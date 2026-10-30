@@ -11,7 +11,7 @@ measures the cut and dredge volumes. Formerly `channel_designer`.
 
 | Layer | Module | What you get |
 |---|---|---|
-| **Rules** | `owd.rules` | Channel width, bend widening, minimum bend radius and depth from the selected Rule Sets and a vessel class, on the rules engine shared with open-vessel-concept-drawings: `pianc-wg141` (qualities A, B, C) and `gb50139` (the Chinese standard GB 50139-2014). Every Rule cites its clause, table and page, and is unverified until a second reader checks it. Select more than one set and the strictest Rule governs; load a Rule Set file of your own at run time (`owd rules`, `owd size --rule-set-file`). Width methods stay pluggable (`register_width_method`, or the `owd.width_methods` entry-point group); they are design assumptions, not verified rules. |
+| **Rules** | `owd.rules` | Channel width, bend widening, minimum bend radius and depth from the selected Rule Sets and a vessel class, on the rules engine shared with open-vessel-designer: `pianc-wg141` (qualities A, B, C) and `gb50139` (the Chinese standard GB 50139-2014). Every Rule cites its clause, table and page, and is unverified until a second reader checks it. Select more than one set and the strictest Rule governs; load a Rule Set file of your own at run time (`owd rules`, `owd size --rule-set-file`). Width methods stay pluggable (`register_width_method`, or the `owd.width_methods` entry-point group); they are design assumptions, not verified rules. |
 | **Alignment** | `owd.alignment` | Centreline from two bank lines, river width, meander analysis, a tight/gentle/straight bend catalogue (exact reachability, not a closed form), rolling-circle straightening to R_min, channel limits with bend widening, and a least-cost route search that shifts the line sideways where that cuts less ground while holding R_min. |
 | **Volumes** | `owd.volumes` | Cut Model A and B cross-sections (wet batter, clearance-prism gate, benched face above the waterline), a station-by-station section integrator, a raster DEM integrator, weir-cascade pool levels, and the plan excavation footprint. Quantities only — m², m³ and face heights. |
 | **Terrain** | `owd.terrain` | Long profile of any line over a terrain sampler: chainage, levels, ascent and descent. Pure; it reads no files and fetches nothing. |
@@ -19,7 +19,7 @@ measures the cut and dredge volumes. Formerly `channel_designer`.
 | **Drawings** | `owd.draw` | Engineering drawings of a design line option, drawn by the Rust core through [`otd`](https://github.com/African-River-Corridors/open-technical-drawer), the [Drawing Format Standard](https://github.com/African-River-Corridors/technical_drawings_for_agents) in Rust: the cross-section gallery and the typical section (ISO 7200 title block, one scale, dredge and dry cut hatched, areas, dimensions), as drawing documents, SVG, PDF and DXF. The same sheets as `owd draw`. Every sheet says "Screening — not for construction". |
 
 Vessel classes and dimensions come from
-[`vessel_designer`](https://github.com/African-River-Corridors/open-vessel-concept-drawings).
+[`vessel_designer`](https://github.com/African-River-Corridors/open-vessel-designer) (Open Vessel Designer, OVD).
 
 Pricing is out of scope. The package measures quantities; what they cost is your call.
 

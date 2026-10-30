@@ -1,7 +1,7 @@
 # Channel rules: Rule Sets, reaches and screening
 
 OWD sizes a channel from **Rule Sets**: versioned data files of Rules, each citing the clause, table and
-page it comes from. The rules engine is `arc-rules`, shared with open-vessel-concept-drawings. The design
+page it comes from. The rules engine is `arc-rules`, shared with open-vessel-designer. The design
 is in spec 0007 and ADR 0008; the words are in the [glossary](../../GLOSSARY.md).
 
 Every result is a screening result, not a design for construction. Every Rule is **unverified** until a

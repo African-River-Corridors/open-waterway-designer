@@ -1,7 +1,7 @@
 # Build process (spec 0001)
 
 How spec 0001 (the parity harness and the Rust core port, issue #20) is built and merged. It follows
-the process of the open-vessel-concept-drawings (OVCD) port, in **single-builder mode**: one builder
+the process of the open-vessel-designer (OVD, then named OVCD) port, in **single-builder mode**: one builder
 works the tickets one at a time, and adversarial review happens after the build, not on every ticket.
 
 ## The loop

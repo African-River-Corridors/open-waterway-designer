@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/African-River-Corridors/open-vessel-concept-drawings/crates/arc-rules/rule-set.schema.json",
+  "$id": "https://github.com/African-River-Corridors/open-vessel-designer/crates/arc-rules/rule-set.schema.json",
   "title": "ARC Rule Set (schema 1.x)",
   "description": "One version of a Rule Set (spec 0004, 'Rule Set (data)'; ADR 0013). Schema 1.x is frozen: changes are additive only. The loader of the arc-rules crate checks the same fields, and also what a schema cannot: the rule id against its locator, repeated ids, table names and conflicts between two constant Criteria.",
   "type": "object",
