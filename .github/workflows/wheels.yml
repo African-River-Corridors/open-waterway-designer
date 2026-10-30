@@ -135,7 +135,7 @@ jobs:
           python -m pip install --only-binary :all: --no-deps --no-index --find-links dist open-waterway-designer
           python -m pip install --only-binary :all: numpy shapely
           # vessel_designer is pure Python, installed from git (its sdist builds without a compiler).
-          python -m pip install "vessel_designer @ git+https://github.com/African-River-Corridors/open-vessel-concept-drawings@v0.2.2"
+          python -m pip install "vessel_designer @ git+https://github.com/African-River-Corridors/open-vessel-designer@v0.2.2"
       - name: Use it
         shell: pwsh
         run: |

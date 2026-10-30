@@ -8,7 +8,7 @@
 //!   (`Label: sourced - PIANC WG 141 (2019) 5.3.3 text box, p104`).
 //!
 //! The sizing theorem (the governing limit meets every sizing Rule of its Requirement; adding a Rule
-//! never lowers it) is in the Lean model of `arc-rules` (OVCD #482). OWD runs no Lean.
+//! never lowers it) is in the Lean model of `arc-rules` (OVD #482). OWD runs no Lean.
 
 use arc_rules::domain::Domain;
 use arc_rules::eval::{MeasureSource, MeasureValue, Outcome, evaluate};

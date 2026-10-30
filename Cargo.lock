@@ -153,7 +153,7 @@ dependencies = [
 [[package]]
 name = "arc-rules"
 version = "0.2.4"
-source = "git+https://github.com/African-River-Corridors/open-vessel-concept-drawings?tag=v0.2.4#5789530300e0b0ec0007941a5c351e8f9cb21faa"
+source = "git+https://github.com/African-River-Corridors/open-vessel-designer?tag=v0.2.4#5789530300e0b0ec0007941a5c351e8f9cb21faa"
 dependencies = [
  "serde_json",
  "sha2 0.11.1",
@@ -3648,7 +3648,7 @@ dependencies = [
 [[package]]
 name = "ovcd-core"
 version = "0.2.4"
-source = "git+https://github.com/African-River-Corridors/open-vessel-concept-drawings?tag=v0.2.4#5789530300e0b0ec0007941a5c351e8f9cb21faa"
+source = "git+https://github.com/African-River-Corridors/open-vessel-designer?tag=v0.2.4#5789530300e0b0ec0007941a5c351e8f9cb21faa"
 dependencies = [
  "arc-rules",
  "libm",

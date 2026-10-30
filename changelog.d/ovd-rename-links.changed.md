@@ -1,0 +1,1 @@
+- The sister project open-vessel-concept-drawings (OVCD) is now open-vessel-designer (OVD). The git dependencies on `arc-rules`, `ovcd-core` and `vessel_designer` point to the new repository URL, at the same tags (v0.2.4 and v0.2.2) and the same commits. No result moves.

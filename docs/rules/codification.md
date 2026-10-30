@@ -2,7 +2,7 @@
 
 How a person or an agent turns a clause of a channel guideline into a Rule that OWD can load. The
 design is in `docs/specs/0007-rules-engine-adoption.md` and ADR 0008. The engine is `arc-rules`,
-shared with open-vessel-concept-drawings (OVCD); this page follows OVCD's own codification page and
+shared with open-vessel-designer (OVD); this page follows OVD's own codification page and
 changes only what is particular to channels.
 
 You do not need to read Rust. You need the guideline open at the right clause, a text editor, and

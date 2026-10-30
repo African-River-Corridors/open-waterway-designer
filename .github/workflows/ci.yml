@@ -176,7 +176,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev,dem]'
           python -m pip install --force-reinstall \
-            'vessel_designer @ git+https://github.com/African-River-Corridors/open-vessel-concept-drawings@main'
+            'open-vessel-designer @ git+https://github.com/African-River-Corridors/open-vessel-designer@main'
       - name: Test
         run: python -m pytest -q
 
