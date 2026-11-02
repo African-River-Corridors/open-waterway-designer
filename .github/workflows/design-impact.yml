@@ -32,8 +32,11 @@ jobs:
       - name: Install the pinned Rust toolchain (rust-toolchain.toml)
         working-directory: head
         run: rustup toolchain install
+      # Restore only. This job runs on pull requests alone, so a saved cache serves only later pushes to
+      # the same pull request, and each one (about 360 MB) pushed main's caches out of the 10 GB limit.
       - uses: Swatinem/rust-cache@v2
         with:
+          save-if: false
           workspaces: |
             head -> target
             base -> target
