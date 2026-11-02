@@ -314,8 +314,7 @@ jobs:
   # Web parity (spec 0011): every web fixture gives the same document from the wasm design session as from
   # native `owd run`, by the ADR 0005 tolerance. Not a required check, and apart from `test` so the fast
   # gate keeps its time budget. The wasm-bindgen CLI is the version the owd-web crate pins, installed from
-  # its prebuilt release. web-parity and web-app build the same release CLI and wasm package, so they
-  # share one Rust cache; web-parity alone saves it, because it builds a superset (the wasm tests too).
+  # its prebuilt release.
   web-parity:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.web == 'true'
@@ -332,8 +331,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: web
-          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'web-parity' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The pinned wasm-bindgen version
         id: wb
         run: echo "version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' crates/owd-web/Cargo.toml)" >> "$GITHUB_OUTPUT"
@@ -383,8 +381,7 @@ jobs:
           rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: web
-          save-if: ${{ github.ref == 'refs/heads/main' && github.job == 'web-parity' }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The pinned wasm-bindgen version
         id: wb
         run: echo "version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' crates/owd-web/Cargo.toml)" >> "$GITHUB_OUTPUT"
