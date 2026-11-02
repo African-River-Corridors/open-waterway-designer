@@ -57,19 +57,19 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add wasm32-unknown-unknown
+      # Saves from main only, as in ci.yml: a pull request's cache serves no other pull request and pushes
+      # main's caches out of the repository's 10 GB limit.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: The pinned wasm-bindgen version
         id: wb
         run: echo "version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' crates/owd-web/Cargo.toml)" >> "$GITHUB_OUTPUT"
-      - name: wasm-bindgen CLI (cached)
-        id: cli
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # The prebuilt, checksum-verified binary of the pinned version, in seconds instead of a source build.
+      - name: Install wasm-bindgen CLI (prebuilt)
+        uses: taiki-e/install-action@1919c4a95903d2c33e4a221102edca87309fc14b # v2.89.0
         with:
-          path: ~/.cargo/bin/wasm-bindgen
-          key: wasm-bindgen-cli-${{ steps.wb.outputs.version }}-${{ runner.os }}
-      - name: Install wasm-bindgen CLI
-        if: steps.cli.outputs.cache-hit != 'true'
-        run: cargo install wasm-bindgen-cli --version "${{ steps.wb.outputs.version }}" --locked
+          tool: wasm-bindgen@${{ steps.wb.outputs.version }}
       - name: Build the web package (wasm)
         run: bash tools/build_web.sh
       - name: Build the web app
