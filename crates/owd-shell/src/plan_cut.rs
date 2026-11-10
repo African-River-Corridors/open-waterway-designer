@@ -8,6 +8,8 @@ impl AppState {
     /// refusal leaves the design as it was.
     pub fn run_plan_cut(&mut self, settings: &Value) -> Result<(), String> {
         self.refuse_while_running()?;
+        // The Rule Sets are confirmed first, as for every other stage (ticket #499).
+        self.confirm_rule_sets()?;
         let mut s = self.session().clone();
         s.run_plan_cut(settings).map_err(|e| e.to_string())?;
         self.replace_session(s);

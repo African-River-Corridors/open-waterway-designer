@@ -61,16 +61,38 @@ fn set_reads(set: &arc_rules::model::RuleSet, name: &str) -> bool {
 /// The built-in Rule Sets a user can pick, each with the set inputs its Rules apply on (values,
 /// words and the default, if there is one), and the sets that are always selected.
 pub fn rule_set_choices() -> (Vec<Value>, Vec<Value>) {
-    let lib = engine::built_in();
+    rule_set_choices_in(engine::built_in())
+}
+
+/// The Rule Sets of `lib` a user can pick, as [`rule_set_choices`] lists them, and the sets that
+/// are always selected (ticket #499). The built-in sets come first, listed as
+/// [`rule_set_choices`] lists them; a set loaded from a file follows, marked `"from_file": true`,
+/// its label saying so.
+pub fn rule_set_choices_in(lib: &Library) -> (Vec<Value>, Vec<Value>) {
+    let built_in = engine::built_in();
+    let from_file =
+        |set: &arc_rules::model::RuleSet| built_in.find(&set.id, &set.version).is_none();
     let (mut pick, mut always) = (Vec::new(), Vec::new());
-    for set in lib.sets() {
+    let ordered = lib
+        .sets()
+        .iter()
+        .filter(|s| !from_file(s))
+        .chain(lib.sets().iter().filter(|s| from_file(s)));
+    for set in ordered {
         let mut entry = json!({
             "id": set.id,
             "version": set.version,
             "title": set.title,
             "label": format!("{} ({}@{})", set.title, set.id, set.version),
         });
-        if set.id == engine::OWD_SET {
+        if from_file(set) {
+            entry["from_file"] = json!(true);
+            entry["label"] = json!(format!(
+                "{} ({}@{}, from a file)",
+                set.title, set.id, set.version
+            ));
+        }
+        if set.id == engine::OWD_SET && !from_file(set) {
             always.push(entry);
             continue;
         }

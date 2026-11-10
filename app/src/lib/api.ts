@@ -173,6 +173,8 @@ export interface Snapshot {
   /** The stages "Run stale" runs now, in order, as the shell's one run loop decides. After each
    * run the next snapshot says again: running one stage can make a later one due. */
   due: StageName[];
+  /** Why the design's Rule Sets cannot be confirmed now (a set no one loaded, a changed file), in the core's words; null when they can (#499). */
+  rule_set_problem: string | null;
   file_name: string;
   path: string | null;
   dirty: boolean;
@@ -291,7 +293,12 @@ export interface RuleSetChoice {
   title: string;
   label: string;
   inputs: SetInputChoice[];
+  /** A set loaded from a file in this session, not built in (#499). */
+  from_file?: boolean;
 }
+
+/** What the picker sends for a set: the bare id for a built-in set, `id@version` for one from a file (a file may share a built-in set's id). */
+export const ruleSetKey = (r: { id: string; version: string; from_file?: boolean }) => (r.from_file ? `${r.id}@${r.version}` : r.id);
 export interface Choices {
   rule_sets: RuleSetChoice[];
   /** Sets that are always selected (the `owd` checks). */
@@ -314,6 +321,8 @@ export interface Choices {
 
 export const snapshot = () => invoke<Snapshot>("snapshot");
 export const sizingChoices = () => invoke<Choices>("sizing_choices");
+/** "Load Rule Set file": ask for a file and load it for the life of the session. `{ loaded: "id@version" }`, or null when the user cancels; rejects with the core's refusal (#499). */
+export const loadRuleSetFile = () => invoke<{ loaded: string } | null>("load_rule_set_file");
 /** Each of these returns null when the user cancels a dialog. */
 export const newFile = () => invoke<Snapshot | null>("new_file");
 export const openFile = () => invoke<Snapshot | null>("open_file");

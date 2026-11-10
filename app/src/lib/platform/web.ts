@@ -111,6 +111,8 @@ export async function createWebPlatform(): Promise<Platform> {
 
   /** The DEM the session holds, kept so a restart can give it back. */
   let dem: Uint8Array | null = null;
+  /** The Rule Set files loaded in this session, kept so a restart loads them again (#499). */
+  const ruleSetTexts: string[] = [];
   /** Whether the design has unsaved changes, as the last snapshot said (or as it was before a restart). */
   let dirty = false;
   let carriedDirty = false;
@@ -150,6 +152,7 @@ export async function createWebPlatform(): Promise<Platform> {
     host = new Host(onProgress, onReach);
     await host.rpc("ping");
     dem = before.dem;
+    for (const text of ruleSetTexts) await host.rpc("load_rule_set_text", text);
     await host.rpc("open_text", before.name, before.text, before.dem ?? undefined);
     carriedDirty = before.dirty;
   }
@@ -240,6 +243,14 @@ export async function createWebPlatform(): Promise<Platform> {
   const commands: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
     snapshot: () => change("snapshot"),
     sizing_choices: () => json("sizing_choices"),
+    load_rule_set_file: async () => {
+      const file = await pickFile(".json");
+      if (!file) return null;
+      const text = await file.text();
+      const loaded = await host.rpc<string>("load_rule_set_text", text);
+      if (!ruleSetTexts.includes(text)) ruleSetTexts.push(text);
+      return { loaded };
+    },
     new_file: async () => {
       if (!confirmDiscard()) return null;
       dem = null;

@@ -593,39 +593,54 @@ impl Session {
     /// the lists in the app: ids, display labels and the dimensions that matter. `owd` is listed
     /// apart, as `always`: it is always selected.
     pub fn sizing_choices() -> Value {
-        let (rule_sets, always) = super::rule_sets::rule_set_choices();
-        // Every class a channel can be sized for (spec 0015 T0), with its family for the picker's
-        // groups and the words its search matches; `default` marks the 12 `owd fits` checks.
-        let defaults = owd_core::rules::classes::default_class_ids();
-        let vessels: Vec<Value> = owd_core::rules::full_catalogue()
-            .into_iter()
-            .map(|(id, v)| {
-                let (lo, hi) = v.loa_m.unwrap_or((f64::NAN, f64::NAN));
-                let loa = if lo == hi {
-                    format!("{hi}")
-                } else {
-                    format!("{lo}-{hi}")
-                };
-                json!({
-                    "id": id,
-                    "label": format!(
-                        "{id} ({}, LOA {loa} m, beam {} m)",
-                        v.formation.replace('_', " "),
-                        v.beam_m.unwrap_or(f64::NAN)
-                    ),
-                    "family": v.family,
-                    "region": v.region,
-                    "formation": v.formation,
-                    "loa_m": v.loa_m.map(|(a, b)| [a, b]),
-                    "beam_m": v.beam_m,
-                    "draught_nominal_m": v.draught_nominal_m(),
-                    "default": defaults.contains(&id.as_str()),
-                })
-            })
-            .collect();
-        json!({"rule_sets": rule_sets, "always": always, "vessels": vessels})
+        sizing_choices_of(super::rule_sets::rule_set_choices())
     }
 
+    /// The sizing choices of this session (ticket #499): as [`Session::sizing_choices`], with the
+    /// Rule Sets loaded from a file listed after the built-in ones, each marked `"from_file":
+    /// true`.
+    pub fn sizing_choices_for(&self) -> Value {
+        sizing_choices_of(super::rule_sets::rule_set_choices_in(
+            self.rule_set_library(),
+        ))
+    }
+}
+
+/// The sizing choices with these Rule Sets (to pick, and always selected) and every vessel class.
+fn sizing_choices_of((rule_sets, always): (Vec<Value>, Vec<Value>)) -> Value {
+    // Every class a channel can be sized for (spec 0015 T0), with its family for the picker's
+    // groups and the words its search matches; `default` marks the 12 `owd fits` checks.
+    let defaults = owd_core::rules::classes::default_class_ids();
+    let vessels: Vec<Value> = owd_core::rules::full_catalogue()
+        .into_iter()
+        .map(|(id, v)| {
+            let (lo, hi) = v.loa_m.unwrap_or((f64::NAN, f64::NAN));
+            let loa = if lo == hi {
+                format!("{hi}")
+            } else {
+                format!("{lo}-{hi}")
+            };
+            json!({
+                "id": id,
+                "label": format!(
+                    "{id} ({}, LOA {loa} m, beam {} m)",
+                    v.formation.replace('_', " "),
+                    v.beam_m.unwrap_or(f64::NAN)
+                ),
+                "family": v.family,
+                "region": v.region,
+                "formation": v.formation,
+                "loa_m": v.loa_m.map(|(a, b)| [a, b]),
+                "beam_m": v.beam_m,
+                "draught_nominal_m": v.draught_nominal_m(),
+                "default": defaults.contains(&id.as_str()),
+            })
+        })
+        .collect();
+    json!({"rule_sets": rule_sets, "always": always, "vessels": vessels})
+}
+
+impl Session {
     // --- inputs -------------------------------------------------------------------------
 
     /// Import inputs from GeoJSON text. Reads every input first and changes nothing if one is

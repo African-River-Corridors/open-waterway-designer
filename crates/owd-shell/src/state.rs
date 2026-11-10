@@ -618,9 +618,15 @@ impl AppState {
         Ok(id)
     }
 
+    /// The Rule Sets, set inputs and vessel classes to choose from for sizing (ticket #499): the
+    /// built-in sets, then each set loaded from a file in this shell, marked `"from_file": true`.
+    pub fn sizing_choices(&self) -> Value {
+        self.session.sizing_choices_for()
+    }
+
     /// The Rule Sets the design was sized with, confirmed before a stage runs: a set that is not
     /// built in and not loaded, or a file that changed, is refused with what to give (ticket #491).
-    fn confirm_rule_sets(&self) -> Result<(), String> {
+    pub(crate) fn confirm_rule_sets(&self) -> Result<(), String> {
         match self.session.rule_set_problem() {
             Some(e) => Err(message(e)),
             None => Ok(()),
@@ -962,6 +968,9 @@ impl AppState {
             StageStatus::Stale => "stale",
         });
         snap["reach_view"]["envelope_strip"] = self.envelope_strip();
+        // Why the design's Rule Sets cannot be confirmed now (ticket #499): the core's message, for
+        // the app to show where the Rule Sets are chosen, never "sizing is stale".
+        snap["rule_set_problem"] = json!(self.session.rule_set_problem().map(message));
         // The stages "Run stale" would run now, in order: the surfaces step through these and
         // never work the list out from the statuses (one run loop).
         snap["due"] = json!(

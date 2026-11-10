@@ -145,8 +145,15 @@ impl Session {
         self.state.snapshot().to_string()
     }
 
+    /// The Rule Sets (built in, then each loaded from a file), set inputs and vessel classes.
     pub fn sizing_choices(&self) -> String {
-        owd_format::design::Session::sizing_choices().to_string()
+        self.state.sizing_choices().to_string()
+    }
+
+    /// Load a Rule Set file's text for the life of this session (the app's "Load Rule Set file",
+    /// ticket #499). Returns `id@version`; a refused file changes nothing.
+    pub fn load_rule_set_text(&mut self, text: &str) -> Js<String> {
+        ok(self.state.load_rule_set_text(text))
     }
 
     pub fn new_design(&mut self) -> String {

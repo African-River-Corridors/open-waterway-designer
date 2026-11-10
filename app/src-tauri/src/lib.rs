@@ -142,10 +142,40 @@ fn snapshot(window: Window, state: State<Shared>) -> Reply {
     finish(&window, &guard)
 }
 
-/// The Rule Sets with their set inputs, and the vessel classes, to choose from.
+/// The Rule Sets with their set inputs, and the vessel classes, to choose from: the built-in sets,
+/// then each set loaded from a file (ticket #499).
 #[tauri::command]
-fn sizing_choices() -> serde_json::Value {
-    Session::sizing_choices()
+fn sizing_choices(state: State<Shared>) -> Reply {
+    Ok(lock(&state)?.sizing_choices())
+}
+
+/// Ask for a Rule Set file to load. `None` when the user cancels.
+fn pick_rule_set(app: &AppHandle) -> Result<Option<PathBuf>, String> {
+    if let Some(answer) = test_answer("rule-set.txt") {
+        return Ok(answer.map(PathBuf::from));
+    }
+    match app
+        .dialog()
+        .file()
+        .add_filter("Rule Set file", &["json"])
+        .blocking_pick_file()
+    {
+        Some(picked) => Ok(Some(picked.into_path().map_err(|e| e.to_string())?)),
+        None => Ok(None),
+    }
+}
+
+/// Load a Rule Set file for the life of the app (ticket #499): `{"loaded": "id@version"}`, or
+/// `null` when the user cancels. A refused file changes nothing; the refusal is the core's.
+#[tauri::command]
+async fn load_rule_set_file(app: AppHandle, state: State<'_, Shared>) -> Reply {
+    let Some(path) = pick_rule_set(&app)? else {
+        return Ok(serde_json::Value::Null);
+    };
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+    let loaded = lock(&state)?.load_rule_set_text(&text)?;
+    Ok(serde_json::json!({ "loaded": loaded }))
 }
 
 /// `null` when the user cancels.
@@ -1160,6 +1190,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             snapshot,
             sizing_choices,
+            load_rule_set_file,
             new_file,
             open_file,
             save,

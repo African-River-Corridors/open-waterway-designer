@@ -5,6 +5,7 @@ declare module "*/wasm-pkg/owd_web.js" {
     constructor();
     snapshot(): string;
     sizing_choices(): string;
+    load_rule_set_text(text: string): string;
     new_design(): string;
     open_text(name: string, text: string, dem?: Uint8Array): string;
     save_text(name: string): string;
