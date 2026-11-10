@@ -1,0 +1,19 @@
+[package]
+name = "owd-cases"
+description = "The alignment case runner: plays a case's steps through the command line and the app shell, and reports each expected value from both."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "owd-cases"
+path = "src/main.rs"
+
+[dependencies]
+owd-cli = { path = "../owd-cli" }
+owd-format.workspace = true
+owd-shell.workspace = true
+serde_json.workspace = true
