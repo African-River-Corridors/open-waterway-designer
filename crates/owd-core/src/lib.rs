@@ -2,6 +2,7 @@
 //! reference (the Python package at the tag `py-reference`). No I/O.
 
 pub mod alignment;
+pub mod banks;
 /// Python-style number formatting, for the text of messages and printed results.
 pub use ovcd_core::pyfmt;
 

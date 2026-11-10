@@ -2,8 +2,8 @@
 //! person, or another tool). It prints what fails and changes nothing.
 
 use crate::commands::{Failure, Result, input_error, open, say};
+use owd_core::banks::check::{CheckParams, check_banks as run_checks, lines_cross};
 use owd_format::design::crs::{Crs, Utm};
-use owd_reach::bankcheck::{CheckParams, check_banks as run_checks, lines_cross};
 use serde_json::{Value, json};
 
 /// The checks' station step on a document's banks, in metres.
