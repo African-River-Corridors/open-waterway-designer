@@ -9,6 +9,7 @@ pub mod envelope;
 pub mod fetch;
 pub mod fits;
 pub mod level;
+pub mod plan_cut;
 pub mod qa_overlay;
 pub mod reach_fetch;
 pub mod report;

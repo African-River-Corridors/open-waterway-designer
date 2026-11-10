@@ -17,6 +17,7 @@ pub mod hillshade;
 pub mod map;
 pub mod midline;
 pub mod optimise;
+pub mod plan_cut;
 pub mod provenance;
 pub mod reach;
 pub mod reference_line;

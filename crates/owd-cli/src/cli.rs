@@ -668,6 +668,24 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
+    /// The plan cut of each design line option: the fairway at the water surface, less the river
+    /// polygon. Plan only: it needs no terrain and no water level. Kept in the document.
+    PlanCut {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// The smallest piece that counts as a cut, in square metres (the document's, or the
+        /// stage's own default when absent).
+        #[arg(long, value_name = "M2")]
+        min_piece_m2: Option<f64>,
+        /// Also write the cut polygons as GeoJSON to this file.
+        #[arg(long, value_name = "FILE")]
+        geojson: Option<String>,
+        /// With --geojson: write longitude and latitude instead of the project CRS.
+        #[arg(long, requires = "geojson")]
+        wgs84: bool,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Mark reaches of the river as canal, impounded river or free-flowing river (spec 0007), so
     /// Rules written for one kind apply only there. Chainage is along the river centreline.
     Waterway {
@@ -925,6 +943,22 @@ pub fn main() -> ExitCode {
             show,
             csv,
             png.as_deref(),
+            &out.output,
+            out.json,
+        ),
+        Command::PlanCut {
+            doc,
+            min_piece_m2,
+            geojson,
+            wgs84,
+            out,
+        } => crate::plan_cut::plan_cut(
+            &doc,
+            crate::plan_cut::PlanCutFlags {
+                min_piece_m2,
+                geojson,
+                wgs84,
+            },
             &out.output,
             out.json,
         ),
