@@ -410,6 +410,7 @@ mod tests {
                     bench_left: false,
                     bench_right: false,
                     tag: String::new(),
+                    has_water: true,
                 }
             })
             .collect();
