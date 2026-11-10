@@ -120,6 +120,7 @@ const snapshot: Snapshot = {
     { name: "sizing", status: "fresh" }, { name: "alignment", status: "fresh" },
     { name: "optimise", status: "not_run" }, { name: "volumes", status: "stale" },
   ],
+  due: ["volumes"],
   document: {
     project: { title: "Reach A, screening", created: "2026-10-21", crs: { epsg: 32631, name: "WGS 84 / UTM zone 31N" }, source_crs: null },
     inputs: {
@@ -167,6 +168,7 @@ function relief(): Hillshade {
 const blank = (): Snapshot => ({
   ...snapshot, file_name: "Untitled", warnings: [], title: "Untitled",
   stages: snapshot.stages.map((x) => ({ ...x, status: "not_run" as const })),
+  due: [],
   document: { ...snapshot.document, project: { ...snapshot.document.project, title: "Untitled", crs: null },
     inputs: { left_bank: null, right_bank: null, centreline: null, river_polygon: null, dem: null, water_level: null },
     stages: { ...snapshot.document.stages, sizing: { settings: null, results: null }, volumes: { settings: null, results: null } } },

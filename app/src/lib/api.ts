@@ -166,6 +166,9 @@ export interface Snapshot {
   /** True when a bank edit can be undone. */
   can_undo_bank_edit?: boolean;
   stages: { name: StageName; status: StageState }[];
+  /** The stages "Run stale" runs now, in order, as the shell's one run loop decides. After each
+   * run the next snapshot says again: running one stage can make a later one due. */
+  due: StageName[];
   file_name: string;
   path: string | null;
   dirty: boolean;

@@ -159,7 +159,7 @@ fn a_custom_vessel_study_saves_as_format_0_4_and_reopens_the_same() {
         ..like_iv()
     })
     .unwrap();
-    s.run_stale().unwrap();
+    s.run_stale_with(None).unwrap();
     let text = s.to_text();
     assert!(
         text.contains(r#""format_version": "0.4""#),
@@ -180,7 +180,7 @@ fn a_custom_vessel_study_saves_as_format_0_4_and_reopens_the_same() {
 fn changing_the_custom_vessel_makes_sizing_stale() {
     let mut s = imported();
     s.set_custom_vessel(&like_iv()).unwrap();
-    s.run_stale().unwrap();
+    s.run_stale_with(None).unwrap();
     assert_eq!(s.stage_status(Stage::Sizing), StageStatus::Fresh);
     s.set_custom_vessel(&CustomVessel {
         beam_m: 11.0,
@@ -249,7 +249,7 @@ fn the_schema_takes_format_0_4_and_a_custom_vessel() {
     assert_eq!(schema["properties"]["format_version"]["const"], "0.4");
     let mut s = imported();
     s.set_custom_vessel(&like_iv()).unwrap();
-    s.run_stale().unwrap();
+    s.run_stale_with(None).unwrap();
     assert_eq!(s.validate(), Vec::<String>::new());
 }
 

@@ -38,7 +38,7 @@ fn a_new_design_opens_with_pianc_wg141_quality_c_all_marked_default() {
     assert!(s.validate().is_empty(), "{:?}", s.validate());
     // Nothing to size until a vessel is chosen, and `run` does not try.
     let mut s = s;
-    assert_eq!(s.run_stale().unwrap(), Vec::<Stage>::new());
+    assert_eq!(s.run_stale_with(None).unwrap(), Vec::<Stage>::new());
     // Choosing only a vessel keeps the default selection and its marks.
     s.set_vessel("CEMT_IV", None).unwrap();
     s.run_stage(Stage::Sizing).unwrap();

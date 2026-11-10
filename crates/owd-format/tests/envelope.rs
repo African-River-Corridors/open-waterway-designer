@@ -78,7 +78,7 @@ fn a_change_to_the_banks_makes_it_stale_and_nothing_reruns_it() {
     s.run_envelope(Settings::default(), false).unwrap();
     s.import(&[(Role::LeftBank, line(190.0).as_str())]).unwrap();
     assert_eq!(s.envelope_status(), StageStatus::Stale);
-    s.run_stale().unwrap();
+    s.run_stale_with(None).unwrap();
     assert_eq!(s.envelope_status(), StageStatus::Stale);
 }
 

@@ -94,11 +94,15 @@
     await guard(() => api.cancelRun());
   }
 
-  /** Rerun the stale stages in order, each on the worker; stop at the first that does not finish. */
+  /** Run the stages that are due, each on the worker, so it shows progress and can be cancelled.
+   * The shell decides what is due (`snap.due`, the session's one run loop); this only steps
+   * through its answer, asking again after each run. Stop at the first that does not finish, or
+   * if a stage that just finished is still the first due (it would never end). */
   async function runStale() {
-    for (const s of snap?.stages ?? []) {
-      if (s.status !== "stale") continue;
-      if (!(await run(s.name))) return;
+    let last: StageName | null = null;
+    for (let next = snap?.due[0]; next && next !== last; next = snap?.due[0]) {
+      last = next;
+      if (!(await run(next))) return;
     }
   }
 
@@ -379,7 +383,7 @@
 
   let theme = $state<ThemeChoice>(currentTheme());
 
-  let anyStale = $derived(snap?.stages.some((s) => s.status === "stale") ?? false);
+  let anyStale = $derived((snap?.due.length ?? 0) > 0);
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -396,7 +400,7 @@
     <button class:on={sheetsView} data-testid="sheets-toggle" aria-pressed={sheetsView} disabled={!(table?.rows.length)} onclick={() => (sheetsView = !sheetsView)} title="The drawing sheets of the active option, as owd draw makes them">Sheets</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("geojson")} title="Design line options as GeoJSON (WGS84), with their checks">Export GeoJSON</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("csv")} title="The quantity table as CSV">Export CSV</button>
-    <button class="primary" disabled={!anyStale || busy !== null} onclick={runStale} title="Rerun every stale stage, in order">Run stale</button>
+    <button class="primary" disabled={!anyStale || busy !== null} onclick={runStale} title="Run every stage that is due (stale, or set up and not run yet), in order">Run stale</button>
     <span class="grow"></span>
     <label class="theme">
       Theme

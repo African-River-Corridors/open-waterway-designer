@@ -533,29 +533,35 @@ impl Session {
         }
     }
 
-    /// Run every stage that is stale, or has settings but no results, in order. Returns the stages
-    /// that ran. A stale stage that cannot run yet (a later ticket builds it) is an error.
-    pub fn run_stale(&mut self) -> Result<Vec<Stage>, DesignError> {
-        self.run_stale_with(None)
+    /// Whether `stage` is due now: stale, or not run yet with settings to run on. A new design
+    /// has a Rule Set selection but no vessel, so sizing is not due until it has one.
+    fn is_due(&self, stage: Stage) -> bool {
+        match self.stage_status(stage) {
+            StageStatus::Stale => true,
+            StageStatus::NotRun => {
+                let settings = &self.doc["stages"][stage.name()]["settings"];
+                !settings.is_null()
+                    && (stage != Stage::Sizing
+                        || !settings["vessel_standard_id"].is_null()
+                        || settings["custom_vessel"].is_object())
+            }
+            StageStatus::Fresh => false,
+        }
     }
 
-    /// [`Session::run_stale`] with the DEM as a terrain sampler.
+    /// The stages due now, in order, by the rule [`Session::run_stale_with`] runs. Running one can
+    /// make a later one due, so a surface that steps through them asks again after each.
+    pub fn due_stages(&self) -> Vec<Stage> {
+        Stage::ALL.into_iter().filter(|s| self.is_due(*s)).collect()
+    }
+
+    /// Run every stage that is due (stale, or with settings but no results), in order, on
+    /// `terrain`. Returns the stages that ran. This is the one "run what is due" loop: the command
+    /// line and the app shells all call it. A stage that cannot run is an error.
     pub fn run_stale_with(&mut self, terrain: Option<Terrain>) -> Result<Vec<Stage>, DesignError> {
         let mut ran = Vec::new();
         for stage in Stage::ALL {
-            let due = match self.stage_status(stage) {
-                StageStatus::Stale => true,
-                StageStatus::NotRun => {
-                    let settings = &self.doc["stages"][stage.name()]["settings"];
-                    // A new design has a Rule Set selection but no vessel: nothing to size yet.
-                    !settings.is_null()
-                        && (stage != Stage::Sizing
-                            || !settings["vessel_standard_id"].is_null()
-                            || settings["custom_vessel"].is_object())
-                }
-                StageStatus::Fresh => false,
-            };
-            if due {
+            if self.is_due(stage) {
                 self.run_stage_with(stage, terrain)?;
                 ran.push(stage);
             }

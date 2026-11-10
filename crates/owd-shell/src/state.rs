@@ -309,11 +309,23 @@ impl AppState {
         serde_json::from_str(&text).map_err(|e| e.to_string())
     }
 
-    /// Rerun every stale stage, in order. Returns the names of the stages that ran.
+    /// Run every stage that is due, in order, through the session's one loop, on the document's
+    /// DEM when it is the file whose hash was recorded (as [`AppState::begin_run`] and `owd run`).
+    /// Returns the names of the stages that ran.
     pub fn run_stale(&mut self) -> Result<Vec<&'static str>, String> {
         self.refuse_while_running()?;
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => Some(
+                owd_format::design::terrain::dem_sampler(d, self.project_epsg())
+                    .map_err(message)?,
+            ),
+            None => None,
+        };
+        let terrain: Option<owd_format::design::Terrain> =
+            sampler.as_ref().map(|s| s as owd_format::design::Terrain);
         let before = self.session.clone();
-        match self.session.run_stale() {
+        match self.session.run_stale_with(terrain) {
             Ok(ran) => {
                 if !ran.is_empty() {
                     self.dirty = true;
@@ -740,6 +752,15 @@ impl AppState {
             StageStatus::Stale => "stale",
         });
         snap["reach_view"]["envelope_strip"] = self.envelope_strip();
+        // The stages "Run stale" would run now, in order: the surfaces step through these and
+        // never work the list out from the statuses (one run loop).
+        snap["due"] = json!(
+            self.session
+                .due_stages()
+                .into_iter()
+                .map(Stage::name)
+                .collect::<Vec<_>>()
+        );
         snap
     }
 }
@@ -901,7 +922,7 @@ mod tests {
         assert!(Session::open(&text).unwrap().validate().is_empty());
         // `owd run` on the saved file changes nothing: every stage is fresh.
         let mut again = Session::open(&text).unwrap();
-        assert_eq!(again.run_stale().unwrap(), vec![]);
+        assert_eq!(again.run_stale_with(None).unwrap(), vec![]);
         assert_eq!(again.to_text(), text);
         let reopened = AppState::open(Path::new("a.owd"), &text, None).unwrap();
         assert_eq!(reopened.save_text(), text);
