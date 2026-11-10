@@ -331,10 +331,18 @@ impl Session {
             _ => self.fits_choices(),
         };
         let water = self.river_polygons().ok_or_else(|| {
-            DesignError::Input(
+            let inputs = &self.doc["inputs"];
+            let has_bank = inputs["left_bank"].is_object() || inputs["right_bank"].is_object();
+            DesignError::Input(if has_bank {
                 "the answer needs the river polygon: import it first (`owd import --polygon FILE`)"
-                    .into(),
-            )
+                    .into()
+            } else {
+                // A centreline alone: the polygon is made from the banks, and there are none.
+                "the design has no banks: \"what fits\" reads the river between its banks. Import \
+                 both banks (`owd import --left-bank FILE --right-bank FILE`) or the river polygon \
+                 (`--polygon FILE`)."
+                    .into()
+            })
         })?;
         // The reference line is made from the banks: without them, the centreline is read.
         let (line, read_on, note) = match plan_line {
