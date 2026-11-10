@@ -223,6 +223,94 @@ impl Session {
         Ok(t)
     }
 
+    /// The left and right channel limits of each design line option, as a GeoJSON
+    /// FeatureCollection: in the project CRS, or with `wgs84` in longitude and latitude.
+    ///
+    /// The limits are the edges of the channel bottom, from the same half-width as the volumes
+    /// cut: at stations every `STATION_M` along the line, `widened_hb_from_shape` of the sized
+    /// channel, moved left (`(-sin θ, cos θ)`, looking the way the line runs) and right. Worked out
+    /// here, never stored.
+    pub fn export_limits_geojson(&self, wgs84: bool) -> Result<String, DesignError> {
+        use owd_core::cut_model::{STATION_M, WIDEN_RMAX, widened_hb_from_shape};
+        use owd_core::volumes::sections::station_frame;
+        let epsg = self.doc["project"]["crs"]["epsg"]
+            .as_u64()
+            .map(|c| c as u32);
+        let utm: Option<Utm> = epsg
+            .and_then(|c| Crs::from_epsg(c).ok())
+            .and_then(|c| match c {
+                Crs::Utm(u) => Some(u),
+                Crs::Wgs84 => None,
+            });
+        if self.options_list().is_empty() {
+            return Err(DesignError::Input(
+                "there are no design line options to export: run the alignment stage first".into(),
+            ));
+        }
+        let shape = self.sized_shape()?;
+        let point = |x: f64, y: f64| -> Result<Value, DesignError> {
+            if wgs84 {
+                let u = utm.ok_or_else(|| {
+                    DesignError::Input("the channel design has no project CRS".into())
+                })?;
+                let [lon, lat] = u.inverse(x, y).map_err(DesignError::Input)?;
+                Ok(json!([lon, lat]))
+            } else {
+                Ok(json!([x, y]))
+            }
+        };
+        let mut features = Vec::new();
+        for o in self.options_list() {
+            let line: Vec<[f64; 2]> = o["line"]["coordinates"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|p| {
+                    [
+                        p[0].as_f64().unwrap_or(f64::NAN),
+                        p[1].as_f64().unwrap_or(f64::NAN),
+                    ]
+                })
+                .collect();
+            let (_, xy, heading) = station_frame(&line, STATION_M).map_err(DesignError::Input)?;
+            let hb = widened_hb_from_shape(&xy, &shape, WIDEN_RMAX);
+            let (mut left, mut right) = (Vec::new(), Vec::new());
+            for ((p, th), h) in xy.iter().zip(&heading).zip(&hb) {
+                let (nx, ny) = (-libm::sin(*th), libm::cos(*th));
+                left.push(point(p[0] + h * nx, p[1] + h * ny)?);
+                right.push(point(p[0] - h * nx, p[1] - h * ny)?);
+            }
+            let failed = failed_checks(&o);
+            for (side, coords) in [("left", left), ("right", right)] {
+                features.push(json!({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": coords},
+                    "properties": {
+                        "screening": SCREENING_LABEL,
+                        "id": o["id"].as_str().unwrap_or(""),
+                        "name": o["name"],
+                        "method": o["method"],
+                        "side": side,
+                        "failed_checks": failed,
+                    },
+                }));
+            }
+        }
+        let mut fc = json!({
+            "type": "FeatureCollection",
+            "screening": SCREENING_LABEL,
+            "engine_version": super::session::ENGINE_VERSION,
+            "title": self.doc["project"]["title"],
+            "features": features,
+        });
+        if !wgs84 {
+            fc["crs"] = json!({"type": "name", "properties": {"name": format!("urn:ogc:def:crs:EPSG::{}", epsg.unwrap_or(0))}});
+        }
+        let mut t = serde_json::to_string_pretty(&fc).expect("a JSON value serialises");
+        t.push('\n');
+        Ok(t)
+    }
+
     /// The design basis (B) and the verdicts (A) as `#` comment lines, for the head of a CSV.
     fn basis_and_verdict_lines(&self) -> Vec<String> {
         let mut out = Vec::new();

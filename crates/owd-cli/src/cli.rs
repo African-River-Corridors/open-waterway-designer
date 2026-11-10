@@ -424,6 +424,10 @@ enum Command {
         /// as CSV, whose head holds the design basis and the verdicts.
         #[arg(long)]
         stretches: bool,
+        /// With --geojson: export the channel limits (the edges of the channel bottom, wider in
+        /// bends) of each option instead of the options.
+        #[arg(long, requires = "geojson", conflicts_with_all = ["csv", "stretches"])]
+        limits: bool,
         /// Write the export here instead of stdout.
         #[arg(short = 'o', long = "output", value_name = "FILE")]
         output: Option<String>,
@@ -1140,8 +1144,15 @@ pub fn main() -> ExitCode {
             csv,
             wgs84,
             stretches,
+            limits,
             output,
-        } => commands::export(&doc, geojson, csv, wgs84, stretches, output.as_deref()),
+        } => {
+            if limits {
+                commands::export_limits(&doc, wgs84, output.as_deref())
+            } else {
+                commands::export(&doc, geojson, csv, wgs84, stretches, output.as_deref())
+            }
+        }
         Command::Trace {
             doc,
             option,
