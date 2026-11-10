@@ -15,7 +15,7 @@
 //! integers, and a damaged file. A refusal never returns a raster.
 
 use std::io::Cursor;
-use tiff::decoder::{Decoder, DecodingResult};
+use tiff::decoder::{ChunkType, Decoder, DecodingResult, Limits};
 use tiff::tags::Tag;
 
 /// Why a file could not be read.
@@ -27,6 +27,8 @@ pub enum GeoTiffError {
     Corrupt(String),
     /// A valid GeoTIFF the reader does not handle. The text names what is missing.
     Unsupported(String),
+    /// A file whose grid would not fit the reader's memory limit. The text gives the numbers.
+    TooLarge(String),
 }
 
 impl core::fmt::Display for GeoTiffError {
@@ -35,6 +37,7 @@ impl core::fmt::Display for GeoTiffError {
             GeoTiffError::Io(m) => write!(f, "cannot read the GeoTIFF: {m}"),
             GeoTiffError::Corrupt(m) => write!(f, "the GeoTIFF is damaged or not a TIFF: {m}"),
             GeoTiffError::Unsupported(m) => write!(f, "unsupported GeoTIFF: {m}"),
+            GeoTiffError::TooLarge(m) => write!(f, "the terrain file is too large: {m}"),
         }
     }
 }
@@ -298,10 +301,126 @@ fn with_image_width(bytes: &[u8], new_width: u32) -> Option<Vec<u8>> {
     None
 }
 
-/// Read a GeoTIFF held in memory.
+/// Decode the image chunk by chunk (strip or tile) straight into the grid, so the peak memory is
+/// the grid and one chunk. `width` is the image's own width: a chunk of a decoder over a padded
+/// raster (see the LZW note in [`read_bytes_within`]) is cropped to it as it is placed.
+fn read_grid(
+    d: &mut Decoder<Cursor<&[u8]>>,
+    width: usize,
+    height: usize,
+) -> Result<Vec<f64>, GeoTiffError> {
+    let (iw, _) = d.dimensions().map_err(corrupt)?;
+    let (cw, ch) = d.chunk_dimensions();
+    let tiled = matches!(d.get_chunk_type(), ChunkType::Tile);
+    let count = if tiled {
+        d.tile_count().map_err(corrupt)?
+    } else {
+        d.strip_count().map_err(corrupt)?
+    };
+    let across = iw.div_ceil(cw.max(1));
+    let mut data = vec![f64::NAN; width * height];
+    let mut placed = 0usize;
+    for i in 0..count {
+        let (dw, dh) = d.chunk_data_dimensions(i);
+        let (x0, y0) = if tiled {
+            ((i % across) * cw, (i / across) * ch)
+        } else {
+            (0, i * ch)
+        };
+        let (dw, dh, x0, y0) = (dw as usize, dh as usize, x0 as usize, y0 as usize);
+        let mut put = |vals: &mut dyn Iterator<Item = f64>| -> Result<(), GeoTiffError> {
+            for (k, v) in vals.enumerate() {
+                let (r, c) = (y0 + k / dw, x0 + k % dw);
+                if c < width && r < height {
+                    data[r * width + c] = v;
+                    placed += 1;
+                }
+            }
+            Ok(())
+        };
+        match d.read_chunk(i).map_err(corrupt)? {
+            DecodingResult::U8(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::U16(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::U32(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::I8(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::I16(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::I32(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::F32(v) => put(&mut v.into_iter().take(dw * dh).map(f64::from))?,
+            DecodingResult::F64(v) => put(&mut v.into_iter().take(dw * dh))?,
+            _ => {
+                return unsupported(
+                    "this pixel type (64 bit integers and 16 bit floats are not read); DEMs are 8, 16 or 32 bit integers or 32 or 64 bit floats",
+                );
+            }
+        }
+    }
+    if placed != width * height {
+        return Err(GeoTiffError::Corrupt(format!(
+            "the image holds {placed} values, expected {} ({width} x {height})",
+            width * height
+        )));
+    }
+    Ok(data)
+}
+
+/// The memory the reader may use for one terrain grid, in bytes: the grid it returns (8 bytes a
+/// cell) and the one chunk it holds while decoding. 6 GiB on native targets, which holds the grid
+/// of a long river (10,000 by 35,000 cells is 2.8 GB); 1 GiB in the browser, whose memory is
+/// smaller. The `tiff` crate's own defaults (256 MiB) no longer decide.
+pub const DEFAULT_GRID_LIMIT_BYTES: u64 = if cfg!(target_arch = "wasm32") {
+    1 << 30
+} else {
+    6 << 30
+};
+
+/// Read a GeoTIFF held in memory, inside [`DEFAULT_GRID_LIMIT_BYTES`].
 pub fn read_bytes(bytes: &[u8]) -> Result<Dem, GeoTiffError> {
-    let mut d = Decoder::new(Cursor::new(bytes)).map_err(corrupt)?;
+    read_bytes_within(bytes, DEFAULT_GRID_LIMIT_BYTES)
+}
+
+/// A decoder whose own limits leave the memory limit to the reader.
+fn decoder(bytes: &[u8], limit_bytes: u64) -> Result<Decoder<Cursor<&[u8]>>, GeoTiffError> {
+    let mut limits = Limits::default();
+    limits.decoding_buffer_size = usize::try_from(limit_bytes).unwrap_or(usize::MAX);
+    Ok(Decoder::new(Cursor::new(bytes))
+        .map_err(corrupt)?
+        .with_limits(limits))
+}
+
+/// A size in bytes, with its GiB beside it.
+fn bytes_and_gib(n: u64) -> String {
+    format!("{n} bytes ({:.2} GiB)", n as f64 / f64::from(1u32 << 30))
+}
+
+/// Read a GeoTIFF held in memory, using at most `limit_bytes` for the grid and the chunk being
+/// decoded. A file over the limit is refused by size before anything is decoded.
+pub fn read_bytes_within(bytes: &[u8], limit_bytes: u64) -> Result<Dem, GeoTiffError> {
+    let mut d = decoder(bytes, limit_bytes)?;
     let (w, h) = d.dimensions().map_err(corrupt)?;
+
+    // The memory the read needs, from the header alone: the grid of f64 cells, and one chunk of
+    // samples while it is decoded. Refused here, before decoding, when it is over the limit.
+    // One value per band: a file of several bands is refused below, by name.
+    let bits = d
+        .find_tag_unsigned_vec::<u16>(Tag::BitsPerSample)
+        .ok()
+        .flatten()
+        .and_then(|v| v.into_iter().max())
+        .unwrap_or(8);
+    let (cw, ch) = d.chunk_dimensions();
+    let cells = u64::from(w) * u64::from(h);
+    let grid = cells * 8;
+    // A strip's nominal height may be far taller than the image: the chunk is at most the image.
+    let chunk = u64::from(cw.min(w)) * u64::from(ch.min(h)) * u64::from(bits).div_ceil(8);
+    let need = grid + chunk;
+    if need > limit_bytes {
+        return Err(GeoTiffError::TooLarge(format!(
+            "it has {cells} cells ({w} x {h}); its grid needs {grid} bytes (8 bytes a cell), and \
+             the read needs {} in all, over the reader's limit of {}",
+            bytes_and_gib(need),
+            bytes_and_gib(limit_bytes)
+        )));
+    }
 
     // KNOWN FAULT in the `tiff` crate (0.11.3): an LZW tile on the right edge of the raster, whose
     // visible part is narrower than the tile, is refused with "no lzw end code found" although the
@@ -327,8 +446,8 @@ pub fn read_bytes(bytes: &[u8]) -> Result<Dem, GeoTiffError> {
         );
     }
     let mut d = match &patched {
-        Some(p) => Decoder::new(Cursor::new(p.as_slice())).map_err(corrupt)?,
-        None => Decoder::new(Cursor::new(bytes)).map_err(corrupt)?,
+        Some(p) => decoder(p.as_slice(), limit_bytes)?,
+        None => decoder(bytes, limit_bytes)?,
     };
 
     let bands = d
@@ -364,45 +483,8 @@ pub fn read_bytes(bytes: &[u8]) -> Result<Dem, GeoTiffError> {
         None => None,
     };
 
-    let data: Vec<f64> = match d.read_image().map_err(corrupt)? {
-        DecodingResult::U8(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::U16(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::U32(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::I8(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::I16(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::I32(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::F32(v) => v.into_iter().map(f64::from).collect(),
-        DecodingResult::F64(v) => v,
-        _ => {
-            return unsupported(
-                "this pixel type (64 bit integers and 16 bit floats are not read); DEMs are 8, 16 or 32 bit integers or 32 or 64 bit floats",
-            );
-        }
-    };
     let (width, height) = (w as usize, h as usize);
-    let data = match padded {
-        Some(pw) => {
-            let pw = pw as usize;
-            if data.len() != pw * height {
-                return Err(GeoTiffError::Corrupt(format!(
-                    "the image holds {} values, expected {} ({pw} x {height})",
-                    data.len(),
-                    pw * height
-                )));
-            }
-            data.chunks(pw)
-                .flat_map(|row| row[..width].iter().copied())
-                .collect()
-        }
-        None => data,
-    };
-    if data.len() != width * height {
-        return Err(GeoTiffError::Corrupt(format!(
-            "the image holds {} values, expected {} ({width} x {height})",
-            data.len(),
-            width * height
-        )));
-    }
+    let data = read_grid(&mut d, width, height)?;
     Ok(Dem {
         width,
         height,
