@@ -1425,6 +1425,14 @@ pub fn fetch_dem_watched(
     Ok(())
 }
 
+/// `owd export --geojson --limits`: the channel limits of each option, in the project CRS or with
+/// `wgs84` in longitude and latitude, to `output` (or stdout).
+pub fn export_limits(doc: &str, wgs84: bool, output: Option<&str>) -> Result {
+    let session = open(doc)?;
+    let text = session.export_limits_geojson(wgs84).map_err(from_design)?;
+    write(output.unwrap_or("-"), &text)
+}
+
 pub fn export(
     doc: &str,
     geojson: bool,

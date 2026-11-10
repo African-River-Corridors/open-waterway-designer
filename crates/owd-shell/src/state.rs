@@ -589,6 +589,12 @@ impl AppState {
             .map_err(message)
     }
 
+    /// The channel limits as GeoJSON in longitude and latitude. The same text as
+    /// `owd export --geojson --limits --wgs84` on the saved file.
+    pub fn export_limits_geojson(&self) -> Result<String, String> {
+        self.session.export_limits_geojson(true).map_err(message)
+    }
+
     /// The inputs of the drawing sheets of an option (spec 0004, ticket 8), to run off the lock.
     pub fn sheets_job(&self, option: &str) -> crate::sheets::SheetsJob {
         crate::sheets::SheetsJob::new(self.session.to_text(), self.dem_bytes.clone(), option)
