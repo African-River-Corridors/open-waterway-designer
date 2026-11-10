@@ -177,6 +177,10 @@ enum Command {
         /// Two lines at one chainage make a step (a weir).
         #[arg(long, value_name = "FILE")]
         water_table: Option<String>,
+        /// The water level as pools: one line per pool, `chainage_m,level_m`, the chainage where
+        /// the pool starts. Its level holds to the next line; nothing is read between two levels.
+        #[arg(long, value_name = "FILE")]
+        water_pools: Option<String>,
         /// A bank dataset file: both banks, the river polygon and what the source says about them
         /// (its accuracy, its low-confidence stretches), in one GeoJSON FeatureCollection.
         /// It is imported on its own: give the centreline, the DEM or the water level in another
@@ -184,7 +188,7 @@ enum Command {
         #[arg(
             long,
             value_name = "FILE",
-            conflicts_with_all = ["left_bank", "right_bank", "polygon", "centreline", "dem", "water_level", "water_slope", "water_table"]
+            conflicts_with_all = ["left_bank", "right_bank", "polygon", "centreline", "dem", "water_level", "water_slope", "water_table", "water_pools"]
         )]
         banks: Option<String>,
         #[command(flatten)]
@@ -897,6 +901,7 @@ pub fn main() -> ExitCode {
             water_level,
             water_slope,
             water_table,
+            water_pools,
             banks: None,
             out,
         } => commands::import(
@@ -912,6 +917,7 @@ pub fn main() -> ExitCode {
                 level: water_level,
                 slope: water_slope,
                 table: water_table,
+                pools: water_pools,
                 holds_bathymetry,
             },
             &out.output,

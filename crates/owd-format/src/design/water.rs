@@ -85,6 +85,71 @@ impl Session {
         Ok(())
     }
 
+    /// Set the water level as pools: rows of `[river chainage in metres, level in metres]`, one
+    /// per pool, the chainage where it starts. A level holds from its chainage to the next row; the
+    /// first also upstream of its chainage, the last to the end of the river. Nothing is read
+    /// between two levels. Stored as the stepped profile the document already has: each row, then
+    /// the same level at the next row's chainage. A refused table changes nothing.
+    pub fn set_water_pools(&mut self, pools: &[[f64; 2]]) -> Result<(), DesignError> {
+        if pools.is_empty() {
+            return Err(DesignError::Input(
+                "a pool table needs at least one pool".into(),
+            ));
+        }
+        if pools
+            .iter()
+            .any(|p| !(p[0].is_finite() && p[1].is_finite()))
+        {
+            return Err(DesignError::Input(
+                "every pool needs a finite chainage and level".into(),
+            ));
+        }
+        if let Some(w) = pools.windows(2).find(|w| w[1][0] <= w[0][0]) {
+            return Err(DesignError::Input(format!(
+                "the chainage of each pool must be above the one before: {} m follows {} m \
+                 (two rows at one chainage are a pool with no length)",
+                w[1][0], w[0][0]
+            )));
+        }
+        let mut points = Vec::with_capacity(2 * pools.len() - 1);
+        for (i, p) in pools.iter().enumerate() {
+            points.push(*p);
+            if let Some(next) = pools.get(i + 1) {
+                points.push([next[0], p[1]]);
+            }
+        }
+        self.set_water_profile(&points)
+    }
+
+    /// [`Session::set_water_pools`] from text: lines of `chainage_m,level_m`, read as
+    /// `--water-table` reads its file. A blank line and a `#` line are skipped, and a first line
+    /// that is not two numbers is a header; any other line that is not two numbers is refused by
+    /// its number. The one reader of the text for every surface.
+    pub fn set_water_pools_text(&mut self, text: &str) -> Result<(), DesignError> {
+        let mut pools = Vec::new();
+        for (n, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let f: Vec<&str> = line.split(',').map(str::trim).collect();
+            match (
+                f.first().and_then(|x| x.parse::<f64>().ok()),
+                f.get(1).and_then(|x| x.parse::<f64>().ok()),
+            ) {
+                (Some(c), Some(l)) if f.len() == 2 => pools.push([c, l]),
+                _ if n == 0 => {} // a header line
+                _ => {
+                    return Err(DesignError::Input(format!(
+                        "the pool table, line {}: expected `chainage_m,level_m`",
+                        n + 1
+                    )));
+                }
+            }
+        }
+        self.set_water_pools(&pools)
+    }
+
     /// A straight fall: `start_m_level` at the river's start, falling `slope` per metre of river
     /// chainage to its end. Needs the river centreline (or both banks) to be imported first.
     pub fn set_water_fall(&mut self, start_level_m: f64, slope: f64) -> Result<(), DesignError> {
