@@ -29,20 +29,96 @@ pub enum DemCheck {
     Changed,
 }
 
-fn defaults() -> Value {
-    json!({
-        "cut_model": CUT_MODEL,
-        "station_m": DEFAULT_STATION_M,
-        "maxw_m": DEFAULT_MAXW_M,
-        "dx_m": DEFAULT_DX_M,
-        "wet_slope": DEFAULT_WET_SLOPE,
-        "half_width_m": null,
-    })
+/// The settings of the volumes stage, typed. A key the stage does not know is refused by name.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VolumesSettings {
+    /// The cut model (`a` or `b`).
+    pub cut_model: String,
+    /// The station spacing in metres.
+    pub station_m: f64,
+    /// The half-width of each cross-section in metres.
+    pub maxw_m: f64,
+    /// The sample spacing across each cross-section in metres.
+    pub dx_m: f64,
+    /// The slope of the cut below water, horizontal per vertical.
+    pub wet_slope: f64,
+    /// A fixed bottom half-width in metres; `None`: widened in bends from the sizing.
+    pub half_width_m: Option<f64>,
 }
 
-fn setting(v: &Value, key: &str) -> Result<f64, DesignError> {
-    v[key]
-        .as_f64()
+impl Default for VolumesSettings {
+    fn default() -> Self {
+        VolumesSettings {
+            cut_model: CUT_MODEL.to_string(),
+            station_m: DEFAULT_STATION_M,
+            maxw_m: DEFAULT_MAXW_M,
+            dx_m: DEFAULT_DX_M,
+            wet_slope: DEFAULT_WET_SLOPE,
+            half_width_m: None,
+        }
+    }
+}
+
+impl VolumesSettings {
+    /// The settings as the stage writes them into the document.
+    pub fn to_value(&self) -> Value {
+        json!({
+            "cut_model": self.cut_model,
+            "station_m": self.station_m,
+            "maxw_m": self.maxw_m,
+            "dx_m": self.dx_m,
+            "wet_slope": self.wet_slope,
+            "half_width_m": self.half_width_m,
+        })
+    }
+
+    /// Lay the settings of `source` (an object, or null for none) over these. A key the stage does
+    /// not know, or a value of the wrong kind, is refused by name; nothing is half applied.
+    fn apply(&self, source: &Value) -> Result<VolumesSettings, DesignError> {
+        let mut out = self.clone();
+        let Some(o) = source.as_object() else {
+            return Ok(out);
+        };
+        for (k, v) in o {
+            match k.as_str() {
+                "cut_model" => {
+                    out.cut_model = v
+                        .as_str()
+                        .ok_or_else(|| {
+                            DesignError::Input("the setting `cut_model` must be text".into())
+                        })?
+                        .to_string();
+                }
+                "station_m" => out.station_m = setting(o, k)?,
+                "maxw_m" => out.maxw_m = setting(o, k)?,
+                "dx_m" => out.dx_m = setting(o, k)?,
+                "wet_slope" => out.wet_slope = setting(o, k)?,
+                "half_width_m" => {
+                    out.half_width_m = match v {
+                        Value::Null => None,
+                        v => Some(v.as_f64().filter(|h| *h > 0.0).ok_or_else(|| {
+                            DesignError::Input(
+                                "the setting `half_width_m` must be a positive number of metres or null"
+                                    .into(),
+                            )
+                        })?),
+                    };
+                }
+                other => {
+                    return Err(DesignError::Input(format!(
+                        "the volumes stage has no setting `{other}`: its settings are cut_model, \
+                         station_m, maxw_m, dx_m, wet_slope and half_width_m"
+                    )));
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn setting(v: &serde_json::Map<String, Value>, key: &str) -> Result<f64, DesignError> {
+    v.get(key)
+        .and_then(Value::as_f64)
         .ok_or_else(|| DesignError::Input(format!("the setting `{key}` must be a number")))
 }
 
@@ -139,6 +215,8 @@ impl Session {
         overrides: &Value,
         terrain: Option<Terrain>,
     ) -> Result<(), DesignError> {
+        // The settings first, before the terrain or any work: an unknown key changes nothing.
+        self.volumes_settings(overrides)?;
         match self.stage_status(Stage::Sizing) {
             StageStatus::Stale => {
                 return Err(DesignError::StaleUpstream {
@@ -223,6 +301,7 @@ impl Session {
 /// What every option's station walk shares: the settings, the water, the sizing and the river.
 pub(super) struct SectionPlan {
     pub(super) settings: Value,
+    typed: VolumesSettings,
     profile: Vec<[f64; 2]>,
     pub(super) water_source: &'static str,
     pub(super) centre: Vec<Pt>,
@@ -238,26 +317,23 @@ pub(super) struct SectionPlan {
 impl Session {
     /// Read the volumes settings (the document's, then `overrides`), the water level, the sizing and
     /// the river, once, for the station walk of every option.
+    /// The volumes settings: the defaults, then the document's, then `overrides`. A key the stage
+    /// does not know, in the document or from the caller, is refused by name.
+    fn volumes_settings(&self, overrides: &Value) -> Result<VolumesSettings, DesignError> {
+        VolumesSettings::default()
+            .apply(&self.doc["stages"]["volumes"]["settings"])?
+            .apply(overrides)
+    }
+
     pub(super) fn section_plan(&self, overrides: &Value) -> Result<SectionPlan, DesignError> {
-        let mut settings = defaults();
-        for source in [
-            &self.doc["stages"]["volumes"]["settings"].clone(),
-            overrides,
-        ] {
-            if let Some(o) = source.as_object() {
-                for (k, v) in o {
-                    settings[k] = v.clone();
-                }
-            }
-        }
+        // The defaults, then the document's settings, then the caller's: each key checked.
+        let typed = self.volumes_settings(overrides)?;
+        let settings = typed.to_value();
         let (profile, water_source) = self
             .water_profile()
             .ok_or_else(|| self.needs_water_profile(Stage::Volumes))?;
         let centre = self.river_centreline()?;
-        let model = settings["cut_model"]
-            .as_str()
-            .unwrap_or(CUT_MODEL)
-            .to_string();
+        let model = typed.cut_model.clone();
 
         let shape = self.sized_shape()?;
         let depth = shape.design_depth_m;
@@ -281,14 +357,7 @@ impl Session {
         };
 
         // The bottom half-width: widened in bends from the sizing, unless the settings fix one.
-        let fixed_hb = match &settings["half_width_m"] {
-            Value::Null => None,
-            v => Some(v.as_f64().filter(|h| *h > 0.0).ok_or_else(|| {
-                DesignError::Input(
-                    "the setting `half_width_m` must be a positive number of metres or null".into(),
-                )
-            })?),
-        };
+        let fixed_hb = typed.half_width_m;
         let bed = match self.bed_on_river()? {
             Some(b) => {
                 let level = self.bed_water_profile().ok_or_else(|| {
@@ -300,6 +369,7 @@ impl Session {
         };
         Ok(SectionPlan {
             settings,
+            typed,
             profile,
             water_source,
             centre,
@@ -320,7 +390,6 @@ impl Session {
         o: &Value,
         terrain: Terrain,
     ) -> Result<owd_core::volumes::sections::SectionVolumes, DesignError> {
-        let settings = &plan.settings;
         let id = o["id"].as_str().unwrap_or("?");
         let line: Vec<Pt> = all_positions(&o["line"]);
         // Where the document has a bed model, it is the bed inside the water; the DEM is the rest.
@@ -348,10 +417,10 @@ impl Session {
             plan.depth,
             &half_width,
             &plan.model,
-            setting(settings, "wet_slope")?,
-            setting(settings, "station_m")?,
-            setting(settings, "maxw_m")?,
-            setting(settings, "dx_m")?,
+            plan.typed.wet_slope,
+            plan.typed.station_m,
+            plan.typed.maxw_m,
+            plan.typed.dx_m,
             None,
             None,
             owd_core::volumes::sections::DEFAULT_CHUNK,
