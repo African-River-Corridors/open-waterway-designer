@@ -14402,5 +14402,25 @@
       "engine_version": null
     }
   },
-  "options": []
+  "options": [],
+  "provenance": {
+    "left_bank": {
+      "source": "user-file",
+      "date": "2026-11-10",
+      "notice": "User-supplied data",
+      "mark": "user"
+    },
+    "right_bank": {
+      "source": "user-file",
+      "date": "2026-11-10",
+      "notice": "User-supplied data",
+      "mark": "user"
+    },
+    "river_polygon": {
+      "source": "user-file",
+      "date": "2026-11-10",
+      "notice": "User-supplied data",
+      "mark": "user"
+    }
+  }
 }

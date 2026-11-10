@@ -3683,6 +3683,7 @@ dependencies = [
  "owd-format",
  "owd-reach",
  "owd-report",
+ "owd-shell",
  "png 0.18.1",
  "serde_json",
  "sha2 0.11.1",

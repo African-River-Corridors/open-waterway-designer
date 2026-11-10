@@ -534,7 +534,13 @@ fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
         text.lines().next().unwrap(),
         "# Screening — not for construction"
     );
-    assert!(text.lines().nth(1).unwrap().contains("failed_checks"));
+    // Notice lines (`# User-supplied data` for imported inputs) may come before the header.
+    let header = 1 + text
+        .lines()
+        .skip(1)
+        .take_while(|l| l.starts_with("# "))
+        .count();
+    assert!(text.lines().nth(header).unwrap().contains("failed_checks"));
     assert!(
         text.contains("\nrolling-circle,") && text.contains("\nlattice,"),
         "{text}"
@@ -543,7 +549,7 @@ fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
         // `volumes_status`, then the `notes` column (spec 0005: the water-aware rolling circle
         // says "width only, no depth data").
         text.lines()
-            .skip(2)
+            .skip(header + 1)
             .all(|l| l.contains(",fresh,") || l.ends_with(",fresh")),
         "{text}"
     );

@@ -380,23 +380,10 @@ impl AppState {
     pub fn load_inputs(&mut self, items: &[(Role, String)], date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
         let list: Vec<(Role, &str)> = items.iter().map(|(r, t)| (*r, t.as_str())).collect();
-        let before = self.session.clone();
-        let roles: Vec<Role> = items.iter().map(|(r, _)| *r).collect();
-        match self
-            .session
-            .import(&list)
-            .and_then(|_| self.session.mark_user(&roles, date))
-        {
-            Ok(_) => {
-                self.bank_undo.clear();
-                self.dirty = true;
-                Ok(())
-            }
-            Err(e) => {
-                self.session = before;
-                Err(message(e))
-            }
-        }
+        crate::import::import(&mut self.session, &list, None, date).map_err(|e| e.to_string())?;
+        self.bank_undo.clear();
+        self.dirty = true;
+        Ok(())
     }
 
     /// Edit one bank (spec 0012): `side` is `left_bank` or `right_bank`. The input is marked
@@ -432,32 +419,20 @@ impl AppState {
     /// refused, with the CRS named. It is marked `user` in the provenance, dated `date`.
     pub fn load_dem(&mut self, file: &Path, bytes: Vec<u8>, date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
-        let dem = read_bytes(&bytes).map_err(|e| format!("{}: {e}", file.display()))?;
-        let epsg = self.project_epsg();
-        if epsg.is_some() {
-            owd_format::design::terrain::dem_sampler(&dem, epsg)
-                .map(|_| ())
-                .map_err(message)?;
-        }
         let base = self.path.as_deref().and_then(Path::parent);
         let rel = match base {
             Some(b) => relative_to(b, file),
             None => file.to_string_lossy().into_owned(),
         };
-        self.session.set_dem(&rel, &bytes, &dem);
-        self.session
-            .set_provenance(
-                "dem",
-                owd_format::design::provenance::record(
-                    "user-file",
-                    date,
-                    "User-supplied data",
-                    owd_format::design::provenance::Mark::User,
-                    false,
-                ),
-            )
-            .map_err(message)?;
-        self.dem = Some(Arc::new(dem));
+        let name = file.display().to_string();
+        let terrain = crate::import::Terrain {
+            path: &rel,
+            name: &name,
+            bytes: &bytes,
+        };
+        let done = crate::import::import(&mut self.session, &[], Some(terrain), date)
+            .map_err(|e| e.to_string())?;
+        self.dem = done.dem.map(Arc::new);
         self.dem_bytes = Some(Arc::new(bytes));
         self.dem_file = Some(file.to_path_buf());
         self.warnings.clear();

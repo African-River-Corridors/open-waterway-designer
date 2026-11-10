@@ -266,7 +266,8 @@ fn a_bed_model_makes_only_the_volumes_stale_and_a_survey_replaces_it() {
         .as_object_mut()
         .unwrap()
         .remove("bed_model");
-    before.as_object_mut().unwrap().remove("provenance");
+    // Only the bed model's own provenance record goes; the imported inputs keep theirs.
+    before["provenance"].as_object_mut().unwrap().remove("bed");
     assert_eq!(before, after);
     assert!(ok(&["validate", &doc]).status.success());
 }
