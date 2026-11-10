@@ -37,6 +37,8 @@ fn only_the_bank_extraction_calls_the_unchecked_import() {
                 .replace('\\', "/")
         })
         .filter(|p| !p.ends_with("tests/import_unchecked_callers.rs"))
+        // The test of the bank checks on that entry (ticket B3) calls it, and is no product caller.
+        .filter(|p| p != "crates/owd-format/tests/import_unchecked_warnings.rs")
         .collect();
     assert_eq!(callers, vec!["crates/owd-reach/src/banks.rs"]);
 }

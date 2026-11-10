@@ -71,6 +71,7 @@ fn import_into(
         ImportReport {
             project_epsg: project_epsg(session).unwrap_or(0),
             inputs: Vec::new(),
+            warnings: Vec::new(),
         }
     } else {
         // An empty import is refused here, by the session.

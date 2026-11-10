@@ -380,7 +380,13 @@ impl AppState {
     pub fn load_inputs(&mut self, items: &[(Role, String)], date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
         let list: Vec<(Role, &str)> = items.iter().map(|(r, t)| (*r, t.as_str())).collect();
-        crate::import::import(&mut self.session, &list, None, date).map_err(|e| e.to_string())?;
+        let done = crate::import::import(&mut self.session, &list, None, date)
+            .map_err(|e| e.to_string())?;
+        // What the bank checks found shows with the other warnings; an earlier import's go.
+        self.warnings.retain(|w| {
+            !w.starts_with("the banks ") && !w.starts_with("the left bank and the right bank cross")
+        });
+        self.warnings.extend(done.report.warnings);
         self.bank_undo.clear();
         self.dirty = true;
         Ok(())
