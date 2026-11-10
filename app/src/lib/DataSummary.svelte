@@ -10,6 +10,7 @@
     onFetch,
     onWater,
     onTerrainLimit,
+    onDownstream,
   }: {
     snap: Snapshot | null;
     busy: boolean;
@@ -20,6 +21,8 @@
     onWater: (level: string, fall: string) => void;
     /** Set the terrain memory limit of this machine, in GiB (empty: the default). */
     onTerrainLimit: (gib: string) => void;
+    /** Set the point the river flows towards for the next bank import, `LON,LAT` (empty: none). */
+    onDownstream: (point: string) => void;
   } = $props();
 
   const count = (g: { coordinates: unknown[] } | null | undefined) => (g ? `${g.coordinates.length} positions` : "not loaded");
@@ -32,6 +35,7 @@
   let level = $state("");
   let fall = $state("");
   let limitGib = $state("");
+  let downstream = $state("");
   // Show the document's water level, as a level at the start and the fall to the end.
   $effect(() => {
     const p = inputs?.water_level?.points;
@@ -96,6 +100,13 @@
       <input aria-label="Terrain memory limit" inputmode="decimal" bind:value={limitGib} disabled={busy} data-testid="terrain-limit" />
     </label>
     <button disabled={busy} data-testid="set-terrain-limit" onclick={() => onTerrainLimit(limitGib)} title="A terrain file whose grid needs more memory than this is refused. Not saved in the design.">Set limit</button>
+  </div>
+
+  <div class="water">
+    <label>Downstream point for the next bank import (lon,lat; empty: {snap?.downstream_lon_lat ? `${snap.downstream_lon_lat.join(", ")} set` : "the banks' own direction"})
+      <input aria-label="Downstream point" bind:value={downstream} disabled={busy} data-testid="downstream-point" />
+    </label>
+    <button disabled={busy} data-testid="set-downstream-point" onclick={() => onDownstream(downstream)} title="The banks are run towards this point and named left and right looking downstream, whatever way they were drawn or named.">Set point</button>
   </div>
 </section>
 

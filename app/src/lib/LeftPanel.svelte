@@ -19,6 +19,7 @@
     onFetch,
     onWater,
     onTerrainLimit,
+    onDownstream,
   }: {
     snap: Snapshot | null;
     choices: Choices | null;
@@ -34,12 +35,13 @@
     onFetch: () => void;
     onWater: (level: string, fall: string) => void;
     onTerrainLimit: (gib: string) => void;
+    onDownstream: (point: string) => void;
   } = $props();
 </script>
 
 <div class="left">
   <StageList {snap} {busy} {samples} {onRun} {onCancel} />
-  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} />
+  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>
 

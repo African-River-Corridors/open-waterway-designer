@@ -55,8 +55,22 @@ pub fn import(
     terrain: Option<Terrain>,
     date: &str,
 ) -> Result<Imported, ImportError> {
+    import_toward(session, vectors, terrain, date, None)
+}
+
+/// Import as [`import`] does, with the point the river flows towards when the user gave one
+/// (`downstream`, longitude and latitude, WGS84): the banks are run towards it and named looking
+/// downstream ([`Session::import_downstream`]), and each bank imported records the point in its
+/// provenance (`settings.downstream_lon_lat`).
+pub fn import_toward(
+    session: &mut Session,
+    vectors: &[(Role, &str)],
+    terrain: Option<Terrain>,
+    date: &str,
+    downstream: Option<[f64; 2]>,
+) -> Result<Imported, ImportError> {
     let before = session.clone();
-    let done = import_into(session, vectors, terrain, date);
+    let done = import_into(session, vectors, terrain, date, downstream);
     if done.is_err() {
         *session = before;
     }
@@ -68,6 +82,7 @@ fn import_into(
     vectors: &[(Role, &str)],
     terrain: Option<Terrain>,
     date: &str,
+    downstream: Option<[f64; 2]>,
 ) -> Result<Imported, ImportError> {
     let mut report = if vectors.is_empty() && terrain.is_some() {
         ImportReport {
@@ -77,11 +92,27 @@ fn import_into(
         }
     } else {
         // An empty import is refused here, by the session.
-        let report = session.import(vectors).map_err(ImportError::Design)?;
+        let report = match downstream {
+            Some(d) => session.import_downstream(vectors, d),
+            None => session.import(vectors),
+        }
+        .map_err(ImportError::Design)?;
         let roles: Vec<Role> = vectors.iter().map(|(r, _)| *r).collect();
         session
             .mark_user(&roles, date)
             .map_err(ImportError::Design)?;
+        if let Some(d) = downstream {
+            for role in [Role::LeftBank, Role::RightBank] {
+                if !roles.contains(&role) {
+                    continue;
+                }
+                let mut rec = session.document()["provenance"][role.name()].clone();
+                rec["settings"] = serde_json::json!({ "downstream_lon_lat": d });
+                session
+                    .set_provenance(role.name(), rec)
+                    .map_err(ImportError::Design)?;
+            }
+        }
         report
     };
     let Some(t) = terrain else {

@@ -20,6 +20,7 @@ declare module "*/wasm-pkg/owd_web.js" {
     load_dem(name: string, bytes: Uint8Array): string;
     set_water(level: string, fall: string): string;
     set_terrain_limit(gib: string): string;
+    set_downstream_point(point: string): string;
     run_stage(stage: string, method?: string, progress?: (samples: number) => void): string;
     option_table(): string;
     map_geometry(): string;

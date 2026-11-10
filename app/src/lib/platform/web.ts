@@ -301,6 +301,7 @@ export async function createWebPlatform(): Promise<Platform> {
     load_input: (a) => loadInput(a.role as string, a.path),
     set_water: (a) => change("set_water", a.level, a.fall),
     set_terrain_limit: (a) => change("set_terrain_limit", (a.gib as string) ?? ""),
+    set_downstream_point: (a) => change("set_downstream_point", (a.point as string) ?? ""),
     edit_bank: (a) => change("edit_bank", a.side, JSON.stringify(a.edit)),
     undo_bank_edit: () => change("undo_bank_edit"),
     run_stage: (a) => runStage(a.stage as string, (a.method as string | null) ?? null),

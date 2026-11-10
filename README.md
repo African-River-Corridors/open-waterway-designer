@@ -63,6 +63,8 @@ owd fits study.owd
 
 - **The river.** Give the river polygon and the centreline, or the two bank lines (`--left-bank`, `--right-bank`).
   GeoJSON or a GeoPackage layer (`FILE#LAYER`), in WGS84 or WGS84 / UTM.
+  If your banks are named as map sides, or run upstream, add `--downstream LON,LAT`, the point the river flows
+  towards: the banks are run towards it and named looking downstream.
 - **The DEM.** A GeoTIFF in the river's CRS or in WGS84. The design keeps its relative path and its SHA-256, never a
   copy, so keep the file next to the design. Without a DEM of your own, `owd fetch-dem` gets Copernicus GLO-30.
 - **The water level.** `--water-level 38` is one level for the whole river, in metres. Add `--water-slope` for a

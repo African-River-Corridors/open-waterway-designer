@@ -252,12 +252,36 @@ pub fn import(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
+    import_toward(doc, inputs, None, dem, water, output, json_mode)
+}
+
+/// `owd import` with the point the river flows towards (`--downstream LON,LAT`), if given.
+pub fn import_toward(
+    doc: &str,
+    inputs: [(&str, Option<String>); 4],
+    downstream: Option<&str>,
+    dem: Option<String>,
+    water: WaterFlags,
+    output: &Option<String>,
+    json_mode: bool,
+) -> Result {
     let roles = [
         Role::LeftBank,
         Role::RightBank,
         Role::Centreline,
         Role::RiverPolygon,
     ];
+    // Text that is not two numbers is refused here; the range, by the session, in the words the
+    // app shows.
+    let downstream = downstream
+        .map(|s| {
+            lon_lat(s).map_err(|_| {
+                input_error(format!(
+                    "--downstream: `{s}` is not `LON,LAT` (for example -6.08,4.95)"
+                ))
+            })
+        })
+        .transpose()?;
     let mut texts: Vec<(Role, String)> = Vec::new();
     let mut stdin_used = doc == "-";
     for (role, (_, path)) in roles.into_iter().zip(inputs) {
@@ -306,7 +330,7 @@ pub fn import(
             warnings: Vec::new(),
         }
     } else {
-        owd_shell::import::import(&mut session, &items, terrain, &today())
+        owd_shell::import::import_toward(&mut session, &items, terrain, &today(), downstream)
             .map_err(|e| match e {
                 owd_shell::import::ImportError::Design(e) => from_design(e),
                 owd_shell::import::ImportError::Terrain(m) => input_error(m),

@@ -409,6 +409,12 @@ impl Session {
         self.edit(|s| s.set_terrain_limit_gib_text(gib))
     }
 
+    /// Set the point the river flows towards for the bank imports that follow, as `LON,LAT`
+    /// (empty: none).
+    pub fn set_downstream_point(&mut self, point: &str) -> Js<String> {
+        self.edit(|s| s.set_downstream_point_text(point))
+    }
+
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
         self.edit(|s| s.set_water_text(level, fall))
     }

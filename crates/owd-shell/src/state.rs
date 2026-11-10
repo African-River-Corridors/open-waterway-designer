@@ -37,6 +37,9 @@ pub struct AppState {
     /// The memory a terrain grid may take, in bytes, set on this machine (ticket C11b); `None`:
     /// the reader's default. Never written to the document.
     terrain_limit: Option<u64>,
+    /// The point the river flows towards, for the next bank import (ticket B2b); `None`: the
+    /// banks' own direction. Recorded in the imported banks' provenance, not kept otherwise.
+    downstream: Option<[f64; 2]>,
 }
 
 /// How many bank edits can be undone.
@@ -195,6 +198,7 @@ impl AppState {
             bank_undo: Vec::new(),
             reach: Default::default(),
             terrain_limit: None,
+            downstream: None,
         }
     }
 
@@ -221,6 +225,7 @@ impl AppState {
             bank_undo: Vec::new(),
             reach: Default::default(),
             terrain_limit: None,
+            downstream: None,
         })
     }
 
@@ -399,8 +404,9 @@ impl AppState {
     pub fn load_inputs(&mut self, items: &[(Role, String)], date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
         let list: Vec<(Role, &str)> = items.iter().map(|(r, t)| (*r, t.as_str())).collect();
-        let done = crate::import::import(&mut self.session, &list, None, date)
-            .map_err(|e| e.to_string())?;
+        let done =
+            crate::import::import_toward(&mut self.session, &list, None, date, self.downstream)
+                .map_err(|e| e.to_string())?;
         // What the bank checks found shows with the other warnings; an earlier import's go.
         self.warnings.retain(|w| {
             !w.starts_with("the banks ") && !w.starts_with("the left bank and the right bank cross")
@@ -540,6 +546,44 @@ impl AppState {
             })?;
         let bytes = (gib * f64::from(1u32 << 30)).ceil().max(1.0);
         self.set_terrain_limit_bytes(Some(bytes.min(u64::MAX as f64) as u64))
+    }
+
+    /// Set the point the river flows towards (longitude, latitude, WGS84) for the bank imports
+    /// that follow, as `owd import --downstream` does; `None`: the banks' own direction. A point
+    /// that is not a longitude and latitude is refused.
+    pub fn set_downstream_point(&mut self, point: Option<[f64; 2]>) -> Result<(), String> {
+        if let Some([lon, lat]) = point
+            && !(lon.is_finite() && lat.is_finite() && lon.abs() <= 180.0 && lat.abs() <= 90.0)
+        {
+            return Err(format!(
+                "the downstream point ({lon}, {lat}) is not a longitude and latitude"
+            ));
+        }
+        self.downstream = point;
+        Ok(())
+    }
+
+    /// Set the downstream point from the app's field: `LON,LAT`, or empty for none. Text that is
+    /// not two numbers is refused by name.
+    pub fn set_downstream_point_text(&mut self, text: &str) -> Result<(), String> {
+        let t = text.trim();
+        if t.is_empty() {
+            return self.set_downstream_point(None);
+        }
+        let nums: Vec<f64> = t
+            .split(',')
+            .map(|p| p.trim().parse::<f64>())
+            .collect::<Result<_, _>>()
+            .map_err(|_| format!("the downstream point must be `LON,LAT`, not `{t}`"))?;
+        match nums[..] {
+            [lon, lat] => self.set_downstream_point(Some([lon, lat])),
+            _ => Err(format!("the downstream point must be `LON,LAT`, not `{t}`")),
+        }
+    }
+
+    /// The downstream point set for the next bank import, if any.
+    pub fn downstream_point(&self) -> Option<[f64; 2]> {
+        self.downstream
     }
 
     /// This state, keeping the machine settings of `old` (the terrain memory limit): for a shell
@@ -850,6 +894,7 @@ impl AppState {
             "warnings": self.warnings,
             "can_undo_bank_edit": !self.bank_undo.is_empty(),
             "terrain_limit_bytes": self.terrain_limit,
+            "downstream_lon_lat": self.downstream,
             "running": self.running.as_ref().map(|(s, _)| s.name()),
             "notices": self.session.notices(),
             "fits_status": match self.session.fits_status() {

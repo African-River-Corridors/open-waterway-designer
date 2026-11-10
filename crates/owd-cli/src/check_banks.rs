@@ -2,8 +2,10 @@
 //! person, or another tool). It prints what fails and changes nothing.
 
 use crate::commands::{Failure, Result, input_error, open, say};
-use owd_core::banks::check::{CheckParams, check_banks as run_checks, lines_cross};
+use owd_core::banks::check::{CheckParams, assess, lines_cross};
+use owd_core::banks::stations::arc;
 use owd_format::design::crs::{Crs, Utm};
+use owd_format::design::session::side_wholesale_message;
 use serde_json::{Value, json};
 
 /// The checks' station step on a document's banks, in metres.
@@ -40,15 +42,39 @@ pub fn check_banks(doc: &str, json_mode: bool) -> Result {
         let to = |pts: &[[f64; 2]]| utm.forward_all(pts).map_err(input_error);
         (left, right, centre) = (to(&left)?, to(&right)?, to(&centre)?);
     }
-    let failed = run_checks(&left, &right, &centre, &CheckParams::at_step(STATION_M));
+    // Every station's checks (`check_banks` keeps the failing ones), so the share of stations that
+    // fail the side check is known.
+    let (reference, _, checks, _, _) = assess(
+        &left,
+        &right,
+        &centre,
+        &CheckParams::at_step(STATION_M),
+        &[],
+    );
+    let s = arc(&reference);
+    let failed: Vec<(f64, owd_core::banks::check::Checks)> = checks
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.any())
+        .map(|(i, c)| (s[i], *c))
+        .collect();
+    let side_fails = failed.iter().filter(|(_, c)| c.side).count();
+    let wholesale = side_wholesale_message(side_fails, checks.len());
     let cross = lines_cross(&left, &right);
     let rows: Vec<Value> = failed
         .iter()
         .map(|(at, c)| json!({"chainage_m": at, "checks": c.names()}))
         .collect();
     let mut human = String::new();
-    for (at, c) in &failed {
-        human.push_str(&format!("{at:>10.0} m  {}\n", c.names().join(", ")));
+    // One fact wrong, not a fault at each station: the plain message in place of the list (the
+    // JSON keeps it).
+    match &wholesale {
+        Some(m) => human.push_str(&format!("{m}\n")),
+        None => {
+            for (at, c) in &failed {
+                human.push_str(&format!("{at:>10.0} m  {}\n", c.names().join(", ")));
+            }
+        }
     }
     if let Some(x) = cross {
         human.push_str(&format!("the banks cross at ({:.1}, {:.1})\n", x[0], x[1]));
