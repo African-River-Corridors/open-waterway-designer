@@ -247,6 +247,18 @@ pub fn new(file: &str, title: &str, date: Option<&str>, json_mode: bool) -> Resu
 pub fn import(
     doc: &str,
     inputs: [(&str, Option<String>); 4],
+    dem: Option<String>,
+    water: WaterFlags,
+    output: &Option<String>,
+    json_mode: bool,
+) -> Result {
+    import_toward(doc, inputs, None, dem, water, output, json_mode)
+}
+
+/// `owd import` with the point the river flows towards (`--downstream LON,LAT`), if given.
+pub fn import_toward(
+    doc: &str,
+    inputs: [(&str, Option<String>); 4],
     downstream: Option<&str>,
     dem: Option<String>,
     water: WaterFlags,

@@ -911,7 +911,7 @@ pub fn main() -> ExitCode {
             downstream,
             banks: None,
             out,
-        } => commands::import(
+        } => commands::import_toward(
             &doc,
             [
                 ("left_bank", left_bank),
