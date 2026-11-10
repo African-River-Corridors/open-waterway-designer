@@ -150,13 +150,14 @@ impl Session {
     }
 
     pub fn new_design(&mut self) -> String {
-        self.state = new_design();
+        self.state = new_design().with_machine_settings_of(&self.state);
         self.snapshot()
     }
 
     /// Open `.owd` text. `dem` is the DEM file the document names, when the page has it.
     pub fn open_text(&mut self, name: &str, text: &str, dem: Option<Vec<u8>>) -> Js<String> {
-        self.state = ok(AppState::open(Path::new(name), text, dem.as_deref()))?;
+        let opened = ok(AppState::open(Path::new(name), text, dem.as_deref()))?;
+        self.state = opened.with_machine_settings_of(&self.state);
         Ok(self.snapshot())
     }
 
@@ -403,6 +404,11 @@ impl Session {
     }
 
     /// Set the water level from the level and the fall per metre as typed; the shell reads them.
+    /// Set the memory a terrain grid may take in this browser, in GiB (empty: the default).
+    pub fn set_terrain_limit(&mut self, gib: &str) -> Js<String> {
+        self.edit(|s| s.set_terrain_limit_gib_text(gib))
+    }
+
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
         self.edit(|s| s.set_water_text(level, fall))
     }

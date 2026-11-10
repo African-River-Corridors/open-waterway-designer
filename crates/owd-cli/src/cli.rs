@@ -6,7 +6,7 @@
 
 use crate::commands;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use std::process::ExitCode;
 
 /// The help of a flag of `owd align`, with the default of `method`'s setting `key`, read from
@@ -27,6 +27,42 @@ fn align_help(method: &str, key: &str, text: &str, after: &str) -> String {
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    /// The memory a terrain file's grid may take, in GiB (default 6). Raise it to open a larger
+    /// terrain model on a machine with the memory for it. A setting of the machine, not of the
+    /// design: it is never written to the document.
+    #[arg(
+        long,
+        global = true,
+        value_name = "GIB",
+        env = "OWD_TERRAIN_LIMIT_GIB",
+        allow_hyphen_values = true
+    )]
+    terrain_limit_gib: Option<String>,
+}
+
+/// The terrain limit from `--terrain-limit-gib` or `OWD_TERRAIN_LIMIT_GIB`, in bytes. A value that
+/// is not a positive number is refused, named as the user gave it.
+fn terrain_limit(raw: Option<&str>, from_env: bool) -> Result<Option<u64>, commands::Failure> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let name = if from_env {
+        "OWD_TERRAIN_LIMIT_GIB"
+    } else {
+        "--terrain-limit-gib"
+    };
+    let gib = raw
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|g| g.is_finite() && *g > 0.0)
+        .ok_or_else(|| {
+            commands::input_error(format!(
+                "{name} must be a positive number of GiB, not `{raw}`"
+            ))
+        })?;
+    let bytes = (gib * f64::from(1u32 << 30)).ceil();
+    Ok(Some(bytes.min(u64::MAX as f64).max(1.0) as u64))
 }
 
 /// Options every command that writes a document takes.
@@ -794,7 +830,20 @@ enum Command {
 
 /// Parse the arguments, run the command and give the exit code. The `owd` binary calls this.
 pub fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let from_env =
+        matches.value_source("terrain_limit_gib") == Some(clap::parser::ValueSource::EnvVariable);
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(c) => c,
+        Err(e) => e.exit(),
+    };
+    match terrain_limit(cli.terrain_limit_gib.as_deref(), from_env) {
+        Ok(limit) => owd_format::geotiff::set_grid_limit(limit),
+        Err(e) => {
+            eprintln!("owd: {}", e.message);
+            return ExitCode::from(e.code);
+        }
+    }
     let result = match cli.command {
         Command::New {
             file,
@@ -1265,7 +1314,14 @@ pub fn main() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("owd: {}", e.message);
+            let mut message = e.message;
+            // A terrain file over the limit: say how to raise it on the command line.
+            if message.contains(owd_format::geotiff::TOO_LARGE) {
+                message.push_str(
+                    ". Raise the limit with `--terrain-limit-gib GIB`, or set OWD_TERRAIN_LIMIT_GIB",
+                );
+            }
+            eprintln!("owd: {message}");
             ExitCode::from(e.code)
         }
     }

@@ -21,7 +21,10 @@ fn web(name: &str) -> PathBuf {
 struct Dir(PathBuf);
 impl Dir {
     fn new(tag: &str) -> Dir {
-        let p = std::env::temp_dir().join(format!("owd-c11b-{tag}-{}", std::process::id()));
+        // A number of its own for each folder: the tests run in parallel.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let p = std::env::temp_dir().join(format!("owd-c11b-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         std::fs::copy(web("river-example.owd"), p.join("d.owd")).unwrap();

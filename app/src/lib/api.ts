@@ -165,6 +165,8 @@ export interface Snapshot {
   };
   /** True when a bank edit can be undone. */
   can_undo_bank_edit?: boolean;
+  /** The terrain memory limit set on this machine, in bytes; null: the default. */
+  terrain_limit_bytes?: number | null;
   stages: { name: StageName; status: StageState }[];
   /** The stages "Run stale" runs now, in order, as the shell's one run loop decides. After each
    * run the next snapshot says again: running one stage can make a later one due. */
@@ -381,6 +383,8 @@ export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polyg
 export const loadInput = (role: InputRole, path?: string | File) => invoke<Snapshot | null>("load_input", { role, path: path ?? null });
 /** The water level at the river's start, and optionally a fall per metre (both as typed). */
 export const setWater = (level: string, fall: string) => invoke<Snapshot>("set_water", { level, fall });
+/** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
+export const setTerrainLimit = (gib: string) => invoke<Snapshot>("set_terrain_limit", { gib });
 export type RunMethod = "rolling_circle" | "reroute";
 /** The snapshot after a run; `run.outcome` is `done` or `cancelled` (a cancelled run leaves the design as it was). Rejects with the reason. */
 export type RunResult = Snapshot & { run: { stage: StageName; outcome: "done" | "cancelled" } };
