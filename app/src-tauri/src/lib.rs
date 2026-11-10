@@ -705,7 +705,7 @@ async fn fetch_dem(app: AppHandle, window: Window, state: State<'_, Shared>) -> 
     finish(&window, &guard)
 }
 
-/// Rerun every stale stage.
+/// Run every stage that is due, through the shell's one run loop.
 #[tauri::command]
 fn run_stale(window: Window, state: State<Shared>) -> Reply {
     let mut guard = lock(&state)?;

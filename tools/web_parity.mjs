@@ -75,10 +75,8 @@ for (const c of cases) {
     s.set_vessel(c.edit.vessel, c.edit.draught);
   }
   const t1 = Date.now();
-  // As the app's "Run stale": each stale stage in order, on the DEM (the session's run_stale has no terrain).
-  for (const st of JSON.parse(s.snapshot()).stages) {
-    if (st.status === "stale") s.run_stage(st.name, undefined, undefined);
-  }
+  // The shell's one run loop: every due stage in order, on the document's DEM, as `owd run`.
+  s.run_stale();
   const wasmMs = Date.now() - t1;
   const web_ = JSON.parse(s.save_text(name));
   s.free();

@@ -275,14 +275,31 @@ fn open_refuses_text_that_is_not_json_and_names_each_schema_break() {
 }
 
 #[test]
+fn due_stages_name_what_the_run_loop_runs() {
+    let mut s = imported();
+    assert_eq!(s.due_stages(), vec![], "all fresh: nothing is due");
+    s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
+        .unwrap();
+    s.set_vessel("CEMT_Va", Some(2.5)).unwrap();
+    let due = s.due_stages();
+    assert_eq!(due, vec![Stage::Sizing]);
+    assert_eq!(s.run_stale_with(None).unwrap(), due);
+    assert_eq!(s.due_stages(), vec![], "nothing is due after the run");
+}
+
+#[test]
 fn run_reruns_every_stale_stage_in_order_and_nothing_else() {
     let mut s = imported();
-    assert_eq!(s.run_stale().unwrap(), vec![], "all fresh: nothing runs");
+    assert_eq!(
+        s.run_stale_with(None).unwrap(),
+        vec![],
+        "all fresh: nothing runs"
+    );
     s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
         .unwrap();
     s.set_vessel("CEMT_Va", Some(2.5)).unwrap();
     assert_eq!(s.stage_status(Stage::Sizing), StageStatus::Stale);
-    assert_eq!(s.run_stale().unwrap(), vec![Stage::Sizing]);
+    assert_eq!(s.run_stale_with(None).unwrap(), vec![Stage::Sizing]);
     assert_eq!(s.stage_status(Stage::Sizing), StageStatus::Fresh);
     // Running gives what a direct sizing of the same choices gives.
     assert_eq!(

@@ -274,7 +274,7 @@ fn a_stage_run_runs_the_rolling_circle_and_a_new_vessel_makes_it_stale_then_run_
     s.set_vessel("CEMT_Va", Some(2.5)).unwrap();
     assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Stale);
     assert_eq!(
-        s.run_stale().unwrap(),
+        s.run_stale_with(None).unwrap(),
         vec![Stage::Sizing, Stage::Alignment]
     );
     assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Fresh);
