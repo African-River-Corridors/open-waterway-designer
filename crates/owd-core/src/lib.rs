@@ -13,6 +13,7 @@ pub mod fits;
 pub mod geom;
 pub(crate) mod numpy;
 pub mod optimise;
+pub mod plan_cut;
 pub mod pyrepr;
 pub mod rules;
 pub mod synthetic;
