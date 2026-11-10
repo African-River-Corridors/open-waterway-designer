@@ -70,6 +70,35 @@ pub struct CrossSection {
     pub bench_left: bool,
     pub bench_right: bool,
     pub tag: String,
+    /// True when a sample of the profile lies inside the river polygon and within the channel
+    /// under water, `|offset| ≤ hb + wet_slope × depth`: the section has water of its own, so its
+    /// dry cut widens the river; with none, its dry cut is a cut-through (ticket C23).
+    pub has_water: bool,
+}
+
+impl CrossSection {
+    /// The cut in the river: the dredge area.
+    pub fn in_river_area_m2(&self) -> f64 {
+        self.dredge_area_m2
+    }
+
+    /// The dry cut of a section that has water: a widening of the river.
+    pub fn widening_area_m2(&self) -> f64 {
+        if self.has_water {
+            self.excav_area_m2
+        } else {
+            0.0
+        }
+    }
+
+    /// The dry cut of a section with no water of its own: a cut-through across new ground.
+    pub fn cut_through_area_m2(&self) -> f64 {
+        if self.has_water {
+            0.0
+        } else {
+            self.excav_area_m2
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,6 +125,21 @@ impl SectionVolumes {
 
     pub fn total_m3(&self) -> f64 {
         self.dredge_m3() + self.excav_m3()
+    }
+
+    /// The volume in the river: equal to [`SectionVolumes::dredge_m3`].
+    pub fn in_river_m3(&self) -> f64 {
+        py_sum(self.stations.iter().map(CrossSection::in_river_area_m2)) * self.station_m
+    }
+
+    /// The volume that widens the river: the dry cut of the sections that have water.
+    pub fn widening_m3(&self) -> f64 {
+        py_sum(self.stations.iter().map(CrossSection::widening_area_m2)) * self.station_m
+    }
+
+    /// The volume of the cut-through: the dry cut of the sections with no water of their own.
+    pub fn cut_through_m3(&self) -> f64 {
+        py_sum(self.stations.iter().map(CrossSection::cut_through_area_m2)) * self.station_m
     }
 
     pub fn max_face_h_m(&self) -> f64 {
@@ -333,6 +377,9 @@ pub fn section_volumes(
                 &mdl,
                 daylight_run_m,
             );
+            // Water of this section: inside the river and within the channel under water.
+            let reach = hb_st[i] + wet_slope * depth;
+            let has_water = (0..m).any(|k| w[k] && offs[k].abs() <= reach);
             out.stations.push(CrossSection {
                 chainage_m: s,
                 x: xy[i][0],
@@ -353,6 +400,7 @@ pub fn section_volumes(
                 bench_left: bench.minus,
                 bench_right: bench.plus,
                 tag: tag.map_or(String::new(), |t| t(s)),
+                has_water,
             });
         }
         a += chunk;

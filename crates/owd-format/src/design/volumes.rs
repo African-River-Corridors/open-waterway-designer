@@ -269,6 +269,10 @@ impl Session {
                 "dredge_m3": v.dredge_m3(),
                 "excav_m3": v.excav_m3(),
                 "total_m3": v.total_m3(),
+                // The three kinds of cut (ticket C23); they add up to the total.
+                "in_river_m3": v.in_river_m3(),
+                "widening_m3": v.widening_m3(),
+                "cut_through_m3": v.cut_through_m3(),
                 "max_face_h_m": v.max_face_h_m(),
                 "stations": v.stations.len(),
                 // A failed check stays with the option's numbers.
