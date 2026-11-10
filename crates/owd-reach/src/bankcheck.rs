@@ -39,7 +39,7 @@ use crate::error::ReachError;
 pub use owd_core::banks::check::{CheckParams, Checks, check_banks, crossing_points, lines_cross};
 use owd_core::banks::check::{assess, median};
 use owd_format::design::midline::{
-    SegIndex, TANGENT_HALF_M, arc_normals, bank_offsets, median_width, midline, resample,
+    SegIndex, TANGENT_HALF_M, arc_normals, bank_offsets, median_width, midline,
 };
 
 type P2 = [f64; 2];

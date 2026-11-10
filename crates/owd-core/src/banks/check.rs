@@ -9,6 +9,12 @@ use super::stations::{SegIndex, arc, bank_offsets, median_width, resample};
 
 type P2 = [f64; 2];
 
+/// `x` squared. Written as one multiply, which is what `powi(x, 2)` compiles to, so the bits match
+/// the code before the move (owd-core does not use `powi`).
+fn sq(x: f64) -> f64 {
+    x * x
+}
+
 /// The settings of the checks. Every value here is a provisional default.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheckParams {
@@ -152,6 +158,7 @@ pub fn moving_average(pts: &[P2], k: usize) -> Vec<P2> {
         .collect()
 }
 
+/// The median of `v` (sorted in place), or `None` when it is empty.
 pub fn median(v: &mut [f64]) -> Option<f64> {
     if v.is_empty() {
         return None;
@@ -229,7 +236,7 @@ pub fn lines_cross(a: &[P2], b: &[P2]) -> Option<P2> {
     let idx = SegIndex::new(b, 50.0);
     let mut buf = Vec::new();
     for w in a.windows(2) {
-        let len = ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
+        let len = (sq(w[1][0] - w[0][0]) + sq(w[1][1] - w[0][1])).sqrt();
         if len == 0.0 {
             continue;
         }
@@ -252,7 +259,7 @@ pub fn crossing_points(a: &[P2], b: &[P2]) -> Vec<P2> {
     let mut buf = Vec::new();
     let mut out = Vec::new();
     for w in a.windows(2) {
-        let len = ((w[1][0] - w[0][0]).powi(2) + (w[1][1] - w[0][1]).powi(2)).sqrt();
+        let len = (sq(w[1][0] - w[0][0]) + sq(w[1][1] - w[0][1])).sqrt();
         if len == 0.0 {
             continue;
         }
@@ -265,6 +272,7 @@ pub fn crossing_points(a: &[P2], b: &[P2]) -> Vec<P2> {
     out
 }
 
+/// What [`assess`] returns for a pair of banks at their stations.
 pub type Assessed = (
     Vec<P2>,
     Vec<(Option<f64>, Option<f64>)>,
@@ -331,7 +339,7 @@ pub fn assess(left: &[P2], right: &[P2], seed: &[P2], p: &CheckParams, pinches: 
     let narrow = |i: usize| matches!(off[i], (Some(l), Some(r)) if l - r < p.pinch_width_m);
     for x in pinches {
         let Some(i) = (first..=last.max(first).min(n.saturating_sub(1))).min_by(|a, b| {
-            let d = |k: usize| (reference[k][0] - x[0]).powi(2) + (reference[k][1] - x[1]).powi(2);
+            let d = |k: usize| sq(reference[k][0] - x[0]) + sq(reference[k][1] - x[1]);
             d(*a).total_cmp(&d(*b))
         }) else {
             continue;

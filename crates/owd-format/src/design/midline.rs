@@ -76,6 +76,7 @@ fn smooth(line: &[Pt]) -> Vec<Pt> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use owd_core::banks::stations::dist;
 
     fn wavy(off: f64, n: usize) -> Vec<Pt> {
         (0..=n)

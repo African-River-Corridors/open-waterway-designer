@@ -20,6 +20,7 @@ pub const MIN_MOVE_M: f64 = 200.0;
 /// of the mask reaches 1.5 km).
 pub const MAX_RAY_M: f64 = 2_000.0;
 
+/// The planar distance between two points, through `libm` so native and wasm give the same bits.
 pub fn dist(a: Pt, b: Pt) -> f64 {
     libm::hypot(b[0] - a[0], b[1] - a[1])
 }
@@ -365,6 +366,7 @@ pub fn median_width(line: &[Pt], left: &[Pt], right: &[Pt]) -> Option<f64> {
     median_width_on(line, &li, &ri)
 }
 
+/// As [`median_width`], with the two banks already indexed.
 pub fn median_width_on(line: &[Pt], li: &SegIndex, ri: &SegIndex) -> Option<f64> {
     let nrm = arc_normals(line, TANGENT_HALF_M);
     let mut buf = Vec::new();
