@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { checkCustomVessel, customFields } from "./api";
+  import { checkCustomVessel, customFields, loadRuleSetFile, ruleSetKey, sizingChoices } from "./api";
   import type { Choices, ChoiceSource, CustomCheck, CustomFields, RuleSetChoice, SetInputChoice, Snapshot } from "./api";
 
   let {
@@ -23,6 +23,14 @@
   /** The picker's last entry: a vessel of the user's own (spec 0015). */
   const CUSTOM = "__custom__";
 
+  /** The choices after a Rule Set file was loaded here; until then, the ones given (#499). */
+  let reloaded = $state<Choices | null>(null);
+  let shown = $derived(reloaded ?? choices);
+  /** The last "Load Rule Set file": the set it loaded, or the core's refusal. */
+  let loadedSet = $state<string | null>(null);
+  let loadError = $state<string | null>(null);
+  let loading = $state(false);
+
   let settings = $derived(snap?.document.stages.sizing.settings ?? null);
   let shape = $derived(snap?.document.stages.sizing.results ?? null);
   const OWD = "owd";
@@ -43,8 +51,8 @@
 
   // Take the choices from the document whenever it changes (open, new, a sent choice).
   $effect(() => {
-    const stored = settings?.rule_sets?.filter((s) => s.id !== OWD).map((s) => s.id) ?? [];
-    sets = stored.length ? stored : [choices?.rule_sets[0]?.id ?? ""].filter(Boolean);
+    const stored = storedSets();
+    sets = stored.length ? stored : [shown?.rule_sets[0] ? ruleSetKey(shown.rule_sets[0]) : ""].filter(Boolean);
     values = Object.fromEntries((settings?.set_inputs ?? []).map((i) => [i.name, i.value]));
     const storedCustom = settings?.custom_vessel;
     vessel = storedCustom ? CUSTOM : (settings?.vessel_standard_id ?? choices?.vessels[0]?.id ?? "");
@@ -74,7 +82,13 @@
   });
   let vesselCount = $derived(vesselGroups.reduce((n, [, vs]) => n + vs.length, 0));
 
-  const setChoice = (id: string): RuleSetChoice | undefined => choices?.rule_sets.find((r) => r.id === id);
+  const setChoice = (key: string): RuleSetChoice | undefined => shown?.rule_sets.find((r) => ruleSetKey(r) === key);
+  /** The picker's key for a set the document holds: a built-in set by its id, a set from a file by `id@version`. */
+  const keyOf = (s: { id: string; version: string }) => {
+    const listed = shown?.rule_sets.find((r) => r.id === s.id && r.version === s.version);
+    // Not listed: a set no one loaded; its key names its version, so it matches no listed set.
+    return listed ? ruleSetKey(listed) : `${s.id}@${s.version}`;
+  };
   /** The set inputs the chosen sets read, each once. */
   let inputs = $derived(
     sets
@@ -83,11 +97,11 @@
   );
   /** An input with no value and no default: the user must choose it before the sets can be sent. */
   let missing = $derived(inputs.filter((i) => !values[i.name] && i.default == null));
-  let spare = $derived(choices?.rule_sets.filter((r) => !sets.includes(r.id)) ?? []);
+  let spare = $derived(shown?.rule_sets.filter((r) => !sets.includes(ruleSetKey(r))) ?? []);
 
   /** The document's mark for a set or an input; `null` while the choice is only in the form. */
-  function setSource(id: string): ChoiceSource | null {
-    return settings?.rule_sets?.find((s) => s.id === id)?.source ?? null;
+  function setSource(key: string): ChoiceSource | null {
+    return settings?.rule_sets?.find((s) => s.id !== OWD && keyOf(s) === key)?.source ?? null;
   }
   function inputSource(name: string): ChoiceSource | null {
     const stored = settings?.set_inputs?.find((i) => i.name === name);
@@ -105,7 +119,7 @@
   }
 
   /** The sets the document holds, in order, without `owd`. */
-  const storedSets = () => settings?.rule_sets?.filter((s) => s.id !== OWD).map((s) => s.id) ?? [];
+  const storedSets = () => settings?.rule_sets?.filter((s) => s.id !== OWD).map(keyOf) ?? [];
   const sameAsStored = () => {
     const stored = storedSets();
     return stored.length === sets.length && stored.every((s, k) => s === sets[k]);
@@ -121,7 +135,7 @@
   }
   function addSet() {
     if (!spare.length) return;
-    sets = [...sets, spare[0].id];
+    sets = [...sets, ruleSetKey(spare[0])];
     sendSets();
   }
   function removeSet(k: number) {
@@ -133,6 +147,22 @@
     if (missing.length) return;
     // A set just added goes with its input; otherwise the sets stay as they are.
     onRuleSets(sameAsStored() ? [] : [...sets], typedInputs(i.name));
+  }
+  /** "Load Rule Set file": the set joins the list at once; a refusal is shown as the core gives it, and nothing changes. */
+  async function loadFile() {
+    loading = true;
+    try {
+      const done = await loadRuleSetFile();
+      if (!done) return;
+      reloaded = await sizingChoices();
+      loadedSet = done.loaded;
+      loadError = null;
+    } catch (e) {
+      loadError = String(e);
+      loadedSet = null;
+    } finally {
+      loading = false;
+    }
   }
   function sendVessel() {
     if (vessel === CUSTOM) return;
@@ -259,8 +289,8 @@
         <label class="grow">
           <span>Rule Set {k + 1}</span>
           <select aria-label="Rule Set {k + 1}" data-testid="rule-set-{k}" value={id} onchange={(e) => chooseSet(k, e.currentTarget.value)}>
-            {#each choices?.rule_sets ?? [] as r}
-              <option value={r.id} disabled={r.id !== id && sets.includes(r.id)}>{r.label}</option>
+            {#each shown?.rule_sets ?? [] as r}
+              <option value={ruleSetKey(r)} disabled={ruleSetKey(r) !== id && sets.includes(ruleSetKey(r))}>{r.label}</option>
             {/each}
           </select>
         </label>
@@ -288,9 +318,15 @@
     {#if missing.length}
       <p class="hint" role="status" data-testid="rule-set-missing">Choose {missing.map((i) => i.label.toLowerCase()).join(" and ")} to size with these Rule Sets.</p>
     {/if}
-    {#each choices?.always ?? [] as a}
+    {#each shown?.always ?? [] as a}
       <p class="dim" data-testid="always-{a.id}">Always applied: {a.label}.</p>
     {/each}
+    <div class="row">
+      <button class="small" data-testid="load-rule-set" disabled={loading} onclick={loadFile}>Load Rule Set file</button>
+      {#if loadedSet}<span class="dim" role="status" data-testid="rule-set-loaded">Loaded {loadedSet} from a file.</span>{/if}
+    </div>
+    {#if loadError}<p class="warn" role="alert" data-testid="rule-set-load-error">{loadError}</p>{/if}
+    {#if snap?.rule_set_problem}<p class="warn" role="alert" data-testid="rule-set-problem">{snap.rule_set_problem}</p>{/if}
   </fieldset>
   <label>
     Vessel class

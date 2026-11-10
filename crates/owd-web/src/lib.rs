@@ -48,16 +48,31 @@ impl JsFetch {
             )
             .map(|v| js_sys::Uint8Array::new(&v).to_vec())
             .map_err(|e| {
-                let reason = e.as_string().unwrap_or_else(|| format!("{e:?}"));
-                if reason.contains("404") {
-                    owd_reach::FetchError::NotFound(url.to_string())
-                } else {
-                    owd_reach::FetchError::Failed {
-                        url: url.to_string(),
-                        reason,
-                    }
-                }
+                // A thrown Error gives its message, without the stack; anything else as it is.
+                let reason = e
+                    .as_string()
+                    .or_else(|| e.dyn_ref::<js_sys::Error>().map(|err| err.message().into()))
+                    .unwrap_or_else(|| format!("{e:?}"));
+                fetch_error(url, &reason)
             })
+    }
+}
+
+/// The fetch error for `url` from the reason the page's fetch threw (`HTTP <status> from <url>`,
+/// perhaps with a stack after it). Only a status of 404 on the first line is a missing file; any
+/// other answer, such as a busy server's 502, is a failure, so a reach step tries the next server.
+/// Searching the whole text for "404" (before #499) also matched a stack's line and column numbers.
+pub fn fetch_error(url: &str, reason: &str) -> owd_reach::FetchError {
+    let first = reason.lines().next().unwrap_or("");
+    let words: Vec<&str> = first.split_whitespace().collect();
+    let not_found = words.windows(2).any(|w| w[0] == "HTTP" && w[1] == "404");
+    if not_found {
+        owd_reach::FetchError::NotFound(url.to_string())
+    } else {
+        owd_reach::FetchError::Failed {
+            url: url.to_string(),
+            reason: reason.to_string(),
+        }
     }
 }
 
@@ -145,8 +160,15 @@ impl Session {
         self.state.snapshot().to_string()
     }
 
+    /// The Rule Sets (built in, then each loaded from a file), set inputs and vessel classes.
     pub fn sizing_choices(&self) -> String {
-        owd_format::design::Session::sizing_choices().to_string()
+        self.state.sizing_choices().to_string()
+    }
+
+    /// Load a Rule Set file's text for the life of this session (the app's "Load Rule Set file",
+    /// ticket #499). Returns `id@version`; a refused file changes nothing.
+    pub fn load_rule_set_text(&mut self, text: &str) -> Js<String> {
+        ok(self.state.load_rule_set_text(text))
     }
 
     pub fn new_design(&mut self) -> String {

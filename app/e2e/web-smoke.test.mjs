@@ -564,6 +564,38 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "error"), false);
   });
 
+  it("loads a Rule Set file through Load Rule Set file, sizes with it, and shows a bad file's refusal with the list unchanged (#499)", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    const options = () => b.execute(() => [...document.querySelectorAll("[data-testid=rule-set-0] option")].map((o) => [o.value, o.textContent]));
+    const before = await options();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-rule-set-"));
+    const builtIn = fs.readFileSync(path.resolve(here, "../../crates/owd-core/rules/pianc-wg141/0.3.0.json"), "utf8");
+    const mine = path.join(dir, "wider-bottom.json");
+    fs.writeFileSync(mine, builtIn.replace('"k": 3.2,', '"k": 3.6,').replace('"version": "0.3.0"', '"version": "0.9.0"'));
+    await pick(b, async () => (await tid(b, "load-rule-set")).click(), mine);
+    await until(b, "the file's set in the list", async () => (await options()).some(([v]) => v === "pianc-wg141@0.9.0"));
+    assert.match((await options()).find(([v]) => v === "pianc-wg141@0.9.0")[1], /from a file/);
+    await b.execute(() => {
+      const s = document.querySelector("[data-testid=rule-set-0]");
+      s.value = "pianc-wg141@0.9.0";
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await until(b, "sizing with the file's set", async () => (await text(b, "shape-rule-sets")).includes("pianc-wg141@0.9.0"));
+    // A bad file: the core's refusal, and the list as it was.
+    const bad = path.join(dir, "not-a-rule-set.json");
+    fs.writeFileSync(bad, "{ not a rule set");
+    const now = await options();
+    await pick(b, async () => (await tid(b, "load-rule-set")).click(), bad);
+    await until(b, "the refusal", async () => exists(b, "rule-set-load-error"));
+    assert.match(await text(b, "rule-set-load-error"), /the Rule Set file is refused/);
+    assert.deepEqual(await options(), now);
+    assert.equal(before.length + 1, now.length);
+  });
+
   it("Cancel leaves the design exactly as it was", async () => {
     const FILE = "river-rolling-circle.owd";
     const b = await start();

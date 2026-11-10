@@ -121,6 +121,7 @@ const snapshot: Snapshot = {
     { name: "optimise", status: "not_run" }, { name: "volumes", status: "stale" },
   ],
   due: ["volumes"],
+  rule_set_problem: null,
   document: {
     project: { title: "Reach A, screening", created: "2026-10-21", crs: { epsg: 32631, name: "WGS 84 / UTM zone 31N" }, source_crs: null },
     inputs: {
@@ -169,6 +170,7 @@ const blank = (): Snapshot => ({
   ...snapshot, file_name: "Untitled", warnings: [], title: "Untitled",
   stages: snapshot.stages.map((x) => ({ ...x, status: "not_run" as const })),
   due: [],
+  rule_set_problem: null,
   document: { ...snapshot.document, project: { ...snapshot.document.project, title: "Untitled", crs: null },
     inputs: { left_bank: null, right_bank: null, centreline: null, river_polygon: null, dem: null, water_level: null },
     stages: { ...snapshot.document.stages, sizing: { settings: null, results: null }, volumes: { settings: null, results: null } } },
@@ -177,7 +179,9 @@ const none = (why: string) => () => Promise.reject(why);
 
 const answer: Record<string, () => unknown> = {
   snapshot: () => snapshot, set_rule_sets: () => snapshot, set_vessel: () => snapshot, set_custom_vessel: () => snapshot,
-  check_custom_vessel: () => ({ refusal: null, warnings: [] }), stretches_geojson: () => stretches, sizing_choices: () => ({
+  check_custom_vessel: () => ({ refusal: null, warnings: [] }), stretches_geojson: () => stretches,
+  load_rule_set_file: () => ({ loaded: "pianc-wg141@0.9.0" }),
+  sizing_choices: () => ({
     rule_sets: [
       { id: "pianc-wg141", version: "0.3.0", title: "PIANC WG 141", label: "PIANC WG 141 (pianc-wg141@0.3.0)", inputs: [{ name: "se_quality", label: "Safety and ease quality", default: "C", values: [{ value: "A", label: "A: the most room" }, { value: "B", label: "B: between A and C" }, { value: "C", label: "C: the least room" }] }] },
       { id: "gb50139", version: "0.3.0", title: "GB 50139", label: "GB 50139 (gb50139@0.3.0)", inputs: [{ name: "range_end", label: "End of each range the standard gives", default: null, values: [{ value: "permissive", label: "permissive: the less demanding end" }, { value: "strict", label: "strict: the more demanding end" }] }] },
