@@ -27,6 +27,9 @@ pub type Terrain<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
 pub enum AlignMethod {
     RollingCircle,
     Reroute,
+    /// The river centreline as it is, with no repair: a line to compare with. It may be tighter
+    /// than the minimum radius; its checks say so.
+    Centreline,
 }
 
 impl AlignMethod {
@@ -34,6 +37,7 @@ impl AlignMethod {
         match self {
             AlignMethod::RollingCircle => "rolling_circle",
             AlignMethod::Reroute => "reroute",
+            AlignMethod::Centreline => "centreline",
         }
     }
 
@@ -41,6 +45,7 @@ impl AlignMethod {
         match s {
             "rolling_circle" | "rolling-circle" => Some(AlignMethod::RollingCircle),
             "reroute" => Some(AlignMethod::Reroute),
+            "centreline" => Some(AlignMethod::Centreline),
             _ => None,
         }
     }
@@ -49,6 +54,7 @@ impl AlignMethod {
         match self {
             AlignMethod::RollingCircle => "rolling-circle",
             AlignMethod::Reroute => "reroute",
+            AlignMethod::Centreline => "centreline",
         }
     }
 
@@ -56,6 +62,7 @@ impl AlignMethod {
         match self {
             AlignMethod::RollingCircle => "Rolling circle",
             AlignMethod::Reroute => "Least-cost re-route",
+            AlignMethod::Centreline => "River centreline",
         }
     }
 }
@@ -96,6 +103,38 @@ pub struct RerouteSettings {
 pub struct AlignmentSettings {
     pub rolling_circle: RollingCircleSettings,
     pub reroute: RerouteSettings,
+    pub centreline: CentrelineSettings,
+}
+
+/// The settings of the river centreline as a design line: the chord its radius is read on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CentrelineSettings {
+    /// The chord the minimum radius is read on; `None`: a third of R_min.
+    pub check_chord_m: Option<f64>,
+}
+
+impl CentrelineSettings {
+    fn to_value(&self) -> Value {
+        json!({"check_chord_m": self.check_chord_m})
+    }
+
+    fn apply(&self, source: &Value) -> Result<CentrelineSettings, DesignError> {
+        let mut out = self.clone();
+        let Some(o) = source.as_object() else {
+            return Ok(out);
+        };
+        for k in o.keys() {
+            match k.as_str() {
+                "check_chord_m" => out.check_chord_m = opt_num(source, k)?,
+                other => {
+                    return Err(DesignError::Input(format!(
+                        "the river centreline has no setting `{other}`"
+                    )));
+                }
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl Default for AlignmentSettings {
@@ -118,6 +157,9 @@ impl Default for AlignmentSettings {
                 dry_weight: 1.0,
                 check_chord_m: None,
                 fairness_weight: Some(0.0),
+            },
+            centreline: CentrelineSettings {
+                check_chord_m: None,
             },
         }
     }
@@ -234,6 +276,7 @@ impl AlignmentSettings {
         json!({
             "rolling_circle": self.rolling_circle.to_value(),
             "reroute": self.reroute.to_value(),
+            "centreline": self.centreline.to_value(),
         })
     }
 }
@@ -307,6 +350,7 @@ impl Session {
                 d.rolling_circle.apply(stored)?.apply(overrides)?.to_value()
             }
             AlignMethod::Reroute => d.reroute.apply(stored)?.apply(overrides)?.to_value(),
+            AlignMethod::Centreline => d.centreline.apply(stored)?.apply(overrides)?.to_value(),
         })
     }
 
@@ -325,6 +369,7 @@ impl Session {
         let settings = self.method_settings(method, overrides)?;
         let option = match method {
             AlignMethod::RollingCircle => self.water_aware_rolling_circle(&settings, r_min)?,
+            AlignMethod::Centreline => self.centreline_option(&settings, r_min)?,
             AlignMethod::Reroute => {
                 let terrain = terrain.ok_or_else(|| {
                     DesignError::Input("the re-route needs terrain: give it a DEM".into())
@@ -537,6 +582,33 @@ impl Session {
 
     /// The rolling-circle option: seed legs joined first when there are any, then the rolling
     /// circle, water-aware when `use_water` holds (default: when there is a river polygon).
+    /// The river centreline as a design line: the base line point for point, with its radius read
+    /// as the rolling circle reads it. Its bends widen by their own radius (`widening_floor`).
+    fn centreline_option(&self, settings: &Value, r_min: f64) -> Result<Value, DesignError> {
+        use owd_core::alignment::radius_check::{
+            default_check_chord, min_radius_on_chord, radius_ok,
+        };
+        use owd_core::cut_model::WideningFloor;
+        let line = self.base_line()?;
+        let chord =
+            opt_num(settings, "check_chord_m")?.unwrap_or_else(|| default_check_chord(r_min));
+        let measured =
+            min_radius_on_chord(&line, chord).map_err(|e| DesignError::Input(e.message))?;
+        let method = AlignMethod::Centreline;
+        Ok(json!({
+            "id": method.option_id(), "name": method.option_name(),
+            "method": method.name(), "settings": settings,
+            "line": line_json(&line),
+            "checks": {
+                "r_min_m": r_min,
+                "radius_ok": radius_ok(measured, r_min),
+                "measured_min_radius_m": measured,
+                "radius_check_chord_m": chord,
+            },
+            "widening_floor": WideningFloor::None.name(),
+        }))
+    }
+
     fn water_aware_rolling_circle(
         &self,
         settings: &Value,

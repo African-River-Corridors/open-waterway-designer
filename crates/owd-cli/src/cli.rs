@@ -208,7 +208,8 @@ enum Command {
     Align {
         /// The channel design. `-` is stdin.
         doc: String,
-        /// The method: rolling-circle or reroute. Running a method again replaces its own option.
+        /// The method: rolling-circle, reroute, or centreline (the river centreline as it is, with
+        /// no repair). Running a method again replaces its own option.
         #[arg(long, value_name = "METHOD")]
         method: String,
         #[arg(long, value_name = "METRES", help = align_help("rolling_circle", "step_m", "Rolling circle: the sampling step in metres", ""))]
