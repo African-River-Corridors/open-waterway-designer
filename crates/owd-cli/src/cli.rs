@@ -274,11 +274,9 @@ enum Command {
         /// The fall of the water per metre of river chainage (with --water-level).
         #[arg(long, value_name = "M_PER_M")]
         water_slope: Option<f64>,
-        /// The station spacing in metres (default 25).
-        #[arg(long, value_name = "METRES")]
+        #[arg(long, value_name = "METRES", help = volumes_help("station_m", "The station spacing in metres"))]
         station: Option<f64>,
-        /// The half-width of each cross-section in metres (default 200).
-        #[arg(long, value_name = "METRES")]
+        #[arg(long, value_name = "METRES", help = volumes_help("maxw_m", "The half-width of each cross-section in metres"))]
         maxw: Option<f64>,
         #[command(flatten)]
         out: Out,
@@ -1207,4 +1205,19 @@ pub fn main() -> ExitCode {
             ExitCode::from(e.code)
         }
     }
+}
+
+/// The help of a flag of `owd volumes`, with the stage's own default for `key`, read from
+/// `VolumesSettings::default()` so the help never holds a copy of it.
+fn volumes_help(key: &str, text: &str) -> String {
+    let d = owd_format::design::VolumesSettings::default().to_value();
+    let shown = match &d[key] {
+        serde_json::Value::Array(a) => a
+            .iter()
+            .map(|v| v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}")))
+            .collect::<Vec<_>>()
+            .join(","),
+        v => v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}")),
+    };
+    format!("{text} (default {shown}).")
 }

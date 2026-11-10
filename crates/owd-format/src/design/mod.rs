@@ -36,5 +36,5 @@ pub use session::{
     DesignError, ImportReport, Session, Stage, StageStatus, Status, check_file_name, date_from_unix,
 };
 pub use stage_terrain::{NoTerrain, stage_terrain};
-pub use volumes::DemCheck;
+pub use volumes::{DemCheck, VolumesSettings};
 pub use water::WaterSampling;
