@@ -297,6 +297,7 @@ pub fn import(
         owd_format::design::ImportReport {
             project_epsg: project_epsg(&session).unwrap_or(0),
             inputs: Vec::new(),
+            warnings: Vec::new(),
         }
     } else {
         owd_shell::import::import(&mut session, &items, terrain, &today())
@@ -320,6 +321,8 @@ pub fn import(
             let unit = if name == "dem" { "pixels" } else { "positions" };
             lines.push(format!("{name}: {n} {unit}, from {src}"));
         }
+        // What the bank checks found, after the other lines.
+        lines.extend(report.warnings.iter().map(|w| format!("warning: {w}")));
         lines.join("\n")
     };
     let inputs_json: Vec<Value> = report
@@ -331,7 +334,7 @@ pub fn import(
         dest == "-",
         json_mode,
         &human,
-        json!({"ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json}),
+        json!({"ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json, "warnings": report.warnings}),
     );
     Ok(())
 }

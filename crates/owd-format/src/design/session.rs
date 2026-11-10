@@ -159,6 +159,9 @@ pub struct ImportReport {
     pub project_epsg: u32,
     /// `(input name, source CRS as EPSG:nnnn, positions read)` per input.
     pub inputs: Vec<(String, String, usize)>,
+    /// What the bank checks found, one line per failed check; empty when every check passes. The
+    /// checks report: they never repair or refuse the banks.
+    pub warnings: Vec<String>,
 }
 
 /// One channel design.
@@ -728,9 +731,11 @@ impl Session {
             None => None,
         };
         let pair = self.sound_pair(&converted, downstream_xy, refuse_crossing)?;
+        let brings_a_bank = converted.iter().any(|(r, _, _)| r.is_bank());
         let mut report = ImportReport {
             project_epsg: target.epsg(),
             inputs: Vec::new(),
+            warnings: Vec::new(),
         };
         self.doc["project"]["crs"] = json!({"epsg": target.epsg(), "name": target.name()});
         for (role, source, g) in converted {
@@ -763,7 +768,68 @@ impl Session {
                 self.doc["inputs"][Role::RiverPolygon.name()] = p;
             }
         }
+        if brings_a_bank {
+            report.warnings = self.bank_check_warnings(!refuse_crossing);
+        }
         Ok(report)
+    }
+
+    /// The bank checks on the document's two banks, as one line per failed check (none when the
+    /// document lacks a bank). The seed is the centreline, or the mid-line of the banks, at the
+    /// station step of `owd check-banks`. With `report_crossing`, banks that cross (the unchecked
+    /// import keeps them) are reported too, with the first crossing point.
+    fn bank_check_warnings(&self, report_crossing: bool) -> Vec<String> {
+        use owd_core::banks::check::{CheckParams, check_banks, lines_cross};
+        const STATION_M: f64 = 20.0;
+        let inputs = &self.doc["inputs"];
+        let (Some(left), Some(right)) = (
+            line_points(&inputs[Role::LeftBank.name()]),
+            line_points(&inputs[Role::RightBank.name()]),
+        ) else {
+            return Vec::new();
+        };
+        if left.len() < 2 || right.len() < 2 {
+            return Vec::new();
+        }
+        let centre = line_points(&inputs[Role::Centreline.name()])
+            .filter(|c| c.len() >= 2)
+            .unwrap_or_else(|| super::bank_edit::centreline(&left, &right, STATION_M));
+        let failed = check_banks(&left, &right, &centre, &CheckParams::at_step(STATION_M));
+        let mut out = Vec::new();
+        for name in [
+            "side",
+            "missing",
+            "jump",
+            "width-wide",
+            "width-narrow",
+            "excursion",
+            "crossing",
+        ] {
+            let at: Vec<f64> = failed
+                .iter()
+                .filter(|(_, c)| c.names().contains(&name))
+                .map(|(s, _)| *s)
+                .collect();
+            if let (Some(first), Some(last)) = (
+                at.iter().copied().reduce(f64::min),
+                at.iter().copied().reduce(f64::max),
+            ) {
+                let n = at.len();
+                out.push(format!(
+                    "the banks fail the `{name}` check at {n} station{} of {STATION_M} m, between \
+                     {first:.0} m and {last:.0} m: run `owd check-banks` for the list",
+                    if n == 1 { "" } else { "s" }
+                ));
+            }
+        }
+        if report_crossing && let Some(x) = lines_cross(&left, &right) {
+            out.push(format!(
+                "the left bank and the right bank cross at ({:.1}, {:.1}): run `owd check-banks` \
+                 for the list",
+                x[0], x[1]
+            ));
+        }
+        out
     }
 
     /// Whether the document's river polygon is the one built from its two banks (the left bank,
