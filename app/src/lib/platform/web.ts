@@ -311,6 +311,7 @@ export async function createWebPlatform(): Promise<Platform> {
     station_near: (a) => host.rpc("station_near", a.option, a.lon, a.lat),
     load_input: (a) => loadInput(a.role as string, a.path),
     set_water: (a) => change("set_water", a.level, a.fall),
+    set_alignment_settings: (a) => change("set_alignment_settings", a.method, JSON.stringify(a.settings)),
     set_terrain_limit: (a) => change("set_terrain_limit", (a.gib as string) ?? ""),
     set_downstream_point: (a) => change("set_downstream_point", (a.point as string) ?? ""),
     edit_bank: (a) => change("edit_bank", a.side, JSON.stringify(a.edit)),

@@ -596,6 +596,59 @@ describe("OWD web smoke tests", () => {
     assert.equal(before.length + 1, now.length);
   });
 
+  it("sets the rolling circle's water mode: Ignore the water equals owd align --use-water false, Default equals owd align (#494)", async () => {
+    const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
+    /** The document `owd align <doc> --method rolling-circle` leaves for the example, with `flags`. */
+    const aligned = (flags) => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-use-water-"));
+      const doc = path.join(dir, "synthetic-river.owd");
+      fs.copyFileSync(EXAMPLE, doc);
+      try {
+        execFileSync(CLI, ["align", doc, "--method", "rolling-circle", ...flags], { encoding: "utf8", maxBuffer: 1 << 28 });
+      } catch (e) {
+        if (e.status !== 1) throw e; // exit 1: a check failed; the document is still written
+      }
+      return JSON.parse(fs.readFileSync(doc, "utf8"));
+    };
+    const stored = async () => (await pageDoc(b)).stages.alignment.settings?.rolling_circle?.use_water;
+    const pickWater = (value) =>
+      b.execute((v) => {
+        const s = document.querySelector("[data-testid=use-water]");
+        s.value = v;
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+      }, value);
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), EXAMPLE);
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("synthetic-river.owd"));
+    assert.equal(await (await tid(b, "use-water")).getValue(), "default");
+    // The binding: the three states are false, true and unset in the design's settings.
+    await pickWater("true");
+    await until(b, "use_water true", async () => (await stored()) === true);
+    await pickWater("default");
+    await until(b, "use_water unset", async () => (await stored()) === null);
+    await pickWater("false");
+    await until(b, "use_water false", async () => (await stored()) === false);
+    // Ignore the water, run: the document `owd align --use-water false` makes.
+    await (await tid(b, "run-alignment")).click();
+    await until(b, "alignment fresh", async () => (await text(b, "status-alignment")) === "fresh", 120000);
+    sameAsNative(await pageDoc(b), aligned(["--use-water", "false"]), "Ignore the water");
+    assert.match(await text(b, "use-water-last"), /Ignore the water/);
+    // Default: the setting changes, the stage goes stale; run: the line of `owd align` with no flag.
+    await pickWater("default");
+    await until(b, "alignment stale", async () => (await text(b, "status-alignment")) === "stale");
+    await (await tid(b, "run-alignment")).click();
+    await until(b, "alignment fresh again", async () => (await text(b, "status-alignment")) === "fresh", 120000);
+    const page = await pageDoc(b);
+    // `owd align` with no flag stores the setting unset (null), as Default does.
+    assert.equal(page.stages.alignment.settings.rolling_circle.use_water, null);
+    sameAsNative(page, aligned([]), "Default");
+    // The option records the value the run used: the example has a river polygon, so on.
+    assert.equal(page.options.find((o) => o.method === "rolling_circle").settings.use_water, true);
+    assert.match(await text(b, "use-water-last"), /Keep to the water/);
+  });
+
   it("Cancel leaves the design exactly as it was", async () => {
     const FILE = "river-rolling-circle.owd";
     const b = await start();

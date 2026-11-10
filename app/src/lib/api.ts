@@ -156,10 +156,12 @@ export interface Snapshot {
     };
     stages: {
       sizing: StageRecord<SizingSettings, ChannelShape>;
-      alignment: StageRecord<unknown, unknown>;
+      alignment: StageRecord<AlignmentSettings, unknown>;
       optimise: StageRecord<unknown, unknown>;
       volumes: StageRecord<unknown, { options: VolumesOption[] }>;
     };
+    /** The design line options, with the settings each run used. */
+    options?: { id: string; method: string; settings?: { use_water?: boolean | null } & Record<string, unknown> }[];
     /** Where each generated or loaded input came from (spec 0012). Absent for a design with none. */
     provenance?: Partial<Record<ProvenanceInput, Provenance>>;
   };
@@ -394,6 +396,20 @@ export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polyg
 export const loadInput = (role: InputRole, path?: string | File) => invoke<Snapshot | null>("load_input", { role, path: path ?? null });
 /** The water level at the river's start, and optionally a fall per metre (both as typed). */
 export const setWater = (level: string, fall: string) => invoke<Snapshot>("set_water", { level, fall });
+
+/** The alignment settings the app reads: the rolling circle's water-aware mode (#494). */
+export interface AlignmentSettings {
+  rolling_circle?: { use_water?: boolean | null } & Record<string, unknown>;
+}
+/** The rolling circle's water-aware mode, as the app offers it: `default` is the setting unset (on when the design has a river polygon). */
+export type UseWater = "default" | "true" | "false";
+/** The setting for a choice: unset (null), true or false. */
+export const useWaterValue = (choice: UseWater): boolean | null => (choice === "default" ? null : choice === "true");
+/** The choice for a stored setting. */
+export const useWaterChoice = (value: boolean | null | undefined): UseWater => (value == null ? "default" : value ? "true" : "false");
+/** Set the rolling circle's water-aware mode in the design (`owd align --use-water`); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
+export const setUseWater = (choice: UseWater) =>
+  invoke<Snapshot>("set_alignment_settings", { method: "rolling_circle", settings: { use_water: useWaterValue(choice) } });
 /** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
 export const setTerrainLimit = (gib: string) => invoke<Snapshot>("set_terrain_limit", { gib });
 export const setDownstreamPoint = (point: string) => invoke<Snapshot>("set_downstream_point", { point });

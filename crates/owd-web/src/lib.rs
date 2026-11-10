@@ -437,6 +437,14 @@ impl Session {
         self.edit(|s| s.set_downstream_point_text(point))
     }
 
+    /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as JSON
+    /// text, as `owd align --use-water` does (ticket #494). Nothing runs.
+    pub fn set_alignment_settings(&mut self, method: &str, settings: &str) -> Js<String> {
+        let settings: Value =
+            ok(serde_json::from_str(settings).map_err(|e| format!("not alignment settings: {e}")))?;
+        self.edit(|s| s.set_alignment_settings(method, &settings))
+    }
+
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
         self.edit(|s| s.set_water_text(level, fall))
     }
