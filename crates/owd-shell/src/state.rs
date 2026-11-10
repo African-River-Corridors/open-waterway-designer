@@ -40,6 +40,9 @@ pub struct AppState {
     /// The point the river flows towards, for the next bank import (ticket B2b); `None`: the
     /// banks' own direction. Recorded in the imported banks' provenance, not kept otherwise.
     downstream: Option<[f64; 2]>,
+    /// The Rule Set files loaded in this shell, as text, for the life of the shell: every design
+    /// opened later loads them too (ticket #491).
+    rule_set_texts: Vec<String>,
 }
 
 /// How many bank edits can be undone.
@@ -198,6 +201,7 @@ impl AppState {
             bank_undo: Vec::new(),
             reach: Default::default(),
             terrain_limit: None,
+            rule_set_texts: Vec::new(),
             downstream: None,
         }
     }
@@ -225,6 +229,7 @@ impl AppState {
             bank_undo: Vec::new(),
             reach: Default::default(),
             terrain_limit: None,
+            rule_set_texts: Vec::new(),
             downstream: None,
         })
     }
@@ -338,6 +343,7 @@ impl AppState {
     /// Returns the names of the stages that ran.
     pub fn run_stale(&mut self) -> Result<Vec<&'static str>, String> {
         self.refuse_while_running()?;
+        self.confirm_rule_sets()?;
         let dem = self.usable_dem();
         let sampler = match dem.as_deref() {
             Some(d) => Some(
@@ -590,7 +596,35 @@ impl AppState {
     /// that replaces its state when a file is opened or a new design begun.
     pub fn with_machine_settings_of(mut self, old: &AppState) -> AppState {
         let _ = self.set_terrain_limit_bytes(old.terrain_limit);
+        // The Rule Set files loaded in this shell stay loaded. Each loaded once before, so a
+        // refusal here can only be the same file again.
+        for text in &old.rule_set_texts {
+            if self.session.load_rule_set(text).is_ok() {
+                self.rule_set_texts.push(text.clone());
+            }
+        }
         self
+    }
+
+    /// Load a Rule Set file's text for the life of this shell (the app's "Load Rule Set file",
+    /// `owd --rule-set-file`): the design can select it at once, and every design opened later
+    /// loads it too. Returns `id@version`. A refused file changes nothing.
+    pub fn load_rule_set_text(&mut self, text: &str) -> Result<String, String> {
+        self.refuse_while_running()?;
+        let id = self.session.load_rule_set(text).map_err(message)?;
+        if !self.rule_set_texts.iter().any(|t| t == text) {
+            self.rule_set_texts.push(text.to_string());
+        }
+        Ok(id)
+    }
+
+    /// The Rule Sets the design was sized with, confirmed before a stage runs: a set that is not
+    /// built in and not loaded, or a file that changed, is refused with what to give (ticket #491).
+    fn confirm_rule_sets(&self) -> Result<(), String> {
+        match self.session.rule_set_problem() {
+            Some(e) => Err(message(e)),
+            None => Ok(()),
+        }
     }
 
     fn project_epsg(&self) -> Option<u32> {
@@ -715,6 +749,7 @@ impl AppState {
         method: Option<&str>,
     ) -> Result<(RunJob, Arc<RunControl>), String> {
         self.refuse_while_running()?;
+        self.confirm_rule_sets()?;
         let stage = Stage::from_name(stage).ok_or_else(|| format!("`{stage}` is not a stage"))?;
         let method = match method {
             Some(m) => Some(

@@ -136,7 +136,6 @@ fn cli_design(dir: &Dir, line: &[[f64; 2]]) -> String {
             SizeFlags {
                 rule_sets: vec!["pianc-wg141".into()],
                 set_inputs: vec!["se_quality=B".into()],
-                files: vec![],
                 vessel: Some("CEMT_IV".into()),
                 draught: Some(2.5),
                 custom: None,

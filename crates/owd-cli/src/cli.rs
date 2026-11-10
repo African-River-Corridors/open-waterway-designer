@@ -42,6 +42,11 @@ struct Cli {
     /// the design is saved. Without it, a saved design exits 0 and the failed checks are a warning.
     #[arg(long, global = true)]
     strict: bool,
+    /// Load a Rule Set file at run time (repeatable), for every command that opens a design: select
+    /// it with `owd size --rule-set ID@VERSION`, and give it again to every later command of a
+    /// design sized with it.
+    #[arg(long = "rule-set-file", global = true, value_name = "FILE")]
+    rule_set_file: Vec<String>,
 }
 
 /// The terrain limit from `--terrain-limit-gib` or `OWD_TERRAIN_LIMIT_GIB`, in bytes. A value that
@@ -215,9 +220,6 @@ enum Command {
         /// A set input, such as se_quality=B, range_end=strict or gb_class=IV (repeatable).
         #[arg(long = "set-input", value_name = "NAME=VALUE")]
         set_input: Vec<String>,
-        /// Load a Rule Set file at run time, then select it with --rule-set (repeatable).
-        #[arg(long = "rule-set-file", value_name = "FILE")]
-        rule_set_file: Vec<String>,
         /// The vessel class: any class of the shared vessel catalogue with a length, a beam and a
         /// draught, by id, for example CEMT-IV or CEMT-VIb-motor (an older id such as CEMT_IV also
         /// works). Default: the one the design has.
@@ -795,9 +797,6 @@ enum Command {
         /// List the Measures a Rule may test.
         #[arg(long)]
         measures: bool,
-        /// Load a Rule Set file at run time first (repeatable).
-        #[arg(long = "rule-set-file", value_name = "FILE")]
-        rule_set_file: Vec<String>,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
         json: bool,
@@ -838,9 +837,6 @@ enum Command {
         /// With --option: the station spacing, metres.
         #[arg(long, value_name = "M", default_value_t = 10.0)]
         station_m: f64,
-        /// Load a Rule Set file the design selects (repeatable).
-        #[arg(long = "rule-set-file", value_name = "FILE")]
-        rule_set_file: Vec<String>,
         /// Print the rows as JSON.
         #[arg(long)]
         json: bool,
@@ -849,9 +845,6 @@ enum Command {
     Run {
         /// The channel design. `-` is stdin.
         doc: String,
-        /// Load a Rule Set file the design selects (repeatable).
-        #[arg(long = "rule-set-file", value_name = "FILE")]
-        rule_set_file: Vec<String>,
         #[command(flatten)]
         out: Out,
     },
@@ -892,6 +885,7 @@ pub fn main() -> ExitCode {
         }
     }
     commands::set_strict(cli.strict);
+    commands::use_rule_set_files(cli.rule_set_file);
     let result = match cli.command {
         Command::New {
             file,
@@ -1097,7 +1091,6 @@ pub fn main() -> ExitCode {
             doc,
             rule_set,
             set_input,
-            rule_set_file,
             vessel,
             draught,
             custom_vessel,
@@ -1115,7 +1108,6 @@ pub fn main() -> ExitCode {
             commands::SizeFlags {
                 rule_sets: rule_set,
                 set_inputs: set_input,
-                files: rule_set_file,
                 vessel,
                 draught,
                 custom: custom_vessel.map(|name| commands::CustomFlags {
@@ -1159,15 +1151,8 @@ pub fn main() -> ExitCode {
             action,
             id,
             measures,
-            rule_set_file,
             json,
-        } => commands::rules(
-            action.as_deref(),
-            id.as_deref(),
-            measures,
-            &rule_set_file,
-            json,
-        ),
+        } => commands::rules(action.as_deref(), id.as_deref(), measures, json),
         Command::Align {
             doc,
             method,
@@ -1331,9 +1316,8 @@ pub fn main() -> ExitCode {
             doc,
             option,
             station_m,
-            rule_set_file,
             json,
-        } => commands::trace(&doc, option.as_deref(), station_m, &rule_set_file, json),
+        } => commands::trace(&doc, option.as_deref(), station_m, json),
         Command::Draw {
             sub: Some(DrawSub::Run { document }),
             ..
@@ -1376,11 +1360,7 @@ pub fn main() -> ExitCode {
             },
             json,
         ),
-        Command::Run {
-            doc,
-            rule_set_file,
-            out,
-        } => commands::run(&doc, &rule_set_file, &out.output, out.json),
+        Command::Run { doc, out } => commands::run(&doc, &out.output, out.json),
         Command::Validate { doc, json } => commands::validate(&doc, json),
         Command::Status { doc, json } => commands::status(&doc, json),
         Command::Schema => commands::schema(),
