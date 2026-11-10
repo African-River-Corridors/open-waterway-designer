@@ -421,6 +421,52 @@ impl Session {
         )
     }
 
+    /// Why the design's Rule Sets cannot be confirmed now, or `None` (ticket #491). Every surface
+    /// asks this before a stage after sizing, so the user is told what to give rather than that
+    /// sizing is stale:
+    /// - a selected set that is neither built in nor loaded: its id, version and hash, and the
+    ///   option and the app control that load its file;
+    /// - a set loaded from a file (not built in) whose content hash is not the one the design was
+    ///   sized with: the file changed, with both hashes.
+    ///
+    /// A built-in set whose content changed with the engine is not a problem here: the stages go
+    /// stale and rerun, as before.
+    pub fn rule_set_problem(&self) -> Option<DesignError> {
+        let settings = self.sizing_settings();
+        for s in settings["rule_sets"].as_array().into_iter().flatten() {
+            let (id, version) = (
+                s["id"].as_str().unwrap_or(""),
+                s["version"].as_str().unwrap_or(""),
+            );
+            let stored = s["hash"].as_str();
+            match self.library.find(id, version) {
+                None => {
+                    return Some(DesignError::Input(format!(
+                        "the design is sized with Rule Set {id}@{version} (content hash {}), which \
+                         is not built in and not loaded: give its file with `--rule-set-file FILE` \
+                         (in the app: Load Rule Set file, under Rule Sets)",
+                        stored.unwrap_or("not recorded")
+                    )));
+                }
+                Some(set)
+                    if engine::built_in().find(id, version).is_none()
+                        && stored.is_some_and(|h| h != set.hash) =>
+                {
+                    return Some(DesignError::Input(format!(
+                        "the Rule Set file {id}@{version} has changed since the design was sized: \
+                         the design was sized with content hash {}, the loaded file has {}. Give the \
+                         file it was sized with, or size it again with this one (`owd size \
+                         --rule-set {id}@{version}`)",
+                        stored.unwrap_or(""),
+                        set.hash
+                    )));
+                }
+                Some(_) => {}
+            }
+        }
+        None
+    }
+
     /// The selection as words, for the results and the drawings: each set but `owd`, with the set
     /// inputs, such as `pianc-wg141@0.3.0 (se_quality B)`.
     pub(super) fn selection_label(settings: &Value) -> String {

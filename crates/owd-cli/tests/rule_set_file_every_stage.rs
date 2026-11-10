@@ -44,7 +44,10 @@ fn rule_set(k: &str) -> String {
         .1
         .replace("\"k\": 3.2,", &format!("\"k\": {k},"))
         .replace("\"version\": \"0.3.0\"", "\"version\": \"0.9.0\"");
-    assert!(text.contains(&format!("\"k\": {k},")), "the bottom factor was replaced");
+    assert!(
+        text.contains(&format!("\"k\": {k},")),
+        "the bottom factor was replaced"
+    );
     text
 }
 
@@ -70,12 +73,18 @@ fn case(name: &str) -> Case {
     let (c, p) = (dir.join("centreline.geojson"), dir.join("polygon.geojson"));
     std::fs::write(
         &c,
-        format!(r#"{{"type":"LineString"{UTM30},"coordinates":{}}}"#, json!(centre)),
+        format!(
+            r#"{{"type":"LineString"{UTM30},"coordinates":{}}}"#,
+            json!(centre)
+        ),
     )
     .unwrap();
     std::fs::write(
         &p,
-        format!(r#"{{"type":"Polygon"{UTM30},"coordinates":{}}}"#, json!([ring])),
+        format!(
+            r#"{{"type":"Polygon"{UTM30},"coordinates":{}}}"#,
+            json!([ring])
+        ),
     )
     .unwrap();
     let dem = dir.join("river-dem.tif");
@@ -135,7 +144,14 @@ fn later(doc: &str) -> Vec<Vec<String>> {
     vec![
         v(&["align", doc, "--method", "rolling-circle"]),
         v(&["plan-cut", doc]),
-        v(&["volumes", doc, "--water-level", "0.0", "--water-slope", "0.0"]),
+        v(&[
+            "volumes",
+            doc,
+            "--water-level",
+            "0.0",
+            "--water-slope",
+            "0.0",
+        ]),
         v(&["run", doc]),
     ]
 }
@@ -157,7 +173,13 @@ fn recorded_hash(doc: &str) -> String {
         .as_array()
         .unwrap()
         .iter()
-        .find(|s| format!("{}@{}", s["id"].as_str().unwrap(), s["version"].as_str().unwrap()) == SET)
+        .find(|s| {
+            format!(
+                "{}@{}",
+                s["id"].as_str().unwrap(),
+                s["version"].as_str().unwrap()
+            ) == SET
+        })
         .expect("the design records the file's set")["hash"]
         .as_str()
         .unwrap()
@@ -190,7 +212,11 @@ fn every_later_stage_runs_with_the_file() {
     let o = owd(&["run", &c.doc, "--rule-set-file", &c.file, "--json"]);
     assert_eq!(code(&o), 0, "{}", err(&o));
     let ran: Value = serde_json::from_slice(&o.stdout).unwrap();
-    assert_eq!(ran["ran"], json!([]), "nothing is stale with the file loaded");
+    assert_eq!(
+        ran["ran"],
+        json!([]),
+        "nothing is stale with the file loaded"
+    );
     let _ = &c.dir;
 }
 
@@ -225,7 +251,10 @@ fn a_changed_file_is_named_with_both_hashes() {
         let e = err(&o);
         assert_ne!(code(&o), 0, "{args:?} ran with a changed file");
         assert!(e.contains(SET), "{args:?}: {e}");
-        assert!(e.contains("has changed since the design was sized"), "{args:?}: {e}");
+        assert!(
+            e.contains("has changed since the design was sized"),
+            "{args:?}: {e}"
+        );
         assert!(e.contains(&old), "{args:?}: {e}");
         // The loaded file's hash: another long hex word in the message.
         let other = e
@@ -241,14 +270,29 @@ fn a_design_with_built_in_sets_is_unchanged_with_and_without_the_option() {
     let (a, b) = (case("builtin-a"), case("builtin-b"));
     for c in [&a, &b] {
         let o = owd(&[
-            "size", &c.doc, "--rule-set", "pianc-wg141", "--set-input", "se_quality=B",
-            "--vessel", "CEMT_IV", "--draught", "2.5",
+            "size",
+            &c.doc,
+            "--rule-set",
+            "pianc-wg141",
+            "--set-input",
+            "se_quality=B",
+            "--vessel",
+            "CEMT_IV",
+            "--draught",
+            "2.5",
         ]);
         assert_eq!(code(&o), 0, "{}", err(&o));
     }
     let (ra, rb) = (
         owd(&["align", &a.doc, "--method", "rolling-circle"]),
-        owd(&["align", &b.doc, "--method", "rolling-circle", "--rule-set-file", &b.file]),
+        owd(&[
+            "align",
+            &b.doc,
+            "--method",
+            "rolling-circle",
+            "--rule-set-file",
+            &b.file,
+        ]),
     );
     assert_eq!(code(&ra), code(&rb), "{} | {}", err(&ra), err(&rb));
     let (mut da, mut db) = (read(&a.doc), read(&b.doc));
@@ -272,6 +316,10 @@ fn the_option_is_taken_by_commands_that_open_a_design() {
         a.extend(["--rule-set-file", c.file.as_str()]);
         let o = owd(&a);
         assert!(code(&o) == 0 || code(&o) == 1, "{a:?}: {}", err(&o));
-        assert!(!err(&o).contains("unexpected argument"), "{a:?}: {}", err(&o));
+        assert!(
+            !err(&o).contains("unexpected argument"),
+            "{a:?}: {}",
+            err(&o)
+        );
     }
 }

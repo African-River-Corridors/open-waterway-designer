@@ -131,9 +131,35 @@ pub(crate) fn write(path: &str, text: &str) -> Result {
     }
 }
 
+thread_local! {
+    /// The Rule Set files of this run of `owd` (`--rule-set-file`, a global option).
+    static RULE_SET_FILES: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Set the Rule Set files (`--rule-set-file`) every design opened from now on loads. `owd` calls
+/// this once, before the command.
+pub fn use_rule_set_files(files: Vec<String>) {
+    RULE_SET_FILES.with(|f| *f.borrow_mut() = files);
+}
+
+/// Open a design: its Rule Set files loaded, and its Rule Sets confirmed (ticket #491). A set the
+/// design names that no built-in set or loaded file supplies, or a file that changed since the
+/// design was sized, is refused with what to give.
 pub(crate) fn open(path: &str) -> core::result::Result<Session, Failure> {
+    let session = open_unconfirmed(path)?;
+    match session.rule_set_problem() {
+        Some(e) => Err(from_design(e)),
+        None => Ok(session),
+    }
+}
+
+/// Open a design with its Rule Set files loaded, without confirming its Rule Sets: for `owd size`,
+/// which may choose others, and `owd status`.
+fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     owd_format::design::check_file_name(path).map_err(from_design)?;
-    Session::open(&read(path)?).map_err(from_design)
+    let mut session = Session::open(&read(path)?).map_err(from_design)?;
+    load_rule_set_files(&mut session)?;
+    Ok(session)
 }
 
 /// Where a document's relative paths start: its own folder (the working folder for stdin).
@@ -176,7 +202,14 @@ fn pathdiff(base: &Path, target: &Path) -> String {
 pub(crate) fn open_with_dem(
     doc: &str,
 ) -> core::result::Result<(Session, Option<Vec<u8>>), Failure> {
-    let session = open(doc)?;
+    with_dem(doc, open(doc)?)
+}
+
+/// The DEM bytes of an opened design, with the warning of a changed or missing file.
+fn with_dem(
+    doc: &str,
+    session: Session,
+) -> core::result::Result<(Session, Option<Vec<u8>>), Failure> {
     let bytes = session
         .dem_path()
         .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok());
@@ -398,7 +431,6 @@ pub fn import_toward(
 pub struct SizeFlags {
     pub rule_sets: Vec<String>,
     pub set_inputs: Vec<String>,
-    pub files: Vec<String>,
     pub vessel: Option<String>,
     pub draught: Option<f64>,
     /// `--custom-vessel NAME` and its fields (spec 0015 T1).
@@ -443,9 +475,11 @@ impl CustomFlags {
     }
 }
 
-/// Load each Rule Set file into the session, through the loader the built-in sets take.
-fn load_rule_set_files(session: &mut Session, files: &[String]) -> Result {
-    for f in files {
+/// Load each Rule Set file of the run (`--rule-set-file`) into the session, through the loader the
+/// built-in sets take. The one loader: every command reaches it through `open`.
+fn load_rule_set_files(session: &mut Session) -> Result {
+    let files = RULE_SET_FILES.with(|f| f.borrow().clone());
+    for f in &files {
         let text = std::fs::read_to_string(f)
             .map_err(|e| input_error(format!("cannot read the Rule Set file `{f}`: {e}")))?;
         session
@@ -457,8 +491,13 @@ fn load_rule_set_files(session: &mut Session, files: &[String]) -> Result {
 
 pub fn size(doc: &str, flags: SizeFlags, output: &Option<String>, json_mode: bool) -> Result {
     // Opened first: when the document comes from stdin it must be read before anything else.
-    let mut session = open(doc)?;
-    load_rule_set_files(&mut session, &flags.files)?;
+    let mut session = open_unconfirmed(doc)?;
+    // With no set chosen here the design keeps its own: they must be there to size with.
+    if flags.rule_sets.is_empty()
+        && let Some(e) = session.rule_set_problem()
+    {
+        return Err(from_design(e));
+    }
     let settings = &session.document()["stages"]["sizing"]["settings"];
     // The vessel: a new custom vessel, a class, or the one the design has (a class or a custom one).
     enum Choice {
@@ -536,20 +575,13 @@ pub fn size(doc: &str, flags: SizeFlags, output: &Option<String>, json_mode: boo
 }
 
 /// `owd trace`: the full Rule Trace, rebuilt from the document.
-pub fn trace(
-    doc: &str,
-    option: Option<&str>,
-    station_m: f64,
-    files: &[String],
-    json_mode: bool,
-) -> Result {
+pub fn trace(doc: &str, option: Option<&str>, station_m: f64, json_mode: bool) -> Result {
     if !(station_m.is_finite() && station_m > 0.0) {
         return Err(input_error(
             "--station-m must be a positive number of metres",
         ));
     }
-    let mut session = open(doc)?;
-    load_rule_set_files(&mut session, files)?;
+    let session = open(doc)?;
     let t = session.rule_trace(option, station_m).map_err(from_design)?;
     let mut human = format!(
         "# {}\n# {}\n# sets: {}\n# vessel: {}\n",
@@ -678,16 +710,10 @@ pub fn waterway_remove(doc: &str, from: f64, output: &Option<String>, json_mode:
 }
 
 /// `owd rules`: the Rule Sets, one set with its Rules (`show ID`), or the Measures (`--measures`).
-pub fn rules(
-    action: Option<&str>,
-    id: Option<&str>,
-    measures: bool,
-    files: &[String],
-    json_mode: bool,
-) -> Result {
+pub fn rules(action: Option<&str>, id: Option<&str>, measures: bool, json_mode: bool) -> Result {
     use owd_core::rules::engine;
     let mut session = Session::new("", "");
-    load_rule_set_files(&mut session, files)?;
+    load_rule_set_files(&mut session)?;
     let lib = session.rule_set_library();
     if measures {
         let human: Vec<String> = engine::MEASURES
@@ -1775,9 +1801,8 @@ impl otd::Files for FolderFiles {
     }
 }
 
-pub fn run(doc: &str, files: &[String], output: &Option<String>, json_mode: bool) -> Result {
+pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
     let (mut session, bytes) = open_with_dem(doc)?;
-    load_rule_set_files(&mut session, files)?;
     // The DEM is used only when it is the file whose hash was recorded.
     let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
         Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
@@ -1866,7 +1891,7 @@ pub fn validate(doc: &str, json_mode: bool) -> Result {
 }
 
 pub fn status(doc: &str, json_mode: bool) -> Result {
-    let (session, bytes) = open_with_dem(doc)?;
+    let (session, bytes) = with_dem(doc, open_unconfirmed(doc)?)?;
     let st = session.status_with_dem(bytes.as_deref());
     let mut human: Vec<String> = st
         .stages

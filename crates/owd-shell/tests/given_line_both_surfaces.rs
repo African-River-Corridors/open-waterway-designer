@@ -104,10 +104,7 @@ fn a_given_line_gives_equal_documents_through_the_shell_and_the_command_line() {
     assert_eq!(from_shell, from_cli);
 
     // The volumes stage is now stale on both. Each surface runs it on the document's terrain.
-    ok(
-        "run",
-        commands::run(&doc.to_string_lossy(), &[], &None, true),
-    );
+    ok("run", commands::run(&doc.to_string_lossy(), &None, true));
     let from_cli = read(&doc);
     shell_volumes(&mut shell);
     let from_shell: Value = serde_json::from_str(&shell.save_text_for(&doc)).unwrap();

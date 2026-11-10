@@ -47,9 +47,7 @@ fn rule_set() -> String {
 fn through_the_shell(doc: &Path, text: &str, dem: &[u8], file_text: &str) -> AppState {
     let mut shell = AppState::open(doc, text, Some(dem)).unwrap();
     shell.load_rule_set_text(file_text).unwrap();
-    shell
-        .set_rule_sets(&[SET], &[("se_quality", "B")])
-        .unwrap();
+    shell.set_rule_sets(&[SET], &[("se_quality", "B")]).unwrap();
     shell.run_stale().expect("every later stage runs");
     shell
 }
@@ -90,7 +88,10 @@ fn the_shell_and_the_command_line_give_equal_documents() {
         "the sized numbers are the file's"
     );
     assert!(!from_cli["stages"]["alignment"]["results"].is_null());
-    assert_eq!(from_shell, from_cli, "the two surfaces left different documents");
+    assert_eq!(
+        from_shell, from_cli,
+        "the two surfaces left different documents"
+    );
 }
 
 #[test]
@@ -140,5 +141,9 @@ fn a_loaded_file_lasts_for_the_life_of_the_shell() {
         .unwrap()
         .with_machine_settings_of(&shell);
     let mut reopened = reopened;
-    assert!(reopened.begin_run("alignment", Some("rolling_circle")).is_ok());
+    assert!(
+        reopened
+            .begin_run("alignment", Some("rolling_circle"))
+            .is_ok()
+    );
 }

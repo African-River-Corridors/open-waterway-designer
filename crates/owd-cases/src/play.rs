@@ -149,7 +149,6 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                     SizeFlags {
                         rule_sets: rule_sets.clone(),
                         set_inputs: set_inputs.iter().map(|(k, v)| format!("{k}={v}")).collect(),
-                        files: Vec::new(),
                         vessel,
                         draught,
                         custom,
@@ -226,7 +225,7 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                 done.map_err(|f| fail(n, f))?;
             }
             Step::Run => {
-                commands::run(&doc, &[], &None, false).map_err(|f| fail(n, f))?;
+                commands::run(&doc, &None, false).map_err(|f| fail(n, f))?;
             }
         }
     }

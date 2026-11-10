@@ -57,7 +57,7 @@ fn both(tag: &str, text: &str) -> (Value, Value, Vec<&'static str>) {
     let from_shell: Value = serde_json::from_str(&shell.save_text_for(&doc)).unwrap();
 
     // The command line, on the file.
-    if owd_cli::commands::run(&doc.to_string_lossy(), &[], &None, true).is_err() {
+    if owd_cli::commands::run(&doc.to_string_lossy(), &None, true).is_err() {
         panic!("`owd run` failed on {tag}");
     }
     let from_cli: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
