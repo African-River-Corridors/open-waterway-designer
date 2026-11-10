@@ -339,7 +339,7 @@ export async function createWebPlatform(): Promise<Platform> {
       running.cancelled = true;
       host.end(CANCELLED);
     },
-    set_bed: (a) => change("set_bed", JSON.stringify(a.points), (a.season as string) ?? ""),
+    set_bed: (a) => change("set_bed", (a.depth as string) ?? "", (a.table as string) ?? "", (a.season as string) ?? ""),
     run_fits: () => change("run_fits"),
     run_envelope: () => change("run_envelope"),
     open_example: openExample,

@@ -36,7 +36,7 @@ declare module "*/wasm-pkg/owd_web.js" {
     reach_route_only(): boolean;
     reach_add_tile(name: string, bytes: Uint8Array): string;
     reach_step(step: string, percentile: number | undefined, at: string, fetch?: (url: string, start: number, len: number) => Uint8Array): string;
-    set_bed(points: string, season: string): string;
+    set_bed(depth: string, table: string, season: string): string;
     run_fits(): string;
     run_envelope(): string;
   }

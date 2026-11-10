@@ -166,3 +166,58 @@ pub(super) fn with_bed<'a>(
             .collect()
     }
 }
+
+/// Read a depth table: lines of `chainage_m,depth_m`. Blank lines and `#` lines are skipped, and a
+/// first line that is not numbers is a header. Any other line that is not two numbers is refused
+/// with its number, counted from 1 over every line of the text. The points keep the order given;
+/// the session checks them ([`Session::set_bed_model`]). This is the one reader of the table: the
+/// command line and the app shell both call it.
+pub fn read_depth_table(text: &str) -> Result<Vec<[f64; 2]>, String> {
+    let number = |x: Option<&&str>| {
+        x.and_then(|x| x.parse::<f64>().ok())
+            .filter(|v| v.is_finite())
+    };
+    let mut points = Vec::new();
+    for (n, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split(',').map(str::trim).collect();
+        match (number(f.first()), number(f.get(1))) {
+            (Some(c), Some(d)) if f.len() == 2 => points.push([c, d]),
+            _ if n == 0 => {}
+            _ => return Err(format!("line {}: expected `chainage_m,depth_m`", n + 1)),
+        }
+    }
+    Ok(points)
+}
+
+#[cfg(test)]
+mod table_tests {
+    //! Label: property
+    use super::read_depth_table;
+
+    #[test]
+    fn a_depth_table_skips_a_header_comments_and_blanks_and_names_a_bad_line() {
+        assert_eq!(
+            read_depth_table("chainage_m,depth_m\n# x\n\n0, 2.5\n 1200 ,3\n"),
+            Ok(vec![[0.0, 2.5], [1200.0, 3.0]])
+        );
+        assert_eq!(
+            read_depth_table("100,2\n0,3"),
+            Ok(vec![[100.0, 2.0], [0.0, 3.0]])
+        );
+        for (t, n) in [
+            ("0,2\nabc,3", 2),
+            ("0,2\n\n100,3,4", 3),
+            ("0,2\n100,NaN", 2),
+        ] {
+            assert_eq!(
+                read_depth_table(t),
+                Err(format!("line {n}: expected `chainage_m,depth_m`")),
+                "{t:?}"
+            );
+        }
+    }
+}

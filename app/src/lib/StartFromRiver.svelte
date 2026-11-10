@@ -339,16 +339,9 @@
     await long("Water level from SWORD and SWOT", () => api.reachStep("level", p));
   }
 
+  /** Send the depth and the table as typed: the shell reads and checks them, as `owd bed` does. */
   async function setDepth() {
-    const points: [number, number][] = [];
-    if (depth.trim()) points.push([0, Number(depth)]);
-    for (const line of depthRows.split("\n").filter((l) => l.trim())) {
-      const [c, d] = line.split(",").map((x) => Number(x.trim()));
-      points.push([c, d]);
-    }
-    if (points.length === 0) return onError("Give a depth, or depths at chainages.");
-    // One depth with rows: the rows hold beyond the first chainage, the one depth from the start.
-    await act(() => api.setBed(points.sort((a, b) => a[0] - b[0]), season));
+    await act(() => api.setBed(depth, depthRows, season));
   }
 
   // --- the map: the route, the picked points and the stretches of the class shown --------------
