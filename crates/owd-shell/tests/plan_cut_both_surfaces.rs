@@ -118,7 +118,6 @@ fn both(tag: &str, text: &str, min_piece_m2: Option<f64>) -> Both {
         min_piece_m2,
         geojson: Some(cut_file.to_string_lossy().into_owned()),
         wgs84: true,
-        ..Default::default()
     };
     if plan_cut(&doc.to_string_lossy(), flags, &None, true).is_err() {
         panic!("`owd plan-cut` failed on {tag}");
