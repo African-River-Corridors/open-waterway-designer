@@ -425,6 +425,36 @@ describe("Open Waterway Designer app smoke test", () => {
     await browser.execute((el) => el.click(), options);
     await until("the options tab", async () => (await options.getAttribute("aria-selected")) === "true");
   });
+  it("loads a Rule Set file through Load Rule Set file, lists it apart, sizes with it, and shows a bad file's refusal with the list unchanged (#499)", async () => {
+    await open(designWithDem("rule-file-"), "with-dem.owd");
+    await formShowsExample();
+    const options = () => browser.execute(() => [...document.querySelectorAll("[data-testid=rule-set-0] option")].map((o) => [o.value, o.textContent]));
+    const before = await options();
+    // The built-in PIANC set with a wider bottom, at a version that is not built in.
+    const builtIn = fs.readFileSync(path.resolve(here, "../../crates/owd-core/rules/pianc-wg141/0.3.0.json"), "utf8");
+    const mine = path.join(WORK, "wider-bottom.json");
+    fs.writeFileSync(mine, builtIn.replace('"k": 3.2,', '"k": 3.6,').replace('"version": "0.3.0"', '"version": "0.9.0"'));
+    answer("rule-set.txt", mine);
+    await (await browser.$("[data-testid=load-rule-set]")).click();
+    await until("the file's set in the list", async () => (await options()).some(([v]) => v === "pianc-wg141@0.9.0"));
+    const listed = (await options()).find(([v]) => v === "pianc-wg141@0.9.0");
+    assert.match(listed[1], /from a file/);
+    assert.match(await text("rule-set-loaded"), /pianc-wg141@0\.9\.0/);
+    // Size with it at once.
+    await choose("rule-set-0", "pianc-wg141@0.9.0");
+    await until("sizing with the file's set", async () => (await text("shape-rule-sets")).includes("pianc-wg141@0.9.0"));
+    // A bad file: its refusal from the core, as it is, and the list as it was.
+    const bad = path.join(WORK, "not-a-rule-set.json");
+    fs.writeFileSync(bad, "{ not a rule set");
+    answer("rule-set.txt", bad);
+    const now = await options();
+    await (await browser.$("[data-testid=load-rule-set]")).click();
+    await until("the refusal", async () => (await browser.$("[data-testid=rule-set-load-error]")).isExisting());
+    assert.match(await text("rule-set-load-error"), /the Rule Set file is refused/);
+    assert.deepEqual(await options(), now);
+    assert.equal(before.length + 1, now.length);
+    forget("rule-set.txt");
+  });
   it("sorts a failing option first with a red mark and its numbers, and selecting a row selects the option on the map", async () => {
     // Two options in the document, the passing one first. The failing one reads 222 m against R_min 330 m.
     const option = (id, name, ok, measured, y) => ({
