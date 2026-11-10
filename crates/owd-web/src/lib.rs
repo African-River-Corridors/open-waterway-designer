@@ -47,17 +47,19 @@ impl JsFetch {
                 &JsValue::from_f64(len),
             )
             .map(|v| js_sys::Uint8Array::new(&v).to_vec())
-            .map_err(|e| {
-                let reason = e.as_string().unwrap_or_else(|| format!("{e:?}"));
-                if reason.contains("404") {
-                    owd_reach::FetchError::NotFound(url.to_string())
-                } else {
-                    owd_reach::FetchError::Failed {
-                        url: url.to_string(),
-                        reason,
-                    }
-                }
-            })
+            .map_err(|e| fetch_error(url, &e.as_string().unwrap_or_else(|| format!("{e:?}"))))
+    }
+}
+
+/// The fetch error for `url` from the reason the page's fetch threw.
+pub fn fetch_error(url: &str, reason: &str) -> owd_reach::FetchError {
+    if reason.contains("404") {
+        owd_reach::FetchError::NotFound(url.to_string())
+    } else {
+        owd_reach::FetchError::Failed {
+            url: url.to_string(),
+            reason: reason.to_string(),
+        }
     }
 }
 
