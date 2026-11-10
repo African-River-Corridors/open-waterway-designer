@@ -194,6 +194,43 @@
             "notes": { "type": "array", "items": { "type": "string" } }
           }
         },
+        "banks": {
+          "description": "What the bank source says about the banks (draft ADR 0016, banks are a dataset): who made them, how accurate they are, and where the source is unsure. The bank lines stay in left_bank and right_bank. Optional; no member is required.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "description": "Who made the banks: a file the user gave, an edit in the app, or a bank source.",
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {"enum": ["file", "edit", "bank-source"]},
+                "name": {"type": "string"},
+                "date": {"type": "string", "minLength": 10, "maxLength": 10},
+                "licence": {"type": ["string", "null"]}
+              }
+            },
+            "accuracy_m": {
+              "description": "The accuracy of the bank lines in metres, as the source states it; null when unknown.",
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "low_confidence": {
+              "description": "Stretches of river chainage, in metres, where the source is unsure of the banks.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["from_m", "to_m", "reason"],
+                "additionalProperties": false,
+                "properties": {
+                  "from_m": {"type": "number"},
+                  "to_m": {"type": "number"},
+                  "reason": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
