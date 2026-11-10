@@ -48,9 +48,9 @@ pub fn water_level(flags: LevelFlags) -> Result {
 pub fn water_level_with(flags: LevelFlags, fetch: &dyn owd_reach::Fetch, at: &Endpoints) -> Result {
     let mut params = LevelParams::default();
     if let Some(p) = flags.percentile {
-        if !(0.0..=100.0).contains(&p) {
-            return Err(input_error("--percentile must be from 0 to 100"));
-        }
+        // The water level work's own check, with the flag's name in front.
+        owd_reach::level::check_percentile(p)
+            .map_err(|e| input_error(format!("--percentile: {e}")))?;
         params.percentile = p;
     }
     if let Some(w) = flags.min_swot_width {
