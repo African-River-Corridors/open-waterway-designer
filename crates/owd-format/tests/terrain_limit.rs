@@ -41,8 +41,7 @@ fn a_file_inside_the_limit_opens_as_with_the_default() {
     assert_eq!(within, dem);
 }
 
-#[test]
-fn the_stated_default_holds_a_long_rivers_terrain() {
-    // 10,000 by 35,000 cells: the grid of a long river, as the reader holds it (8 bytes a cell).
-    assert!(DEFAULT_GRID_LIMIT_BYTES >= 10_000 * 35_000 * 8 || cfg!(target_arch = "wasm32"));
-}
+// The stated default holds a long river's terrain: 10,000 by 35,000 cells, 8 bytes a cell, on
+// native targets. Checked when the tests build, so a smaller default fails the build.
+const _: () =
+    assert!(cfg!(target_arch = "wasm32") || DEFAULT_GRID_LIMIT_BYTES >= 10_000 * 35_000 * 8);
