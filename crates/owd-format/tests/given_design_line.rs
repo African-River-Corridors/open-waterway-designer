@@ -199,7 +199,7 @@ fn the_same_name_replaces_its_line_and_another_name_adds_one() {
         .import_design_line(&utm_line(&cornered()), "Study line")
         .unwrap();
     assert_eq!(a, again);
-    assert_eq!(ids(&s), [a.clone()]);
+    assert_eq!(ids(&s), std::slice::from_ref(&a));
     assert_eq!(line_of(&option(&s, &a)), cornered());
     let b = s
         .import_design_line(&utm_line(&straight()), "Second line")
@@ -252,7 +252,11 @@ fn a_new_sizing_checks_the_given_line_again_and_keeps_it() {
     assert_eq!(ran, [Stage::Sizing, Stage::Alignment]);
     assert!(r_min(&s) > old_r);
 
-    assert_eq!(ids(&s), [id.clone()], "the run makes no other option");
+    assert_eq!(
+        ids(&s),
+        std::slice::from_ref(&id),
+        "the run makes no other option"
+    );
     let after = option(&s, &id);
     assert_eq!(after["line"], before["line"], "the given line is kept");
     assert_eq!(after["name"], before["name"]);
