@@ -1436,6 +1436,47 @@ pub fn export_limits(doc: &str, wgs84: bool, output: Option<&str>) -> Result {
     write(output.unwrap_or("-"), &text)
 }
 
+/// `owd import --banks FILE`: the banks, the river polygon and what the source says about them,
+/// from one bank dataset file, through the one import of the shell.
+pub fn import_banks(doc: &str, file: &str, output: &Option<String>, json_mode: bool) -> Result {
+    let text = std::fs::read_to_string(file)
+        .map_err(|e| input_error(format!("cannot read {file}: {e}")))?;
+    let mut session = open(doc)?;
+    let report = owd_shell::import::import_bank_dataset(&mut session, &text, &today())
+        .map_err(|e| match e {
+            owd_shell::import::ImportError::Design(e) => from_design(e),
+            owd_shell::import::ImportError::Terrain(m) => input_error(m),
+        })?
+        .report;
+    let dest = destination(doc, output);
+    write(&dest, &session.to_text())?;
+    let mut lines = vec![format!("project CRS: EPSG:{}", report.project_epsg)];
+    for (name, src, n) in &report.inputs {
+        lines.push(format!("{name}: {n} positions, from {src}"));
+    }
+    lines.extend(report.warnings.iter().map(|w| format!("warning: {w}")));
+    let inputs_json: Vec<Value> = report
+        .inputs
+        .iter()
+        .map(|(n, c, k)| json!({"input": n, "source_crs": c, "positions": k}))
+        .collect();
+    say(
+        dest == "-",
+        json_mode,
+        &lines.join("\n"),
+        json!({"ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json, "warnings": report.warnings}),
+    );
+    Ok(())
+}
+
+/// `owd export --banks FILE`: the bank dataset file of the design, in the project CRS or with
+/// `wgs84` in longitude and latitude.
+pub fn export_banks(doc: &str, wgs84: bool, file: &str) -> Result {
+    let session = open(doc)?;
+    let text = session.export_bank_dataset(wgs84).map_err(from_design)?;
+    write(file, &text)
+}
+
 pub fn export(
     doc: &str,
     geojson: bool,
