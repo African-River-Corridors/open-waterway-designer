@@ -11,14 +11,14 @@ type Pt = [f64; 2];
 
 const UTM30: &str = r#""crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::32630"}}"#;
 
-/// A bank of a winding river, 6 km long: a sine of 600 m amplitude and 2 km wavelength, `off`
-/// metres to the north of the middle. Its bends (radius about 170 m) are tighter than the 255 m
+/// A bank of a winding river, 6 km long: a sine of 600 m amplitude and 1.2 km wavelength, `off`
+/// metres to the north of the middle. Its bends (radius about 60 m) are far tighter than the 255 m
 /// the vessel needs, so a line held in the water differs from one that is not.
 fn bank(off: f64) -> Vec<Pt> {
     (0..=600)
         .map(|i| {
             let x = 10.0 * f64::from(i);
-            let y = 600.0 * libm::sin(2.0 * std::f64::consts::PI * x / 2000.0) + off;
+            let y = 600.0 * libm::sin(2.0 * std::f64::consts::PI * x / 1200.0) + off;
             [500_000.0 + x, 600_000.0 + y]
         })
         .collect()
