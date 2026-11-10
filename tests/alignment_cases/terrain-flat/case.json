@@ -1,0 +1,70 @@
+{
+  "id": "terrain-flat",
+  "study": "synthetic",
+  "source_repository": "this repository",
+  "source_commit": "none: closed-form geometry",
+  "steps": [
+    { "new": { "title": "Flat terrain twin", "date": "2026-01-02" } },
+    {
+      "import": {
+        "left_bank": "inputs/left.geojson",
+        "right_bank": "inputs/right.geojson",
+        "river_polygon": "inputs/river.geojson",
+        "dem": "inputs/flat.tif"
+      }
+    },
+    { "water": { "level_m": 10.0 } },
+    {
+      "size": {
+        "rule_sets": ["pianc-wg141"],
+        "set_inputs": { "se_quality": "B" },
+        "vessel": "CEMT_IV",
+        "draught_m": 2.5
+      }
+    },
+    { "align": { "method": "rolling_circle" } },
+    { "volumes": {} }
+  ],
+  "expect": [
+    {
+      "name": "bottom_width_m",
+      "read": { "pointer": "/stages/sizing/results/bottom_width_straight_m" },
+      "value": 30.4,
+      "class": "exact",
+      "tolerance": { "absolute": 1e-9 },
+      "source": "SOURCE.md#the-channel"
+    },
+    {
+      "name": "design_depth_m",
+      "read": { "pointer": "/stages/sizing/results/design_depth_m" },
+      "value": 3.25,
+      "class": "exact",
+      "tolerance": { "absolute": 1e-9 },
+      "source": "SOURCE.md#the-channel"
+    },
+    {
+      "name": "dredge_m3",
+      "read": { "pointer": "/stages/volumes/results/options/0/dredge_m3" },
+      "value": 232960.0,
+      "class": "outcome",
+      "tolerance": { "relative": 0.02 },
+      "source": "SOURCE.md#the-volume"
+    },
+    {
+      "name": "dry_cut_m3",
+      "read": { "pointer": "/stages/volumes/results/options/0/excav_m3" },
+      "value": 0.0,
+      "class": "outcome",
+      "tolerance": { "absolute": 1.0 },
+      "source": "SOURCE.md#dredge-and-dry-cut"
+    },
+    {
+      "name": "tallest_face_m",
+      "read": { "pointer": "/stages/volumes/results/options/0/max_face_h_m" },
+      "value": 0.0,
+      "class": "outcome",
+      "tolerance": { "absolute": 0.001 },
+      "source": "SOURCE.md#dredge-and-dry-cut"
+    }
+  ]
+}

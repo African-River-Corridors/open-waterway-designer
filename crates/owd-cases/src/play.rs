@@ -3,7 +3,7 @@
 //! files, so the case folder is never written and a DEM path reads the same on both.
 
 use crate::case::{Case, Step, Vessel};
-use owd_cli::commands::{self, AlignFlags, CustomFlags, SizeFlags, WaterFlags};
+use owd_cli::commands::{self, AlignFlags, CustomFlags, SizeFlags, VolumesFlags, WaterFlags};
 use owd_format::design::{AlignMethod, Role};
 use owd_shell::state::AppState;
 use serde_json::{Value, json};
@@ -70,6 +70,18 @@ fn failed_entry(doc: &Value, step: usize, method: &str) -> Option<Value> {
         .find(|o| o["method"] == name)?;
     let checks = owd_format::design::export::failed_checks(option);
     (!checks.is_empty()).then(|| json!({"step": step, "method": name, "checks": checks}))
+}
+
+/// Whether the command line's saved document holds volumes results and an option that fails a
+/// check: the volumes step ran, and its code 1 only reports the failed check.
+fn volumes_ran_on_a_failed_option(work: &Work) -> bool {
+    read_doc(&work.doc()).is_ok_and(|d| {
+        d["stages"]["volumes"]["results"].is_object()
+            && d["options"].as_array().is_some_and(|o| {
+                o.iter()
+                    .any(|o| !owd_format::design::export::failed_checks(o).is_empty())
+            })
+    })
 }
 
 fn read_doc(path: &Path) -> Result<Value, String> {
@@ -187,6 +199,54 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                 }
                 failed.extend(entry);
             }
+            Step::Water {
+                level_m,
+                fall_per_m,
+            } => commands::import(
+                &doc,
+                [
+                    ("left_bank", None),
+                    ("right_bank", None),
+                    ("centreline", None),
+                    ("river_polygon", None),
+                ],
+                None,
+                WaterFlags {
+                    level: Some(*level_m),
+                    slope: *fall_per_m,
+                    table: None,
+                    holds_bathymetry: false,
+                },
+                &None,
+                false,
+            )
+            .map_err(|f| fail(n, f))?,
+            Step::Volumes => {
+                let done = commands::volumes(
+                    &doc,
+                    VolumesFlags {
+                        dem: None,
+                        model: None,
+                        water_level: None,
+                        water_slope: None,
+                        station: None,
+                        maxw: None,
+                    },
+                    &None,
+                    false,
+                );
+                // As `align`: `volumes` saves the document, then returns code 1 when an option fails
+                // a check. The step has run when the saved document holds the volumes and an option
+                // that lists a failed check.
+                match done {
+                    Ok(()) => {}
+                    Err(f) if f.code == 1 && volumes_ran_on_a_failed_option(&work) => {}
+                    Err(f) => return Err(fail(n, f)),
+                }
+            }
+            Step::Run => {
+                commands::run(&doc, &[], &None, false).map_err(|f| fail(n, f))?;
+            }
         }
     }
     read_doc(&work.doc()).map_err(|e| format!("the command line wrote {e}"))
@@ -279,6 +339,18 @@ fn shell_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, String> {
                 let now: Value =
                     serde_json::from_str(&s.save_text_for(&doc)).map_err(|e| at(e.to_string()))?;
                 failed.extend(failed_entry(&now, n, method));
+            }
+            Step::Water {
+                level_m,
+                fall_per_m,
+            } => s.set_water(*level_m, *fall_per_m).map_err(at)?,
+            Step::Volumes => {
+                let (job, _control) = s.begin_run("volumes", None).map_err(at)?;
+                let outcome = job.execute(&|_| {});
+                s.finish_run(outcome).map_err(at)?;
+            }
+            Step::Run => {
+                s.run_stale().map_err(at)?;
             }
         }
     }
