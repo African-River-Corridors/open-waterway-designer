@@ -12,6 +12,7 @@ pub mod export;
 pub mod fits;
 pub mod geojson;
 pub mod geopackage;
+pub mod given_line;
 pub mod hash;
 pub mod hillshade;
 pub mod map;

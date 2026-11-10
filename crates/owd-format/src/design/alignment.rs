@@ -490,7 +490,11 @@ impl Session {
                     .collect()
             })
             .unwrap_or_default();
-        if ran.is_empty() {
+        // A given line (ticket C21) is kept, and checked again against the sizing of the moment.
+        let given = self.doc["stages"]["alignment"]["results"]["methods"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|m| m == super::given_line::GIVEN));
+        if ran.is_empty() && !given {
             return self.align(AlignMethod::RollingCircle, &Value::Null, None);
         }
         for m in ran {
@@ -500,6 +504,12 @@ impl Session {
                 ));
             }
             self.align(m, &Value::Null, terrain)?;
+        }
+        if given {
+            self.recheck_given_lines()?;
+            self.doc["stages"]["alignment"]["engine_version"] = json!(ENGINE_VERSION);
+            let h = self.dependency_hash(Stage::Alignment);
+            self.doc["stages"]["alignment"]["depends_on"] = json!(h);
         }
         Ok(())
     }
