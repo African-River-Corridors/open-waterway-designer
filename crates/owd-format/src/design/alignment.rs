@@ -547,7 +547,9 @@ impl Session {
         let river = self.river_polygons();
         let use_water = match &settings["use_water"] {
             Value::Bool(b) => *b,
-            Value::Null => river.is_some(),
+            // Unset: keep to the water when the user gave the polygon. One the import built from
+            // the two banks does not change the default line; `true` still uses it.
+            Value::Null => river.is_some() && !self.polygon_built_from_banks(),
             _ => {
                 return Err(DesignError::Input(
                     "the setting `use_water` must be true, false or null".into(),
