@@ -613,12 +613,34 @@ fn run_reruns_a_stale_stage_and_leaves_fresh_ones_alone() {
 fn the_worked_example_file_is_what_the_commands_produce() {
     let dir = work_dir("example");
     let doc = build(&dir);
-    let made = std::fs::read_to_string(&doc).unwrap();
+    let mut made = std::fs::read_to_string(&doc).unwrap();
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-river.owd");
     if std::env::var_os("OWD_UPDATE_EXAMPLE").is_some() {
         std::fs::write(&example, &made).unwrap();
     }
     let committed = std::fs::read_to_string(&example).expect("examples/synthetic-river.owd");
+    // `owd import` dates each provenance record with the day of the import. Give the made file the
+    // committed file's dates, so every other byte is still compared.
+    let dates = |text: &str| -> Vec<String> {
+        let v: Value = serde_json::from_str(text).unwrap();
+        v["provenance"]
+            .as_object()
+            .map(|p| {
+                p.values()
+                    .map(|r| r["date"].as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let (today, then) = (dates(&made), dates(&committed));
+    assert_eq!(today.len(), then.len(), "the same provenance records");
+    for (t, c) in today.iter().zip(&then) {
+        made = made.replacen(
+            &format!("\"date\": \"{t}\""),
+            &format!("\"date\": \"{c}\""),
+            1,
+        );
+    }
     assert_eq!(
         committed, made,
         "run with OWD_UPDATE_EXAMPLE=1 to rewrite the example"

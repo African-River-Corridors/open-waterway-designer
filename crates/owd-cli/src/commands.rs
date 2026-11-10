@@ -270,42 +270,37 @@ pub fn import(
     // The document is read first when it is on stdin: stdin can be read once.
     let mut session = open(doc)?;
     let items: Vec<(Role, &str)> = texts.iter().map(|(r, t)| (*r, t.as_str())).collect();
-    let mut report = if items.is_empty() {
+    let bytes = match &dem {
+        Some(path) => {
+            Some(std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?)
+        }
+        None => None,
+    };
+    let dem_path = dem.as_deref().map(|p| relative_dem_path(doc, p));
+    let terrain = match (&dem, &dem_path, &bytes) {
+        (Some(name), Some(path), Some(bytes)) => {
+            Some(owd_shell::import::Terrain { path, name, bytes })
+        }
+        _ => None,
+    };
+    let report = if items.is_empty() && terrain.is_none() {
         owd_format::design::ImportReport {
             project_epsg: project_epsg(&session).unwrap_or(0),
             inputs: Vec::new(),
         }
     } else {
-        session.import(&items).map_err(from_design)?
+        owd_shell::import::import(&mut session, &items, terrain, &today())
+            .map_err(|e| match e {
+                owd_shell::import::ImportError::Design(e) => from_design(e),
+                owd_shell::import::ImportError::Terrain(m) => input_error(m),
+            })?
+            .report
     };
     apply_water(&mut session, &water)?;
-    if let Some(path) = &dem {
-        let bytes =
-            std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?;
-        let d = read_dem(&bytes, path)?;
-        // Refuse a DEM the stages could not sample, now, with the CRS named.
-        owd_format::design::terrain::dem_sampler(&d, project_epsg(&session))
-            .map(|_| ())
-            .or_else(|e| {
-                // No project CRS yet is fine: the river comes later.
-                if project_epsg(&session).is_none() {
-                    Ok(())
-                } else {
-                    Err(e)
-                }
-            })
+    if dem.is_some() && water.holds_bathymetry {
+        session
+            .set_dem_holds_bathymetry(true)
             .map_err(from_design)?;
-        session.set_dem(&relative_dem_path(doc, path), &bytes, &d);
-        if water.holds_bathymetry {
-            session
-                .set_dem_holds_bathymetry(true)
-                .map_err(from_design)?;
-        }
-        report.inputs.push((
-            "dem".to_string(),
-            owd_format::design::terrain::dem_crs_name(&d),
-            d.width * d.height,
-        ));
     }
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
