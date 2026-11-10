@@ -9,6 +9,18 @@ use crate::commands;
 use clap::{Args, Parser, Subcommand};
 use std::process::ExitCode;
 
+/// The help of a flag of `owd align`, with the default of `method`'s setting `key`, read from
+/// `AlignmentSettings::default()` so the help never holds a copy of it. `after` follows the value.
+fn align_help(method: &str, key: &str, text: &str, after: &str) -> String {
+    let d = owd_format::design::AlignmentSettings::default().to_value();
+    let one = |v: &serde_json::Value| v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}"));
+    let shown = match &d[method][key] {
+        serde_json::Value::Array(a) => a.iter().map(one).collect::<Vec<_>>().join(","),
+        v => one(v),
+    };
+    format!("{text} (default {shown}{after}).")
+}
+
 /// Screening-level design of navigation channels in inland rivers.
 #[derive(Parser)]
 #[command(name = "owd", bin_name = "owd", version, about, long_about = None)]
@@ -199,11 +211,9 @@ enum Command {
         /// The method: rolling-circle or reroute. Running a method again replaces its own option.
         #[arg(long, value_name = "METHOD")]
         method: String,
-        /// Rolling circle: the sampling step in metres (default 10).
-        #[arg(long, value_name = "METRES")]
+        #[arg(long, value_name = "METRES", help = align_help("rolling_circle", "step_m", "Rolling circle: the sampling step in metres", ""))]
         step: Option<f64>,
-        /// Rolling circle: the number of passes (default 2).
-        #[arg(long)]
+        #[arg(long, help = align_help("rolling_circle", "passes", "Rolling circle: the number of passes", ""))]
         passes: Option<u32>,
         /// Read the minimum radius on this chord, in metres (default: a third of R_min, for every
         /// method).
@@ -218,12 +228,9 @@ enum Command {
         /// Re-route: the fall of the water per metre of river chainage (with --water-level).
         #[arg(long, value_name = "M_PER_M")]
         water_slope: Option<f64>,
-        /// Re-route: the half-widths of the corridors to try, in metres, comma separated.
-        #[arg(long, value_name = "LIST")]
+        #[arg(long, value_name = "LIST", help = align_help("reroute", "corridor_sweep_m", "Re-route: the half-widths of the corridors to try, in metres, comma separated", ""))]
         corridors: Option<String>,
-        /// Re-route: the fairness weight, on the squared change of heading between stations
-        /// (default 0: off). Prefers the smoother of two lines that cut the same.
-        #[arg(long, value_name = "WEIGHT")]
+        #[arg(long, value_name = "WEIGHT", help = align_help("reroute", "fairness_weight", "Re-route: the fairness weight, on the squared change of heading between stations", ": off. Prefers the smoother of two lines that cut the same"))]
         fairness_weight: Option<f64>,
         #[command(flatten)]
         out: Out,
