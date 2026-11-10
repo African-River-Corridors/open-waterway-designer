@@ -4,9 +4,7 @@ use owd_core::rules::custom::{CustomVessel, Formation};
 use owd_format::design::alignment::WIDTH_ONLY;
 use owd_format::design::export::{failed_checks, no_feasible_line, notes_of};
 use owd_format::design::geopackage;
-use owd_format::design::{
-    AlignMethod, DemCheck, DesignError, Role, Session, Stage, StageStatus, Terrain,
-};
+use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus, Terrain};
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -826,17 +824,23 @@ pub fn align(
             "--water-level and --water-slope are for the re-route only",
         ));
     }
-    // The re-route samples a DEM; read it here, since the session has no file access. A DEM given
-    // here becomes the document's DEM reference.
-    let dem = match (&flags.dem, method) {
-        (Some(path), AlignMethod::Reroute) => {
-            let bytes =
-                std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?;
-            let dem = read_dem(&bytes, path)?;
-            session.set_dem(&relative_dem_path(doc, path), &bytes, &dem);
-            Some(dem)
+    // The re-route samples a DEM, by the terrain rule the other stages follow: a DEM given here is
+    // read and becomes the document's DEM reference; otherwise the one the document names, when it
+    // is there with its recorded hash. A missing or changed file is refused by name.
+    let dem = match method {
+        AlignMethod::Reroute => {
+            let bytes = session
+                .dem_path()
+                .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok());
+            stage_dem(
+                &mut session,
+                doc,
+                bytes.as_deref(),
+                &flags.dem,
+                "align --method reroute",
+            )?
         }
-        (Some(_), _) => return Err(input_error("--dem is for the re-route only")),
+        _ if flags.dem.is_some() => return Err(input_error("--dem is for the re-route only")),
         _ => None,
     };
     let sampler = match &dem {
@@ -920,7 +924,8 @@ pub fn align(
 
 /// The DEM for a stage that needs one. A DEM given with `--dem` is read and recorded as the
 /// document's reference. Otherwise the one the document names must be there and must be the file
-/// whose hash was recorded.
+/// whose hash was recorded (the terrain rule, [`owd_format::design::stage_terrain`]). `command` is
+/// the stage's command as a user types it before `--dem`, for the messages.
 fn stage_dem(
     session: &mut Session,
     doc: &str,
@@ -928,24 +933,25 @@ fn stage_dem(
     flag: &Option<String>,
     command: &str,
 ) -> core::result::Result<Option<owd_format::geotiff::Dem>, Failure> {
+    use owd_format::design::NoTerrain;
     if let Some(path) = flag {
         let b = std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?;
         let d = read_dem(&b, path)?;
         session.set_dem(&relative_dem_path(doc, path), &b, &d);
         return Ok(Some(d));
     }
-    let p = session.dem_path().unwrap_or("DEM").to_string();
-    match session.dem_check(bytes) {
-        DemCheck::Matches => Ok(Some(read_dem(bytes.unwrap_or_default(), &p)?)),
-        DemCheck::Changed => Err(input_error(format!(
-            "the DEM `{p}` has changed since its hash was recorded, so the {command} stage will not run on it. \
+    let stage = command.split_whitespace().next().unwrap_or(command);
+    match owd_format::design::stage_terrain(session, bytes) {
+        Ok(b) => Ok(Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?)),
+        Err(NoTerrain::Changed(p)) => Err(input_error(format!(
+            "the DEM `{p}` has changed since its hash was recorded, so the {stage} stage will not run on it. \
              To accept the new file run `owd {command} --dem {p}`."
         ))),
-        DemCheck::Missing => Err(input_error(format!(
-            "the DEM `{p}` is missing: the {command} stage cannot run without it. \
+        Err(NoTerrain::Missing(p)) => Err(input_error(format!(
+            "the DEM `{p}` is missing: the {stage} stage cannot run without it. \
              Put the file back, or point to another with `owd {command} --dem FILE`."
         ))),
-        DemCheck::NoDem => Ok(None),
+        Err(NoTerrain::NotNamed) => Ok(None),
     }
 }
 
@@ -1626,9 +1632,9 @@ pub fn run(doc: &str, files: &[String], output: &Option<String>, json_mode: bool
     let (mut session, bytes) = open_with_dem(doc)?;
     load_rule_set_files(&mut session, files)?;
     // The DEM is used only when it is the file whose hash was recorded.
-    let dem = match (session.dem_check(bytes.as_deref()), &bytes) {
-        (DemCheck::Matches, Some(b)) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
-        _ => None,
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+        Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
+        Err(_) => None,
     };
     let sampler = match &dem {
         Some(d) => Some(

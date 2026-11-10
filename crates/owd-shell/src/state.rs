@@ -7,7 +7,7 @@
 use crate::run::{Outcome, RunControl, RunJob};
 use owd_core::volumes::sections::SectionVolumes;
 use owd_format::design::bank_edit::BankEdit;
-use owd_format::design::{AlignMethod, DemCheck, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
 use owd_format::geotiff::{Dem, read_bytes};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -492,16 +492,13 @@ impl AppState {
         }
     }
 
-    /// The DEM, only when it is the file whose hash the design recorded.
+    /// The DEM, only when it is the file whose hash the design recorded: the terrain rule
+    /// ([`owd_format::design::stage_terrain`]) says whether to use the DEM the shell holds.
     fn usable_dem(&self) -> Option<Arc<Dem>> {
-        match (
-            self.session
-                .dem_check(self.dem_bytes.as_deref().map(|b| b.as_slice())),
-            &self.dem,
-        ) {
-            (DemCheck::Matches, Some(d)) => Some(d.clone()),
-            _ => None,
-        }
+        let bytes = self.dem_bytes.as_deref().map(|b| b.as_slice());
+        owd_format::design::stage_terrain(&self.session, bytes)
+            .ok()
+            .and(self.dem.clone())
     }
 
     /// Get ready to draw the sections of an option: the cached walk if the design has not changed
@@ -550,14 +547,7 @@ impl AppState {
             None => None,
         };
         // The DEM is used only when it is the file whose hash was recorded.
-        let dem = match (
-            self.session
-                .dem_check(self.dem_bytes.as_deref().map(|b| b.as_slice())),
-            &self.dem,
-        ) {
-            (DemCheck::Matches, Some(d)) => Some(d.clone()),
-            _ => None,
-        };
+        let dem = self.usable_dem();
         let control = Arc::new(RunControl::default());
         self.running = Some((stage, control.clone()));
         let job = RunJob {
