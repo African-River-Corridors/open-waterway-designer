@@ -674,7 +674,7 @@ pub fn record_banks_as(
         line(&banks.centreline),
     );
     session
-        .import(&[
+        .import_unchecked(&[
             (Role::LeftBank, l.as_str()),
             (Role::RightBank, r.as_str()),
             (Role::Centreline, c.as_str()),

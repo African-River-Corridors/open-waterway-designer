@@ -51,8 +51,10 @@ fn study(name: &str, dive: f64) -> String {
         .unwrap();
         p.to_str().unwrap().to_string()
     };
+    // Import refuses banks that cross, so the clean pair is imported and a diving left bank is then
+    // written into the document, as a document made before that refusal holds it.
     let (l, r) = (
-        w("l.geojson", bank(100.0, dive)),
+        w("l.geojson", bank(100.0, 0.0)),
         w("r.geojson", bank(-100.0, 0.0)),
     );
     let doc = dir.join("t.owd").to_str().unwrap().to_string();
@@ -63,6 +65,11 @@ fn study(name: &str, dive: f64) -> String {
     );
     let o = run(&["import", &doc, "--left-bank", &l, "--right-bank", &r]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    if dive != 0.0 {
+        let mut d: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
+        d["inputs"]["left_bank"]["coordinates"] = json!(bank(100.0, dive));
+        std::fs::write(&doc, serde_json::to_string_pretty(&d).unwrap()).unwrap();
+    }
     doc
 }
 
