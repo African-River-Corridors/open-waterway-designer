@@ -599,6 +599,20 @@ impl AppState {
             .map(|c| c as u32)
     }
 
+    /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`) in the
+    /// design, as `owd align` does with its flags (`--use-water`). Nothing runs. A refusal changes
+    /// nothing.
+    pub fn set_alignment_settings(&mut self, method: &str, settings: &Value) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let method = AlignMethod::from_name(method)
+            .ok_or_else(|| format!("`{method}` is not an alignment method"))?;
+        self.session
+            .set_alignment_settings(method, settings)
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the water level from a pool table: the text of `owd import --water-pools FILE`, read by
     /// the session's one reader. A refusal changes nothing.
     pub fn set_water_pools(&mut self, table: &str) -> Result<(), String> {

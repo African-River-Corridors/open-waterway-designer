@@ -39,6 +39,7 @@ fn reroute(doc: &Path, dem: Option<&Path>) -> Result<(), String> {
         water_slope: None,
         corridors: None,
         fairness_weight: None,
+        use_water: None,
     };
     match align(&doc.to_string_lossy(), "reroute", flags, &None, true) {
         Ok(()) => Ok(()),

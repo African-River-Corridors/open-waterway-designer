@@ -872,20 +872,6 @@ impl Session {
         out
     }
 
-    /// Whether the document's river polygon is the one built from its two banks (the left bank,
-    /// then the right bank backwards, as the import builds it), not one the user gave.
-    pub(super) fn polygon_built_from_banks(&self) -> bool {
-        let inputs = &self.doc["inputs"];
-        match (
-            line_points(&inputs[Role::LeftBank.name()]),
-            line_points(&inputs[Role::RightBank.name()]),
-            ring_points(&inputs[Role::RiverPolygon.name()]),
-        ) {
-            (Some(l), Some(r), Some(ring)) => ring == super::bank_edit::polygon(&l, &r),
-            _ => false,
-        }
-    }
-
     /// The banks after an import of `converted` (in the project CRS), as a sound pair; `None` when
     /// the import holds no bank. Refuses two banks that cross, and a downstream point that
     /// disagrees with the centreline. Changes nothing.

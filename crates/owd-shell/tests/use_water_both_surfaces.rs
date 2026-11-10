@@ -100,5 +100,8 @@ fn true_gives_the_same_document_through_both_surfaces() {
         json!(true)
     );
     assert_eq!(cli, shell);
-    assert_ne!(cli["options"][0]["line"], both(false).0["options"][0]["line"]);
+    assert_ne!(
+        cli["options"][0]["line"],
+        both(false).0["options"][0]["line"]
+    );
 }

@@ -184,6 +184,7 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                         water_slope: None,
                         corridors: None,
                         fairness_weight: None,
+                        use_water: None,
                     },
                     &None,
                     false,

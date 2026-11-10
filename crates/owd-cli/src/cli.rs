@@ -289,6 +289,10 @@ enum Command {
         corridors: Option<String>,
         #[arg(long, value_name = "WEIGHT", help = align_help("reroute", "fairness_weight", "Re-route: the fairness weight, on the squared change of heading between stations", ": off. Prefers the smoother of two lines that cut the same"))]
         fairness_weight: Option<f64>,
+        /// Rolling circle: keep the line in the river polygon, true or false. Stored in the
+        /// design's alignment settings (default: on when the design has a river polygon).
+        #[arg(long, value_name = "BOOL")]
+        use_water: Option<String>,
         #[command(flatten)]
         out: Out,
     },
@@ -1170,6 +1174,7 @@ pub fn main() -> ExitCode {
             water_slope,
             corridors,
             fairness_weight,
+            use_water,
             out,
         } => commands::align(
             &doc,
@@ -1183,6 +1188,7 @@ pub fn main() -> ExitCode {
                 water_slope,
                 corridors,
                 fairness_weight,
+                use_water,
             },
             &out.output,
             out.json,
