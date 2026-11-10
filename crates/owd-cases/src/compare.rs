@@ -27,13 +27,16 @@ pub struct CaseResult {
     pub differences: Vec<String>,
     /// A surface that could not play the steps, and why.
     pub errors: Vec<String>,
+    /// For each surface, one entry for each `align` step whose option fails a check.
+    pub failed_cli: Vec<Value>,
+    pub failed_shell: Vec<Value>,
 }
 
 /// The number `e` reads from `doc`, if the pointer is there and holds what the measure needs.
 fn read(doc: Option<&Value>, e: &Expect) -> Option<f64> {
     let v = doc?.pointer(&e.pointer)?;
     match e.measure {
-        Measure::Value => v.as_f64(),
+        Measure::Value => crate::case::number(v),
         Measure::Count => v.as_array().map(|a| a.len() as f64),
         Measure::LengthM => {
             let coords = if v.is_object() { &v["coordinates"] } else { v };
@@ -72,11 +75,9 @@ fn passes(got: Option<f64>, e: &Expect) -> bool {
     }
 }
 
-pub fn run_case(
-    case: &Case,
-    cli: Result<Value, String>,
-    shell: Result<Value, String>,
-) -> CaseResult {
+pub fn run_case(case: &Case, cli: crate::play::Played, shell: crate::play::Played) -> CaseResult {
+    let (failed_cli, failed_shell) = (cli.failed, shell.failed);
+    let (cli, shell) = (cli.doc, shell.doc);
     let mut errors = Vec::new();
     if let Err(e) = &cli {
         errors.push(format!("command line: {e}"));
@@ -120,6 +121,8 @@ pub fn run_case(
         one_path_equal,
         differences,
         errors,
+        failed_cli,
+        failed_shell,
     }
 }
 
@@ -222,6 +225,10 @@ pub fn report(results: &[CaseResult]) -> Value {
                 "one_path".into(),
                 json!({"equal": r.one_path_equal, "differences": r.differences}),
             );
+            case.insert(
+                "failed_checks".into(),
+                json!({"cli": r.failed_cli, "shell": r.failed_shell}),
+            );
             if !r.errors.is_empty() {
                 case.insert("errors".into(), json!(r.errors));
             }
@@ -259,6 +266,20 @@ pub fn table(results: &[CaseResult]) -> String {
                 show(row.shell),
                 row.verdict
             ));
+        }
+        for (surface, list) in [("cli", &r.failed_cli), ("shell", &r.failed_shell)] {
+            for f in list {
+                let checks: Vec<&str> = f["checks"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(Value::as_str).collect())
+                    .unwrap_or_default();
+                out.push_str(&format!(
+                    "  failed checks ({surface}): step {}, {}: {}\n",
+                    f["step"],
+                    f["method"].as_str().unwrap_or(""),
+                    checks.join(", ")
+                ));
+            }
         }
         for e in &r.errors {
             out.push_str(&format!("  error: {e}\n"));

@@ -63,6 +63,8 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // The commands run in process: their own lines would mix with the table.
+    owd_cli::commands::set_quiet(true);
     let results: Vec<compare::CaseResult> = cases
         .iter()
         .map(|c| compare::run_case(c, play::command_line(c), play::shell(c)))

@@ -1,0 +1,89 @@
+{
+  "id": "line-tight-bend",
+  "study": "synthetic",
+  "source_repository": "this repository",
+  "source_commit": "none: closed-form geometry",
+  "steps": [
+    {
+      "new": {
+        "title": "Tight bend twin",
+        "date": "2026-01-02"
+      }
+    },
+    {
+      "import": {
+        "left_bank": "inputs/left.geojson",
+        "right_bank": "inputs/right.geojson",
+        "river_polygon": "inputs/river.geojson"
+      }
+    },
+    {
+      "size": {
+        "rule_sets": [
+          "pianc-wg141"
+        ],
+        "set_inputs": {
+          "se_quality": "B"
+        },
+        "vessel": "CEMT_IV",
+        "draught_m": 2.5
+      }
+    },
+    {
+      "align": {
+        "method": "rolling_circle"
+      }
+    }
+  ],
+  "expect": [
+    {
+      "name": "min_bend_radius_m",
+      "read": {
+        "pointer": "/stages/sizing/results/min_bend_radius_m"
+      },
+      "value": 255.0,
+      "class": "exact",
+      "tolerance": {
+        "absolute": 1e-09
+      },
+      "source": "SOURCE.md#required-radius"
+    },
+    {
+      "name": "left_bank_positions",
+      "read": {
+        "pointer": "/inputs/left_bank/coordinates",
+        "measure": "count"
+      },
+      "value": 39,
+      "class": "exact",
+      "tolerance": {
+        "absolute": 0
+      },
+      "source": "SOURCE.md#banks"
+    },
+    {
+      "name": "checked_against_m",
+      "read": {
+        "pointer": "/options/0/checks/r_min_m"
+      },
+      "value": 255.0,
+      "class": "exact",
+      "tolerance": {
+        "absolute": 1e-09
+      },
+      "source": "SOURCE.md#required-radius"
+    },
+    {
+      "name": "radius_ok",
+      "read": {
+        "pointer": "/options/0/checks/radius_ok"
+      },
+      "value": false,
+      "class": "exact",
+      "tolerance": {
+        "absolute": 0
+      },
+      "source": "SOURCE.md#the-bend"
+    }
+  ]
+}

@@ -175,9 +175,19 @@ fn project_epsg(session: &Session) -> Option<u32> {
         .map(|c| c as u32)
 }
 
+static QUIET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Stop `say` from printing: for a caller that runs the commands in process and owns stdout.
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Print a result. When the document itself goes to stdout the result goes to stderr, so the two
 /// never mix.
 pub(crate) fn say(doc_on_stdout: bool, json_mode: bool, human: &str, value: Value) {
+    if QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     let text = if json_mode {
         format!("{value}\n")
     } else {

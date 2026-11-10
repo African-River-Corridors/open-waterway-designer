@@ -31,12 +31,34 @@ pub enum Step {
     Size {
         rule_sets: Vec<String>,
         set_inputs: Vec<(String, String)>,
-        vessel: String,
-        draught_m: Option<f64>,
+        vessel: Vessel,
     },
     Align {
         method: String,
     },
+}
+
+/// The vessel a `size` step sizes for: a class, or a custom vessel.
+#[derive(Debug)]
+pub enum Vessel {
+    Class { id: String, draught_m: Option<f64> },
+    Custom(Custom),
+}
+
+/// A custom vessel, as `case.json` gives it. `fields` is the object itself, for the app shell.
+#[derive(Debug)]
+pub struct Custom {
+    pub name: String,
+    pub loa_m: f64,
+    pub beam_m: f64,
+    pub draught_m: f64,
+    pub formation: String,
+    pub n_abreast: Option<u32>,
+    pub n_in_line: Option<u32>,
+    pub gb_class: Option<String>,
+    pub air_draught_m: Option<f64>,
+    pub deadweight_t: Option<f64>,
+    pub fields: Value,
 }
 
 /// How a value read from the document is turned into a number.
@@ -209,11 +231,34 @@ fn step(s: &Value) -> Result<Step, String> {
                 Value::Null => None,
                 x => Some(x.as_f64().ok_or("`draught_m` must be a number")?),
             };
+            let vessel = match (&v["vessel"], &v["custom_vessel"]) {
+                (Value::Null, Value::Null) => {
+                    return Err("a `size` step needs `vessel` or `custom_vessel`".into());
+                }
+                (Value::Null, c) => {
+                    if draught_m.is_some() {
+                        return Err(
+                            "`draught_m` goes inside `custom_vessel`: the custom vessel carries its draught"
+                                .into(),
+                        );
+                    }
+                    Vessel::Custom(custom(c)?)
+                }
+                (_, Value::Null) => Vessel::Class {
+                    id: text(v, "vessel")?,
+                    draught_m,
+                },
+                _ => {
+                    return Err(
+                        "give `vessel` or `custom_vessel`, not both: a custom vessel is not a class"
+                            .into(),
+                    );
+                }
+            };
             Ok(Step::Size {
                 rule_sets,
                 set_inputs,
-                vessel: text(v, "vessel")?,
-                draught_m,
+                vessel,
             })
         }
         "align" => Ok(Step::Align {
@@ -225,8 +270,57 @@ fn step(s: &Value) -> Result<Step, String> {
     }
 }
 
-fn number(v: &Value) -> Option<f64> {
+/// A custom vessel object: its required and optional members, by the names `case.json` uses.
+fn custom(c: &Value) -> Result<Custom, String> {
+    if !c.is_object() {
+        return Err("`custom_vessel` must be an object".into());
+    }
+    let need = |k: &str| {
+        c[k].as_f64()
+            .ok_or_else(|| format!("`custom_vessel.{k}` must be a number"))
+    };
+    let maybe = |k: &str| match &c[k] {
+        Value::Null => Ok(None),
+        x => x
+            .as_f64()
+            .map(Some)
+            .ok_or_else(|| format!("`custom_vessel.{k}` must be a number")),
+    };
+    let count = |k: &str| match &c[k] {
+        Value::Null => Ok(None),
+        x => x
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| format!("`custom_vessel.{k}` must be a whole number")),
+    };
+    let text_of = |k: &str| {
+        c[k].as_str()
+            .map(str::to_string)
+            .ok_or_else(|| format!("`custom_vessel.{k}` must be text"))
+    };
+    Ok(Custom {
+        name: text_of("name")?,
+        loa_m: need("loa_m")?,
+        beam_m: need("beam_m")?,
+        draught_m: need("draught_m")?,
+        formation: text_of("formation")?,
+        n_abreast: count("n_abreast")?,
+        n_in_line: count("n_in_line")?,
+        gb_class: match &c["gb_class"] {
+            Value::Null => None,
+            _ => Some(text_of("gb_class")?),
+        },
+        air_draught_m: maybe("air_draught_m")?,
+        deadweight_t: maybe("deadweight_t")?,
+        fields: c.clone(),
+    })
+}
+
+/// A number, or a boolean as 1 (true) or 0 (false).
+pub fn number(v: &Value) -> Option<f64> {
     v.as_f64()
+        .or_else(|| v.as_bool().map(|b| if b { 1.0 } else { 0.0 }))
 }
 
 fn expect(r: &Value, i: usize, id: &str) -> Result<Expect, String> {
