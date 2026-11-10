@@ -36,6 +36,16 @@ pub enum Step {
     Align {
         method: String,
     },
+    /// A water level: `level_m` at the river's start, falling `fall_per_m` per metre of river
+    /// (none: a level surface).
+    Water {
+        level_m: f64,
+        fall_per_m: Option<f64>,
+    },
+    /// Run the volumes stage with the document's settings.
+    Volumes,
+    /// Run every stage that is due, through each surface's one run loop.
+    Run,
 }
 
 /// The vessel a `size` step sizes for: a class, or a custom vessel.
@@ -264,8 +274,17 @@ fn step(s: &Value) -> Result<Step, String> {
         "align" => Ok(Step::Align {
             method: text(v, "method")?,
         }),
+        "water" => Ok(Step::Water {
+            level_m: v["level_m"].as_f64().ok_or("`level_m` must be a number")?,
+            fall_per_m: match &v["fall_per_m"] {
+                Value::Null => None,
+                x => Some(x.as_f64().ok_or("`fall_per_m` must be a number")?),
+            },
+        }),
+        "volumes" => Ok(Step::Volumes),
+        "run" => Ok(Step::Run),
         other => Err(format!(
-            "`{other}` is not a step: use new, import, size or align"
+            "`{other}` is not a step: use new, import, water, size, align, volumes or run"
         )),
     }
 }
