@@ -609,6 +609,15 @@ fn set_terrain_limit(window: Window, state: State<Shared>, gib: String) -> Reply
     finish(&window, &guard)
 }
 
+/// Set the point the river flows towards for the bank imports that follow, as `LON,LAT` (empty:
+/// none), as `owd import --downstream` does. Recorded in the imported banks' provenance.
+#[tauri::command]
+fn set_downstream_point(window: Window, state: State<Shared>, point: String) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_downstream_point_text(&point)?;
+    finish(&window, &guard)
+}
+
 /// Run one stage on a worker thread. `method` picks the alignment method (`rolling_circle` or
 /// `reroute`). The design changes only if the stage finishes: a cancel or a failure leaves it as it
 /// was. The reply is the snapshot, with `run` saying how it ended.
@@ -1175,6 +1184,7 @@ pub fn run() {
             load_input,
             set_water,
             set_terrain_limit,
+            set_downstream_point,
             edit_bank,
             undo_bank_edit,
             run_stage,

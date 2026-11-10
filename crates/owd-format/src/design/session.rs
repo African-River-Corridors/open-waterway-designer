@@ -152,6 +152,23 @@ pub struct Status {
     pub stages: Vec<(Stage, StageStatus)>,
 }
 
+/// The share of the checked stations over which a failed side check is wholesale: the banks are
+/// named the wrong way round for the way they run, one fact, not a fault at each station.
+pub const SIDE_WHOLESALE_SHARE: f64 = 0.8;
+
+/// The one plain message for a side check that fails at `side_fails` of `checked` stations, when
+/// that is over [`SIDE_WHOLESALE_SHARE`]; `None` otherwise.
+pub fn side_wholesale_message(side_fails: usize, checked: usize) -> Option<String> {
+    (checked > 0 && side_fails as f64 > SIDE_WHOLESALE_SHARE * checked as f64).then(|| {
+        format!(
+            "the banks fail the side check at {side_fails} of {checked} stations: they look named \
+             the wrong way round for the direction they run. If left and right are map sides, or the \
+             banks run upstream, give the downstream point (`--downstream LON,LAT` on the command \
+             line, or the downstream point in the app), or swap the two files"
+        )
+    })
+}
+
 /// What an import changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportReport {
@@ -779,7 +796,8 @@ impl Session {
     /// station step of `owd check-banks`. With `report_crossing`, banks that cross (the unchecked
     /// import keeps them) are reported too, with the first crossing point.
     fn bank_check_warnings(&self, report_crossing: bool) -> Vec<String> {
-        use owd_core::banks::check::{CheckParams, check_banks, lines_cross};
+        use owd_core::banks::check::{CheckParams, assess, lines_cross};
+        use owd_core::banks::stations::arc;
         const STATION_M: f64 = 20.0;
         let inputs = &self.doc["inputs"];
         let (Some(left), Some(right)) = (
@@ -794,8 +812,27 @@ impl Session {
         let centre = line_points(&inputs[Role::Centreline.name()])
             .filter(|c| c.len() >= 2)
             .unwrap_or_else(|| super::bank_edit::centreline(&left, &right, STATION_M));
-        let failed = check_banks(&left, &right, &centre, &CheckParams::at_step(STATION_M));
+        // The checks at every station (as `check_banks` gives the failing ones), so the share of
+        // stations that fail the side check is known.
+        let (reference, _, checks, _, _) = assess(
+            &left,
+            &right,
+            &centre,
+            &CheckParams::at_step(STATION_M),
+            &[],
+        );
+        let s = arc(&reference);
+        let failed: Vec<(f64, owd_core::banks::check::Checks)> = checks
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.any())
+            .map(|(i, c)| (s[i], *c))
+            .collect();
+        let side_fails = failed.iter().filter(|(_, c)| c.side).count();
         let mut out = Vec::new();
+        // One fact wrong (the direction or the names), not hundreds: one plain message first.
+        let wholesale = side_wholesale_message(side_fails, checks.len());
+        out.extend(wholesale.clone());
         for name in [
             "side",
             "missing",
@@ -805,6 +842,9 @@ impl Session {
             "excursion",
             "crossing",
         ] {
+            if name == "side" && wholesale.is_some() {
+                continue;
+            }
             let at: Vec<f64> = failed
                 .iter()
                 .filter(|(_, c)| c.names().contains(&name))
