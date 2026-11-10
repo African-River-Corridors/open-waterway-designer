@@ -727,14 +727,15 @@ fn align_adds_a_rolling_circle_option_and_replaces_it_when_run_again() {
         saved["options"][0]["checks"]["radius_ok"],
         res["option"]["checks"]["radius_ok"]
     );
-    // The exit code is the option's checks: 0 when all hold, 1 when one fails. The synthetic river
-    // has a river polygon, so the rolling circle is water-aware (spec 0005): at 40 m it fails
-    // `fits_in_water` at every apex.
+    // The design is saved: exit code 0, and a failed check is a warning on stderr (ticket A13). The
+    // synthetic river has a river polygon, so the rolling circle is water-aware (spec 0005): at 40 m
+    // it fails `fits_in_water` at every apex.
     let c = &res["option"]["checks"];
     let failed = c["radius_ok"].as_bool() == Some(false)
         || c["fits_in_water"]["ok"].as_bool() == Some(false);
     assert!(c["fits_in_water"].is_object());
-    assert_eq!(code(&o), i32::from(failed));
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    assert_eq!(err(&o).contains("the option fails:"), failed, "{}", err(&o));
     // Again, with another step: one option still, with the new setting.
     run(
         &["align", &doc, "--method", "rolling-circle", "--step", "20"],
@@ -770,12 +771,12 @@ fn align_with_sizing_stale_is_refused_and_names_the_size_command() {
 // --- spec 0005 (#100) ---------------------------------------------------------------------
 
 #[test]
-fn a_failed_fits_in_water_check_is_in_status_the_csv_and_the_geojson_and_exits_1() {
+fn a_failed_fits_in_water_check_is_in_status_the_csv_and_the_geojson_and_exits_0() {
     let dir = work_dir("fits_in_water");
     let doc = build(&dir);
     // The 40 m synthetic river: the water-aware rolling circle is too narrow at every apex.
     let o = run(&["align", &doc, "--method", "rolling-circle", "--json"], "");
-    assert_eq!(code(&o), 1, "{}", err(&o));
+    assert_eq!(code(&o), 0, "{}", err(&o));
     assert!(err(&o).contains("fits_in_water"), "{}", err(&o));
     assert!(err(&o).contains("no_feasible_line"), "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
