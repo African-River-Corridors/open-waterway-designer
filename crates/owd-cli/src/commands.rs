@@ -9,7 +9,32 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::Path;
 
-/// A failed command: its message and exit code (1 a failed check, 2 a usage or input error).
+/// With `--strict` (ticket A13): a failed check on an option the command made or re-ran exits 1.
+static STRICT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Turn `--strict` on or off for this process.
+pub fn set_strict(on: bool) {
+    STRICT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The one exit rule for an option's failed checks (ticket A13), after the document is saved.
+/// `failed` names them (empty: none). Without `--strict` they are a warning on stderr and the
+/// command succeeds; with it, the same words and exit code 1.
+fn option_checks_outcome(failed: &str) -> Result {
+    if failed.is_empty() {
+        return Ok(());
+    }
+    let message = format!("the option fails: {failed}");
+    if STRICT.load(std::sync::atomic::Ordering::Relaxed) {
+        Err(Failure { message, code: 1 })
+    } else {
+        eprintln!("owd: {message}");
+        Ok(())
+    }
+}
+
+/// A failed command: its message and exit code (1 a stale-stage refusal, a failed check of a
+/// checking command, or with `--strict` a failed option check; 2 a usage or input error).
 pub struct Failure {
     pub message: String,
     pub code: u8,
@@ -985,17 +1010,7 @@ pub fn align(
         &human,
         json!({"ok": ok, "failed_checks": failed, "option": option}),
     );
-    // An option that fails a check is a failed check: exit code 1, with the document written.
-    // The river centreline is a line to compare with, kept as it is: its failed checks are
-    // reported above and kept in the option, and the command succeeds.
-    if ok || method == AlignMethod::Centreline {
-        Ok(())
-    } else {
-        Err(Failure {
-            message: format!("the option fails: {}", failed.join(", ")),
-            code: 1,
-        })
-    }
+    option_checks_outcome(&failed.join(", "))
 }
 
 /// The DEM for a stage that needs one. A DEM given with `--dem` is read and recorded as the
@@ -1139,14 +1154,7 @@ pub fn optimise(
         &human,
         json!({"ok": ok, "failed_checks": failed, "cascade": res["cascade"], "pools": res["pools"], "option": option}),
     );
-    if ok {
-        Ok(())
-    } else {
-        Err(Failure {
-            message: "the option fails R_min".into(),
-            code: 1,
-        })
-    }
+    option_checks_outcome(&failed.join(", "))
 }
 
 /// The flags of `owd volumes`.
@@ -1199,11 +1207,31 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
     let rows = session.document()["stages"]["volumes"]["results"]["options"].clone();
     let mut human = Vec::new();
     let mut all_ok = true;
+    // Each option's failed checks, as this command reads them: in the JSON and on stderr.
+    let mut json_rows = Vec::new();
+    let mut fails = Vec::new();
     for r in rows.as_array().into_iter().flatten() {
         // Issue #366: an option with no feasible line is not a design: flagged, whatever its radius.
         let nfl = r["no_feasible_line"] == true;
         let ok = r["radius_ok"].as_bool().unwrap_or(false) && !nfl;
         all_ok &= ok;
+        let failed: Vec<&str> = [
+            (nfl, "no_feasible_line"),
+            (!r["radius_ok"].as_bool().unwrap_or(false), "R_min"),
+        ]
+        .into_iter()
+        .filter_map(|(f, name)| f.then_some(name))
+        .collect();
+        if !failed.is_empty() {
+            fails.push(format!(
+                "{} ({})",
+                r["name"].as_str().unwrap_or("?"),
+                failed.join(", ")
+            ));
+        }
+        let mut row = r.clone();
+        row["failed_checks"] = json!(failed);
+        json_rows.push(row);
         let f = |k: &str| r[k].as_f64().unwrap_or(f64::NAN);
         human.push(format!(
             "{}: dredge {:.0} m3, dry cut {:.0} m3, tallest face {:.1} m{}",
@@ -1224,16 +1252,9 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
         dest == "-",
         json_mode,
         &human.join("\n"),
-        json!({"ok": all_ok, "options": rows}),
+        json!({"ok": all_ok, "options": json_rows}),
     );
-    if all_ok {
-        Ok(())
-    } else {
-        Err(Failure {
-            message: "an option fails R_min or has no feasible line".into(),
-            code: 1,
-        })
-    }
+    option_checks_outcome(&fails.join("; "))
 }
 
 /// Largest number of tiles one `fetch-dem` will take: a reach this wide wants a DEM of its own.
@@ -1775,18 +1796,42 @@ pub fn run(doc: &str, files: &[String], output: &Option<String>, json_mode: bool
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
     let names: Vec<&str> = ran.iter().map(|s| s.name()).collect();
-    let human = if names.is_empty() {
+    let mut human = if names.is_empty() {
         "nothing to run: every stage is fresh or not set up".to_string()
     } else {
         format!("ran: {}", names.join(", "))
     };
-    say(
-        dest == "-",
-        json_mode,
-        &human,
-        json!({"ok": true, "ran": names}),
-    );
-    Ok(())
+    // The options this run made again (the alignment or the optimise stage ran), with their
+    // failed checks, as `owd align` and `owd optimise` report them.
+    let remade = ran
+        .iter()
+        .any(|s| matches!(s, Stage::Alignment | Stage::Optimise));
+    let mut options = Vec::new();
+    let mut fails = Vec::new();
+    if remade {
+        for o in session.document()["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let failed = failed_checks(o);
+            let name = o["name"].as_str().unwrap_or("?");
+            if !failed.is_empty() {
+                fails.push(format!("{name} ({})", failed.join(", ")));
+                human.push_str(&format!(
+                    "\n{name}: saved, marked failed: {}",
+                    failed.join(", ")
+                ));
+            }
+            options.push(json!({"id": o["id"], "name": name, "failed_checks": failed}));
+        }
+    }
+    let mut res = json!({"ok": fails.is_empty(), "ran": names});
+    if remade {
+        res["options"] = json!(options);
+    }
+    say(dest == "-", json_mode, &human, res);
+    option_checks_outcome(&fails.join("; "))
 }
 
 pub fn validate(doc: &str, json_mode: bool) -> Result {

@@ -128,7 +128,8 @@ strings and values. The callers do all file, network and clock access.
   given. `-` reads from stdin or writes to stdout.
 - `--json` prints a machine-readable result.
 - Exit codes are 0 for success, 1 for a failed check or a stale-stage refusal, and 2 for a usage or
-  input error.
+  input error. Since ticket A13 a saved design exits 0 even when an option fails a check, unless
+  `--strict` is given; the table in the README's "Exit codes" section is the rule.
 - The hidden `eval` command from spec 0001 is removed in #37, not here.
 
 ### Geodata (ADR 0003)

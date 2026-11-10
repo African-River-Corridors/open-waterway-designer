@@ -72,18 +72,6 @@ fn failed_entry(doc: &Value, step: usize, method: &str) -> Option<Value> {
     (!checks.is_empty()).then(|| json!({"step": step, "method": name, "checks": checks}))
 }
 
-/// Whether the command line's saved document holds volumes results and an option that fails a
-/// check: the volumes step ran, and its code 1 only reports the failed check.
-fn volumes_ran_on_a_failed_option(work: &Work) -> bool {
-    read_doc(&work.doc()).is_ok_and(|d| {
-        d["stages"]["volumes"]["results"].is_object()
-            && d["options"].as_array().is_some_and(|o| {
-                o.iter()
-                    .any(|o| !owd_format::design::export::failed_checks(o).is_empty())
-            })
-    })
-}
-
 fn read_doc(path: &Path) -> Result<Value, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("no document: {e}"))?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
@@ -189,17 +177,14 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                     &None,
                     false,
                 );
-                // `align` saves the document, then returns code 1 when the option fails a check.
-                // The step has run when the saved option of this method lists a failed check.
-                let entry = read_doc(&work.doc())
-                    .ok()
-                    .and_then(|d| failed_entry(&d, n, method));
-                match done {
-                    Ok(()) => {}
-                    Err(f) if f.code == 1 && entry.is_some() => {}
-                    Err(f) => return Err(fail(n, f)),
-                }
-                failed.extend(entry);
+                done.map_err(|f| fail(n, f))?;
+                // A saved option that fails a check exits 0 (ticket A13): its failed checks are
+                // read from the document.
+                failed.extend(
+                    read_doc(&work.doc())
+                        .ok()
+                        .and_then(|d| failed_entry(&d, n, method)),
+                );
             }
             Step::Water {
                 level_m,
@@ -238,14 +223,7 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                     &None,
                     false,
                 );
-                // As `align`: `volumes` saves the document, then returns code 1 when an option fails
-                // a check. The step has run when the saved document holds the volumes and an option
-                // that lists a failed check.
-                match done {
-                    Ok(()) => {}
-                    Err(f) if f.code == 1 && volumes_ran_on_a_failed_option(&work) => {}
-                    Err(f) => return Err(fail(n, f)),
-                }
+                done.map_err(|f| fail(n, f))?;
             }
             Step::Run => {
                 commands::run(&doc, &[], &None, false).map_err(|f| fail(n, f))?;

@@ -195,7 +195,10 @@ fn volumes_equal_the_core_called_directly_on_the_same_dem() {
     let o = run(&args);
     assert!(code(&o) == 0 || code(&o) == 1, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
-    let row = &res["options"][0];
+    // The command's row is the saved row with the failed checks it read (ticket A13).
+    let mut row = res["options"][0].clone();
+    row.as_object_mut().unwrap().remove("failed_checks");
+    let row = &row;
 
     let saved = read_doc(&doc);
     let line: Vec<Pt> = saved["options"][0]["line"]["coordinates"]
@@ -579,7 +582,8 @@ fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
 }
 
 /// Issue #367: a re-route that cannot hold R_min is saved marked failed, and its summary says so:
-/// `ok: false` and the failed check in the JSON, `FAILS R_min` and "marked failed" in words, exit 1.
+/// `ok: false` and the failed check in the JSON, `FAILS R_min` and "marked failed" in words, exit 0
+/// (ticket A13: the design is saved).
 #[test]
 fn a_reroute_that_fails_r_min_is_marked_failed_in_its_summary() {
     let dir = work_dir("reroute-fails");
@@ -602,7 +606,7 @@ fn a_reroute_that_fails_r_min_is_marked_failed_in_its_summary() {
     let mut json_args = args.to_vec();
     json_args.push("--json");
     let o = run(&json_args);
-    assert_eq!(code(&o), 1, "{}", err(&o));
+    assert_eq!(code(&o), 0, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
     assert_eq!(res["ok"], false, "{res}");
     assert_eq!(res["failed_checks"], json!(["R_min"]), "{res}");
@@ -617,14 +621,14 @@ fn a_reroute_that_fails_r_min_is_marked_failed_in_its_summary() {
         .unwrap();
     assert_eq!(opt["checks"]["radius_ok"], false);
     let o = run(&args);
-    assert_eq!(code(&o), 1);
+    assert_eq!(code(&o), 0);
     assert!(out(&o).contains("FAILS R_min"), "{}", out(&o));
     assert!(out(&o).contains("marked failed"), "{}", out(&o));
     // `owd volumes` costs it with its failed check, and says so.
     let mut vargs = vec!["volumes", &doc as &str, "--json"];
     vargs.extend(VOLUME_FLAGS);
     let o = run(&vargs);
-    assert_eq!(code(&o), 1, "{}", err(&o));
+    assert_eq!(code(&o), 0, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
     assert_eq!(res["ok"], false, "{res}");
 }

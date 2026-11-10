@@ -38,6 +38,10 @@ struct Cli {
         allow_hyphen_values = true
     )]
     terrain_limit_gib: Option<String>,
+    /// Make a failed check on an option the command made or re-ran an error: exit code 1, after
+    /// the design is saved. Without it, a saved design exits 0 and the failed checks are a warning.
+    #[arg(long, global = true)]
+    strict: bool,
 }
 
 /// The terrain limit from `--terrain-limit-gib` or `OWD_TERRAIN_LIMIT_GIB`, in bytes. A value that
@@ -887,6 +891,7 @@ pub fn main() -> ExitCode {
             return ExitCode::from(e.code);
         }
     }
+    commands::set_strict(cli.strict);
     let result = match cli.command {
         Command::New {
             file,
