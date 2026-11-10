@@ -58,27 +58,183 @@ impl AlignMethod {
             AlignMethod::Reroute => "Least-cost re-route",
         }
     }
+}
 
-    /// The settings of a method, with the defaults the Python has.
-    fn defaults(self) -> Value {
-        match self {
-            AlignMethod::RollingCircle => {
-                json!({
-                    "step_m": 10.0, "passes": 2, "check_chord_m": null,
-                    "use_water": null, "clearance_m": 0.0, "r_pref_m": null,
-                })
-            }
-            AlignMethod::Reroute => json!({
-                "corridor_sweep_m": [40.0, 80.0, 120.0],
-                "station_step_m": 100.0,
-                "offset_step_m": 10.0,
-                "side_slope": 3.0,
-                "wet_weight": 1.0,
-                "dry_weight": 1.0,
-                "check_chord_m": null,
-                "fairness_weight": 0.0,
-            }),
+/// The settings of the rolling circle, typed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RollingCircleSettings {
+    /// The sampling step in metres.
+    pub step_m: f64,
+    /// The number of passes.
+    pub passes: i64,
+    /// The chord the minimum radius is read on; `None`: a third of R_min.
+    pub check_chord_m: Option<f64>,
+    /// Keep the line in the water; `None`: when the document has a river polygon.
+    pub use_water: Option<bool>,
+    pub clearance_m: f64,
+    pub r_pref_m: Option<f64>,
+}
+
+/// The settings of the least-cost re-route, typed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RerouteSettings {
+    /// The half-widths of the corridors to try, in metres.
+    pub corridor_sweep_m: Vec<f64>,
+    pub station_step_m: f64,
+    pub offset_step_m: f64,
+    pub side_slope: f64,
+    pub wet_weight: f64,
+    pub dry_weight: f64,
+    pub check_chord_m: Option<f64>,
+    /// The fairness weight; `None` (a document from before spec 0005) reads as 0.
+    pub fairness_weight: Option<f64>,
+}
+
+/// The settings of the alignment stage: one typed part per method, under the method's name, as
+/// the document holds them. Each method knows its own keys only.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlignmentSettings {
+    pub rolling_circle: RollingCircleSettings,
+    pub reroute: RerouteSettings,
+}
+
+impl Default for AlignmentSettings {
+    fn default() -> Self {
+        AlignmentSettings {
+            rolling_circle: RollingCircleSettings {
+                step_m: 10.0,
+                passes: 2,
+                check_chord_m: None,
+                use_water: None,
+                clearance_m: 0.0,
+                r_pref_m: None,
+            },
+            reroute: RerouteSettings {
+                corridor_sweep_m: vec![40.0, 80.0, 120.0],
+                station_step_m: 100.0,
+                offset_step_m: 10.0,
+                side_slope: 3.0,
+                wet_weight: 1.0,
+                dry_weight: 1.0,
+                check_chord_m: None,
+                fairness_weight: Some(0.0),
+            },
         }
+    }
+}
+
+impl RollingCircleSettings {
+    fn to_value(&self) -> Value {
+        json!({
+            "step_m": self.step_m, "passes": self.passes, "check_chord_m": self.check_chord_m,
+            "use_water": self.use_water, "clearance_m": self.clearance_m, "r_pref_m": self.r_pref_m,
+        })
+    }
+
+    fn apply(&self, source: &Value) -> Result<RollingCircleSettings, DesignError> {
+        let mut out = self.clone();
+        let Some(o) = source.as_object() else {
+            return Ok(out);
+        };
+        for (k, v) in o {
+            match k.as_str() {
+                "step_m" => out.step_m = num(source, k)?,
+                "passes" => {
+                    out.passes = v.as_i64().ok_or_else(|| {
+                        DesignError::Input("the setting `passes` must be a whole number".into())
+                    })?
+                }
+                "check_chord_m" => out.check_chord_m = opt_num(source, k)?,
+                "use_water" => {
+                    out.use_water = match v {
+                        Value::Bool(b) => Some(*b),
+                        Value::Null => None,
+                        _ => {
+                            return Err(DesignError::Input(
+                                "the setting `use_water` must be true, false or null".into(),
+                            ));
+                        }
+                    }
+                }
+                "clearance_m" => out.clearance_m = num(source, k)?,
+                "r_pref_m" => out.r_pref_m = opt_num(source, k)?,
+                other => {
+                    return Err(DesignError::Input(format!(
+                        "the rolling circle has no setting `{other}`"
+                    )));
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl RerouteSettings {
+    fn to_value(&self) -> Value {
+        json!({
+            "corridor_sweep_m": self.corridor_sweep_m,
+            "station_step_m": self.station_step_m,
+            "offset_step_m": self.offset_step_m,
+            "side_slope": self.side_slope,
+            "wet_weight": self.wet_weight,
+            "dry_weight": self.dry_weight,
+            "check_chord_m": self.check_chord_m,
+            "fairness_weight": self.fairness_weight,
+        })
+    }
+
+    fn apply(&self, source: &Value) -> Result<RerouteSettings, DesignError> {
+        let mut out = self.clone();
+        let Some(o) = source.as_object() else {
+            return Ok(out);
+        };
+        for (k, v) in o {
+            match k.as_str() {
+                "corridor_sweep_m" => {
+                    out.corridor_sweep_m = v
+                        .as_array()
+                        .and_then(|a| a.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>())
+                        .ok_or_else(|| {
+                            DesignError::Input(
+                                "the setting `corridor_sweep_m` must be a list of numbers".into(),
+                            )
+                        })?
+                }
+                "station_step_m" => out.station_step_m = num(source, k)?,
+                "offset_step_m" => out.offset_step_m = num(source, k)?,
+                "side_slope" => out.side_slope = num(source, k)?,
+                "wet_weight" => out.wet_weight = num(source, k)?,
+                "dry_weight" => out.dry_weight = num(source, k)?,
+                "check_chord_m" => out.check_chord_m = opt_num(source, k)?,
+                "fairness_weight" => {
+                    out.fairness_weight = match v {
+                        Value::Null => None,
+                        v => Some(v.as_f64().ok_or_else(|| {
+                            DesignError::Input(
+                                "the setting `fairness_weight` must be a number at or above 0"
+                                    .into(),
+                            )
+                        })?),
+                    }
+                }
+                other => {
+                    return Err(DesignError::Input(format!(
+                        "the re-route has no setting `{other}`"
+                    )));
+                }
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl AlignmentSettings {
+    /// The settings as the stage writes them into the document.
+    pub fn to_value(&self) -> Value {
+        json!({
+            "rolling_circle": self.rolling_circle.to_value(),
+            "reroute": self.reroute.to_value(),
+        })
     }
 }
 
@@ -137,17 +293,21 @@ impl Session {
     }
 
     /// Settings of a method: its defaults, then what the document holds, then `overrides`.
-    fn method_settings(&self, method: AlignMethod, overrides: &Value) -> Value {
-        let mut s = method.defaults();
+    /// The settings of one method: the defaults, then the document's, then `overrides`. A key the
+    /// method does not know, in the document or from the caller, is refused by name.
+    fn method_settings(
+        &self,
+        method: AlignMethod,
+        overrides: &Value,
+    ) -> Result<Value, DesignError> {
+        let d = AlignmentSettings::default();
         let stored = &self.doc["stages"]["alignment"]["settings"][method.name()];
-        for source in [stored, overrides] {
-            if let Some(o) = source.as_object() {
-                for (k, v) in o {
-                    s[k] = v.clone();
-                }
+        Ok(match method {
+            AlignMethod::RollingCircle => {
+                d.rolling_circle.apply(stored)?.apply(overrides)?.to_value()
             }
-        }
-        s
+            AlignMethod::Reroute => d.reroute.apply(stored)?.apply(overrides)?.to_value(),
+        })
     }
 
     /// Run one method and add its option, or replace the option that method made before. The
@@ -162,7 +322,7 @@ impl Session {
         self.upstream_ready()?;
         let shape = self.doc["stages"]["sizing"]["results"].clone();
         let r_min = shape["min_bend_radius_m"].as_f64().unwrap_or(f64::NAN);
-        let settings = self.method_settings(method, overrides);
+        let settings = self.method_settings(method, overrides)?;
         let option = match method {
             AlignMethod::RollingCircle => self.water_aware_rolling_circle(&settings, r_min)?,
             AlignMethod::Reroute => {
