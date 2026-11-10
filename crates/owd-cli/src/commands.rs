@@ -271,7 +271,10 @@ pub fn import(
             texts.push((role, read_vector(&path)?));
         }
     }
-    let has_water = water.level.is_some() || water.slope.is_some() || water.table.is_some();
+    let has_water = water.level.is_some()
+        || water.slope.is_some()
+        || water.table.is_some()
+        || water.pools.is_some();
     if texts.is_empty() && dem.is_none() && !has_water {
         return Err(input_error(
             "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem or a water level",
@@ -710,11 +713,13 @@ pub fn rules(
 }
 
 /// The water level flags: a constant, a straight fall along the river chainage, or a table.
-#[derive(Default)]
+#[derive(Default, Debug, Clone)]
 pub struct WaterFlags {
     pub level: Option<f64>,
     pub slope: Option<f64>,
     pub table: Option<String>,
+    /// A pool table: one row per pool, `chainage_m,level_m` (ticket C24).
+    pub pools: Option<String>,
     /// The DEM given holds the river bed (#363).
     pub holds_bathymetry: bool,
 }
@@ -722,6 +727,15 @@ pub struct WaterFlags {
 /// Set the document's water level profile from the flags, if any were given. A level alone is a
 /// constant; with a slope it is the level at the river's start, falling that much per metre.
 fn apply_water(session: &mut Session, w: &WaterFlags) -> Result {
+    if let Some(path) = &w.pools {
+        if w.level.is_some() || w.slope.is_some() || w.table.is_some() {
+            return Err(input_error(
+                "give the water level as a pool table or as a level, a slope or a table, not both",
+            ));
+        }
+        let text = read(path)?;
+        return session.set_water_pools_text(&text).map_err(from_design);
+    }
     if let Some(path) = &w.table {
         if w.level.is_some() || w.slope.is_some() {
             return Err(input_error(
@@ -826,6 +840,7 @@ pub fn align(
                 level: flags.water_level,
                 slope: flags.water_slope,
                 table: None,
+                pools: None,
                 holds_bathymetry: false,
             },
         )?;
@@ -1112,6 +1127,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
             level: flags.water_level,
             slope: flags.water_slope,
             table: None,
+            pools: None,
             holds_bathymetry: false,
         },
     )?;

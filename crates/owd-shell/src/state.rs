@@ -86,7 +86,13 @@ impl WalkJob {
 /// `target` relative to the folder `base`, using `..` where it must climb. Both are made absolute
 /// first, so the document stays portable when it is saved somewhere else.
 fn relative_to(base: &Path, target: &Path) -> String {
-    let (Ok(b), Ok(t)) = (std::fs::canonicalize(base), std::fs::canonicalize(target)) else {
+    // A target that is not there (a DEM file the document names but that is missing) is resolved
+    // by its folder, so its path stays relative instead of turning absolute on save.
+    let resolved = std::fs::canonicalize(target).ok().or_else(|| {
+        let folder = std::fs::canonicalize(target.parent()?).ok()?;
+        Some(folder.join(target.file_name()?))
+    });
+    let (Ok(b), Some(t)) = (std::fs::canonicalize(base), resolved) else {
         return target.to_string_lossy().replace('\\', "/");
     };
     let (bc, tc): (Vec<_>, Vec<_>) = (b.components().collect(), t.components().collect());
@@ -473,6 +479,23 @@ impl AppState {
         self.session.document()["project"]["crs"]["epsg"]
             .as_u64()
             .map(|c| c as u32)
+    }
+
+    /// Set the water level from a pool table: the text of `owd import --water-pools FILE`, read by
+    /// the session's one reader. A refusal changes nothing.
+    pub fn set_water_pools(&mut self, table: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let before = self.session.clone();
+        match self.session.set_water_pools_text(table) {
+            Ok(()) => {
+                self.dirty = true;
+                Ok(())
+            }
+            Err(e) => {
+                self.session = before;
+                Err(message(e))
+            }
+        }
     }
 
     /// Set the water level: a level at the river's start, and optionally a fall per metre of
