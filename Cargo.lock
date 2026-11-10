@@ -3711,7 +3711,6 @@ dependencies = [
  "libm",
  "ovcd-core",
  "serde_json",
- "web-time 0.2.4",
 ]
 
 [[package]]

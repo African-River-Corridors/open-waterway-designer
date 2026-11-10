@@ -2,7 +2,7 @@
 //!
 //! A section's half-width is a number or `{"kind": "width_fn", "loa_m", "beam_m", "draft_m",
 //! "rule_set"}`, which is `make_width_fn(...).half_width` (the width profile of ticket 25).
-//! `seconds` is wall-clock time and is not an output.
+//! The lattice search reads no clock (ticket D3), so a case may not set `wall_cap_s`.
 
 use super::geometry::{geom_from, geom_json};
 use super::terrain::terrain_from;
@@ -129,7 +129,13 @@ fn config(d: &Value) -> Result<Result<LatticeConfig, String>, EvalError> {
             .as_i64()
             .ok_or_else(|| bad("max_expand must be a whole number".into()))?;
     }
-    c.wall_cap_s = opt_f64(d, "wall_cap_s")?;
+    // The core reads no clock (ticket D3): a time limit would be the harness's own, and no case
+    // sets one. A case that does is refused, so it never runs without the limit it asked for.
+    if opt_f64(d, "wall_cap_s")?.is_some() {
+        return Err(bad(
+            "wall_cap_s is not supported: the lattice search reads no clock; leave it null".into(),
+        ));
+    }
     c.bounds_margin_m = f64_or(d, "bounds_margin_m", c.bounds_margin_m)?;
     Ok(c.validated())
 }
@@ -148,7 +154,8 @@ fn config_json(c: &LatticeConfig) -> Value {
         "heuristic_weight": float_json(c.heuristic_weight),
         "prune_bound": float_json(c.prune_bound),
         "max_expand": c.max_expand,
-        "wall_cap_s": c.wall_cap_s.map_or(Value::Null, float_json),
+        // Kept for the frozen Python's config shape: the core has no time limit.
+        "wall_cap_s": Value::Null,
         "bounds_margin_m": float_json(c.bounds_margin_m),
     })
 }

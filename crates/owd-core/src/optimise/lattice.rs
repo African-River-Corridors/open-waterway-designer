@@ -38,10 +38,6 @@ use crate::geom::{Geometry, Polygon, Pt, linear};
 use crate::volumes::sections::{TerrainSampler, arange};
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
-#[cfg(target_arch = "wasm32")]
-use web_time::Instant;
 
 /// A refusal: a Python `ValueError`, with its text.
 pub type Refusal = String;
@@ -190,7 +186,6 @@ pub struct LatticeConfig {
     /// Drop states with g + h above this.
     pub prune_bound: f64,
     pub max_expand: i64,
-    pub wall_cap_s: Option<f64>,
     pub bounds_margin_m: f64,
 }
 
@@ -210,7 +205,6 @@ impl LatticeConfig {
             heuristic_weight: 1.0,
             prune_bound: f64::INFINITY,
             max_expand: 4_000_000,
-            wall_cap_s: None,
             bounds_margin_m: 20.0,
         }
     }
@@ -876,7 +870,6 @@ pub struct LatticeResult {
     pub end_err_m: f64,
     pub expansions: usize,
     pub n_states: usize,
-    pub seconds: f64,
     pub hit_cap: bool,
     pub timed_out: bool,
     /// `c_min_per_m` when the heuristic is `"c_min"`.
@@ -962,7 +955,7 @@ impl Heuristic {
     }
 }
 
-/// A* from `start_pose` to `goal_pose` over the lattice. See the module docs.
+/// A* from `start_pose` to `goal_pose` over the lattice, with no time limit. See the module docs.
 pub fn solve_lattice(
     grid: &TerrainGrid,
     start_pose: Pose,
@@ -971,7 +964,30 @@ pub fn solve_lattice(
     section: &SectionSpec,
     cfg: &LatticeConfig,
 ) -> LatticeResult {
-    let t0 = Instant::now();
+    solve_lattice_until(
+        grid,
+        start_pose,
+        goal_pose,
+        grade_m,
+        section,
+        cfg,
+        &mut || false,
+    )
+}
+
+/// [`solve_lattice`], stopped by the caller. The core reads no clock: the search asks `stop` once
+/// in every 1000 expansions (when the count is a multiple of 1000). The first time it says stop, the
+/// search ends timed out (`timed_out`, not `converged`, no line) and does not ask again. A caller
+/// that wants a time limit builds `stop` from its own clock.
+pub fn solve_lattice_until(
+    grid: &TerrainGrid,
+    start_pose: Pose,
+    goal_pose: Pose,
+    grade_m: f64,
+    section: &SectionSpec,
+    cfg: &LatticeConfig,
+    stop: &mut dyn FnMut() -> bool,
+) -> LatticeResult {
     let prims = lattice_primitives(cfg);
     // One scorer per distinct half-width (rounded to 0.1 mm), as Python caches them.
     let hbs: Vec<f64> = prims
@@ -1059,7 +1075,6 @@ pub fn solve_lattice(
         end_err_m: f64::INFINITY,
         expansions: 0,
         n_states: 0,
-        seconds: 0.0,
         hit_cap: false,
         timed_out: false,
         c_min_per_m,
@@ -1081,10 +1096,7 @@ pub fn solve_lattice(
             res.hit_cap = true;
             break;
         }
-        if let Some(cap) = cfg.wall_cap_s
-            && expanded % 1000 == 0
-            && t0.elapsed().as_secs_f64() > cap
-        {
+        if expanded % 1000 == 0 && stop() {
             res.timed_out = true;
             break;
         }
@@ -1124,7 +1136,6 @@ pub fn solve_lattice(
     res.expansions = expanded as usize;
     res.n_states = g.len();
     let Some(best) = best else {
-        res.seconds = t0.elapsed().as_secs_f64();
         return res;
     };
     let mut chain = Vec::new();
@@ -1167,7 +1178,6 @@ pub fn solve_lattice(
         })
         .collect();
     res.end_err_m = hypot(cx - gx0, cy - gy0);
-    res.seconds = t0.elapsed().as_secs_f64();
     res
 }
 
