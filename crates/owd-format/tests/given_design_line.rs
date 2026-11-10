@@ -79,12 +79,12 @@ fn bend(radius_m: f64) -> Vec<Pt> {
     let n = (radius_m * sweep / 5.0).ceil() as u32;
     for i in 0..=n {
         let a = sweep * f64::from(i) / f64::from(n);
-        pts.push([cx + radius_m * a.sin(), cy - radius_m * a.cos()]);
+        pts.push([cx + radius_m * libm::sin(a), cy - radius_m * libm::cos(a)]);
     }
     let end = *pts.last().unwrap();
     for i in 1..=120 {
         let d = 5.0 * f64::from(i);
-        pts.push([end[0] + d * sweep.cos(), end[1] + d * sweep.sin()]);
+        pts.push([end[0] + d * libm::cos(sweep), end[1] + d * libm::sin(sweep)]);
     }
     pts
 }
