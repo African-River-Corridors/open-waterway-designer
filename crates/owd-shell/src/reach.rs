@@ -655,13 +655,18 @@ impl AppState {
     /// defaults (five single hulls, 10 x 2 m to 50 x 10 m, PIANC-C, 2 m draught) and keep it. The
     /// desktop runs the sizes at once; the web, one after another.
     pub fn run_envelope(&mut self) -> Result<(), String> {
+        self.run_envelope_with(owd_core::envelope::Settings::default())
+    }
+
+    /// Run the sweep with these settings and keep it.
+    pub fn run_envelope_with(
+        &mut self,
+        settings: owd_core::envelope::Settings,
+    ) -> Result<(), String> {
         self.refuse_while_running()?;
         let mut s = self.session().clone();
-        s.run_envelope(
-            owd_core::envelope::Settings::default(),
-            cfg!(not(target_arch = "wasm32")),
-        )
-        .map_err(err)?;
+        s.run_envelope(settings, cfg!(not(target_arch = "wasm32")))
+            .map_err(err)?;
         self.replace_session(s);
         self.set_dirty();
         Ok(())

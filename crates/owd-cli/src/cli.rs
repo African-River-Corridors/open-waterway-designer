@@ -656,6 +656,12 @@ enum Command {
         /// The ruleset, for example PIANC-B (default PIANC-C).
         #[arg(long, value_name = "RULESET")]
         rule_set: Option<String>,
+        /// The beams to find the longest vessel for, in metres, such as `4,6,8`.
+        #[arg(long, value_name = "BEAMS")]
+        beams: Option<String>,
+        /// The lengths the search tries, `MIN:MAX:STEP` in metres (default: from 10 to 200 by 1).
+        #[arg(long, value_name = "MIN:MAX:STEP", requires = "beams")]
+        length_search: Option<String>,
         /// Print the sweep the document holds, and say if it is stale, without running.
         #[arg(long)]
         show: bool,
@@ -931,6 +937,8 @@ pub fn main() -> ExitCode {
             sizes,
             draught,
             rule_set,
+            beams,
+            length_search,
             show,
             csv,
             png,
@@ -940,6 +948,8 @@ pub fn main() -> ExitCode {
             sizes.as_deref(),
             draught,
             rule_set.as_deref(),
+            beams.as_deref(),
+            length_search.as_deref(),
             show,
             csv,
             png.as_deref(),

@@ -97,6 +97,28 @@ Built in `owd-core`, beside the mid-line and the fairway fit.
 - **Stored** in the study as `stages.envelope`, stale when the banks, the reference line or the settings
   change.
 
+### The longest vessel for each beam (ticket C5)
+
+The series ties each length to a beam, so it cannot say how long a hull of a given beam may be. A
+search asks that the other way round. For each beam in `beams_m` (`owd envelope --beams 4,6,8`), it
+tries the lengths of `length_search` (`--length-search MIN:MAX:STEP`; default 10 m to 200 m by
+1 m). A length fits when its own sweep run (`size_result`) has no blocked stretch.
+
+- **Bisection.** The search bisects between a length that fits and one that does not, until they
+  are one step apart. It trusts that a longer hull never fits where a shorter one does not. It
+  makes at most about `2 + log2(number of lengths)` size runs.
+- **The answer for a beam:**
+  - the longest length that fits, or none when the shortest does not;
+  - whether the search's own longest length fitted (`at_max`: the search stopped, not the river);
+  - the blocked stretches of the shortest length that does not fit (`binding`), by chainage on the
+    reference line.
+- **Refusals.** The search refuses bounds or a step that are not finite numbers, a shortest length
+  or a step at or under 0, a longest length under the shortest, and a beam at or under 0 or at or
+  over the shortest length.
+- **Where it is kept.** The answers go to `stages.envelope.results.by_beam`, and the beams and the
+  search to `stages.envelope.settings`. A sweep with no beam writes none of these. The series still
+  runs in both cases.
+
 ### Ticket 3: the report
 
 The screening report (spec 0014) gains a "Largest vessel" section: the series table, the chart, the

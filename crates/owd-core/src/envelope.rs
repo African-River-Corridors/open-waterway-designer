@@ -77,6 +77,25 @@ pub fn default_sizes() -> Vec<Size> {
         .collect()
 }
 
+/// The lengths a search tries: `min_m`, then steps of `step_m`, up to `max_m`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LengthSearch {
+    pub min_m: f64,
+    pub max_m: f64,
+    pub step_m: f64,
+}
+
+impl Default for LengthSearch {
+    /// 10 m to 200 m by 1 m.
+    fn default() -> Self {
+        LengthSearch {
+            min_m: 10.0,
+            max_m: 200.0,
+            step_m: 1.0,
+        }
+    }
+}
+
 /// The settings of a sweep.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
@@ -86,6 +105,9 @@ pub struct Settings {
     pub rule_set: String,
     /// A clearance from the banks on top of half the bottom width (m), 0 by default.
     pub clearance_m: f64,
+    /// The beams to search a length for (m). Empty by default: no search.
+    pub beams_m: Vec<f64>,
+    pub length_search: LengthSearch,
 }
 
 impl Default for Settings {
@@ -95,8 +117,22 @@ impl Default for Settings {
             draught_m: DEFAULT_DRAUGHT_M,
             rule_set: DEFAULT_RULE_SET.into(),
             clearance_m: 0.0,
+            beams_m: Vec::new(),
+            length_search: LengthSearch::default(),
         }
     }
+}
+
+/// The answer for one beam.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BeamResult {
+    pub beam_m: f64,
+    /// The longest length that fits, or `None` when the shortest does not.
+    pub longest_m: Option<f64>,
+    /// True when the longest length of the search fits: the search stopped, not the river.
+    pub at_max: bool,
+    /// What binds: the blocked stretches of the shortest length that does not fit.
+    pub binding: Vec<FitStretch>,
 }
 
 /// The answer for one size. Its stretches are by chainage on the reference line.
@@ -143,6 +179,8 @@ pub struct Envelope {
     pub largest: Option<usize>,
     pub per_km: Vec<KmResult>,
     pub marks: Vec<Mark>,
+    /// One answer for each beam of the settings, in their order.
+    pub by_beam: Vec<BeamResult>,
 }
 
 /// One size: its own fairway fit seeded from `reference` in `water`, and the width and radius read
@@ -265,7 +303,109 @@ pub fn combine(
         largest,
         per_km,
         marks,
+        by_beam: Vec::new(),
     }
+}
+
+/// The longest length of hull, of beam `beam_m`, that the river takes as it stands, by the lengths
+/// of `settings.length_search`, and what stops the next one. A length fits when [`size_result`]
+/// gives it no blocked stretch. The search bisects between a length that fits and one that does
+/// not, until they are one step apart: it trusts that a longer hull never fits where a shorter one
+/// does not, and makes at most about `2 + log2(number of lengths)` size runs.
+pub fn longest_for_beam(
+    reference: &[Pt],
+    water: &[Polygon],
+    settings: &Settings,
+    beam_m: f64,
+) -> Result<BeamResult, PyError> {
+    let LengthSearch {
+        min_m,
+        max_m,
+        step_m,
+    } = settings.length_search;
+    if !(min_m.is_finite() && max_m.is_finite() && step_m.is_finite()) {
+        return Err(PyError::value(
+            "the length search needs finite numbers for its bounds and its step.",
+        ));
+    }
+    if min_m <= 0.0 || step_m <= 0.0 {
+        return Err(PyError::value(
+            "the length search needs a shortest length and a step above 0.",
+        ));
+    }
+    if max_m < min_m {
+        return Err(PyError::value(format!(
+            "the length search goes up to {max_m} m, under its shortest length of {min_m} m."
+        )));
+    }
+    if !(beam_m.is_finite() && beam_m > 0.0) {
+        return Err(PyError::value(format!(
+            "a beam of {beam_m} m: a beam must be a number above 0."
+        )));
+    }
+    if beam_m >= min_m {
+        return Err(PyError::value(format!(
+            "a beam of {beam_m} m is not under the shortest length of the search ({min_m} m): a hull is longer than it is wide."
+        )));
+    }
+    // The lengths: min + i × step while not over max.
+    let n = ((max_m - min_m) / step_m + 1e-9).floor() as usize + 1;
+    let length = |i: usize| min_m + i as f64 * step_m;
+    let run = |i: usize| {
+        size_result(
+            reference,
+            water,
+            settings,
+            Size {
+                loa_m: length(i),
+                beam_m,
+            },
+        )
+    };
+    let first = run(0)?;
+    if !first.passes {
+        return Ok(BeamResult {
+            beam_m,
+            longest_m: None,
+            at_max: false,
+            binding: first.stretches,
+        });
+    }
+    if n == 1 {
+        return Ok(BeamResult {
+            beam_m,
+            longest_m: Some(length(0)),
+            at_max: true,
+            binding: Vec::new(),
+        });
+    }
+    let last = run(n - 1)?;
+    if last.passes {
+        return Ok(BeamResult {
+            beam_m,
+            longest_m: Some(length(n - 1)),
+            at_max: true,
+            binding: Vec::new(),
+        });
+    }
+    // Length `lo` fits, length `hi` does not; `blocked` holds the stretches of `hi`.
+    let (mut lo, mut hi, mut blocked) = (0, n - 1, last.stretches);
+    while hi - lo > 1 {
+        let mid = lo + (hi - lo) / 2;
+        let r = run(mid)?;
+        if r.passes {
+            lo = mid;
+        } else {
+            hi = mid;
+            blocked = r.stretches;
+        }
+    }
+    Ok(BeamResult {
+        beam_m,
+        longest_m: Some(length(lo)),
+        at_max: false,
+        binding: blocked,
+    })
 }
 
 /// The whole sweep, one size after another.
@@ -285,7 +425,14 @@ pub fn envelope(
         .iter()
         .map(|&s| size_result(reference, water, &settings, s))
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(combine(reference, settings, sizes, custom))
+    let by_beam = settings
+        .beams_m
+        .iter()
+        .map(|&b| longest_for_beam(reference, water, &settings, b))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut e = combine(reference, settings, sizes, custom);
+    e.by_beam = by_beam;
+    Ok(e)
 }
 
 #[cfg(test)]
