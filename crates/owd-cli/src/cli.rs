@@ -238,18 +238,13 @@ enum Command {
         /// The water level below the first weir, in metres (default: the water level at the line's start).
         #[arg(long, value_name = "METRES")]
         base_level: Option<f64>,
-        /// Candidate weir chainages along the design line, in metres, comma separated
-        /// (default: every 500 m).
-        #[arg(long, value_name = "LIST")]
+        #[arg(long, value_name = "LIST", help = optimise_sites_help())]
         sites: Option<String>,
-        /// The lifts a weir may have, in metres, comma separated (default 0.5,1).
-        #[arg(long, value_name = "LIST")]
+        #[arg(long, value_name = "LIST", help = optimise_help("lifts_m", "The lifts a weir may have, in metres, comma separated"))]
         lifts: Option<String>,
-        /// The weight of dredging in the cost (default 1).
-        #[arg(long)]
+        #[arg(long, help = optimise_help("wet_weight", "The weight of dredging in the cost"))]
         wet_weight: Option<f64>,
-        /// The weight of dry cut in the cost (default 1).
-        #[arg(long)]
+        #[arg(long, help = optimise_help("dry_weight", "The weight of dry cut in the cost"))]
         dry_weight: Option<f64>,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
@@ -1207,17 +1202,34 @@ pub fn main() -> ExitCode {
     }
 }
 
+/// A setting's default as the help shows it: a number as Rust prints an `f64`, a list with commas.
+fn shown_default(v: &serde_json::Value) -> String {
+    let one = |v: &serde_json::Value| v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}"));
+    match v {
+        serde_json::Value::Array(a) => a.iter().map(one).collect::<Vec<_>>().join(","),
+        v => one(v),
+    }
+}
+
 /// The help of a flag of `owd volumes`, with the stage's own default for `key`, read from
 /// `VolumesSettings::default()` so the help never holds a copy of it.
 fn volumes_help(key: &str, text: &str) -> String {
     let d = owd_format::design::VolumesSettings::default().to_value();
-    let shown = match &d[key] {
-        serde_json::Value::Array(a) => a
-            .iter()
-            .map(|v| v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}")))
-            .collect::<Vec<_>>()
-            .join(","),
-        v => v.as_f64().map_or_else(|| v.to_string(), |x| format!("{x}")),
-    };
-    format!("{text} (default {shown}).")
+    format!("{text} (default {}).", shown_default(&d[key]))
+}
+
+/// The help of a flag of `owd optimise`, with the stage's own default for `key`, read from
+/// `OptimiseSettings::default()` so the help never holds a copy of it.
+fn optimise_help(key: &str, text: &str) -> String {
+    let d = owd_format::design::OptimiseSettings::default().to_value();
+    format!("{text} (default {}).", shown_default(&d[key]))
+}
+
+/// The help of `owd optimise --sites`: with no list, a site every `site_step_m`.
+fn optimise_sites_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().to_value();
+    format!(
+        "Candidate weir chainages along the design line, in metres, comma separated (default: a site every {} m).",
+        shown_default(&d["site_step_m"])
+    )
 }
