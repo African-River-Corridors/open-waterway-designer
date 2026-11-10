@@ -399,6 +399,18 @@ pub struct LevelInputs<'a> {
     pub dem: Option<&'a dyn Fn(LonLat) -> f64>,
 }
 
+/// Refuse a percentile that is not a number from 0 to 100. The water level work checks it first,
+/// before any request, so every surface gives the same refusal and none reaches a bad one.
+pub fn check_percentile(p: f64) -> Result<(), ReachError> {
+    if (0.0..=100.0).contains(&p) {
+        Ok(())
+    } else {
+        Err(ReachError::Input(
+            "the percentile must be from 0 to 100".into(),
+        ))
+    }
+}
+
 /// The default level along `centre` (the river centreline in `utm`), from the SWORD `reaches` near it.
 pub fn default_level(
     centre: &[[f64; 2]],
@@ -408,6 +420,7 @@ pub fn default_level(
     params: &LevelParams,
     datum: Datum,
 ) -> Result<LevelProfile, ReachError> {
+    check_percentile(params.percentile)?;
     let len = linear::length(centre);
     if centre.len() < 2 || len <= 0.0 {
         return Err(ReachError::Input(
@@ -481,8 +494,12 @@ pub fn default_level(
             continue;
         }
         let vals: Vec<f64> = obs.iter().map(|o| datum.from_swot(o)).collect();
-        let level =
-            percentile(&vals, params.percentile).expect("observations and a valid percentile");
+        let level = percentile(&vals, params.percentile).ok_or_else(|| {
+            ReachError::Input(format!(
+                "SWORD reach {} has no level at the {}th percentile",
+                p.reach.id, params.percentile
+            ))
+        })?;
         let mut t: Vec<String> = obs
             .iter()
             .map(|o| o.time.chars().take(10).collect())
@@ -589,6 +606,7 @@ pub fn level_from_sources(
     params: &LevelParams,
     datum: Datum,
 ) -> Result<LevelProfile, ReachError> {
+    check_percentile(params.percentile)?;
     let ll = utm.inverse_all(centre).map_err(ReachError::Input)?;
     let b = crate::geo::bbox(&ll).ok_or_else(|| ReachError::Input("an empty centreline".into()))?;
     // A margin of the match distance, in degrees at the poorer scale.
@@ -704,6 +722,17 @@ pub fn record_level(
 mod tests {
     //! Label: property
     use super::*;
+
+    #[test]
+    fn a_percentile_outside_0_to_100_or_not_a_number_is_refused_with_the_range() {
+        for p in [0.0, 10.0, 100.0] {
+            assert!(check_percentile(p).is_ok(), "{p}");
+        }
+        for p in [150.0, -1.0, f64::NAN, f64::INFINITY] {
+            let e = check_percentile(p).expect_err("refused").to_string();
+            assert_eq!(e, "the percentile must be from 0 to 100", "{p}");
+        }
+    }
 
     #[test]
     fn the_percentile_reads_between_ranks_and_refuses_nothing_to_read() {
