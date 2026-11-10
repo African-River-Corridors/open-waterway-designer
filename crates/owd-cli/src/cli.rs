@@ -712,6 +712,20 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
+    /// Add a design line you already have (an earlier study, or drawn by hand) as an option. It gets
+    /// the radius check of the other options; a line under the minimum radius is kept and reported.
+    DesignLine {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// The line: GeoJSON, or a GeoPackage layer as `FILE#LAYER`.
+        #[arg(long, value_name = "FILE")]
+        line: String,
+        /// The option's name; its id is `given-` and the name in lower case.
+        #[arg(long, value_name = "NAME")]
+        name: String,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Mark reaches of the river as canal, impounded river or free-flowing river (spec 0007), so
     /// Rules written for one kind apply only there. Chainage is along the river centreline.
     Waterway {
@@ -1001,6 +1015,12 @@ pub fn main() -> ExitCode {
             &out.output,
             out.json,
         ),
+        Command::DesignLine {
+            doc,
+            line,
+            name,
+            out,
+        } => crate::design_line::design_line(&doc, &line, &name, &out.output, out.json),
         Command::Size {
             doc,
             rule_set,

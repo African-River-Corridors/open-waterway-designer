@@ -66,7 +66,7 @@ fn read(path: &str) -> core::result::Result<String, Failure> {
 
 /// The text of one input: GeoJSON as it is, or a GeoPackage layer turned into GeoJSON. A GeoPackage
 /// layer is named `FILE#LAYER`; a file with one feature layer needs no name.
-fn read_vector(spec: &str) -> core::result::Result<String, Failure> {
+pub(crate) fn read_vector(spec: &str) -> core::result::Result<String, Failure> {
     let (path, layer) = if spec == "-" || Path::new(spec).exists() {
         (spec, None)
     } else {
