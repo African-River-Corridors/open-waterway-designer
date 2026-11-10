@@ -27,9 +27,22 @@
 //!   larger than the old line's own turn at that vertex; at E the arc and the straight share a heading.
 //! - If the error starts to grow before it reaches zero (the old line curves away from the
 //!   straight), or the line ends first, Q is the vertex of least error, but only if that error is
-//!   within `EXIT_HEADING_TOL_RAD` (0.25 degree). Otherwise the circle **falls back** to the
-//!   crossing exit of before 0.3.0: the arc ends at the touch. The circle's record says which exit
-//!   it took (`tangent_exit`). A fallback never fails.
+//!   within `EXIT_HEADING_TOL_RAD` (0.25 degree). Otherwise the circle tries the reverse exit
+//!   (below), and if that fails too it **falls back** to the
+//!   crossing exit of before 0.3.0: the arc ends at the touch. The circle's record says whether it
+//!   left tangent (`tangent_exit`, true for the tangent and the reverse exits). A fallback never
+//!   fails.
+//! - **Reverse exit (issue #498): circle, straight, circle the other way, as a Dubins path (RSL or
+//!   LSR).** Where the old line turns the other way past the touch (one bend turning into the
+//!   next), no straight from the circle can meet it with its heading, and the crossing exit left a
+//!   corner of up to tens of degrees between the two bends. Walk the old line's vertices forward
+//!   from the touch, no further than one turn of the circle (`2 pi min_radius`). At each vertex Q,
+//!   place a circle of `min_radius` on the other side, tangent at Q to the segment out of Q. The
+//!   first Q whose circle does not overlap the first one (centres at least `2 min_radius` apart),
+//!   and where neither arc turns half a circle or more, is the join: the line follows the first
+//!   circle to E1, the inner common tangent to E2, and the far circle to Q. The heading is
+//!   continuous at E1, E2 and Q, and every arc has radius `min_radius`. The far circle is not
+//!   recorded as a circle of its own.
 //! - The fallback is for pass 1 only (#283). From pass 2 on, a circle with no tangent exit is not
 //!   spliced, and the roll moves on to the next sample: later passes refine the line and never add a
 //!   kink. So every circle of pass 2 or later has `tangent_exit: true`.
@@ -686,6 +699,128 @@ fn tangent_exit_on(
     best.and_then(|(least, exit)| (least <= EXIT_HEADING_TOL_RAD).then_some(exit))
 }
 
+/// A reverse exit (issue #498): the arc ends at `exit_point` (E1, on the circle); a straight on the
+/// inner common tangent runs to `far_entry` (E2) on a circle of the same radius about
+/// `far_centre`, which turns the other way; that arc ends at `join_point` (Q, a vertex of the old
+/// line at `join_chainage`), tangent there to the old line's segment out of Q.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ReverseExit {
+    pub exit_point: Pt,
+    pub far_centre: Pt,
+    pub far_entry: Pt,
+    pub join_point: Pt,
+    pub join_chainage: f64,
+}
+
+/// How far past the touch (m, as a multiple of the radius) the reverse exit looks for its join:
+/// one turn of the circle.
+const REVERSE_EXIT_REACH: f64 = 2.0 * core::f64::consts::PI;
+
+/// The reverse exit of a circle tangent to `line` at `tangent_point` that touches it at
+/// `contact_chainage` (module doc), or `None`. `side` is the circle's side, as for
+/// `place_circle_at_point`. Never fails.
+pub fn find_reverse_exit(
+    line: &[Pt],
+    centre: Pt,
+    radius: f64,
+    side: &str,
+    tangent_point: Pt,
+    contact_chainage: f64,
+) -> Option<ReverseExit> {
+    if line.len() < 2 {
+        return None;
+    }
+    let chainages = cumulative_chainages(line);
+    reverse_exit_on(
+        line,
+        &chainages,
+        centre,
+        radius,
+        side,
+        tangent_point,
+        contact_chainage,
+    )
+}
+
+/// The other side: `"right"` for `"left"`, and `"left"` for anything else.
+fn other_side(side: &str) -> &'static str {
+    if side == "left" { "right" } else { "left" }
+}
+
+/// [`find_reverse_exit`] with the line's running chainages (`cumulative_chainages(line)`).
+fn reverse_exit_on(
+    line: &[Pt],
+    chainages: &[f64],
+    centre: Pt,
+    radius: f64,
+    side: &str,
+    tangent_point: Pt,
+    contact_chainage: f64,
+) -> Option<ReverseExit> {
+    if line.len() < 2 || radius.is_nan() || radius <= 0.0 || !contact_chainage.is_finite() {
+        return None;
+    }
+    let pi = core::f64::consts::PI;
+    // +1: the arc turns left (anticlockwise); -1: right.
+    let sigma = if side == "right" { -1.0 } else { 1.0 };
+    let reach = contact_chainage + REVERSE_EXIT_REACH * radius;
+    let from = if chainages.iter().all(|c| c.is_finite()) {
+        chainages.partition_point(|&c| c <= contact_chainage).max(1)
+    } else {
+        1
+    };
+    for j in from..line.len() - 1 {
+        if chainages[j] <= contact_chainage {
+            continue;
+        }
+        if chainages[j] > reach {
+            break;
+        }
+        let v = line[j];
+        let Some(&next) = line[j + 1..].iter().find(|&&p| p != v) else {
+            break;
+        };
+        let (dx, dy) = (next[0] - v[0], next[1] - v[1]);
+        let norm = (dx * dx + dy * dy).sqrt();
+        if norm.is_nan() || norm == 0.0 {
+            continue;
+        }
+        let (ux, uy) = (dx / norm, dy / norm);
+        // The far circle is tangent at V to the segment out of V, on the other side: to the right
+        // of that segment when the first circle turns left.
+        let far_centre = [v[0] + sigma * radius * uy, v[1] - sigma * radius * ux];
+        let span = [far_centre[0] - centre[0], far_centre[1] - centre[1]];
+        let d = libm::hypot(span[0], span[1]);
+        // The circles must not overlap, or there is no inner common tangent.
+        if d.is_nan() || d < 2.0 * radius {
+            continue;
+        }
+        // The inner tangent of two equal circles passes through the midpoint of their centres. Its
+        // point E1 on the first circle is at angle alpha - sigma * beta from the centre, where
+        // cos(beta) = 2r / d; E2 is E1 reflected through the midpoint.
+        let alpha = libm::atan2(span[1], span[0]);
+        let beta = libm::acos((2.0 * radius / d).min(1.0));
+        let phi = alpha - sigma * beta;
+        let r1 = [radius * libm::cos(phi), radius * libm::sin(phi)];
+        let exit_point = [centre[0] + r1[0], centre[1] + r1[1]];
+        let far_entry = [far_centre[0] - r1[0], far_centre[1] - r1[1]];
+        // Both arcs turn less than half a circle: no loop.
+        let (_, first) = arc_sweep(centre, tangent_point, exit_point, side);
+        let (_, far) = arc_sweep(far_centre, far_entry, v, other_side(side));
+        if first.abs() > pi || far.abs() >= pi {
+            continue;
+        }
+        return Some(ReverseExit {
+            exit_point,
+            far_centre,
+            far_entry,
+            join_point: v,
+            join_chainage: chainages[j],
+        });
+    }
+    None
+}
+
 /// Straighten `centreline` so a circle of `min_radius` can roll along the given sides.
 ///
 /// The result is measured, not assumed: `radius_ok` is false when the returned line is tighter
@@ -771,15 +906,32 @@ pub fn rolling_circle(
                     side,
                     contact.contact_chainage,
                 );
+                // No plain tangent exit: try the reverse exit (#498), where the old line turns the
+                // other way past the touch.
+                let reverse = match exit {
+                    Some(_) => None,
+                    None => reverse_exit_on(
+                        &line,
+                        &line_ch,
+                        contact.centre,
+                        min_radius,
+                        side,
+                        contact.tangent_point,
+                        contact.contact_chainage,
+                    ),
+                };
+                let tangent = exit.is_some() || reverse.is_some();
                 // Later passes refine the line and never add a kink: no tangent exit, no splice.
-                if exit.is_none() && pass_index > 0 {
+                if !tangent && pass_index > 0 {
                     idx += 1;
                     continue;
                 }
-                // Tangent exit: arc to E, straight to Q. Fallback: arc to the touch, as before 0.3.0.
-                let (exit_point, join_point, join_chainage) = match exit {
-                    Some(e) => (e.exit_point, e.join_point, e.join_chainage),
-                    None => (
+                // Tangent exit: arc to E, straight to Q. Reverse exit: arc to E1, straight to E2,
+                // the far arc to Q. Fallback: arc to the touch, as before 0.3.0.
+                let (exit_point, join_point, join_chainage) = match (exit, reverse) {
+                    (Some(e), _) => (e.exit_point, e.join_point, e.join_chainage),
+                    (None, Some(r)) => (r.exit_point, r.join_point, r.join_chainage),
+                    (None, None) => (
                         contact.contact_point,
                         contact.contact_point,
                         contact.contact_chainage,
@@ -793,11 +945,11 @@ pub fn rolling_circle(
                     tangent_point: contact.tangent_point,
                     contact_point: join_point,
                     exit_point,
-                    tangent_exit: exit.is_some(),
+                    tangent_exit: tangent,
                     start_chainage_m: tangent_distance,
                     end_chainage_m: join_chainage,
                 });
-                let arc = create_arc_between_points(
+                let mut arc = create_arc_between_points(
                     contact.centre,
                     min_radius,
                     contact.tangent_point,
@@ -811,6 +963,24 @@ pub fn rolling_circle(
                         side,
                     ),
                 );
+                if let Some(r) = reverse {
+                    // The straight E1 to E2 is the chord between the two arcs.
+                    let far_side = other_side(side);
+                    arc.extend(create_arc_between_points(
+                        r.far_centre,
+                        min_radius,
+                        r.far_entry,
+                        r.join_point,
+                        far_side,
+                        arc_segments(
+                            min_radius,
+                            r.far_centre,
+                            r.far_entry,
+                            r.join_point,
+                            far_side,
+                        ),
+                    ));
+                }
                 // `replace_segment_with_arc` ends the splice at the join point, so a tangent exit
                 // gets its straight (E to Q) as the splice's last segment.
                 line = replace_segment_with_arc(&line, tangent_distance, join_chainage, &arc)?;
@@ -1033,6 +1203,52 @@ mod tests {
             e.exit_point
         );
         assert_eq!(e.join_point, [400.0, 0.0]);
+    }
+
+    /// Label: sourced - hand calculation. Two circles of radius 150 m, centres (0, 0) and
+    /// (500, 0): the inner tangent meets the first at angle -acos(300 / 500) = -53.13 degrees,
+    /// E1 = (90, -120), and the second at E2 = (410, 120), heading (0.8, 0.6), 400 m long (a 3-4-5
+    /// triangle). The old line runs on to V = (500, 150) and on along the x axis, so the far circle,
+    /// tangent there on the right, has its centre at (500, 0).
+    #[test]
+    fn a_reverse_exit_on_a_3_4_5_triangle() {
+        let line = [[150.0, 0.0], [500.0, 150.0], [600.0, 150.0]];
+        let r = find_reverse_exit(&line, [0.0, 0.0], 150.0, "left", [-150.0, 0.0], 0.0).unwrap();
+        let near = |a: Pt, b: Pt| crate::geom::dist(a, b) < 1e-9;
+        assert!(near(r.exit_point, [90.0, -120.0]), "{:?}", r.exit_point);
+        assert!(near(r.far_entry, [410.0, 120.0]), "{:?}", r.far_entry);
+        assert!(near(r.far_centre, [500.0, 0.0]), "{:?}", r.far_centre);
+        assert_eq!(r.join_point, [500.0, 150.0]);
+        assert!((r.join_chainage - crate::geom::dist(line[0], line[1])).abs() < 1e-12);
+        // The headings agree at E1 (the first circle's, turning left), along the straight, and at
+        // E2 (the far circle's, turning right).
+        let straight = heading(r.exit_point, r.far_entry);
+        assert!((straight - libm::atan2(0.6, 0.8)).abs() < 1e-12);
+        let on_first = libm::atan2(r.exit_point[1], r.exit_point[0]) + core::f64::consts::FRAC_PI_2;
+        let on_far =
+            libm::atan2(r.far_entry[1], r.far_entry[0] - 500.0) - core::f64::consts::FRAC_PI_2;
+        assert!(wrap_angle(on_first - straight).abs() < 1e-12);
+        assert!(wrap_angle(on_far - straight).abs() < 1e-12);
+        // Mirrored across the x axis, on the right.
+        let mirrored: Vec<Pt> = line.iter().map(|p| [p[0], -p[1]]).collect();
+        let r =
+            find_reverse_exit(&mirrored, [0.0, 0.0], 150.0, "right", [-150.0, 0.0], 0.0).unwrap();
+        assert!(near(r.exit_point, [90.0, 120.0]), "{:?}", r.exit_point);
+        assert!(near(r.far_entry, [410.0, -120.0]), "{:?}", r.far_entry);
+        // Circles that would overlap give no reverse exit; nor do degenerate inputs.
+        let close = [[150.0, 0.0], [200.0, 150.0], [300.0, 150.0]];
+        assert_eq!(
+            find_reverse_exit(&close, [0.0, 0.0], 150.0, "left", [-150.0, 0.0], 0.0),
+            None
+        );
+        assert_eq!(
+            find_reverse_exit(&[], [0.0, 0.0], 150.0, "left", [-150.0, 0.0], 0.0),
+            None
+        );
+        assert_eq!(
+            find_reverse_exit(&line, [0.0, 0.0], 150.0, "left", [-150.0, 0.0], f64::NAN),
+            None
+        );
     }
 
     #[test]
