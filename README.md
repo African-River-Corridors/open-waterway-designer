@@ -219,6 +219,20 @@ The search cost is a search objective. Re-measure the winner with `volumes.secti
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.
 
+## Exit codes
+
+Every `owd` command exits with one of these codes. A failed check on an option is part of the result,
+not an error: it is printed (`the option fails: …` on stderr), kept in the design and listed as
+`failed_checks` in `--json`.
+
+| Code | When |
+|------|------|
+| 0 | The command ran and saved the design, whether or not an option fails a check. |
+| 1 | With `--strict`: an option the command made or re-ran fails a check (the design is saved first). Also: a stage that cannot run because an earlier one is stale; a checking command (`check-banks`, `validate`, the bank checks of `reach`) that finds a fault. |
+| 2 | A usage or input error: a bad flag, a missing or unreadable file, a value out of range. Nothing is saved. |
+
+Scripts that stopped on code 1 for a failed option check must add `--strict`.
+
 ## Conventions
 
 - **Units:** metres, m², m³. **CRS:** any projected metric CRS; reprojection is the caller's job.
