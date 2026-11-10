@@ -467,6 +467,24 @@ impl AppState {
         }
     }
 
+    /// Set the water level from the level and the fall per metre as typed: the one reader of that
+    /// text, for the desktop app and the web build. Each text is trimmed; an empty level is refused,
+    /// an empty fall means no fall. Then as [`AppState::set_water`]; a refusal changes nothing.
+    pub fn set_water_text(&mut self, level: &str, fall: &str) -> Result<(), String> {
+        let num = |t: &str, what: &str| -> Result<Option<f64>, String> {
+            let t = t.trim();
+            if t.is_empty() {
+                return Ok(None);
+            }
+            t.parse::<f64>()
+                .map(Some)
+                .map_err(|_| format!("the {what} must be a number, not `{t}`"))
+        };
+        let level = num(level, "water level")?.ok_or("give a water level in metres")?;
+        let fall = num(fall, "fall per metre")?;
+        self.set_water(level, fall)
+    }
+
     /// The DEM, only when it is the file whose hash the design recorded: the terrain rule
     /// ([`owd_format::design::stage_terrain`]) says whether to use the DEM the shell holds.
     fn usable_dem(&self) -> Option<Arc<Dem>> {

@@ -594,19 +594,8 @@ fn undo_bank_edit(window: Window, state: State<Shared>) -> Reply {
 /// Set the water level: at the river's start, and optionally a fall per metre of river.
 #[tauri::command]
 fn set_water(window: Window, state: State<Shared>, level: String, fall: String) -> Reply {
-    let num = |t: &str, what: &str| -> Result<Option<f64>, String> {
-        let t = t.trim();
-        if t.is_empty() {
-            return Ok(None);
-        }
-        t.parse::<f64>()
-            .map(Some)
-            .map_err(|_| format!("the {what} must be a number, not `{t}`"))
-    };
-    let level = num(&level, "water level")?.ok_or("give a water level in metres")?;
-    let fall = num(&fall, "fall per metre")?;
     let mut guard = lock(&state)?;
-    guard.set_water(level, fall)?;
+    guard.set_water_text(&level, &fall)?;
     finish(&window, &guard)
 }
 

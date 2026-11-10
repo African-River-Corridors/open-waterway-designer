@@ -402,20 +402,9 @@ impl Session {
         self.edit(|s| s.load_dem(Path::new(name), bytes, &date))
     }
 
+    /// Set the water level from the level and the fall per metre as typed; the shell reads them.
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
-        let num = |t: &str, what: &str| -> Result<Option<f64>, String> {
-            let t = t.trim();
-            if t.is_empty() {
-                return Ok(None);
-            }
-            t.parse::<f64>()
-                .map(Some)
-                .map_err(|_| format!("the {what} must be a number, not `{t}`"))
-        };
-        let level = ok(num(level, "water level"))?;
-        let level = ok(level.ok_or_else(|| "give a water level in metres".to_string()))?;
-        let fall = ok(num(fall, "fall per metre"))?;
-        self.edit(|s| s.set_water(level, fall))
+        self.edit(|s| s.set_water_text(level, fall))
     }
 
     /// Run one stage to its end. `progress`, when given, is called with the number of terrain reads
