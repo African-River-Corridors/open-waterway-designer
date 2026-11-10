@@ -348,6 +348,36 @@ describe("Open Waterway Designer app smoke test", () => {
     await until("volumes to go stale", async () => (await text("status-volumes")) === "stale");
     assert.equal(await text("status-alignment"), "stale");
   });
+  it("sets the rolling circle's water mode in three states, stores each, and shows what the last run used (#494)", async () => {
+    await open(EXAMPLE, "synthetic-river.owd");
+    assert.equal(await (await browser.$("[data-testid=use-water]")).getValue(), "default");
+    /** Save as a new file and read back the design's settings and options. */
+    let n = 0;
+    const savedDoc = async () => {
+      const file = path.join(WORK, `use-water-${n++}.owd`);
+      answer("save.txt", file);
+      await click("Save as");
+      await until("the file to be saved", async () => fs.existsSync(file) && !(await fileLabel()).includes("(unsaved)"));
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    };
+    // The binding: the three states are true, false and unset in the design's settings.
+    for (const [state, value] of [["true", true], ["false", false], ["default", null]]) {
+      await choose("use-water", state);
+      await until(`the choice ${state} to be sent`, async () => (await fileLabel()).includes("(unsaved)"));
+      assert.equal((await savedDoc()).stages.alignment.settings.rolling_circle.use_water, value, state);
+    }
+    // Ignore the water, run: the option records it and the panel shows it.
+    await choose("use-water", "false");
+    await (await browser.$("[data-testid=run-alignment]")).click();
+    await until("alignment to be fresh", async () => (await text("status-alignment")) === "fresh", 60000);
+    await until("the last run's mode", async () => /Ignore the water/.test(await text("use-water-last")));
+    const doc = await savedDoc();
+    assert.equal(doc.options.find((o) => o.method === "rolling_circle").settings.use_water, false);
+    // A change marks the stage stale.
+    await choose("use-water", "default");
+    await until("alignment to go stale", async () => (await text("status-alignment")) === "stale");
+    assert.match(await text("use-water-last"), /Ignore the water/);
+  });
   it("refuses a .cdesign file with a message to rename it to .owd", async () => {
     // The old name of the design file is no longer read (spec 0006, T10); the content is the same.
     const file = path.join(WORK, "old-name.cdesign");
