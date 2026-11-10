@@ -23,6 +23,7 @@ pub mod schema;
 pub mod screening;
 pub mod sections;
 pub mod session;
+pub mod stage_terrain;
 pub mod table;
 pub mod terrain;
 pub mod volumes;
@@ -34,5 +35,6 @@ pub use geojson::Role;
 pub use session::{
     DesignError, ImportReport, Session, Stage, StageStatus, Status, check_file_name, date_from_unix,
 };
+pub use stage_terrain::{NoTerrain, stage_terrain};
 pub use volumes::DemCheck;
 pub use water::WaterSampling;

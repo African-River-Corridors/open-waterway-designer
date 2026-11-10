@@ -5,7 +5,7 @@
 use crate::commands::{
     Failure, Result, destination, from_design, input_error, open_with_dem, read_dem, say, write,
 };
-use owd_format::design::{DemCheck, StageStatus};
+use owd_format::design::StageStatus;
 use serde_json::{Value, json};
 
 fn f1(v: &Value) -> String {
@@ -178,9 +178,9 @@ pub fn fits(
     }
     // The DEM only when it is the file whose hash was recorded; with it, a bed model and a water
     // level, the answer is full.
-    let dem = match (session.dem_check(bytes.as_deref()), &bytes) {
-        (DemCheck::Matches, Some(b)) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
-        _ => None,
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+        Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
+        Err(_) => None,
     };
     let epsg = session.document()["project"]["crs"]["epsg"]
         .as_u64()

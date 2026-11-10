@@ -4,7 +4,6 @@
 use crate::commands::{
     Result, destination, input_error, open_with_dem, read_dem, say, today, write,
 };
-use owd_format::design::DemCheck;
 use owd_format::design::dem_source::COPERNICUS_NOTICE;
 use owd_format::design::provenance::Mark;
 use owd_reach::level::{
@@ -79,9 +78,9 @@ pub fn water_level_with(flags: LevelFlags, fetch: &dyn owd_reach::Fetch, at: &En
         ));
     }
     // The DEM only when it is the file whose hash was recorded.
-    let dem = match (session.dem_check(bytes.as_deref()), &bytes) {
-        (DemCheck::Matches, Some(b)) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
-        _ => None,
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+        Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
+        Err(_) => None,
     };
     let study = utm.epsg();
     let sampler = dem.as_ref().and_then(|d| {
