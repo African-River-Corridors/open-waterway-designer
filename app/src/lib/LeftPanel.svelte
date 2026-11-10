@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Choices, CustomFields, InputRole, RunMethod, Snapshot, StageName } from "./api";
+  import type { Choices, CustomFields, InputRole, RunMethod, Snapshot, StageName, UseWater } from "./api";
   import DataSummary from "./DataSummary.svelte";
   import SizingForm from "./SizingForm.svelte";
   import StageList from "./StageList.svelte";
@@ -15,6 +15,7 @@
     dropTarget,
     onRun,
     onCancel,
+    onUseWater,
     onLoad,
     onFetch,
     onWater,
@@ -31,6 +32,7 @@
     dropTarget: InputRole | null;
     onRun: (stage: StageName, method?: RunMethod) => void;
     onCancel: () => void;
+    onUseWater: (choice: UseWater) => void;
     onLoad: (role: InputRole) => void;
     onFetch: () => void;
     onWater: (level: string, fall: string) => void;
@@ -40,7 +42,7 @@
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} />
   <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>

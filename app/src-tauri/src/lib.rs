@@ -630,6 +630,20 @@ fn set_water(window: Window, state: State<Shared>, level: String, fall: String) 
     finish(&window, &guard)
 }
 
+/// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as `owd align
+/// --use-water` does (ticket #494). Nothing runs; a fresh alignment goes stale.
+#[tauri::command]
+fn set_alignment_settings(
+    window: Window,
+    state: State<Shared>,
+    method: String,
+    settings: serde_json::Value,
+) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_alignment_settings(&method, &settings)?;
+    finish(&window, &guard)
+}
+
 /// Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not
 /// written to the design.
 #[tauri::command]
@@ -1214,6 +1228,7 @@ pub fn run() {
             hillshade,
             load_input,
             set_water,
+            set_alignment_settings,
             set_terrain_limit,
             set_downstream_point,
             edit_bank,

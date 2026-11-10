@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { RunMethod, Snapshot, StageName, StageState } from "./api";
+  import { useWaterChoice } from "./api";
+  import type { RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
 
   let {
     snap,
@@ -7,6 +8,7 @@
     samples,
     onRun,
     onCancel,
+    onUseWater,
   }: {
     snap: Snapshot | null;
     /** A stage is running (the name), or nothing is. */
@@ -15,6 +17,8 @@
     samples: number;
     onRun: (stage: StageName, method?: RunMethod) => void;
     onCancel: () => void;
+    /** Set the rolling circle's water-aware mode (#494). */
+    onUseWater: (choice: UseWater) => void;
   } = $props();
 
   // Display labels only: the stage names and their order come from the session.
@@ -28,6 +32,14 @@
   // Sizing runs by itself when the vessel changes; the other three have a Run button.
   const RUNNABLE: StageName[] = ["alignment", "optimise", "volumes"];
   let method = $state<RunMethod>("rolling_circle");
+
+  // The rolling circle's water-aware mode: the design's setting, and what the last run used.
+  const WATER: Record<UseWater, string> = { default: "Default", true: "Keep to the water", false: "Ignore the water" };
+  let useWater = $derived(useWaterChoice(snap?.document.stages.alignment.settings?.rolling_circle?.use_water));
+  let lastUsed = $derived.by(() => {
+    const used = snap?.document.options?.find((o) => o.method === "rolling_circle")?.settings?.use_water;
+    return used == null ? null : WATER[useWaterChoice(used)];
+  });
 </script>
 
 <section aria-label="Stages">
@@ -55,6 +67,24 @@
           {/if}
         {/if}
       </li>
+      {#if s.name === "alignment" && method === "rolling_circle"}
+        <li class="sub" data-testid="use-water-row">
+          <label class="name">
+            Water
+            <select
+              aria-label="Rolling circle water mode"
+              data-testid="use-water"
+              title="Default: keep to the water when the design has a river polygon"
+              value={useWater}
+              disabled={busy !== null}
+              onchange={(e) => onUseWater(e.currentTarget.value as UseWater)}
+            >
+              {#each Object.entries(WATER) as [value, label]}<option {value}>{label}</option>{/each}
+            </select>
+          </label>
+          {#if lastUsed}<span class="dim" data-testid="use-water-last">Last run: {lastUsed}</span>{/if}
+        </li>
+      {/if}
     {/each}
   </ol>
   {#if busy}
@@ -68,6 +98,9 @@
   .stages { list-style: none; margin: 0; padding: 0; }
   li { display: flex; gap: var(--sp-2); align-items: center; padding: 5px 0; border-bottom: var(--lw-thin) solid var(--rule); }
   .name { flex: 1; }
+  .sub { padding-left: var(--sp-3); font-size: var(--fs-12); }
+  .sub label { display: flex; gap: var(--sp-2); align-items: center; }
+  .dim { color: var(--ink-3); }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
   .chip { font-size: var(--fs-11); font-weight: 600; padding: 1px 7px; border-radius: var(--radius); color: var(--ink-3); background: var(--surface-2); }

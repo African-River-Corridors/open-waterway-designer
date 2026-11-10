@@ -178,7 +178,7 @@ const blank = (): Snapshot => ({
 const none = (why: string) => () => Promise.reject(why);
 
 const answer: Record<string, () => unknown> = {
-  snapshot: () => snapshot, set_rule_sets: () => snapshot, set_vessel: () => snapshot, set_custom_vessel: () => snapshot,
+  snapshot: () => snapshot, set_rule_sets: () => snapshot, set_alignment_settings: () => snapshot, set_vessel: () => snapshot, set_custom_vessel: () => snapshot,
   check_custom_vessel: () => ({ refusal: null, warnings: [] }), stretches_geojson: () => stretches,
   load_rule_set_file: () => ({ loaded: "pianc-wg141@0.9.0" }),
   sizing_choices: () => ({
