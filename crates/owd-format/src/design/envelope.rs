@@ -6,7 +6,8 @@
 use super::hash::hash_value;
 use super::screening::SCREENING_NOTICE;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
-use owd_core::envelope::{Envelope, Settings, Size, combine, size_result};
+use owd_core::envelope::{Envelope, Settings, Size, combine, longest_for_beam, size_result};
+use owd_core::fits::FitStretch;
 use owd_core::geom::Pt;
 use serde_json::{Value, json};
 
@@ -16,6 +17,19 @@ pub const BANK_CAVEAT: &str = "the answer is only as good as the banks: a narrow
 
 /// Said on every output: what the sweep reads.
 pub const ENVELOPE_LABEL: &str = "single-hull motor vessels; width and radius only, no depth";
+
+fn stretch_json(st: &FitStretch) -> Value {
+    json!({
+        "kind": st.kind.as_str(),
+        "start_chainage_m": st.start_chainage_m,
+        "end_chainage_m": st.end_chainage_m,
+        "start": st.start,
+        "end": st.end,
+        "required_m": st.required_m,
+        "found_m": st.found_m,
+        "deficit_m": st.deficit_m,
+    })
+}
 
 fn size_json(s: &Size) -> Value {
     json!({"label": s.label(), "loa_m": s.loa_m, "beam_m": s.beam_m})
@@ -41,16 +55,7 @@ fn envelope_json(e: &Envelope, at: &dyn Fn(f64) -> Pt) -> Value {
             "bottom_width_straight_m": s.bottom_width_straight_m,
             "passes": s.passes,
             "stretch_count": s.stretches.len(),
-            "stretches": s.stretches.iter().map(|st| json!({
-                "kind": st.kind.as_str(),
-                "start_chainage_m": st.start_chainage_m,
-                "end_chainage_m": st.end_chainage_m,
-                "start": st.start,
-                "end": st.end,
-                "required_m": st.required_m,
-                "found_m": st.found_m,
-                "deficit_m": st.deficit_m,
-            })).collect::<Vec<_>>(),
+            "stretches": s.stretches.iter().map(stretch_json).collect::<Vec<_>>(),
             "notes": s.notes,
         })).collect::<Vec<_>>(),
         "per_km": e.per_km.iter().map(|k| json!({
@@ -145,13 +150,34 @@ impl Session {
             .into_iter()
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| DesignError::Input(format!("the sweep: {}", e.message)))?;
+        // The longest length for each beam (ticket C5), on the same plan line and water.
+        let by_beam = settings
+            .beams_m
+            .iter()
+            .map(|&b| longest_for_beam(&line, &water, &settings, b))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| DesignError::Input(format!("the length search: {}", e.message)))?;
         let custom = self.custom_vessel();
-        let e = combine(&line, settings.clone(), sizes, custom.as_ref());
+        let mut e = combine(&line, settings.clone(), sizes, custom.as_ref());
+        e.by_beam = by_beam;
         let chained = owd_core::geom::linear::length(&line);
         let at = |s: f64| {
             owd_core::geom::linear::interpolate(&line, s.min(chained)).unwrap_or([f64::NAN; 2])
         };
         let mut results = envelope_json(&e, &at);
+        if !e.settings.beams_m.is_empty() {
+            results["by_beam"] = json!(
+                e.by_beam
+                    .iter()
+                    .map(|b| json!({
+                        "beam_m": b.beam_m,
+                        "longest_m": b.longest_m,
+                        "at_max": b.at_max,
+                        "binding": b.binding.iter().map(stretch_json).collect::<Vec<_>>(),
+                    }))
+                    .collect::<Vec<_>>()
+            );
+        }
         results["plan_line"] = json!(plan_line);
         if let Some(n) = note {
             results["plan_line_note"] = json!(n);
@@ -188,6 +214,14 @@ impl Session {
             "depends_on": null,
             "engine_version": ENGINE_VERSION,
         });
+        // The length search's settings, only when it ran: a sweep with no beam is as before.
+        if !settings.beams_m.is_empty() {
+            let set = &mut self.doc["stages"]["envelope"]["settings"];
+            set["beams_m"] = json!(settings.beams_m);
+            let ls = settings.length_search;
+            set["length_search"] =
+                json!({"min_m": ls.min_m, "max_m": ls.max_m, "step_m": ls.step_m});
+        }
         let h = self.envelope_dependency_hash();
         self.doc["stages"]["envelope"]["depends_on"] = json!(h);
         Ok(())

@@ -3,7 +3,7 @@
 //! output carries the screening notice, the rule set, the draught and the bank caveat.
 
 use crate::commands::{Failure, Result, destination, from_design, input_error, open, say, write};
-use owd_core::envelope::{Settings, Size, default_sizes};
+use owd_core::envelope::{LengthSearch, Settings, Size, default_sizes};
 use owd_format::design::StageStatus;
 use serde_json::{Value, json};
 
@@ -56,6 +56,29 @@ fn table(e: &Value) -> String {
             if s["passes"] == true { "yes" } else { "no" },
             s["stretch_count"].as_u64().unwrap_or(0)
         ));
+    }
+    if let Some(beams) = e["by_beam"].as_array() {
+        out.push_str("\nLongest length for each beam:\n");
+        for b in beams {
+            let beam = b["beam_m"].as_f64().unwrap_or(f64::NAN);
+            let longest = b["longest_m"]
+                .as_f64()
+                .map_or("none".to_string(), |l| format!("{l} m"));
+            let stop = if b["at_max"] == true {
+                " (the search's longest length: the search stopped, not the river)"
+            } else {
+                ""
+            };
+            out.push_str(&format!("  beam {beam} m: {longest}{stop}\n"));
+            for st in b["binding"].as_array().into_iter().flatten() {
+                out.push_str(&format!(
+                    "    binds: {} from {:.0} to {:.0} m\n",
+                    st["kind"].as_str().unwrap_or("?"),
+                    st["start_chainage_m"].as_f64().unwrap_or(f64::NAN),
+                    st["end_chainage_m"].as_f64().unwrap_or(f64::NAN)
+                ));
+            }
+        }
     }
     out.push_str("\nLargest size by kilometre:\n");
     for k in e["per_km"].as_array().into_iter().flatten() {
@@ -276,6 +299,43 @@ fn chart(e: &Value) -> core::result::Result<Vec<u8>, String> {
     c.png()
 }
 
+/// `--beams 4,6,8`: each a number of metres above 0.
+fn parse_beams(text: &str) -> core::result::Result<Vec<f64>, Failure> {
+    text.split(',')
+        .map(|t| {
+            t.trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .ok_or_else(|| {
+                    input_error(format!(
+                        "--beams: `{}` is not a beam in metres above 0",
+                        t.trim()
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// `--length-search MIN:MAX:STEP`, in metres. The search itself checks the numbers make sense.
+fn parse_length_search(text: &str) -> core::result::Result<LengthSearch, Failure> {
+    let parts: Vec<&str> = text.split(':').map(str::trim).collect();
+    let bad = || {
+        input_error(format!(
+            "--length-search is `MIN:MAX:STEP` in metres, such as `10:200:1`, not `{text}`"
+        ))
+    };
+    let [min, max, step] = parts.as_slice() else {
+        return Err(bad());
+    };
+    let n = |t: &str| t.parse::<f64>().map_err(|_| bad());
+    Ok(LengthSearch {
+        min_m: n(min)?,
+        max_m: n(max)?,
+        step_m: n(step)?,
+    })
+}
+
 /// Run the sweep (or, with `show`, print the stored one), write the study back, and print the
 /// answer as a table, JSON or CSV; with `png`, also write the chart.
 #[allow(clippy::too_many_arguments)]
@@ -284,6 +344,8 @@ pub fn envelope(
     sizes: Option<&str>,
     draught_m: Option<f64>,
     rule_set: Option<&str>,
+    beams: Option<&str>,
+    length_search: Option<&str>,
     show: bool,
     csv_mode: bool,
     png_path: Option<&str>,
@@ -304,6 +366,17 @@ pub fn envelope(
                 .unwrap_or(owd_core::envelope::DEFAULT_RULE_SET)
                 .to_string(),
             clearance_m: 0.0,
+            beams_m: match beams {
+                Some(b) => parse_beams(b)?,
+                None => Vec::new(),
+            },
+            length_search: match length_search {
+                Some(_) if beams.is_none() => {
+                    return Err(input_error("--length-search needs --beams"));
+                }
+                Some(t) => parse_length_search(t)?,
+                None => LengthSearch::default(),
+            },
         };
         session.run_envelope(settings, true).map_err(from_design)?;
         let dest = destination(doc, output);
