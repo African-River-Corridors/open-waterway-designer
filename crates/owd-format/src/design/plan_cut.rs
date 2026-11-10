@@ -19,11 +19,16 @@ use serde_json::{Map, Value, json};
 /// The default smallest piece, in square metres: a smaller piece is not a cut.
 const DEFAULT_MIN_PIECE_M2: f64 = 50.0;
 
+/// Said on every proxy volume: it is no terrain volume, and is never summed with one.
+const PROXY_LABEL: &str = "proxy: plan area × a stated height, not a terrain volume";
+
 /// The settings of the plan cut.
 struct Settings {
     min_piece_m2: f64,
     station_m: f64,
     wet_slope: f64,
+    /// The stated height of the proxy volume; none: no proxy volume.
+    proxy_height_m: Option<f64>,
 }
 
 impl Settings {
@@ -32,6 +37,7 @@ impl Settings {
             "min_piece_m2": self.min_piece_m2,
             "station_m": self.station_m,
             "wet_slope": self.wet_slope,
+            "proxy_height_m": self.proxy_height_m,
         })
     }
 
@@ -64,10 +70,22 @@ impl Settings {
                         DesignError::Input("the setting `wet_slope` must be a number above 0".into())
                     })?
                 }
+                "proxy_height_m" => {
+                    self.proxy_height_m = match v {
+                        Value::Null => None,
+                        _ => Some(x.filter(|x| x.is_finite() && *x > 0.0).ok_or_else(|| {
+                            DesignError::Input(
+                                "the setting `proxy_height_m` must be a number of metres above 0, \
+                                 or null for no proxy volume"
+                                    .into(),
+                            )
+                        })?),
+                    }
+                }
                 other => {
                     return Err(DesignError::Input(format!(
                         "the plan cut has no setting `{other}`: its settings are min_piece_m2, \
-                         station_m and wet_slope"
+                         station_m, wet_slope and proxy_height_m"
                     )));
                 }
             }
@@ -82,6 +100,7 @@ impl Default for Settings {
             min_piece_m2: DEFAULT_MIN_PIECE_M2,
             station_m: DEFAULT_STATION_M,
             wet_slope: DEFAULT_WET_SLOPE,
+            proxy_height_m: None,
         }
     }
 }
@@ -224,6 +243,16 @@ impl Session {
                 }).collect::<Vec<_>>(),
                 "piece_areas_m2": cut.pieces.iter().map(|p| p.area_m2).collect::<Vec<_>>(),
             });
+            // The proxy volume: the plan area times the stated height. Not a terrain volume: it
+            // takes none of their names and is never added to one.
+            if let Some(h) = settings.proxy_height_m {
+                row["proxy_volume"] = json!({
+                    "label": PROXY_LABEL,
+                    "height_m": h,
+                    "volume_m3": cut.area_m2() * h,
+                    "by_bank": {"left_m3": cut.left_m2() * h, "right_m3": cut.right_m2() * h},
+                });
+            }
             // As a volumes row: an option with no feasible line keeps its numbers, flagged.
             if super::export::no_feasible_line(o) {
                 row["no_feasible_line"] = json!(true);

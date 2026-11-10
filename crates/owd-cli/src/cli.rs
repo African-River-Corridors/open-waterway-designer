@@ -683,6 +683,10 @@ enum Command {
         /// With --geojson: write longitude and latitude instead of the project CRS.
         #[arg(long, requires = "geojson")]
         wgs84: bool,
+        /// A proxy volume: the plan area times this stated height, in metres. Not a terrain
+        /// volume, and never summed with one.
+        #[arg(long, value_name = "M")]
+        proxy_height_m: Option<f64>,
         #[command(flatten)]
         out: Out,
     },
@@ -951,6 +955,7 @@ pub fn main() -> ExitCode {
             min_piece_m2,
             geojson,
             wgs84,
+            proxy_height_m,
             out,
         } => crate::plan_cut::plan_cut(
             &doc,
@@ -958,6 +963,7 @@ pub fn main() -> ExitCode {
                 min_piece_m2,
                 geojson,
                 wgs84,
+                proxy_height_m,
             },
             &out.output,
             out.json,

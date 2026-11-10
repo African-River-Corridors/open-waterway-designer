@@ -13,6 +13,8 @@ pub struct PlanCutFlags {
     pub geojson: Option<String>,
     /// With `geojson`: longitude and latitude instead of the project CRS.
     pub wgs84: bool,
+    /// The stated height of the proxy volume, in metres. None: the document's setting.
+    pub proxy_height_m: Option<f64>,
 }
 
 pub fn plan_cut(
@@ -25,6 +27,9 @@ pub fn plan_cut(
     let mut overrides = serde_json::Map::new();
     if let Some(m) = flags.min_piece_m2 {
         overrides.insert("min_piece_m2".into(), json!(m));
+    }
+    if let Some(h) = flags.proxy_height_m {
+        overrides.insert("proxy_height_m".into(), json!(h));
     }
     session
         .run_plan_cut(&Value::Object(overrides))
@@ -51,6 +56,13 @@ pub fn plan_cut(
             n(&o["largest_piece_m2"]),
             o["dropped"]["pieces"],
         ));
+        if let Some(p) = o.get("proxy_volume") {
+            human.push(format!(
+                "  proxy volume: {:.0} m³ (plan area × {} m; a proxy, not a terrain volume)",
+                n(&p["volume_m3"]),
+                p["height_m"]
+            ));
+        }
     }
     say(dest == "-", json_mode, &human.join("\n"), results);
     Ok(())
