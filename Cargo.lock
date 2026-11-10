@@ -3671,6 +3671,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "owd-cases"
+version = "0.3.1"
+dependencies = [
+ "owd-cli",
+ "owd-format",
+ "owd-shell",
+ "serde_json",
+]
+
+[[package]]
 name = "owd-cli"
 version = "0.3.1"
 dependencies = [

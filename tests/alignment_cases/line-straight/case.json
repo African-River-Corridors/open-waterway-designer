@@ -1,0 +1,59 @@
+{
+  "id": "line-straight",
+  "study": "synthetic",
+  "source_repository": "this repository",
+  "source_commit": "none: closed-form geometry",
+  "steps": [
+    { "new": { "title": "Straight river twin", "date": "2026-01-02" } },
+    {
+      "import": {
+        "left_bank": "inputs/left.geojson",
+        "right_bank": "inputs/right.geojson",
+        "river_polygon": "inputs/river.geojson"
+      }
+    },
+    {
+      "size": {
+        "rule_sets": ["pianc-wg141"],
+        "set_inputs": { "se_quality": "B" },
+        "vessel": "CEMT_IV",
+        "draught_m": 2.5
+      }
+    },
+    { "align": { "method": "rolling_circle" } }
+  ],
+  "expect": [
+    {
+      "name": "min_bend_radius_m",
+      "read": { "pointer": "/stages/sizing/results/min_bend_radius_m" },
+      "value": 255.0,
+      "class": "exact",
+      "tolerance": { "absolute": 1e-9 },
+      "source": "SOURCE.md#required-radius"
+    },
+    {
+      "name": "left_bank_positions",
+      "read": { "pointer": "/inputs/left_bank/coordinates", "measure": "count" },
+      "value": 33,
+      "class": "exact",
+      "tolerance": { "absolute": 0 },
+      "source": "SOURCE.md#banks"
+    },
+    {
+      "name": "left_bank_length_m",
+      "read": { "pointer": "/inputs/left_bank", "measure": "length_m" },
+      "value": 3200.0,
+      "class": "same_recipe",
+      "tolerance": { "absolute": 0.001 },
+      "source": "SOURCE.md#banks"
+    },
+    {
+      "name": "design_line_length_m",
+      "read": { "pointer": "/options/0/line", "measure": "length_m" },
+      "value": 3200.0,
+      "class": "outcome",
+      "tolerance": { "relative": 0.01 },
+      "source": "SOURCE.md#design-line"
+    }
+  ]
+}
