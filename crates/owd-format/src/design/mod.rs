@@ -33,7 +33,8 @@ pub mod volumes;
 pub mod water;
 
 pub use alignment::{
-    AlignMethod, AlignmentSettings, RerouteSettings, RollingCircleSettings, Terrain,
+    AlignMethod, AlignmentSettings, CentrelineSettings, RerouteSettings, RollingCircleSettings,
+    Terrain,
 };
 pub use bed::DEPTH_FROM_DEM_LABEL;
 pub use geojson::Role;

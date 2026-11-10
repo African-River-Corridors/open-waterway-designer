@@ -783,7 +783,7 @@ pub fn align(
 ) -> Result {
     let method = AlignMethod::from_name(method).ok_or_else(|| {
         input_error(format!(
-            "unknown method `{method}`: use rolling-circle or reroute"
+            "unknown method `{method}`: use rolling-circle, reroute or centreline"
         ))
     })?;
     let mut session = open(doc)?;
@@ -812,6 +812,8 @@ pub fn align(
                 put("fairness_weight", json!(v));
             }
         }
+        // The river centreline as it is: no flag but `--chord` applies.
+        AlignMethod::Centreline => {}
     }
     if let Some(v) = flags.chord {
         put("check_chord_m", json!(v));
@@ -920,7 +922,9 @@ pub fn align(
         json!({"ok": ok, "failed_checks": failed, "option": option}),
     );
     // An option that fails a check is a failed check: exit code 1, with the document written.
-    if ok {
+    // The river centreline is a line to compare with, kept as it is: its failed checks are
+    // reported above and kept in the option, and the command succeeds.
+    if ok || method == AlignMethod::Centreline {
         Ok(())
     } else {
         Err(Failure {

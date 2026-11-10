@@ -344,6 +344,47 @@ pub fn widened_hb_from_shape(
     shape: &crate::rules::rulesets::ChannelShape,
     rmax: f64,
 ) -> Vec<f64> {
+    widened_hb_from_shape_floor(xy, shape, rmax, WideningFloor::MinRadius)
+}
+
+/// The lowest radius the bend widening is read at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WideningFloor {
+    /// A radius under the minimum radius is read as the minimum radius.
+    #[default]
+    MinRadius,
+    /// Each bend is read at its own radius.
+    None,
+}
+
+impl WideningFloor {
+    /// The name a document writes: `min_radius` or `none`.
+    pub fn name(self) -> &'static str {
+        match self {
+            WideningFloor::MinRadius => "min_radius",
+            WideningFloor::None => "none",
+        }
+    }
+
+    /// The choice a name stands for: `min_radius` or `none` only.
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s {
+            "min_radius" => Some(WideningFloor::MinRadius),
+            "none" => Some(WideningFloor::None),
+            _ => None,
+        }
+    }
+}
+
+/// [`widened_hb_from_shape`] with the floor of the radius named. With [`WideningFloor::None`] a
+/// bend tighter than the minimum radius widens by its own radius: for a line that does not hold
+/// the minimum radius (the river centreline as it is), where the floor would give too little.
+pub fn widened_hb_from_shape_floor(
+    xy: &[[f64; 2]],
+    shape: &crate::rules::rulesets::ChannelShape,
+    rmax: f64,
+    floor: WideningFloor,
+) -> Vec<f64> {
     let hb = shape.bottom_width_straight_m / 2.0;
     let xs: Vec<f64> = xy.iter().map(|p| p[0]).collect();
     let ys: Vec<f64> = xy.iter().map(|p| p[1]).collect();
@@ -352,7 +393,11 @@ pub fn widened_hb_from_shape(
         .into_iter()
         .map(|ri| {
             if ri.is_finite() && 0.0 < ri && ri < rmax {
-                hb + 0.5 * shape.bend_widening_m(py_max(ri, rmin))
+                let r = match floor {
+                    WideningFloor::MinRadius => py_max(ri, rmin),
+                    WideningFloor::None => ri,
+                };
+                hb + 0.5 * shape.bend_widening_m(r)
             } else {
                 hb
             }
