@@ -3,8 +3,9 @@
 //! checks: `radius_ok`, the measured minimum radius and the chord it was read on.
 //!
 //! Spec 0005 (#100): the rolling circle is water-aware when a river polygon is present (setting
-//! `use_water`, default on then; a document from before spec 0005 records it off on open). Its
-//! option then carries the `fits_in_water` check. Optional `seed_legs` in the inputs are joined
+//! `use_water`, default on then, whether the user gave the polygon or the import built it from the
+//! two banks; a document from before spec 0005 records it off on open). Its option records the
+//! value used and then carries the `fits_in_water` check. Optional `seed_legs` in the inputs are joined
 //! first (`join_legs`, with the `fixed` pieces held), and the option carries the `join_guard` check.
 
 use super::geojson::all_positions;
@@ -335,7 +336,6 @@ impl Session {
         }
     }
 
-    /// Settings of a method: its defaults, then what the document holds, then `overrides`.
     /// The settings of one method: the defaults, then the document's, then `overrides`. A key the
     /// method does not know, in the document or from the caller, is refused by name.
     fn method_settings(
@@ -352,6 +352,24 @@ impl Session {
             AlignMethod::Reroute => d.reroute.apply(stored)?.apply(overrides)?.to_value(),
             AlignMethod::Centreline => d.centreline.apply(stored)?.apply(overrides)?.to_value(),
         })
+    }
+
+    /// Set settings of one method in the document's alignment settings: the defaults, then what
+    /// the document holds, then `settings`. Nothing runs; a fresh alignment shows as stale. The
+    /// command line (`owd align --use-water`) and the app shell both call this. A key the method
+    /// does not know, or a bad value, is refused by name and changes nothing.
+    pub fn set_alignment_settings(
+        &mut self,
+        method: AlignMethod,
+        settings: &Value,
+    ) -> Result<(), DesignError> {
+        let merged = self.method_settings(method, settings)?;
+        let st = &mut self.doc["stages"]["alignment"]["settings"];
+        if !st.is_object() {
+            *st = json!({});
+        }
+        st[method.name()] = merged;
+        Ok(())
     }
 
     /// Run one method and add its option, or replace the option that method made before. The
@@ -629,9 +647,8 @@ impl Session {
         let river = self.river_polygons();
         let use_water = match &settings["use_water"] {
             Value::Bool(b) => *b,
-            // Unset: keep to the water when the user gave the polygon. One the import built from
-            // the two banks does not change the default line; `true` still uses it.
-            Value::Null => river.is_some() && !self.polygon_built_from_banks(),
+            // Unset: keep to the water whenever there is a river polygon, given or built.
+            Value::Null => river.is_some(),
             _ => {
                 return Err(DesignError::Input(
                     "the setting `use_water` must be true, false or null".into(),
@@ -744,6 +761,9 @@ impl Session {
         for (k, v) in checks {
             base_checks[k] = v;
         }
+        // The option records the value used, also when it came from the default.
+        let mut used = settings.clone();
+        used["use_water"] = json!(use_water);
         let mut details = json!({"arcs": r.result.circles.len()});
         if wi.is_some() {
             details["rungs"] = json!(r.rungs.iter().map(|b| b.rung.as_str()).collect::<Vec<_>>());
@@ -751,7 +771,7 @@ impl Session {
         Ok(json!({
             "id": AlignMethod::RollingCircle.option_id(),
             "name": AlignMethod::RollingCircle.option_name(),
-            "method": AlignMethod::RollingCircle.name(), "settings": settings,
+            "method": AlignMethod::RollingCircle.name(), "settings": used,
             "line": line_json(line),
             "checks": base_checks,
             "details": details,

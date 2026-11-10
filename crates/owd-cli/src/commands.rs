@@ -804,6 +804,7 @@ fn apply_water(session: &mut Session, w: &WaterFlags) -> Result {
 }
 
 /// The flags of `owd align`.
+#[derive(Default)]
 pub struct AlignFlags {
     pub step: Option<f64>,
     pub passes: Option<u32>,
@@ -813,6 +814,8 @@ pub struct AlignFlags {
     pub water_slope: Option<f64>,
     pub corridors: Option<String>,
     pub fairness_weight: Option<f64>,
+    /// `--use-water`: `true` or `false`, as typed.
+    pub use_water: Option<String>,
 }
 
 pub fn align(
@@ -827,7 +830,26 @@ pub fn align(
             "unknown method `{method}`: use rolling-circle, reroute or centreline"
         ))
     })?;
+    let use_water = match flags.use_water.as_deref().map(str::trim) {
+        None => None,
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some(other) => {
+            return Err(input_error(format!(
+                "--use-water must be true or false, not `{other}`"
+            )));
+        }
+    };
+    if use_water.is_some() && method != AlignMethod::RollingCircle {
+        return Err(input_error("--use-water is for the rolling circle only"));
+    }
     let mut session = open(doc)?;
+    // Stored in the design's settings, as the app shell sets it; the run then reads it there.
+    if let Some(on) = use_water {
+        session
+            .set_alignment_settings(method, &json!({"use_water": on}))
+            .map_err(from_design)?;
+    }
     let mut overrides = serde_json::Map::new();
     let mut put = |k: &str, v: Value| {
         overrides.insert(k.to_string(), v);

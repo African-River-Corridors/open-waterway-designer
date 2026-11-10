@@ -161,6 +161,7 @@ fn cli_align(doc: &str) -> commands::Result {
             water_slope: None,
             corridors: None,
             fairness_weight: None,
+            use_water: None,
         },
         &None,
         true,
