@@ -34,6 +34,9 @@ pub struct AppState {
     bank_undo: Vec<Session>,
     /// What "Start from a river" keeps between its steps (spec 0012).
     reach: crate::reach::ReachMemo,
+    /// The memory a terrain grid may take, in bytes, set on this machine (ticket C11b); `None`:
+    /// the reader's default. Never written to the document.
+    terrain_limit: Option<u64>,
 }
 
 /// How many bank edits can be undone.
@@ -158,6 +161,14 @@ fn custom_from_fields(
     })
 }
 
+/// A refusal by size, with the way to raise the limit in the app.
+fn with_limit_hint(mut m: String) -> String {
+    if m.contains(owd_format::geotiff::TOO_LARGE) {
+        m.push_str(". Raise the terrain memory limit in the app's settings");
+    }
+    m
+}
+
 fn message(e: DesignError) -> String {
     e.to_string()
 }
@@ -177,6 +188,7 @@ impl AppState {
             walk: None,
             bank_undo: Vec::new(),
             reach: Default::default(),
+            terrain_limit: None,
         }
     }
 
@@ -202,6 +214,7 @@ impl AppState {
             walk: None,
             bank_undo: Vec::new(),
             reach: Default::default(),
+            terrain_limit: None,
         })
     }
 
@@ -458,15 +471,76 @@ impl AppState {
             path: &rel,
             name: &name,
             bytes: &bytes,
+            limit_bytes: self.terrain_limit,
         };
         let done = crate::import::import(&mut self.session, &[], Some(terrain), date)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| with_limit_hint(e.to_string()))?;
         self.dem = done.dem.map(Arc::new);
         self.dem_bytes = Some(Arc::new(bytes));
         self.dem_file = Some(file.to_path_buf());
         self.warnings.clear();
         self.dirty = true;
         Ok(())
+    }
+
+    /// Set the memory a terrain grid may take on this machine, in bytes (`None`: the default). It
+    /// is a setting of the machine, never written to the document. A terrain file the design names
+    /// but that did not open under the old limit is read again under the new one.
+    pub fn set_terrain_limit_bytes(&mut self, limit: Option<u64>) -> Result<(), String> {
+        if limit == Some(0) {
+            return Err("the terrain memory limit must be a positive number of bytes".into());
+        }
+        // The browser addresses 4 GiB at most.
+        #[cfg(target_arch = "wasm32")]
+        if let Some(l) = limit
+            && l > u64::from(u32::MAX)
+        {
+            return Err(format!(
+                "the terrain memory limit of {l} bytes is over what the browser can address \
+                 ({} bytes, 4 GiB)",
+                u32::MAX
+            ));
+        }
+        self.terrain_limit = limit;
+        if self.dem.is_none()
+            && let Some(bytes) = &self.dem_bytes
+        {
+            let within = limit.unwrap_or_else(owd_format::geotiff::grid_limit);
+            self.dem = owd_format::geotiff::read_bytes_within(bytes, within)
+                .ok()
+                .map(Arc::new);
+        }
+        Ok(())
+    }
+
+    /// The terrain memory limit set on this machine, in bytes; `None`: the default.
+    pub fn terrain_limit_bytes(&self) -> Option<u64> {
+        self.terrain_limit
+    }
+
+    /// Set the terrain memory limit from the app's field: a number of GiB, or empty for the
+    /// default. Text that is not a positive number is refused by name.
+    pub fn set_terrain_limit_gib_text(&mut self, text: &str) -> Result<(), String> {
+        let t = text.trim();
+        if t.is_empty() {
+            return self.set_terrain_limit_bytes(None);
+        }
+        let gib = t
+            .parse::<f64>()
+            .ok()
+            .filter(|g| g.is_finite() && *g > 0.0)
+            .ok_or_else(|| {
+                format!("the terrain memory limit must be a positive number of GiB, not `{t}`")
+            })?;
+        let bytes = (gib * f64::from(1u32 << 30)).ceil().max(1.0);
+        self.set_terrain_limit_bytes(Some(bytes.min(u64::MAX as f64) as u64))
+    }
+
+    /// This state, keeping the machine settings of `old` (the terrain memory limit): for a shell
+    /// that replaces its state when a file is opened or a new design begun.
+    pub fn with_machine_settings_of(mut self, old: &AppState) -> AppState {
+        let _ = self.set_terrain_limit_bytes(old.terrain_limit);
+        self
     }
 
     fn project_epsg(&self) -> Option<u32> {
@@ -752,6 +826,7 @@ impl AppState {
             "title": self.title(),
             "warnings": self.warnings,
             "can_undo_bank_edit": !self.bank_undo.is_empty(),
+            "terrain_limit_bytes": self.terrain_limit,
             "running": self.running.as_ref().map(|(s, _)| s.name()),
             "notices": self.session.notices(),
             "fits_status": match self.session.fits_status() {

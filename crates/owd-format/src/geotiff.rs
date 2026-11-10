@@ -37,7 +37,7 @@ impl core::fmt::Display for GeoTiffError {
             GeoTiffError::Io(m) => write!(f, "cannot read the GeoTIFF: {m}"),
             GeoTiffError::Corrupt(m) => write!(f, "the GeoTIFF is damaged or not a TIFF: {m}"),
             GeoTiffError::Unsupported(m) => write!(f, "unsupported GeoTIFF: {m}"),
-            GeoTiffError::TooLarge(m) => write!(f, "the terrain file is too large: {m}"),
+            GeoTiffError::TooLarge(m) => write!(f, "{TOO_LARGE}: {m}"),
         }
     }
 }
@@ -373,9 +373,34 @@ pub const DEFAULT_GRID_LIMIT_BYTES: u64 = if cfg!(target_arch = "wasm32") {
     6 << 30
 };
 
-/// Read a GeoTIFF held in memory, inside [`DEFAULT_GRID_LIMIT_BYTES`].
+/// The start of every refusal by size, so a surface can add its own way to raise the limit.
+pub const TOO_LARGE: &str = "the terrain file is too large";
+
+/// A limit set for the whole process (0: none, the default holds).
+static GRID_LIMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Set the grid limit for the whole process, in bytes; `None` goes back to
+/// [`DEFAULT_GRID_LIMIT_BYTES`]. For a program that serves one user, such as the command line,
+/// which takes the limit from `--terrain-limit-gib` or `OWD_TERRAIN_LIMIT_GIB`. A caller that
+/// holds its own limit passes it to [`read_bytes_within`] instead.
+pub fn set_grid_limit(limit_bytes: Option<u64>) {
+    GRID_LIMIT.store(
+        limit_bytes.unwrap_or(0),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+/// The grid limit in force: the one set for the process, or [`DEFAULT_GRID_LIMIT_BYTES`].
+pub fn grid_limit() -> u64 {
+    match GRID_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => DEFAULT_GRID_LIMIT_BYTES,
+        n => n,
+    }
+}
+
+/// Read a GeoTIFF held in memory, inside [`grid_limit`].
 pub fn read_bytes(bytes: &[u8]) -> Result<Dem, GeoTiffError> {
-    read_bytes_within(bytes, DEFAULT_GRID_LIMIT_BYTES)
+    read_bytes_within(bytes, grid_limit())
 }
 
 /// A decoder whose own limits leave the memory limit to the reader.

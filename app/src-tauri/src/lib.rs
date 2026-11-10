@@ -155,7 +155,8 @@ async fn new_file(app: AppHandle, window: Window, state: State<'_, Shared>) -> R
         return Ok(serde_json::Value::Null);
     }
     let mut guard = lock(&state)?;
-    *guard = AppState::new_design("Untitled channel design", &today());
+    *guard =
+        AppState::new_design("Untitled channel design", &today()).with_machine_settings_of(&guard);
     finish(&window, &guard)
 }
 
@@ -175,7 +176,7 @@ async fn open_file(app: AppHandle, window: Window, state: State<'_, Shared>) -> 
         .and_then(|rel| std::fs::read(path.parent().unwrap_or(Path::new(".")).join(rel)).ok());
     let opened = AppState::open(&path, &text, dem.as_deref())?;
     let mut guard = lock(&state)?;
-    *guard = opened;
+    *guard = opened.with_machine_settings_of(&guard);
     finish(&window, &guard)
 }
 
@@ -599,6 +600,15 @@ fn set_water(window: Window, state: State<Shared>, level: String, fall: String) 
     finish(&window, &guard)
 }
 
+/// Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not
+/// written to the design.
+#[tauri::command]
+fn set_terrain_limit(window: Window, state: State<Shared>, gib: String) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_terrain_limit_gib_text(&gib)?;
+    finish(&window, &guard)
+}
+
 /// Run one stage on a worker thread. `method` picks the alignment method (`rolling_circle` or
 /// `reroute`). The design changes only if the stage finishes: a cancel or a failure leaves it as it
 /// was. The reply is the snapshot, with `run` saying how it ended.
@@ -689,7 +699,7 @@ async fn fetch_dem(app: AppHandle, window: Window, state: State<'_, Shared>) -> 
     let opened = AppState::open(&path, &text, dem.as_deref())?;
     let mut guard = lock(&state)?;
     // The same study, read again: the panel keeps its route and steps (#318).
-    let next = guard.reopened(opened);
+    let next = guard.reopened(opened).with_machine_settings_of(&guard);
     *guard = next;
     finish(&window, &guard)
 }
@@ -1164,6 +1174,7 @@ pub fn run() {
             hillshade,
             load_input,
             set_water,
+            set_terrain_limit,
             edit_bank,
             undo_bank_edit,
             run_stage,

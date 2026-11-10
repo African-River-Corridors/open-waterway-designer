@@ -6,7 +6,7 @@
 
 use owd_format::design::provenance::{Mark, record};
 use owd_format::design::{DesignError, ImportReport, Role, Session};
-use owd_format::geotiff::{Dem, read_bytes};
+use owd_format::geotiff::Dem;
 
 /// A terrain file to import, already read by the caller.
 pub struct Terrain<'a> {
@@ -15,6 +15,8 @@ pub struct Terrain<'a> {
     /// The file as named in messages.
     pub name: &'a str,
     pub bytes: &'a [u8],
+    /// The grid limit to read it within, in bytes; `None`: the reader's limit in force.
+    pub limit_bytes: Option<u64>,
 }
 
 /// What an import did.
@@ -85,7 +87,11 @@ fn import_into(
     let Some(t) = terrain else {
         return Ok(Imported { report, dem: None });
     };
-    let dem = read_bytes(t.bytes).map_err(|e| ImportError::Terrain(format!("{}: {e}", t.name)))?;
+    let limit = t
+        .limit_bytes
+        .unwrap_or_else(owd_format::geotiff::grid_limit);
+    let dem = owd_format::geotiff::read_bytes_within(t.bytes, limit)
+        .map_err(|e| ImportError::Terrain(format!("{}: {e}", t.name)))?;
     let epsg = project_epsg(session);
     if epsg.is_some() {
         owd_format::design::terrain::dem_sampler(&dem, epsg)

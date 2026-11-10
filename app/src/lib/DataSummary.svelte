@@ -9,6 +9,7 @@
     onLoad,
     onFetch,
     onWater,
+    onTerrainLimit,
   }: {
     snap: Snapshot | null;
     busy: boolean;
@@ -17,6 +18,8 @@
     onLoad: (role: InputRole) => void;
     onFetch: () => void;
     onWater: (level: string, fall: string) => void;
+    /** Set the terrain memory limit of this machine, in GiB (empty: the default). */
+    onTerrainLimit: (gib: string) => void;
   } = $props();
 
   const count = (g: { coordinates: unknown[] } | null | undefined) => (g ? `${g.coordinates.length} positions` : "not loaded");
@@ -28,6 +31,7 @@
   );
   let level = $state("");
   let fall = $state("");
+  let limitGib = $state("");
   // Show the document's water level, as a level at the start and the fall to the end.
   $effect(() => {
     const p = inputs?.water_level?.points;
@@ -85,6 +89,13 @@
       <input aria-label="Water fall" inputmode="decimal" bind:value={fall} disabled={busy} data-testid="water-fall" />
     </label>
     <button disabled={busy || level.trim() === ""} data-testid="set-water" onclick={() => onWater(level, fall)}>Set water level</button>
+  </div>
+
+  <div class="water">
+    <label>Terrain memory limit (GiB, this machine; empty: {snap?.terrain_limit_bytes ? `${(snap.terrain_limit_bytes / 2 ** 30).toFixed(1)} set` : "the default"})
+      <input aria-label="Terrain memory limit" inputmode="decimal" bind:value={limitGib} disabled={busy} data-testid="terrain-limit" />
+    </label>
+    <button disabled={busy} data-testid="set-terrain-limit" onclick={() => onTerrainLimit(limitGib)} title="A terrain file whose grid needs more memory than this is refused. Not saved in the design.">Set limit</button>
   </div>
 </section>
 

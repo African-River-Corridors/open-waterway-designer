@@ -288,9 +288,12 @@ pub fn import(
     };
     let dem_path = dem.as_deref().map(|p| relative_dem_path(doc, p));
     let terrain = match (&dem, &dem_path, &bytes) {
-        (Some(name), Some(path), Some(bytes)) => {
-            Some(owd_shell::import::Terrain { path, name, bytes })
-        }
+        (Some(name), Some(path), Some(bytes)) => Some(owd_shell::import::Terrain {
+            path,
+            name,
+            bytes,
+            limit_bytes: None,
+        }),
         _ => None,
     };
     let report = if items.is_empty() && terrain.is_none() {
