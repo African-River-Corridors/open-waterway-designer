@@ -47,13 +47,26 @@ impl JsFetch {
                 &JsValue::from_f64(len),
             )
             .map(|v| js_sys::Uint8Array::new(&v).to_vec())
-            .map_err(|e| fetch_error(url, &e.as_string().unwrap_or_else(|| format!("{e:?}"))))
+            .map_err(|e| {
+                // A thrown Error gives its message, without the stack; anything else as it is.
+                let reason = e
+                    .as_string()
+                    .or_else(|| e.dyn_ref::<js_sys::Error>().map(|err| err.message().into()))
+                    .unwrap_or_else(|| format!("{e:?}"));
+                fetch_error(url, &reason)
+            })
     }
 }
 
-/// The fetch error for `url` from the reason the page's fetch threw.
+/// The fetch error for `url` from the reason the page's fetch threw (`HTTP <status> from <url>`,
+/// perhaps with a stack after it). Only a status of 404 on the first line is a missing file; any
+/// other answer, such as a busy server's 502, is a failure, so a reach step tries the next server.
+/// Searching the whole text for "404" (before #499) also matched a stack's line and column numbers.
 pub fn fetch_error(url: &str, reason: &str) -> owd_reach::FetchError {
-    if reason.contains("404") {
+    let first = reason.lines().next().unwrap_or("");
+    let words: Vec<&str> = first.split_whitespace().collect();
+    let not_found = words.windows(2).any(|w| w[0] == "HTTP" && w[1] == "404");
+    if not_found {
         owd_reach::FetchError::NotFound(url.to_string())
     } else {
         owd_reach::FetchError::Failed {
