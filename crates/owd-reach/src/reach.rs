@@ -43,7 +43,9 @@ fn padded(points: &[LonLat]) -> Result<[f64; 4], ReachError> {
     Ok([b[0] - m, b[1] - m, b[2] + m, b[3] + m])
 }
 
-fn check_point(p: LonLat) -> Result<(), ReachError> {
+/// Refuse a point that is not a longitude and latitude in range. The one range check of a reach
+/// point: planning from points, from a trace, and cutting a chosen river all call it first.
+pub(crate) fn check_point(p: LonLat) -> Result<(), ReachError> {
     if p[0].is_finite() && p[1].is_finite() && p[0].abs() <= 180.0 && p[1].abs() <= 90.0 {
         Ok(())
     } else {

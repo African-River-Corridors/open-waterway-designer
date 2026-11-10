@@ -309,6 +309,10 @@ impl WholeRiver {
         let mut points = vec![start];
         points.extend_from_slice(via);
         points.push(end);
+        // As planning from points: a point out of range is refused before any routing.
+        points
+            .iter()
+            .try_for_each(|p| crate::reach::check_point(*p))?;
         let route = Graph::new(self.ways.clone()).route(&points)?;
         Ok(Planned {
             spec: ReachSpec {

@@ -1796,11 +1796,8 @@ fn lon_lat(s: &str) -> core::result::Result<[f64; 2], Failure> {
     let (a, b) = s.split_once(',').ok_or_else(bad)?;
     let lon: f64 = a.trim().parse().map_err(|_| bad())?;
     let lat: f64 = b.trim().parse().map_err(|_| bad())?;
-    if lon.abs() <= 180.0 && lat.abs() <= 90.0 {
-        Ok([lon, lat])
-    } else {
-        Err(bad())
-    }
+    // The range is checked below, in `owd-reach`, with the words the app shows.
+    Ok([lon, lat])
 }
 
 /// The first line of a GeoJSON file (a LineString, or a Feature or collection holding one), as
