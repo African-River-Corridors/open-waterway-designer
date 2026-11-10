@@ -374,12 +374,11 @@ impl Session {
         self.edit(|s| s.keep_reach(job))
     }
 
-    /// Give the depth of a river with no survey. `points` is JSON `[[chainage, depth], ...]`.
-    pub fn set_bed(&mut self, points: &str, season: &str) -> Js<String> {
-        let pts: Vec<[f64; 2]> =
-            ok(serde_json::from_str(points).map_err(|e| format!("not a depth table: {e}")))?;
+    /// Give the depth of a river with no survey: the depth and the depth table as typed. The shell
+    /// reads them.
+    pub fn set_bed(&mut self, depth: &str, table: &str, season: &str) -> Js<String> {
         let date = today();
-        self.edit(|s| s.set_bed(&pts, Some(season), &date))
+        self.edit(|s| s.set_bed_text(depth, table, Some(season), &date))
     }
 
     /// Answer "what fits" over every vessel class.

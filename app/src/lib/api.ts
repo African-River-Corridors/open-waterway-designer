@@ -535,7 +535,8 @@ export const reachStep = (step: ReachStepName, percentile?: number) => invoke<Sn
 /** Cancel the reach step that is running: its result is dropped. */
 export const reachCancel = () => invoke<void>("reach_cancel");
 /** Give the depth of a river with no survey: `[chainage, depth]` points, and a season label. */
-export const setBed = (points: [number, number][], season: string) => invoke<Snapshot>("set_bed", { points, season });
+/** Give the depth as typed: one depth (or empty) and a table of `chainage_m,depth_m` lines. The shell reads and checks both. */
+export const setBed = (depth: string, table: string, season: string) => invoke<Snapshot>("set_bed", { depth, table, season });
 /** Answer "what fits" over every vessel class. */
 export const runFits = () => invoke<Snapshot>("run_fits");
 /** The largest vessel the river allows: the size sweep of spec 0016. */

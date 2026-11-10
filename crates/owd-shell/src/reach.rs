@@ -553,6 +553,31 @@ impl AppState {
         Ok(())
     }
 
+    /// Set the bed model from the depth and the depth table as the user typed them. `depth` is empty
+    /// or one number, the depth from the start of the river, put before the table's points. The
+    /// table is read by the reader `owd bed --table` uses. The points go to the session in the
+    /// order given; its refusals pass through. A refusal changes nothing.
+    pub fn set_bed_text(
+        &mut self,
+        depth: &str,
+        table: &str,
+        season: Option<&str>,
+        date: &str,
+    ) -> Result<(), String> {
+        let depth = depth.trim();
+        let mut points = Vec::new();
+        if !depth.is_empty() {
+            let d = depth
+                .parse::<f64>()
+                .ok()
+                .filter(|d| d.is_finite())
+                .ok_or_else(|| format!("the depth must be a number of metres, not `{depth}`"))?;
+            points.push([0.0, d]);
+        }
+        points.extend(owd_format::design::bed::read_depth_table(table)?);
+        self.set_bed(&points, season, date)
+    }
+
     /// Answer "what fits" over every vessel class: plan only, or full (with depth and the verdict)
     /// when the design has a bed model, a water level and its DEM.
     pub fn run_fits(&mut self) -> Result<(), String> {

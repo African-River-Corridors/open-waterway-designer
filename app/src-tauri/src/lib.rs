@@ -1113,16 +1113,18 @@ fn reach_cancel() {
     REACH_TURN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Give the depth of a river with no survey: `points` are `[chainage, depth]`.
+/// Give the depth of a river with no survey: the depth and the depth table as typed. The shell
+/// reads them.
 #[tauri::command]
 fn set_bed(
     window: Window,
     state: State<Shared>,
-    points: Vec<[f64; 2]>,
+    depth: String,
+    table: String,
     season: Option<String>,
 ) -> Reply {
     let mut guard = lock(&state)?;
-    guard.set_bed(&points, season.as_deref(), &today())?;
+    guard.set_bed_text(&depth, &table, season.as_deref(), &today())?;
     finish(&window, &guard)
 }
 

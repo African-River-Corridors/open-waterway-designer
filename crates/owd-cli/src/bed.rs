@@ -3,8 +3,8 @@
 use crate::commands::{Result, destination, from_design, input_error, open, say, write};
 use serde_json::json;
 
-/// The depth table from a file of `chainage_m,depth_m` lines (a first line that is not numbers is
-/// a header).
+/// The depth table from a file of `chainage_m,depth_m` lines, read by
+/// [`owd_format::design::bed::read_depth_table`].
 fn read_table(path: &str) -> core::result::Result<Vec<[f64; 2]>, crate::commands::Failure> {
     let text = if path == "-" {
         let mut s = String::new();
@@ -15,28 +15,9 @@ fn read_table(path: &str) -> core::result::Result<Vec<[f64; 2]>, crate::commands
         std::fs::read_to_string(path)
             .map_err(|e| input_error(format!("cannot read {path}: {e}")))?
     };
-    let mut points = Vec::new();
-    for (n, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let f: Vec<&str> = line.split(',').map(str::trim).collect();
-        match (
-            f.first().and_then(|x| x.parse::<f64>().ok()),
-            f.get(1).and_then(|x| x.parse::<f64>().ok()),
-        ) {
-            (Some(c), Some(d)) if f.len() == 2 => points.push([c, d]),
-            _ if n == 0 => {}
-            _ => {
-                return Err(input_error(format!(
-                    "{path}, line {}: expected `chainage_m,depth_m`",
-                    n + 1
-                )));
-            }
-        }
-    }
-    Ok(points)
+    // The one reader of the table, shared with the app shell; the file's name goes in front.
+    owd_format::design::bed::read_depth_table(&text)
+        .map_err(|e| input_error(format!("{path}, {e}")))
 }
 
 /// Set (or with `clear`, remove) the bed model of a document.
