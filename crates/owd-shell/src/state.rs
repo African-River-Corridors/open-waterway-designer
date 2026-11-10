@@ -392,6 +392,29 @@ impl AppState {
         Ok(())
     }
 
+    /// Import a bank dataset file (ticket B7): the banks, the river polygon and what the source says
+    /// about them, through the one import. A refusal changes nothing.
+    pub fn load_bank_dataset(&mut self, text: &str, date: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let done = crate::import::import_bank_dataset(&mut self.session, text, date)
+            .map_err(|e| e.to_string())?;
+        self.warnings.retain(|w| {
+            !w.starts_with("the banks ") && !w.starts_with("the left bank and the right bank cross")
+        });
+        self.warnings.extend(done.report.warnings);
+        self.bank_undo.clear();
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// The bank dataset file of the design: the text of `owd export --banks FILE` (with `wgs84`,
+    /// `--wgs84`).
+    pub fn export_bank_dataset(&self, wgs84: bool) -> Result<String, String> {
+        self.session
+            .export_bank_dataset(wgs84)
+            .map_err(|e| e.to_string())
+    }
+
     /// Edit one bank (spec 0012): `side` is `left_bank` or `right_bank`. The input is marked
     /// `edited`, the river polygon and centreline are rebuilt, and every later stage is stale. A
     /// refusal (a crossing, a bad index) changes nothing.

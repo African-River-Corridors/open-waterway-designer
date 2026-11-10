@@ -181,3 +181,239 @@ impl Session {
         Ok(())
     }
 }
+
+/// A bank dataset file (ticket B7), read and checked: the bank inputs as GeoJSON texts for the
+/// import, in the order left bank, right bank, river polygon, and the `inputs.banks` member.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BankFile {
+    pub items: Vec<(super::geojson::Role, String)>,
+    pub banks: Value,
+}
+
+impl BankFile {
+    /// The items as the import takes them.
+    pub fn items(&self) -> Vec<(super::geojson::Role, &str)> {
+        self.items.iter().map(|(r, t)| (*r, t.as_str())).collect()
+    }
+}
+
+/// Read a bank dataset file: one GeoJSON FeatureCollection with a `bank_dataset` member of version
+/// one, and a feature for each of `left_bank`, `right_bank` and, optionally, `river_polygon`. The
+/// whole file is checked before anything is imported; a refusal names what is wrong.
+pub fn read_bank_file(text: &str) -> Result<BankFile, DesignError> {
+    use super::geojson::Role;
+    let bad = |m: String| DesignError::Input(format!("the bank dataset file: {m}"));
+    let root: Value =
+        serde_json::from_str(text).map_err(|e| bad(format!("not valid JSON: {e}")))?;
+    let meta = root
+        .get("bank_dataset")
+        .filter(|m| m.is_object())
+        .ok_or_else(|| {
+            bad("it has no `bank_dataset` member, so it is not a bank dataset".into())
+        })?;
+    if meta["version"].as_u64() != Some(1) {
+        return Err(bad(format!(
+            "`bank_dataset.version` is {}; this reader takes version 1",
+            meta["version"]
+        )));
+    }
+    // What the source says, checked as the document's schema checks `inputs.banks`.
+    let source = match &meta["source"] {
+        Value::Null => Value::Null,
+        s @ Value::Object(_) => {
+            let text_of = |k: &str| {
+                s[k].as_str()
+                    .map(str::to_string)
+                    .ok_or_else(|| bad(format!("`bank_dataset.source.{k}` must be text")))
+            };
+            let kind = text_of("kind")?;
+            if BankSourceKind::from_name(&kind).is_none() {
+                return Err(bad(format!(
+                    "`bank_dataset.source.kind` is `{kind}`: use file, edit or bank-source"
+                )));
+            }
+            let licence = match &s["licence"] {
+                Value::Null => Value::Null,
+                Value::String(l) => json!(l),
+                _ => {
+                    return Err(bad(
+                        "`bank_dataset.source.licence` must be text or null".into()
+                    ));
+                }
+            };
+            json!({"kind": kind, "name": text_of("name")?, "date": text_of("date")?, "licence": licence})
+        }
+        _ => return Err(bad("`bank_dataset.source` must be an object or null".into())),
+    };
+    let accuracy = match &meta["accuracy_m"] {
+        Value::Null => Value::Null,
+        a => {
+            let x = a
+                .as_f64()
+                .filter(|x| x.is_finite() && *x >= 0.0)
+                .ok_or_else(|| {
+                    bad("`bank_dataset.accuracy_m` must be zero or more metres, or null".into())
+                })?;
+            json!(x)
+        }
+    };
+    let mut stretches = Vec::new();
+    for (i, c) in meta["low_confidence"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        let num = |k: &str| {
+            c[k].as_f64().ok_or_else(|| {
+                bad(format!(
+                    "low-confidence stretch {} needs its `{k}` in metres",
+                    i + 1
+                ))
+            })
+        };
+        let (from_m, to_m) = (num("from_m")?, num("to_m")?);
+        let reason = c["reason"].as_str().ok_or_else(|| {
+            bad(format!(
+                "low-confidence stretch {} needs its `reason`",
+                i + 1
+            ))
+        })?;
+        stretches.push(json!({"from_m": from_m, "to_m": to_m, "reason": reason}));
+    }
+    if !meta["low_confidence"].is_null() && !meta["low_confidence"].is_array() {
+        return Err(bad("`bank_dataset.low_confidence` must be a list".into()));
+    }
+
+    // The features, by role.
+    let crs = root.get("crs").cloned();
+    let mut found: Vec<(Role, Value)> = Vec::new();
+    for f in root["features"].as_array().into_iter().flatten() {
+        let role_name = f["properties"]["role"].as_str().unwrap_or("");
+        let role = match role_name {
+            "left_bank" => Role::LeftBank,
+            "right_bank" => Role::RightBank,
+            "river_polygon" => Role::RiverPolygon,
+            other => {
+                return Err(bad(format!(
+                    "a feature has the role `{other}`: the roles are left_bank, right_bank and river_polygon"
+                )));
+            }
+        };
+        if found.iter().any(|(r, _)| *r == role) {
+            return Err(bad(format!("it has `{role_name}` twice")));
+        }
+        let mut g = f["geometry"].clone();
+        if let (Some(c), Some(o)) = (&crs, g.as_object_mut()) {
+            o.insert("crs".into(), c.clone());
+        }
+        found.push((role, g));
+    }
+    let mut items = Vec::new();
+    for role in [Role::LeftBank, Role::RightBank, Role::RiverPolygon] {
+        match found.iter().find(|(r, _)| *r == role) {
+            Some((_, g)) => items.push((role, g.to_string())),
+            None if role == Role::RiverPolygon => {}
+            None => return Err(bad(format!("it has no `{}`", role.name()))),
+        }
+    }
+    Ok(BankFile {
+        items,
+        banks: json!({"source": source, "accuracy_m": accuracy, "low_confidence": stretches}),
+    })
+}
+
+impl Session {
+    /// Replace `inputs.banks` whole with what a bank dataset file says about the banks.
+    pub fn set_bank_metadata(&mut self, banks: &Value) {
+        self.doc["inputs"]["banks"] = banks.clone();
+    }
+
+    /// Import a bank dataset file: the two banks, the river polygon and what the source says, in
+    /// one go, through [`Session::import`]. The whole file is read first; a refusal changes
+    /// nothing.
+    pub fn import_bank_dataset(
+        &mut self,
+        text: &str,
+    ) -> Result<super::session::ImportReport, DesignError> {
+        let file = read_bank_file(text)?;
+        let mut s = self.clone();
+        let report = s.import(&file.items())?;
+        s.set_bank_metadata(&file.banks);
+        *self = s;
+        Ok(report)
+    }
+
+    /// The bank dataset file of the design: in the project CRS with its `crs` member, or in
+    /// longitude and latitude with none when `wgs84`. Refused when the design has no banks.
+    pub fn export_bank_dataset(&self, wgs84: bool) -> Result<String, DesignError> {
+        use super::crs::Crs;
+        let d = self.bank_dataset().ok_or_else(|| {
+            DesignError::Input("the design has no banks: there is no bank dataset to export".into())
+        })?;
+        let epsg = self.doc["project"]["crs"]["epsg"]
+            .as_u64()
+            .map(|c| c as u32);
+        let utm = match epsg.and_then(|c| Crs::from_epsg(c).ok()) {
+            Some(Crs::Utm(u)) => Some(u),
+            _ => None,
+        };
+        let pts = |line: &[Pt]| -> Result<Value, DesignError> {
+            if !wgs84 {
+                return Ok(json!(line));
+            }
+            let u =
+                utm.ok_or_else(|| DesignError::Input("the design has no project CRS".into()))?;
+            let ll = line
+                .iter()
+                .map(|p| u.inverse(p[0], p[1]).map_err(DesignError::Input))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(json!(ll))
+        };
+        let feature = |role: &str, kind: &str, coordinates: Value| {
+            json!({
+                "type": "Feature",
+                "properties": {"role": role},
+                "geometry": {"type": kind, "coordinates": coordinates}
+            })
+        };
+        let mut features = vec![
+            feature("left_bank", "LineString", pts(&d.left)?),
+            feature("right_bank", "LineString", pts(&d.right)?),
+        ];
+        if let Some(r) = &d.river {
+            let mut rings = vec![pts(&r.exterior)?];
+            for h in &r.holes {
+                rings.push(pts(h)?);
+            }
+            features.push(feature("river_polygon", "Polygon", json!(rings)));
+        }
+        let source = d.source.as_ref().map_or(Value::Null, |s| {
+            json!({"kind": s.kind.name(), "name": s.name, "date": s.date, "licence": s.licence})
+        });
+        let mut fc = serde_json::Map::new();
+        fc.insert("type".into(), json!("FeatureCollection"));
+        if !wgs84 {
+            fc.insert(
+                "crs".into(),
+                json!({"type": "name", "properties": {"name": format!("urn:ogc:def:crs:EPSG::{}", epsg.unwrap_or(0))}}),
+            );
+        }
+        fc.insert(
+            "bank_dataset".into(),
+            json!({
+                "version": 1,
+                "source": source,
+                "accuracy_m": d.accuracy_m,
+                "low_confidence": d.low_confidence.iter().map(|c| json!({
+                    "from_m": c.from_m, "to_m": c.to_m, "reason": c.reason,
+                })).collect::<Vec<_>>(),
+            }),
+        );
+        fc.insert("features".into(), Value::Array(features));
+        let mut t =
+            serde_json::to_string_pretty(&Value::Object(fc)).expect("a JSON value serialises");
+        t.push('\n');
+        Ok(t)
+    }
+}

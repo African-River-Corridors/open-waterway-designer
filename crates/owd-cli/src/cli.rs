@@ -141,6 +141,16 @@ enum Command {
         /// Two lines at one chainage make a step (a weir).
         #[arg(long, value_name = "FILE")]
         water_table: Option<String>,
+        /// A bank dataset file: both banks, the river polygon and what the source says about them
+        /// (its accuracy, its low-confidence stretches), in one GeoJSON FeatureCollection.
+        /// It is imported on its own: give the centreline, the DEM or the water level in another
+        /// `owd import`.
+        #[arg(
+            long,
+            value_name = "FILE",
+            conflicts_with_all = ["left_bank", "right_bank", "polygon", "centreline", "dem", "water_level", "water_slope", "water_table"]
+        )]
+        banks: Option<String>,
         #[command(flatten)]
         out: Out,
     },
@@ -409,6 +419,7 @@ enum Command {
     },
     /// Export the design line options as GeoJSON, or the quantity table as CSV. Every export says
     /// "Screening — not for construction", and an option that fails a check says so.
+    #[command(group(clap::ArgGroup::new("wgs84_target").args(["geojson", "banks"]).multiple(false)))]
     Export {
         /// The channel design. `-` is stdin.
         doc: String,
@@ -418,9 +429,13 @@ enum Command {
         /// CSV: one row per option, with dredge, dry cut, tallest face and failed checks.
         #[arg(long)]
         csv: bool,
-        /// With --geojson: write longitude and latitude instead of the project CRS.
-        #[arg(long, requires = "geojson")]
+        /// With --geojson or --banks: write longitude and latitude instead of the project CRS.
+        #[arg(long, requires = "wgs84_target")]
         wgs84: bool,
+        /// Write the bank dataset file of the design here: both banks, the river polygon and what
+        /// the source says about them, in one GeoJSON FeatureCollection.
+        #[arg(long, value_name = "FILE", conflicts_with_all = ["csv", "stretches", "limits"])]
+        banks: Option<String>,
         /// Export the constraint stretches (spec 0007) instead of the options: as GeoJSON lines or
         /// as CSV, whose head holds the design basis and the verdicts.
         #[arg(long)]
@@ -804,6 +819,12 @@ pub fn main() -> ExitCode {
         } => commands::new(&file, &title, date.as_deref(), json),
         Command::Import {
             doc,
+            banks: Some(file),
+            out,
+            ..
+        } => commands::import_banks(&doc, &file, &out.output, out.json),
+        Command::Import {
+            doc,
             left_bank,
             right_bank,
             centreline,
@@ -813,6 +834,7 @@ pub fn main() -> ExitCode {
             water_level,
             water_slope,
             water_table,
+            banks: None,
             out,
         } => commands::import(
             &doc,
@@ -1191,11 +1213,18 @@ pub fn main() -> ExitCode {
         }),
         Command::Export {
             doc,
+            wgs84,
+            banks: Some(file),
+            ..
+        } => commands::export_banks(&doc, wgs84, &file),
+        Command::Export {
+            doc,
             geojson,
             csv,
             wgs84,
             stretches,
             limits,
+            banks: None,
             output,
         } => {
             if limits {

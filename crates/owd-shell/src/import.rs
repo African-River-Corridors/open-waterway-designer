@@ -115,3 +115,19 @@ fn project_epsg(session: &Session) -> Option<u32> {
         .as_u64()
         .map(|c| c as u32)
 }
+
+/// Import a bank dataset file (ticket B7) into `session`: the banks and the river polygon through
+/// [`import`] (so each is marked in the provenance, dated `date`), and what the source says into
+/// `inputs.banks`. The whole file is read first; a refusal leaves `session` as it was.
+pub fn import_bank_dataset(
+    session: &mut Session,
+    text: &str,
+    date: &str,
+) -> Result<Imported, ImportError> {
+    let file = owd_format::design::banks::read_bank_file(text).map_err(ImportError::Design)?;
+    let mut s = session.clone();
+    let imported = import(&mut s, &file.items(), None, date)?;
+    s.set_bank_metadata(&file.banks);
+    *session = s;
+    Ok(imported)
+}
