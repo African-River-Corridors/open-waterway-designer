@@ -598,13 +598,13 @@ describe("OWD web smoke tests", () => {
 
   it("sets the rolling circle's water mode: Ignore the water equals owd align --use-water false, Default equals owd align (#494)", async () => {
     const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
-    /** The document `owd align <doc> rolling-circle` leaves for the example, with `flags`. */
+    /** The document `owd align <doc> --method rolling-circle` leaves for the example, with `flags`. */
     const aligned = (flags) => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-use-water-"));
       const doc = path.join(dir, "synthetic-river.owd");
       fs.copyFileSync(EXAMPLE, doc);
       try {
-        execFileSync(CLI, ["align", doc, "rolling-circle", ...flags], { encoding: "utf8", maxBuffer: 1 << 28 });
+        execFileSync(CLI, ["align", doc, "--method", "rolling-circle", ...flags], { encoding: "utf8", maxBuffer: 1 << 28 });
       } catch (e) {
         if (e.status !== 1) throw e; // exit 1: a check failed; the document is still written
       }
@@ -641,15 +641,9 @@ describe("OWD web smoke tests", () => {
     await (await tid(b, "run-alignment")).click();
     await until(b, "alignment fresh again", async () => (await text(b, "status-alignment")) === "fresh", 120000);
     const page = await pageDoc(b);
-    const native = aligned([]);
-    // `owd align` with no flag stores no setting; the app stores the setting unset (null). Both
-    // read as unset, so the options and the alignment results are the same.
+    // `owd align` with no flag stores the setting unset (null), as Default does.
     assert.equal(page.stages.alignment.settings.rolling_circle.use_water, null);
-    for (const [what, p, n] of [["options", page.options, native.options], ["alignment results", page.stages.alignment.results, native.stages.alignment.results]]) {
-      const r = compare(n, p);
-      assert.deepEqual(r.problems.slice(0, 5), [], `Default: ${what} equal to native (ADR 0005 tolerance)`);
-      assert.ok(r.numbers > 0, `Default: ${what} had numbers to compare`);
-    }
+    sameAsNative(page, aligned([]), "Default");
     // The option records the value the run used: the example has a river polygon, so on.
     assert.equal(page.options.find((o) => o.method === "rolling_circle").settings.use_water, true);
     assert.match(await text(b, "use-water-last"), /Keep to the water/);
