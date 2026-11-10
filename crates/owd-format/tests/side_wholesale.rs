@@ -49,25 +49,30 @@ fn the_share_is_one_named_constant_with_a_test_on_each_side() {
 
 #[test]
 fn a_local_side_fault_keeps_the_per_check_report() {
-    // A centreline that strays north of the left bank for a short stretch: the left bank is on
-    // its right there, and only there.
-    let centre: Vec<[f64; 2]> = (0..=32)
-        .map(|i| {
-            let x = 100.0 * f64::from(i);
-            let y = if (1500.0..=1600.0).contains(&x) {
-                150.0
-            } else {
-                0.0
-            };
-            [500_000.0 + x, 600_000.0 + y]
+    // The right bank dives north past the left bank for a short stretch: it is on the wrong side
+    // there, and only there. (A centreline that strays off the river is no side fault: the checks
+    // allow it.) Banks that cross come in only through the unchecked import, which runs the same
+    // bank checks.
+    let right: Vec<[f64; 2]> = bank(-100.0)
+        .into_iter()
+        .map(|[x, y]| {
+            let along = x - 500_000.0;
+            [
+                x,
+                if (1500.0..=1600.0).contains(&along) {
+                    600_150.0
+                } else {
+                    y
+                },
+            ]
         })
         .collect();
     let mut s = Session::new("Local fault", "2026-01-02");
     let report = s
-        .import(&[
+        .import_unchecked(&[
             (Role::LeftBank, &line(&bank(100.0))),
-            (Role::RightBank, &line(&bank(-100.0))),
-            (Role::Centreline, &line(&centre)),
+            (Role::RightBank, &line(&right)),
+            (Role::Centreline, &line(&bank(0.0))),
         ])
         .unwrap();
     assert!(
