@@ -5,7 +5,7 @@
 //! the clock, and nothing else. It holds no calculation, validation or default logic.
 
 use base64::Engine;
-use owd_format::design::{Session, date_from_unix};
+use owd_format::design::date_from_unix;
 use owd_shell::state::{self, AppState};
 use owd_shell::{input, run};
 use std::path::{Path, PathBuf};
