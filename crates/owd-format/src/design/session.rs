@@ -611,7 +611,53 @@ impl Session {
     /// Import inputs from GeoJSON text. Reads every input first and changes nothing if one is
     /// refused. The first import chooses the project CRS: the UTM zone of a UTM input, or the zone
     /// and hemisphere at the centroid of the bank lines for WGS84 input. Later imports use it.
+    ///
+    /// After the import the two banks are a sound pair (ticket B2): both run the way the centreline
+    /// runs (downstream), or with no centreline the way the left bank runs; left and right are named
+    /// looking downstream when a centreline says which way that is; two banks that cross are
+    /// refused; and two banks with no given river polygon give one (the left bank, then the right
+    /// bank backwards). A polygon built that way is built again when a bank is imported again.
     pub fn import(&mut self, items: &[(Role, &str)]) -> Result<ImportReport, DesignError> {
+        self.import_with(items, None, true)
+    }
+
+    /// Import as [`Session::import`] does, with no centreline needed to tell which way the river
+    /// flows: both banks run towards `downstream_lon_lat` (longitude, latitude, WGS84), and the
+    /// sides are named looking that way. A point that is no longitude and latitude is refused, and
+    /// so is a point that disagrees with the centreline.
+    pub fn import_downstream(
+        &mut self,
+        items: &[(Role, &str)],
+        downstream_lon_lat: [f64; 2],
+    ) -> Result<ImportReport, DesignError> {
+        let [lon, lat] = downstream_lon_lat;
+        if !(lon.is_finite() && lat.is_finite() && lon.abs() <= 180.0 && lat.abs() <= 90.0) {
+            return Err(DesignError::Input(format!(
+                "the downstream point ({lon}, {lat}) is not a longitude and latitude"
+            )));
+        }
+        self.import_with(items, Some(downstream_lon_lat), true)
+    }
+
+    /// Import as [`Session::import`] does, but keep two banks that cross instead of refusing them.
+    ///
+    /// This exists only for banks a machine made (the bank extraction from imagery, through
+    /// `owd_reach::banks::record_banks_as`, its one caller). The bank checks must run after it and
+    /// report the crossing. A user's files never come in this way: the command line and the app
+    /// shell use [`Session::import`]. It goes when bank making leaves the repository.
+    pub fn import_unchecked(
+        &mut self,
+        items: &[(Role, &str)],
+    ) -> Result<ImportReport, DesignError> {
+        self.import_with(items, None, false)
+    }
+
+    fn import_with(
+        &mut self,
+        items: &[(Role, &str)],
+        downstream: Option<[f64; 2]>,
+        refuse_crossing: bool,
+    ) -> Result<ImportReport, DesignError> {
         if items.is_empty() {
             return Err(DesignError::Input("nothing to import".into()));
         }
@@ -673,6 +719,15 @@ impl Session {
                 .map_err(|e| DesignError::Input(format!("{}: {e}", role.name())))?;
             converted.push((*role, p.crs, g));
         }
+        let downstream_xy = match downstream {
+            Some([lon, lat]) => Some(
+                target
+                    .forward(lon, lat)
+                    .map_err(|e| DesignError::Input(format!("the downstream point: {e}")))?,
+            ),
+            None => None,
+        };
+        let pair = self.sound_pair(&converted, downstream_xy, refuse_crossing)?;
         let mut report = ImportReport {
             project_epsg: target.epsg(),
             inputs: Vec::new(),
@@ -688,7 +743,188 @@ impl Session {
                 json!(format!("EPSG:{}", source.epsg()));
             self.doc["inputs"][role.name()] = g;
         }
+        if let Some(pair) = pair {
+            let (l, r) = (Role::LeftBank.name(), Role::RightBank.name());
+            if pair.swapped {
+                let src = &mut self.doc["project"]["source_crs"];
+                let (a, b) = (src[l].take(), src[r].take());
+                for (k, v) in [(l, b), (r, a)] {
+                    if !v.is_null() {
+                        src[k] = v;
+                    }
+                }
+                if let Some(m) = src.as_object_mut() {
+                    m.retain(|_, v| !v.is_null());
+                }
+            }
+            self.doc["inputs"][l] = pair.left;
+            self.doc["inputs"][r] = pair.right;
+            if let Some(p) = pair.polygon {
+                self.doc["inputs"][Role::RiverPolygon.name()] = p;
+            }
+        }
         Ok(report)
+    }
+
+    /// Whether the document's river polygon is the one built from its two banks (the left bank,
+    /// then the right bank backwards, as the import builds it), not one the user gave.
+    pub(super) fn polygon_built_from_banks(&self) -> bool {
+        let inputs = &self.doc["inputs"];
+        match (
+            line_points(&inputs[Role::LeftBank.name()]),
+            line_points(&inputs[Role::RightBank.name()]),
+            ring_points(&inputs[Role::RiverPolygon.name()]),
+        ) {
+            (Some(l), Some(r), Some(ring)) => ring == super::bank_edit::polygon(&l, &r),
+            _ => false,
+        }
+    }
+
+    /// The banks after an import of `converted` (in the project CRS), as a sound pair; `None` when
+    /// the import holds no bank. Refuses two banks that cross, and a downstream point that
+    /// disagrees with the centreline. Changes nothing.
+    fn sound_pair(
+        &self,
+        converted: &[(Role, Crs, Value)],
+        downstream: Option<[f64; 2]>,
+        refuse_crossing: bool,
+    ) -> Result<Option<SoundPair>, DesignError> {
+        use super::bank_pair::{first_crossing, on_the_right_of, runs_against, runs_away_from};
+        if !converted.iter().any(|(r, _, _)| r.is_bank()) {
+            return Ok(None);
+        }
+        let imported = |role: Role| converted.iter().find(|(r, _, _)| *r == role);
+        let after = |role: Role| -> Value {
+            imported(role)
+                .map(|(_, _, g)| g.clone())
+                .unwrap_or_else(|| self.doc["inputs"][role.name()].clone())
+        };
+        let (mut left, mut right) = (after(Role::LeftBank), after(Role::RightBank));
+        let centre = line_points(&after(Role::Centreline));
+        if refuse_crossing
+            && let (Some(l), Some(r)) = (line_points(&left), line_points(&right))
+            && let Some([x, y]) = first_crossing(&l, &r)
+        {
+            return Err(DesignError::Input(format!(
+                "the left bank and the right bank cross at ({x:.1}, {y:.1}): a river's banks \
+                 must not cross"
+            )));
+        }
+        if let (Some(c), Some(d)) = (&centre, downstream)
+            && runs_away_from(c, d)
+        {
+            return Err(DesignError::Input(
+                "the downstream point is at the upstream end of the centreline: the centreline \
+                 runs downstream, so the two disagree"
+                    .into(),
+            ));
+        }
+        // Direction.
+        let turn_if = |v: &mut Value, yes: &dyn Fn(&[[f64; 2]]) -> bool| {
+            if line_points(v).is_some_and(|p| yes(&p)) {
+                reverse_line(v);
+            }
+        };
+        if let Some(c) = &centre {
+            for v in [&mut left, &mut right] {
+                turn_if(v, &|p| runs_against(p, c));
+            }
+        } else if let Some(d) = downstream {
+            for v in [&mut left, &mut right] {
+                turn_if(v, &|p| runs_away_from(p, d));
+            }
+        } else if let (Some(l), Some(r)) = (line_points(&left), line_points(&right)) {
+            // The bank of this import turns to match the other; with both, the right bank turns.
+            if imported(Role::RightBank).is_some() {
+                turn_if(&mut right, &|p| runs_against(p, &l));
+            } else {
+                turn_if(&mut left, &|p| runs_against(p, &r));
+            }
+        }
+        // Sides, looking downstream.
+        let mut swapped = false;
+        if centre.is_some() || downstream.is_some() {
+            let wrong = match (line_points(&left), line_points(&right), &centre) {
+                (Some(l), Some(r), _) => on_the_right_of(&l, &r),
+                (Some(l), None, Some(c)) => on_the_right_of(&l, c),
+                (None, Some(r), Some(c)) => on_the_right_of(c, &r),
+                _ => false,
+            };
+            if wrong {
+                std::mem::swap(&mut left, &mut right);
+                swapped = true;
+            }
+        }
+        // The river polygon: built from the banks unless one was given.
+        let mut polygon = None;
+        if imported(Role::RiverPolygon).is_none()
+            && let (Some(l), Some(r)) = (line_points(&left), line_points(&right))
+        {
+            let old = &self.doc["inputs"];
+            let built_before = match (
+                line_points(&old[Role::LeftBank.name()]),
+                line_points(&old[Role::RightBank.name()]),
+            ) {
+                (Some(ol), Some(or)) => {
+                    ring_points(&old[Role::RiverPolygon.name()])
+                        == Some(super::bank_edit::polygon(&ol, &or))
+                }
+                _ => false,
+            };
+            if old[Role::RiverPolygon.name()].is_null() || built_before {
+                polygon = Some(json!({
+                    "type": "Polygon",
+                    "coordinates": [super::bank_edit::polygon(&l, &r)],
+                }));
+            }
+        }
+        Ok(Some(SoundPair {
+            left,
+            right,
+            swapped,
+            polygon,
+        }))
+    }
+}
+
+/// The banks after an import, as [`Session::sound_pair`] makes them.
+struct SoundPair {
+    left: Value,
+    right: Value,
+    /// The names were the wrong way round, so the two lines changed places.
+    swapped: bool,
+    /// The river polygon built from the banks, when it is to be (re)built.
+    polygon: Option<Value>,
+}
+
+/// The positions of a LineString geometry; `None` for anything else.
+fn line_points(v: &Value) -> Option<Vec<[f64; 2]>> {
+    if v["type"] != "LineString" {
+        return None;
+    }
+    v["coordinates"]
+        .as_array()?
+        .iter()
+        .map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
+        .collect()
+}
+
+/// The exterior ring of a Polygon geometry; `None` for anything else.
+fn ring_points(v: &Value) -> Option<Vec<[f64; 2]>> {
+    if v["type"] != "Polygon" {
+        return None;
+    }
+    v["coordinates"][0]
+        .as_array()?
+        .iter()
+        .map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
+        .collect()
+}
+
+/// Turn a LineString geometry round.
+fn reverse_line(v: &mut Value) {
+    if let Some(a) = v["coordinates"].as_array_mut() {
+        a.reverse();
     }
 }
 
