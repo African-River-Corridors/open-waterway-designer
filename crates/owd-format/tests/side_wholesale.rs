@@ -25,7 +25,7 @@ fn bank(y: f64) -> Vec<[f64; 2]> {
 
 #[test]
 fn the_share_is_one_named_constant_with_a_test_on_each_side() {
-    assert!(SIDE_WHOLESALE_SHARE > 0.0 && SIDE_WHOLESALE_SHARE < 1.0);
+    const { assert!(SIDE_WHOLESALE_SHARE > 0.0 && SIDE_WHOLESALE_SHARE < 1.0) };
     let checked = 1000;
     let at = (SIDE_WHOLESALE_SHARE * checked as f64).round() as usize;
     assert!(
