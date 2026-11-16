@@ -26,8 +26,9 @@ ticket whose blockers are all closed, and no other. For each ticket:
 
    This takes about a minute instead of about five. Run the full `tools/gates.sh` only when a change crosses
    many crates, such as a rename or a shared-type change, or when CI went red and you need to reproduce it.
-4. **CI, without waiting on it.** The `test` and `release-guard` jobs must be green on the head commit
-   before the merge, and branch protection enforces that. Nobody waits for them, though. As soon as the
+4. **CI, without waiting on it.** The four required checks (`test`, `release-guard`, `app-e2e` and
+   `web-app`) must be green, or skipped by their path filter, on the head commit before the merge, and
+   branch protection enforces that. Nobody waits for them, though. As soon as the
    PR is open, turn on auto-merge (`gh pr merge <pr> --squash --auto --delete-branch`), then start the
    next ticket's reading and tests. If the PR goes red, fixing it comes before anything else. CI runs
    once per PR (pull request event); pushes to ticket branches do not trigger a second run.
@@ -43,14 +44,13 @@ below.
 
 ## Which CI jobs run where (since 2026-10-22)
 
-Only `test` and `release-guard` are required, and they run on every pull request. The rest run only when
-their inputs change, so a skipped job never blocks a merge:
+Four checks are required on `main` (branch protection, `gh api repos/African-River-Corridors/open-waterway-designer/branches/main/protection`): `test`, `release-guard`, `app-e2e` and `web-app`. `test` and `release-guard` run on every pull request. `app-e2e` and `web-app`, and the other jobs, run only when their inputs change (the table), and a job skipped by its path filter does not block a merge:
 
 | Job | On a pull request | On main | Other |
 |---|---|---|---|
-| CI `test` (needs `gate-lint`, `gate-rust` ×3, `gate-python`), `release-guard`, `drawing-crosscheck` | always | always | weekly, by hand |
-| CI `app-linux`, `app-e2e` | `app/**`, the crates the app links, `examples/**`, Cargo files, toolchain, `ci.yml` | always | weekly, by hand |
-| CI `web-parity`, `web-app` | the same, plus `crates/owd-web/**` and the web tools | always | weekly, by hand |
+| CI `test` (required; needs `gate-lint`, `gate-rust` ×3, `gate-python`), `release-guard` (required), `drawing-crosscheck` | always | always | weekly, by hand |
+| CI `app-linux`, `app-e2e` (required) | `app/**`, the crates the app links, `examples/**`, Cargo files, toolchain, `ci.yml` | always | weekly, by hand |
+| CI `web-parity`, `web-app` (required) | the same, plus `crates/owd-web/**` and the web tools | always | weekly, by hand |
 | App bundles (3 jobs) | `app/**`, the crates the app links, Cargo files, toolchain | the same paths | by hand |
 | Wheels (5 jobs) | `crates/owd-py`, `owd-format`, `owd-core`, `src/**`, packaging files | the same paths | by hand |
 | Website | `website/**`, `docs/**`, root `*.md`, `app/src/tokens.css` | the wider list in `website.yml` | by hand |
@@ -66,7 +66,7 @@ gate, as before.
 
 A failed scheduled run (the nightly, the weekly CI run, CodeQL) opens an issue titled "Scheduled run
 failed: <workflow>", or comments on the open one (`scheduled-failure.yml`). `tests/test_workflows.py`
-checks that the required jobs are never filtered and that every scheduled workflow is watched.
+checks that no workflow-level path filter can skip a required check and that every scheduled workflow is watched.
 
 CodeQL moves to `codeql.yml` only when the maintainer turns off the repository's CodeQL "default setup"
 and sets the repository variable `CODEQL_ADVANCED_SETUP` to `true`. Until then the default setup still
