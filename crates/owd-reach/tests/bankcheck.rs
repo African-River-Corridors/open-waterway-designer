@@ -488,3 +488,34 @@ t! {
         assert!(ml < 0.5 && mr < 0.5, "one more round moved the banks {ml:.1} m and {mr:.1} m");
     }
 }
+
+t! {
+    /// Issue #411, the cause that can be fixed on its own: a run of stations at either end of the
+    /// banks, where the normal meets no bank, is not a fault and is not repaired. With the repairs
+    /// of the jump, width and excursion checks off there is nothing left to repair on the recorded
+    /// whole-river banks, so one more round on what `check_and_repair` returned must move neither
+    /// bank. Before the fix, the step limit marked the end runs bad, the fill held the last good
+    /// offset to the end, and the downstream ends of the banks moved by 1,550 m (left) and
+    /// 2,016 m (right). Label: property.
+    fn one_more_round_with_only_the_side_repairs_moves_nothing_at_the_ends() {
+        let fx: serde_json::Value =
+            serde_json::from_str(include_str!("data/midline-tangle.json")).unwrap();
+        let pts = |k: &str| -> Vec<P> {
+            fx[k].as_array().unwrap().iter()
+                .map(|p| [p[0].as_f64().unwrap(), p[1].as_f64().unwrap()])
+                .collect()
+        };
+        let (left, right, seed) = (pts("left"), pts("right"), pts("seed"));
+        let p = CheckParams {
+            max_step_m: Some(1.5),
+            jump_factor: 1e9,
+            width_high: 1e9,
+            excursion_min_m: 1e9,
+            ..CheckParams::at_step(5.0)
+        };
+        let c = check_and_repair(&left, &right, &seed, &p).unwrap();
+        let again = check_and_repair(&c.left, &c.right, &seed, &p).unwrap();
+        let (ml, mr) = (moved(&again.left, &c.left), moved(&again.right, &c.right));
+        assert!(ml < 0.5 && mr < 0.5, "one more round moved the banks {ml:.1} m and {mr:.1} m");
+    }
+}
