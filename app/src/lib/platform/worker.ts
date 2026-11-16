@@ -2,6 +2,7 @@
 // sends {id, method, args}; the worker answers {id, ok, result} or {id, ok: false, error}, and posts
 // {progress} while a stage runs. Cancel is the page ending this worker (wasm cannot unwind out of a stage).
 import init, { Session } from "../../../wasm-pkg/owd_web.js";
+import { isTrap } from "./host";
 import wasmUrl from "../../../wasm-pkg/owd_web_bg.wasm?url";
 
 let session: Session | undefined;
@@ -42,6 +43,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; method: string; args: unkn
     const given = method === "run_stage" ? [args[0], args[1], (n: number) => self.postMessage({ progress: n })] : NETWORK.has(method) ? [...args, syncFetch] : args;
     self.postMessage({ id, ok: true, result: s[method].apply(session, given) });
   } catch (err) {
-    self.postMessage({ id, ok: false, error: String(err) });
+    // A trap or a stack overflow leaves the wasm session unusable: say so, and the page ends this worker.
+    self.postMessage({ id, ok: false, error: String(err), ...(isTrap(err) ? { fatal: true } : {}) });
   }
 };
