@@ -3,9 +3,14 @@
 //! import built from the two banks. A centreline alone has no polygon, so the default is off. The
 //! option records the value used, also when it came from the default.
 //!
-//! The river is closed-form: two sine banks 150 m apart, 6 km long, 600 m amplitude and 1.2 km
-//! wavelength. Its bends (radius about 60 m) are far tighter than the 255 m the vessel needs, so a
-//! line held in the water differs from one that is not.
+//! The river is closed-form: two sine banks 360 m apart, 6 km long, 350 m amplitude and 1.8 km
+//! wavelength. Its bends are tighter than the 255 m the vessel needs, but the water is wide enough
+//! to move the line inside it, so a line held in the water differs from one that is not, and holds
+//! R_min where the plain line does not.
+//!
+//! A second river (`TIGHT`: banks 150 m apart, 600 m amplitude, 1.2 km wavelength) has bends no
+//! channel fits (radius about 60 m). There the water-aware line equals the plain line: it is never
+//! worse (issue #503).
 //!
 //! Label: property
 
@@ -16,12 +21,34 @@ type Pt = [f64; 2];
 
 const UTM30: &str = r#""crs":{"type":"name","properties":{"name":"urn:ogc:def:crs:EPSG::32630"}}"#;
 
+/// A river: the amplitude and wavelength of its sine, and the distance of each bank from the middle.
+#[derive(Clone, Copy)]
+struct River {
+    amplitude: f64,
+    wavelength: f64,
+    half_width: f64,
+}
+
+/// The river the default tests use: the water has room to move the line.
+const ROOMY: River = River {
+    amplitude: 350.0,
+    wavelength: 1800.0,
+    half_width: 180.0,
+};
+
+/// A river whose bends no channel fits.
+const TIGHT: River = River {
+    amplitude: 600.0,
+    wavelength: 1200.0,
+    half_width: 75.0,
+};
+
 /// A sine line `off` metres north of the middle of the river.
-fn sine(off: f64) -> Vec<Pt> {
+fn sine(r: River, off: f64) -> Vec<Pt> {
     (0..=600)
         .map(|i| {
             let x = 10.0 * f64::from(i);
-            let y = 600.0 * libm::sin(2.0 * std::f64::consts::PI * x / 1200.0) + off;
+            let y = r.amplitude * libm::sin(2.0 * std::f64::consts::PI * x / r.wavelength) + off;
             [500_000.0 + x, 600_000.0 + y]
         })
         .collect()
@@ -44,7 +71,10 @@ fn polygon_text(ring: &[Pt]) -> String {
 /// The ring of the two banks with one more vertex on its closing side: a polygon the user gave,
 /// not the one the import builds.
 fn given_ring() -> Vec<Pt> {
-    let (l, r) = (sine(75.0), sine(-75.0));
+    let (l, r) = (
+        sine(ROOMY, ROOMY.half_width),
+        sine(ROOMY, -ROOMY.half_width),
+    );
     let mut ring = l.clone();
     ring.extend(r.iter().rev());
     let (a, b) = (ring[ring.len() - 1], ring[0]);
@@ -65,8 +95,15 @@ enum Case {
 }
 
 fn sized(case: Case) -> Session {
-    let (left, right) = (line_text(&sine(75.0)), line_text(&sine(-75.0)));
-    let (centre, given) = (line_text(&sine(0.0)), polygon_text(&given_ring()));
+    sized_on(case, ROOMY)
+}
+
+fn sized_on(case: Case, river: River) -> Session {
+    let (left, right) = (
+        line_text(&sine(river, river.half_width)),
+        line_text(&sine(river, -river.half_width)),
+    );
+    let (centre, given) = (line_text(&sine(river, 0.0)), polygon_text(&given_ring()));
     let items: Vec<(Role, &str)> = match case {
         Case::TwoBanks => vec![(Role::LeftBank, &left), (Role::RightBank, &right)],
         Case::GivenPolygon => vec![
@@ -87,7 +124,11 @@ fn sized(case: Case) -> Session {
 
 /// The rolling-circle option after a run with `overrides`, and the session.
 fn rolled(case: Case, overrides: Value) -> (Value, Session) {
-    let mut s = sized(case);
+    rolled_on(case, ROOMY, overrides)
+}
+
+fn rolled_on(case: Case, river: River, overrides: Value) -> (Value, Session) {
+    let mut s = sized_on(case, river);
     s.align(AlignMethod::RollingCircle, &overrides, None)
         .unwrap();
     let option = s.document()["options"]
@@ -177,4 +218,44 @@ fn a_bad_setting_is_refused_by_name_and_changes_nothing() {
         .unwrap_err();
     assert!(e.to_string().contains("use_water"), "{e}");
     assert_eq!(s.to_text(), before);
+}
+
+fn min_radius(option: &Value) -> f64 {
+    option["checks"]["measured_min_radius_m"].as_f64().unwrap()
+}
+
+#[test]
+fn where_the_water_has_room_the_water_aware_line_holds_r_min_and_the_plain_line_does_not() {
+    let (on, _) = rolled(Case::TwoBanks, json!({"use_water": true}));
+    let (off, _) = rolled(Case::TwoBanks, json!({"use_water": false}));
+    assert_ne!(
+        on["line"], off["line"],
+        "the water mode must change this line"
+    );
+    assert_eq!(on["checks"]["radius_ok"], json!(true));
+    assert_eq!(on["checks"]["fits_in_water"]["ok"], json!(true));
+    assert_eq!(
+        off["checks"]["radius_ok"],
+        json!(false),
+        "the plain line is tighter than R_min here, or the case proves nothing"
+    );
+    assert!(min_radius(&on) > min_radius(&off));
+}
+
+#[test]
+fn where_no_channel_fits_the_water_aware_line_is_never_worse_than_the_plain_line() {
+    for case in [Case::TwoBanks, Case::GivenPolygon] {
+        let (on, _) = rolled_on(case, TIGHT, json!({"use_water": true}));
+        let (off, _) = rolled_on(case, TIGHT, json!({"use_water": false}));
+        // Holds R_min on the default chord at least as well as the plain line does.
+        assert!(
+            min_radius(&on) >= min_radius(&off) - 1e-9,
+            "{} against {}",
+            min_radius(&on),
+            min_radius(&off)
+        );
+        assert_eq!(on["checks"]["radius_ok"], off["checks"]["radius_ok"]);
+        // The bends are still reported: the line does not fit the water.
+        assert_eq!(on["checks"]["fits_in_water"]["ok"], json!(false));
+    }
 }

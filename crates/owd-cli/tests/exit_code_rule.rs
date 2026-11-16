@@ -215,7 +215,7 @@ fn align_centreline_follows_the_rule() {
 fn optimise_follows_the_rule() {
     check_failing(
         "optimise",
-        &[&["align", "--method", "rolling-circle"]],
+        &[&["align", "--method", "centreline"]],
         "optimise",
         &["--sites", "1200"],
     );
