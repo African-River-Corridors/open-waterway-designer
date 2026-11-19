@@ -291,7 +291,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev \
-            libayatana-appindicator3-dev librsvg2-dev webkit2gtk-driver xvfb
+            libayatana-appindicator3-dev librsvg2-dev webkitgtk-webdriver xvfb
+          # Fail loudly if the driver package did not provide the binary tauri-driver launches.
+          command -v WebKitWebDriver || { echo 'WebKitWebDriver is missing after install' >&2; exit 1; }
       - name: tauri-driver (cached)
         id: driver
         uses: actions/cache@v4

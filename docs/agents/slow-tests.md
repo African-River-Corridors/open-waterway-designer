@@ -46,3 +46,5 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 
 Times are from one local nextest run (10 cores, tests in parallel, so inflated); CI times are in the pull request.
 Python tests (about 33 s in total) all still run in the pull-request job.
+
+**Longer nightly limit.** The nightly profile stops a test after 600 s (`terminate-after = 5` of 120 s). Three `owd-cli::exit_code_rule` tests (`optimise_follows_the_rule`, `volumes_follows_the_rule`, `run_follows_the_rule`) take about 470 s on a CI runner, so they have an override of 1200 s in `.config/nextest.toml` (issue #497). They also run in the pull-request job, which has no limit.
