@@ -2,10 +2,9 @@
 //! is no survey. The calculation is `owd_core::bed`; here are the input, the label and the terrain
 //! the volumes read. The depth is assumed, not measured, and every output that used it says so.
 
-use super::alignment::Terrain;
 use super::provenance::{Mark, record};
 use super::session::{DesignError, Session};
-use super::water::level_at;
+use crate::types::{Chainage, TerrainSampler, WaterProfile};
 use owd_core::bed::BedModel;
 use owd_core::geom::Pt;
 use serde_json::{Value, json};
@@ -140,7 +139,7 @@ impl Session {
 
     /// The water level the bed hangs from: the river's own profile (not the pools of the optimise
     /// stage, which raise the water above the natural low water).
-    pub(super) fn bed_water_profile(&self) -> Option<Vec<[f64; 2]>> {
+    pub(super) fn bed_water_profile(&self) -> Option<WaterProfile> {
         self.input_water_profile()
             .or_else(|| self.water_profile().map(|(p, _)| p))
     }
@@ -150,8 +149,8 @@ impl Session {
 /// depth; elsewhere it is the DEM.
 pub(super) fn with_bed<'a>(
     bed: &'a BedModel,
-    level: &'a [[f64; 2]],
-    terrain: Terrain<'a>,
+    level: &'a WaterProfile,
+    terrain: TerrainSampler<'a>,
 ) -> impl Fn(&[f64], &[f64]) -> Vec<f64> + 'a {
     move |xs: &[f64], ys: &[f64]| -> Vec<f64> {
         let dem = terrain(xs, ys);
@@ -160,7 +159,7 @@ pub(super) fn with_bed<'a>(
             .zip(dem)
             .map(|((&x, &y), z)| {
                 let p: Pt = [x, y];
-                let wl = level_at(level, bed.chainage_of(p));
+                let wl = level.level_at(Chainage(bed.chainage_of(p)));
                 bed.bed_elevation(p, wl).unwrap_or(z)
             })
             .collect()

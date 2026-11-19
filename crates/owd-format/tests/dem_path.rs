@@ -2,8 +2,9 @@
 //! The DEM is identified by its hash: a design saved to another folder, with the DEM path changed to
 //! match, keeps its results fresh (spec 0003, ticket 74).
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, Session, Stage, StageStatus, Terrain};
+use owd_format::design::{AlignMethod, Session, Stage, StageStatus};
 use owd_format::geotiff::Dem;
+use owd_format::types::TerrainSampler;
 use serde_json::Value;
 
 #[test]
@@ -30,7 +31,7 @@ fn moving_the_dem_path_keeps_the_stages_fresh_and_a_changed_file_still_makes_the
     let t = dem_sampler(&dem, Some(32630)).unwrap();
     s.align(AlignMethod::RollingCircle, &Value::Null, None)
         .unwrap();
-    s.run_stage_with(Stage::Volumes, Some(&t as Terrain))
+    s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
         .unwrap();
     assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh);
     s.set_dem_path("../elsewhere/dem.tif");

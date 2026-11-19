@@ -5,9 +5,9 @@
 //! The baseline is the rolling-circle option's line, else the river centreline. Chainages are
 //! metres along it. Weights are settings, not prices: 1.0 / 1.0 minimises volume.
 
-use super::alignment::Terrain;
 use super::geojson::all_positions;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
+use crate::types::TerrainSampler;
 use owd_core::alignment::radius_check::{default_check_chord, min_radius_on_chord, radius_ok};
 use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Polygon, Pt, linear};
@@ -228,7 +228,7 @@ impl Session {
     pub fn run_optimise(
         &mut self,
         overrides: &Value,
-        terrain: Option<Terrain>,
+        terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         // The settings first, before the terrain or any work: an unknown key changes nothing.
         self.optimise_settings(overrides)?;

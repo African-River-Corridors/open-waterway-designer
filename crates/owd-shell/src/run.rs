@@ -8,8 +8,9 @@
 //! No Tauri types here, so it is tested like any other Rust.
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, Session, Stage, Terrain};
+use owd_format::design::{AlignMethod, Session, Stage};
 use owd_format::geotiff::Dem;
+use owd_format::types::TerrainSampler;
 use serde_json::Value;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 use std::sync::Arc;
@@ -76,7 +77,7 @@ impl RunJob {
                 .as_ref()
                 .expect("a sampler is only called when there is a DEM"))(xs, ys)
         };
-        let terrain: Option<Terrain> = base.is_some().then_some(&wrapped as Terrain);
+        let terrain: Option<TerrainSampler> = base.is_some().then_some(&wrapped as TerrainSampler);
         let ran = catch_unwind(AssertUnwindSafe(|| match (stage, method) {
             (Stage::Alignment, Some(m)) => session.align(m, &Value::Null, terrain),
             _ => session.run_stage_with(stage, terrain),

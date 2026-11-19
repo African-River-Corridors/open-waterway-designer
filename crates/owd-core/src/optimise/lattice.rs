@@ -35,12 +35,10 @@ use crate::alignment::radius_check::{default_check_chord, min_radius_on_chord, r
 use crate::geom::offset::{Cap, buffer_line};
 use crate::geom::overlay::{Op, contains_xy, overlay};
 use crate::geom::{Geometry, Polygon, Pt, linear};
-use crate::volumes::sections::{TerrainSampler, arange};
+use crate::types::{Refusal, TerrainSampler};
+use crate::volumes::sections::arange;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-
-/// A refusal: a Python `ValueError`, with its text.
-pub type Refusal = String;
 
 /// `(x, y, heading)`.
 pub type Pose = (f64, f64, f64);

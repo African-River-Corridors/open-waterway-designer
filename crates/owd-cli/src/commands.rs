@@ -4,7 +4,8 @@ use owd_core::rules::custom::{CustomVessel, Formation};
 use owd_format::design::alignment::WIDTH_ONLY;
 use owd_format::design::export::{failed_checks, no_feasible_line, notes_of};
 use owd_format::design::geopackage;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus, Terrain};
+use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -1130,7 +1131,7 @@ pub fn optimise(
     session
         .run_optimise(
             &Value::Object(overrides),
-            sampler.as_ref().map(|s| s as Terrain),
+            sampler.as_ref().map(|s| s as TerrainSampler),
         )
         .map_err(from_design)?;
     let dest = destination(doc, output);
@@ -1225,7 +1226,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
     session
         .run_volumes(
             &Value::Object(overrides),
-            sampler.as_ref().map(|s| s as Terrain),
+            sampler.as_ref().map(|s| s as TerrainSampler),
         )
         .map_err(from_design)?;
     let dest = destination(doc, output);
@@ -1816,7 +1817,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         None => None,
     };
     let ran = session
-        .run_stale_with(sampler.as_ref().map(|s| s as Terrain))
+        .run_stale_with(sampler.as_ref().map(|s| s as TerrainSampler))
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;

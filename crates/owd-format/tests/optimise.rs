@@ -277,6 +277,7 @@ fn volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels() {
     assert_eq!(source, "optimise");
     let weir = &s.document()["stages"]["optimise"]["results"]["cascade"]["weirs"][0];
     let lift = weir["lift_m"].as_f64().unwrap();
+    let profile = profile.to_pairs();
     let steps: Vec<&[[f64; 2]]> = profile
         .windows(2)
         .filter(|w| w[0][0] == w[1][0] && w[0][1] != w[1][1])

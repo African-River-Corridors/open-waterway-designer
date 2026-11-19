@@ -8,6 +8,7 @@
 //! they are the profile the volumes stage reads.
 
 use super::session::{DesignError, Session, Stage};
+use crate::types::{Chainage, WaterProfile};
 use owd_core::geom::{Pt, linear};
 use serde_json::{Value, json};
 
@@ -22,34 +23,17 @@ pub enum WaterSampling {
     DesignLineChainage,
 }
 
-/// The level at `chainage_m` on a table of `(chainage, level)` points sorted by chainage.
-pub fn level_at(points: &[[f64; 2]], chainage_m: f64) -> f64 {
-    let (Some(first), Some(last)) = (points.first(), points.last()) else {
-        return f64::NAN;
-    };
-    if chainage_m.is_nan() {
-        return f64::NAN;
-    }
-    if chainage_m < first[0] {
-        return first[1];
-    }
-    // The last point at or before the chainage: a step takes its later level.
-    let i = points.partition_point(|p| p[0] <= chainage_m) - 1;
-    if i + 1 >= points.len() {
-        return last[1];
-    }
-    let (a, b) = (points[i], points[i + 1]);
-    a[1] + (b[1] - a[1]) * (chainage_m - a[0]) / (b[0] - a[0])
-}
-
-fn points_of(v: &Value) -> Vec<[f64; 2]> {
-    v.as_array()
+/// The profile held as `[chainage, level]` pairs in `v`: a pair that is not two numbers is skipped.
+fn profile_of(v: &Value) -> WaterProfile {
+    let pairs: Vec<[f64; 2]> = v
+        .as_array()
         .map(|a| {
             a.iter()
                 .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    WaterProfile::from_pairs(&pairs)
 }
 
 impl Session {
@@ -159,10 +143,10 @@ impl Session {
 
     /// The water level the later stages read: the pool levels the optimise stage set, if it has run,
     /// else the profile of the inputs. The second value says which.
-    pub fn water_profile(&self) -> Option<(Vec<[f64; 2]>, &'static str)> {
+    pub fn water_profile(&self) -> Option<(WaterProfile, &'static str)> {
         let opt = &self.doc["stages"]["optimise"]["results"];
         if !opt.is_null() {
-            let p = points_of(&opt["profile"]);
+            let p = profile_of(&opt["profile"]);
             if !p.is_empty() {
                 return Some((p, "optimise"));
             }
@@ -171,24 +155,24 @@ impl Session {
     }
 
     /// The profile set by hand or by import.
-    pub fn input_water_profile(&self) -> Option<Vec<[f64; 2]>> {
-        let p = points_of(&self.doc["inputs"]["water_level"]["points"]);
+    pub fn input_water_profile(&self) -> Option<WaterProfile> {
+        let p = profile_of(&self.doc["inputs"]["water_level"]["points"]);
         (!p.is_empty()).then_some(p)
     }
 
     /// The water level along a design line, as a function of the line's own chainage.
     pub(super) fn water_level_along<'a>(
         &self,
-        profile: &'a [[f64; 2]],
+        profile: &'a WaterProfile,
         line: &'a [Pt],
         centre: &'a [Pt],
     ) -> impl Fn(f64) -> f64 + 'a {
         let mode = self.water_sampling;
         move |s| match mode {
-            WaterSampling::DesignLineChainage => level_at(profile, s),
+            WaterSampling::DesignLineChainage => profile.level_at(Chainage(s)),
             WaterSampling::Projection => {
                 let at = linear::interpolate(line, s).unwrap_or([f64::NAN; 2]);
-                level_at(profile, linear::project(centre, at))
+                profile.level_at(Chainage(linear::project(centre, at)))
             }
         }
     }

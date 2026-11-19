@@ -5,10 +5,11 @@
 //! output and passes the layout review; every drawn level and chainage equals the result of the
 //! app's long-section call; the exaggeration is stated on the sheet in words; the style's factor
 //! overrides "auto"; and the same design gives the same bytes.
+use owd_format::design::Session;
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Terrain};
 use owd_format::drawing::{self, DrawOptions, Sheet, SheetKind, Style, check};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -44,7 +45,7 @@ fn series() -> Value {
     let grid = geotiff::read_bytes(&dem).unwrap();
     let t = dem_sampler(&grid, Some(32630)).unwrap();
     let walk = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     s.long_section("rolling-circle", &walk).unwrap()
 }

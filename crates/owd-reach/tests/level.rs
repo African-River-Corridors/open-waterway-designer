@@ -158,7 +158,7 @@ fn the_flow_runs_toward_the_mouth_and_the_level_goes_into_the_document_as_its_pr
     // The stages read the input profile exactly as if it had been typed in.
     let (profile, from) = s.water_profile().unwrap();
     assert_eq!(from, "input");
-    assert_eq!(profile, l.points);
+    assert_eq!(profile.to_pairs(), l.points);
     let at = s.water_levels_along(&c, &[0.0, 5_000.0]).unwrap();
     assert!(at.iter().all(|v| v.is_finite()), "{at:?}");
     let p = s.provenance("water_level").unwrap();

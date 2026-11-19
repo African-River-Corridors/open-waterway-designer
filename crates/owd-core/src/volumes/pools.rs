@@ -6,6 +6,7 @@
 
 use crate::geom::{Pt, linear};
 use crate::numpy::{interp, np_sum, searchsorted_left};
+use crate::types::TerrainSampler;
 
 /// `np.nanmean`: the sum with NaNs as zero, over the count of the others (NaN if none).
 fn nanmean(z: &[f64]) -> f64 {
@@ -156,9 +157,6 @@ impl Default for ProfileParams {
     }
 }
 
-/// A terrain sampler: heights for the points `(xs[i], ys[i])`, NaN where unknown.
-pub type Terrain<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
-
 /// The bed sampled along a centreline (`BedProfile`), chainage from the downstream end.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BedProfile {
@@ -173,7 +171,7 @@ pub struct BedProfile {
 /// chainage 0 is the lower-bed end, and the overall bottom slope.
 pub fn sample_bed_profile(
     centreline: &[Pt],
-    terrain: Terrain<'_>,
+    terrain: TerrainSampler<'_>,
     p: &ProfileParams,
 ) -> BedProfile {
     let length = linear::length(centreline);

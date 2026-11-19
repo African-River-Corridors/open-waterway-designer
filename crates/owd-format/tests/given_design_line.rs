@@ -9,7 +9,8 @@
 
 use owd_core::alignment::radius_check::min_radius_on_chord;
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus, Terrain};
+use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -320,7 +321,7 @@ fn the_volumes_stage_runs_on_a_given_line_with_terrain() {
             .clone()
     };
     // The example's own option, on this engine and this terrain.
-    s.run_stage_with(Stage::Volumes, Some(&terrain as Terrain))
+    s.run_stage_with(Stage::Volumes, Some(&terrain as TerrainSampler))
         .unwrap();
     let before = rows(&s);
     assert_eq!(before.len(), 1);
@@ -338,7 +339,7 @@ fn the_volumes_stage_runs_on_a_given_line_with_terrain() {
         "a new option makes the volumes stale"
     );
 
-    s.run_stage_with(Stage::Volumes, Some(&terrain as Terrain))
+    s.run_stage_with(Stage::Volumes, Some(&terrain as TerrainSampler))
         .unwrap();
     let after = rows(&s);
     assert_eq!(after.len(), 2);
