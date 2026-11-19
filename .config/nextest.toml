@@ -49,3 +49,10 @@ not (
 [profile.nightly]
 fail-fast = false
 slow-timeout = { period = "120s", terminate-after = 5 }
+
+# The three slowest exit-code tests run the full river through the command line twice in a debug
+# build. They take about 470 s on a good runner and passed the 600 s limit on most nights since
+# 2026-11-10 (issue #497). They get a longer limit here; no assertion changes.
+[[profile.nightly.overrides]]
+filter = 'binary_id(owd-cli::exit_code_rule) & test(/^(optimise|volumes|run)_follows_the_rule$/)'
+slow-timeout = { period = "120s", terminate-after = 10 }
