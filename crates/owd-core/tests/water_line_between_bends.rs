@@ -90,13 +90,23 @@ fn roll(half_width: f64, wl: f64, amp: f64) -> (f64, f64, bool) {
 
 #[test]
 fn the_water_line_holds_r_min_wherever_the_plain_line_holds_it() {
-    for hw in [75.0, 125.0, 150.0] {
-        let (plain, water, crossed) = roll(hw, 1200.0, 600.0);
-        assert!(!crossed, "half-width {hw}: the water line crosses itself");
+    for (hw, wl, amp) in [
+        (75.0, 1200.0, 600.0),
+        (125.0, 1200.0, 600.0),
+        (150.0, 1200.0, 600.0),
+        (200.0, 1200.0, 600.0),
+        (125.0, 1000.0, 450.0),
+        (150.0, 1800.0, 700.0),
+    ] {
+        let (plain, water, crossed) = roll(hw, wl, amp);
+        assert!(
+            !crossed,
+            "half-width {hw}, wavelength {wl}, amplitude {amp}: the water line crosses itself"
+        );
         if radius_ok(plain, R_MIN) {
             assert!(
                 radius_ok(water, R_MIN),
-                "half-width {hw}: plain {plain:.1} m holds R_min, water {water:.1} m does not"
+                "half-width {hw}, wavelength {wl}, amplitude {amp}: plain {plain:.1} m holds R_min, water {water:.1} m does not"
             );
         }
     }

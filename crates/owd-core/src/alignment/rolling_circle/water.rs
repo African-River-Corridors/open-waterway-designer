@@ -292,7 +292,8 @@ impl<'a> Ladder<'a> {
             .sum()
     }
 
-    /// Whether the fairway fit's window is strictly better than the window as it stood: first the
+    /// Whether the fairway fit's window (with a chord of line either side) is strictly better than
+    /// the window as it stood (the same stretch of line, with a chord either side): first the
     /// one that holds R_min on the chord (else the one with the larger radius), then the one with
     /// less channel width outside the water. A tie keeps the line as it stood.
     fn fit_is_better(&self, fit: &[Pt], old: &[Pt]) -> Result<bool, PyError> {
@@ -379,9 +380,16 @@ impl<'a> Ladder<'a> {
             &params,
         )?;
         let mut spliced = splice(&c, s0, s1, &fit.line);
-        let own_window = c.slice(s0, s1);
+        // The two lines are compared with a chord of line either side of the window, so that the
+        // joins (where the fit meets the line again) count: a fit that holds R_min inside the
+        // window can still kink at a join (issue #514).
+        let pad = self.chord;
+        let sp = Chained::new(&spliced);
+        let fit_end = s0 + linear::length(&fit.line);
+        let new_window = sp.slice((s0 - pad).max(0.0), (fit_end + pad).min(sp.length()));
+        let old_window = c.slice((s0 - pad).max(0.0), (s1 + pad).min(len));
         let simple = !is_self_intersecting(&spliced) || is_self_intersecting(line);
-        if !(simple && self.fit_is_better(&fit.line, &own_window)?) {
+        if !(simple && self.fit_is_better(&new_window, &old_window)?) {
             // Rung 4 compared: the line as it stood is the better one here.
             spliced = line.to_vec();
         }

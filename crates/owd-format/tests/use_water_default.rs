@@ -259,3 +259,26 @@ fn where_no_channel_fits_the_water_aware_line_is_no_worse_than_the_plain_line_on
         assert_eq!(on["checks"]["fits_in_water"]["ok"], json!(false));
     }
 }
+
+/// Issue #514: with the banks wider apart, every bend still takes the last rung, and the line must
+/// hold R_min where the plain line holds it, at the joins between bend windows too.
+#[test]
+fn the_water_aware_line_holds_r_min_where_the_plain_line_does_on_wider_tight_rivers() {
+    for half_width in [125.0, 150.0] {
+        let river = River {
+            half_width,
+            ..TIGHT
+        };
+        for case in [Case::TwoBanks, Case::GivenPolygon] {
+            let (on, _) = rolled_on(case, river, json!({"use_water": true}));
+            let (off, _) = rolled_on(case, river, json!({"use_water": false}));
+            assert!(
+                min_radius(&on) >= min_radius(&off) - 1e-9,
+                "half-width {half_width}: {} against {}",
+                min_radius(&on),
+                min_radius(&off)
+            );
+            assert_eq!(on["checks"]["radius_ok"], off["checks"]["radius_ok"]);
+        }
+    }
+}
