@@ -2,7 +2,12 @@
 // design or a DEM. Where the desktop opens a dialog or writes a file, the browser picks a file or
 // downloads one. A run that is cancelled ends the worker, and a new worker starts from the design as
 // it was before the run. Errors thrown by the session are strings; they become rejected promises.
+import { Host as WorkerHost } from "./host";
 import type { FileDropEvent, Platform, ReachProgress } from "./types";
+
+/** The design worker, and the requests waiting on it (host.ts). */
+const newHost = (onProgress: (n: number) => void, onReach: (p: ReachProgress) => void) => new WorkerHost(() => new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), onProgress, onReach);
+type Host = WorkerHost;
 
 const LAST_DESIGN = "owd.lastDesign";
 const DEFAULT_NAME = "waterway-design.owd";
@@ -23,45 +28,6 @@ function writeKey(key: string, value: string) {
     window.localStorage.setItem(key, value);
   } catch {
     /* not remembered */
-  }
-}
-
-/** The worker, and the requests waiting on it. */
-class Host {
-  private worker: Worker;
-  private next = 1;
-  private waiting = new Map<number, { ok: (v: unknown) => void; fail: (e: unknown) => void }>();
-  constructor(
-    private onProgress: (n: number) => void,
-    private onReach: (p: ReachProgress) => void,
-  ) {
-    this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
-    this.worker.onmessage = (e: MessageEvent) => {
-      if ("progress" in e.data) return this.onProgress(e.data.progress as number);
-      if ("reach" in e.data) return this.onReach(e.data.reach as ReachProgress);
-      const w = this.waiting.get(e.data.id);
-      this.waiting.delete(e.data.id);
-      if (!w) return;
-      if (e.data.ok) w.ok(e.data.result);
-      else w.fail(e.data.error);
-    };
-    this.worker.onerror = (e) => this.failAll(e.message || "the session stopped unexpectedly");
-  }
-  rpc<T>(method: string, ...args: unknown[]): Promise<T> {
-    return new Promise<T>((ok, fail) => {
-      const id = this.next++;
-      this.waiting.set(id, { ok: ok as (v: unknown) => void, fail });
-      this.worker.postMessage({ id, method, args });
-    });
-  }
-  private failAll(why: string) {
-    for (const w of this.waiting.values()) w.fail(why);
-    this.waiting.clear();
-  }
-  /** End the worker. Every waiting request fails with `why`. */
-  end(why: string) {
-    this.worker.terminate();
-    this.failAll(why);
   }
 }
 
@@ -106,7 +72,7 @@ export async function createWebPlatform(): Promise<Platform> {
   const onProgress = (n: number) => progressHandlers.forEach((h) => h(n));
   const reachHandlers = new Set<(p: ReachProgress) => void>();
   const onReach = (p: ReachProgress) => reachHandlers.forEach((h) => h(p));
-  let host = new Host(onProgress, onReach);
+  let host = newHost(onProgress, onReach);
   await host.rpc("ping");
 
   /** The DEM the session holds, kept so a restart can give it back. */
@@ -149,7 +115,7 @@ export async function createWebPlatform(): Promise<Platform> {
 
   /** Bring back the design as it stood before a run, in a new worker. */
   async function restart(before: { name: string; text: string; dem: Uint8Array | null; dirty: boolean }) {
-    host = new Host(onProgress, onReach);
+    host = newHost(onProgress, onReach);
     await host.rpc("ping");
     dem = before.dem;
     for (const text of ruleSetTexts) await host.rpc("load_rule_set_text", text);
