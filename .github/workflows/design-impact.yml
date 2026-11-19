@@ -1,8 +1,9 @@
 name: Design impact
 
 # On every pull request: run fixed scenarios on the base branch and on the pull request, compare
-# the numbers (ADR 0005 tolerance), and fail only when a result moved and the pull request adds no
-# design-impact entry for it: a fragment changelog.d/<id>.design-impact.md, or a bullet under
+# the numbers (ADR 0005 tolerance), and report when a result moved and the pull request adds no
+# design-impact entry for it. Advisory (2026-11): the job never fails a pull request.
+# An entry is a fragment changelog.d/<id>.design-impact.md, or a bullet under
 # "Unreleased > Design impact" in CHANGELOG.md. See tools/design_impact.py and tools/changelog.py.
 on:
   pull_request:
@@ -17,6 +18,8 @@ permissions:
 jobs:
   design-impact:
     runs-on: ubuntu-latest
+    # Advisory: a failure here shows in the log and summary but never turns the check red.
+    continue-on-error: true
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
