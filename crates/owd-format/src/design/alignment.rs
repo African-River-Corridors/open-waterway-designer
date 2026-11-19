@@ -10,7 +10,7 @@
 
 use super::geojson::all_positions;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
-use crate::types::TerrainSampler;
+use crate::types::{RiverPolygon, TerrainSampler};
 use owd_core::alignment::centreline::build_centreline;
 use owd_core::alignment::fairway_fit::{Fixed, Pose};
 use owd_core::alignment::join::{JoinParams, join_legs};
@@ -390,24 +390,11 @@ impl Session {
                 let terrain = terrain.ok_or_else(|| {
                     DesignError::Input("the re-route needs terrain: give it a DEM".into())
                 })?;
-                let polygon = &self.doc["inputs"]["river_polygon"];
-                if polygon.is_null() {
-                    return Err(DesignError::Input(
+                let river = self.river_polygons().ok_or_else(|| {
+                    DesignError::Input(
                         "the re-route needs the river polygon: import it first".into(),
-                    ));
-                }
-                let ring: Vec<Pt> = polygon["coordinates"][0]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let river = [Polygon {
-                    exterior: ring,
-                    holes: vec![],
-                }];
+                    )
+                })?;
                 let profile = self.input_water_profile().ok_or_else(|| {
                     DesignError::Input(
                         "the re-route needs a water level: set one with `owd import --water-level LEVEL` (a constant), `--water-slope` or `--water-table FILE`".into(),
@@ -561,30 +548,11 @@ fn pose_of(v: &Value) -> Option<Pose> {
 }
 
 impl Session {
-    /// The river polygon(s), with holes, when the inputs have one.
+    /// The river polygon(s), with holes, when the inputs have one. The one place the document's
+    /// polygon is read ([`RiverPolygon::from_geometry`]); every stage that needs it asks here.
     pub(super) fn river_polygons(&self) -> Option<Vec<Polygon>> {
-        let poly = &self.doc["inputs"]["river_polygon"];
-        if poly["type"] != "Polygon" {
-            return None;
-        }
-        let rings: Vec<Vec<Pt>> = poly["coordinates"]
-            .as_array()?
-            .iter()
-            .map(|r| {
-                r.as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect();
-        let (shell, holes) = rings.split_first()?;
-        Some(vec![Polygon {
-            exterior: shell.clone(),
-            holes: holes.to_vec(),
-        }])
+        RiverPolygon::from_geometry(&self.doc["inputs"]["river_polygon"])
+            .map(|p| vec![p.to_polygon()])
     }
 
     /// The seed legs and fixed pieces of the inputs (spec 0005), when there are legs.

@@ -1,0 +1,46 @@
+{
+  "label": "Label: property",
+  "why": "A centreline alone is a river: it is returned as given, its length is the sum of its segments (200 m), and with no banks there is nothing to check.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ]
+    ],
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "centreline": [
+        [
+          0.0,
+          0.0
+        ],
+        [
+          100.0,
+          0.0
+        ],
+        [
+          200.0,
+          0.0
+        ]
+      ],
+      "banks": null,
+      "polygon": null,
+      "length_m": 200.0,
+      "stations_checked": 0,
+      "side_fail_stations": 0,
+      "bank_checks": [],
+      "banks_cross": null
+    }
+  }
+}

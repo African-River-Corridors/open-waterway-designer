@@ -22,6 +22,7 @@ pub mod plan_cut;
 pub mod provenance;
 pub mod reach;
 pub mod reference_line;
+pub mod river;
 pub mod rule_sets;
 pub mod schema;
 pub mod screening;

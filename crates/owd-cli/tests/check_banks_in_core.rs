@@ -17,9 +17,23 @@ fn the_check_banks_command_takes_its_checks_from_the_core() {
         !command.contains("owd_reach"),
         "crates/owd-cli/src/check_banks.rs still uses `owd_reach`"
     );
+    // The checks are the river stage's, in `owd-format`, and that stage takes them from the core. The
+    // command keeps no bank check of its own.
     assert!(
-        command.contains("owd_core::banks::check"),
-        "crates/owd-cli/src/check_banks.rs does not use `owd_core::banks::check`"
+        command.contains("river_geometry"),
+        "crates/owd-cli/src/check_banks.rs does not read the river stage"
+    );
+    for copy in ["assess(", "lines_cross(", "CheckParams"] {
+        assert!(
+            !command.contains(copy),
+            "crates/owd-cli/src/check_banks.rs holds a copy of the bank check (`{copy}`)"
+        );
+    }
+    let stage =
+        source("../owd-format/src/design/river.rs").expect("crates/owd-format/src/design/river.rs");
+    assert!(
+        stage.contains("owd_core::banks::check"),
+        "the river stage does not use `owd_core::banks::check`"
     );
 }
 
