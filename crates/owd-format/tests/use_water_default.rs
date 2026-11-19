@@ -243,7 +243,7 @@ fn where_the_water_has_room_the_water_aware_line_holds_r_min_and_the_plain_line_
 }
 
 #[test]
-fn where_no_channel_fits_the_water_aware_line_is_never_worse_than_the_plain_line() {
+fn where_no_channel_fits_the_water_aware_line_is_no_worse_than_the_plain_line_on_these_two_cases() {
     for case in [Case::TwoBanks, Case::GivenPolygon] {
         let (on, _) = rolled_on(case, TIGHT, json!({"use_water": true}));
         let (off, _) = rolled_on(case, TIGHT, json!({"use_water": false}));

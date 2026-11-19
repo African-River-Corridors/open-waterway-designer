@@ -278,8 +278,8 @@ fn a_tight_bend_adds_a_section_at_its_middle() {
     s.set_vessel("CEMT_Va", None).unwrap();
     s.run_stage(Stage::Sizing).unwrap();
     // The river centreline as it is, with no repair: its bends are tighter than a larger vessel's
-    // radius. The rolling circle now repairs them (the water-aware line is never worse than the
-    // plain one, #503), so it no longer leaves a tight bend in this example.
+    // radius. The rolling circle now repairs them (at a bend it cannot fit, the water-aware line
+    // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
     s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
     s.run_stage_with(Stage::Volumes, Some(&t as Terrain))
@@ -451,8 +451,8 @@ fn the_gallery_reads_its_spacing_and_extra_sections_from_the_style() {
     s.set_vessel("CEMT_Va", None).unwrap();
     s.run_stage(Stage::Sizing).unwrap();
     // The river centreline as it is, with no repair: its bends are tighter than a larger vessel's
-    // radius. The rolling circle now repairs them (the water-aware line is never worse than the
-    // plain one, #503), so it no longer leaves a tight bend in this example.
+    // radius. The rolling circle now repairs them (at a bend it cannot fit, the water-aware line
+    // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
     s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
     s.run_stage_with(Stage::Volumes, Some(&t as Terrain))

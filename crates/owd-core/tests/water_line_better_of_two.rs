@@ -1,5 +1,7 @@
 //! The water-aware rolling circle where the channel does not fit the river (issue #503): at a
-//! bend that ends infeasible, the line is never worse than the plain rolling circle's.
+//! bend that ends infeasible, the line is the better of the fairway fit's and the plain rolling circle's.
+//! The tests prove this on the synthetic rivers below, over the whole line. They do not prove it
+//! on every river: between bend windows the line can still be tighter than the plain one (#514).
 //!
 //! The rivers are synthetic, built in the test: a sine centreline with a vertex every 10 m, and a
 //! water polygon that is wide between the bends and narrow at each apex (narrower than the bottom
@@ -138,7 +140,7 @@ fn missing_width(line: &[Pt], poly: &Polygon, s: &ChannelShape, chord: f64) -> f
 }
 
 #[test]
-fn the_water_line_is_never_worse_than_the_plain_line_where_the_channel_does_not_fit() {
+fn the_water_line_matches_the_plain_line_on_these_rivers_where_the_channel_does_not_fit() {
     for c in &CASES {
         let (plain, poly, s) = roll(c, false);
         let (water, _, _) = roll(c, true);
