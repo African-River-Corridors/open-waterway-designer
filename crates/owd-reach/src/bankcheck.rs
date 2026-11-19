@@ -306,6 +306,14 @@ fn widen_runs(off: &[Option<f64>], bad: &mut [bool], max_step: f64) {
         while j < n && !good(j, bad) {
             j += 1;
         }
+        // A run that reaches either end of the banks is left as it is: those stations lie outside
+        // the checked range (a normal past the end of a bank meets nothing, and that is where the
+        // bank ends, not a fault). Marking them bad made the fill hold the last good offset out to
+        // the end of the reference, so every round re-laid the ends of the banks (issue #411).
+        if i == 0 || j == n {
+            i = j;
+            continue;
+        }
         // The run is i..j; its good neighbours are i - 1 and j.
         let (mut a, mut b) = (i, j);
         let mut grow_left = true;
