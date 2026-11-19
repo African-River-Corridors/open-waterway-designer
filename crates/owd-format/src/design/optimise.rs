@@ -266,11 +266,11 @@ impl Session {
 
         let typed = self.optimise_settings(overrides)?;
         let settings = typed.to_value();
-        let shape = self.sized_shape()?;
-        let (depth, r_min) = (shape.design_depth_m, shape.min_bend_radius_m);
+        let size = self.channel_size()?;
+        let (depth, r_min) = (size.design_depth_m, size.min_bend_radius_m);
         // The bottom half-width: the sizing's, unless the settings fix one.
         let half_width = match &settings["half_width_m"] {
-            Value::Null => shape.bottom_width_straight_m / 2.0,
+            Value::Null => size.bottom_width_straight_m / 2.0,
             v => v.as_f64().filter(|h| *h > 0.0).ok_or_else(|| {
                 DesignError::Input(
                     "the setting `half_width_m` must be a positive number of metres or null".into(),

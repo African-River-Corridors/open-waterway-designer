@@ -52,30 +52,6 @@ impl Session {
         Ok((selection, vessel, sized))
     }
 
-    /// B, the design basis: each quantity with its governing Rule, citation and status.
-    pub(super) fn design_basis_value(&self) -> Result<Value, DesignError> {
-        let (selection, vessel, sized) = self.engine_inputs()?;
-        let rows = screening::design_basis(&selection, &vessel, &sized).map_err(err)?;
-        Ok(json!(
-            rows.iter()
-                .map(|b| json!({
-                    "quantity": b.quantity,
-                    "waterway": b.waterway,
-                    "value": b.value,
-                    "unit": b.unit,
-                    "rule": b.rule,
-                    "rule_sets": b.rule_sets,
-                    "citation": b.citation,
-                    "origin": b.origin,
-                    "status": b.status,
-                    "other_rules": b.others.iter()
-                        .map(|(r, l)| json!({"rule": r, "limit": l}))
-                        .collect::<Vec<_>>(),
-                }))
-                .collect::<Vec<_>>()
-        ))
-    }
-
     /// The reach a point falls in, by its chainage on the river centreline.
     fn reach_of(ranges: &[(f64, f64, engine::WaterwayReach)], centre: &[Pt], p: Pt) -> usize {
         if centre.len() < 2 {

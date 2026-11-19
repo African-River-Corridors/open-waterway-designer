@@ -1,0 +1,27 @@
+{
+  "label": "Label: property",
+  "why": "The design recorded another content hash than the loaded set has: SIZING_RULE_SET_CHANGED.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0",
+        "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "C"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV"
+  },
+  "expect": {
+    "error": "SIZING_RULE_SET_CHANGED"
+  }
+}

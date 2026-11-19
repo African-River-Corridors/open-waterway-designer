@@ -310,7 +310,7 @@ pub(super) struct SectionPlan {
     pub(super) water_source: &'static str,
     pub(super) centre: Vec<Pt>,
     model: String,
-    shape: owd_core::rules::rulesets::ChannelShape,
+    shape: super::sizing::ChannelSize,
     depth: f64,
     pub(super) river: Vec<Polygon>,
     fixed_hb: Option<f64>,
@@ -339,7 +339,7 @@ impl Session {
         let centre = self.river_centreline()?;
         let model = typed.cut_model.clone();
 
-        let shape = self.sized_shape()?;
+        let shape = self.channel_size()?;
         let depth = shape.design_depth_m;
 
         // A polygon with no outer ring is no river: there is no water to split the cut by.
@@ -396,7 +396,7 @@ impl Session {
         let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
         let level = Level::AtChainage(&wl);
         let shape = &plan.shape;
-        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, shape, WIDEN_RMAX);
+        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, shape.shape(), WIDEN_RMAX);
         let half_width = match plan.fixed_hb {
             Some(h) => HalfWidth::Fixed(h),
             None => HalfWidth::FromStations(&from_shape),

@@ -1,0 +1,25 @@
+{
+  "label": "Label: property",
+  "why": "No vessel class and no custom vessel: SIZING_NO_VESSEL.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "C"
+      }
+    ]
+  },
+  "expect": {
+    "error": "SIZING_NO_VESSEL"
+  }
+}

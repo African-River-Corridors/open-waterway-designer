@@ -203,16 +203,16 @@ impl Session {
                 "there are no design line options: run the alignment stage first".into(),
             ));
         }
-        let shape = self.sized_shape()?;
+        let size = self.channel_size()?;
         let centreline = self.river_centreline()?;
-        let widen = |xy: &[Pt]| widened_hb_from_shape(xy, &shape, WIDEN_RMAX);
+        let widen = |xy: &[Pt]| widened_hb_from_shape(xy, size.shape(), WIDEN_RMAX);
         let mut rows = Vec::new();
         for o in &options {
             let line = all_positions(&o["line"]);
             let fairway = Fairway {
                 bottom_half_width: HalfWidth::FromStations(&widen),
                 wet_slope: settings.wet_slope,
-                depth_m: shape.design_depth_m,
+                depth_m: size.design_depth_m,
                 station_m: settings.station_m,
             };
             let cut = plan_cut(&line, &fairway, &river, &centreline, settings.min_piece_m2)

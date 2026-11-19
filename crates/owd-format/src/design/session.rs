@@ -13,7 +13,6 @@ use super::schema;
 use crate::types::{Polyline, RiverPolygon, StageError, TerrainSampler};
 use arc_rules::load::Library;
 use owd_core::rules::engine;
-use owd_core::rules::rulesets::ChannelShape;
 use serde_json::{Value, json};
 
 /// The engine version written into documents and stages.
@@ -200,33 +199,6 @@ fn sizing_stage() -> Value {
     let mut st = empty_stage();
     st["settings"] = default_settings();
     st
-}
-
-/// The sizing results of a channel shape. `label` names the selection, such as
-/// `pianc-wg141@0.3.0 (se_quality B)`.
-fn shape_value(s: &ChannelShape, label: &str) -> Value {
-    let mut v = json!({
-        "rule_sets": label,
-        "vessel_standard_id": s.vessel_standard_id,
-        "loa_m": s.loa_m,
-        "beam_m": s.beam_m,
-        "draught_m": s.draught_m,
-        "formation": s.formation,
-        "bottom_width_straight_m": s.bottom_width_straight_m,
-        "min_bend_radius_m": s.min_bend_radius_m,
-        "design_depth_m": s.design_depth_m,
-        "bend_widening_at_rmin_m": s.bend_widening_at_rmin_m,
-        "bottom_width_at_rmin_m": s.bottom_width_at_rmin_m,
-        "width_basis": s.width_basis,
-        "source": s.source,
-        "warnings": s.warnings,
-    });
-    // A custom vessel has no class id; every output shows its label (spec 0015 T1).
-    if s.custom {
-        v["vessel_standard_id"] = Value::Null;
-        v["vessel_label"] = json!(s.vessel_standard_id);
-    }
-    v
 }
 
 impl Session {
@@ -522,15 +494,12 @@ impl Session {
     /// The sizing results of the sizing settings: the channel shape, and B, the design basis (spec
     /// 0007), each quantity with its governing Rule.
     fn sizing_results(&self) -> Result<Value, DesignError> {
-        let settings = self.sizing_settings();
-        let shape = self.shape_for_settings(&settings)?;
-        let mut results = shape_value(&shape, &Session::selection_label(&settings));
-        results["design_basis"] = self.design_basis_value()?;
-        results["rules_notice"] = json!(super::screening::UNVERIFIED_NOTICE);
-        Ok(results)
+        let size = super::sizing::size(&self.sizing_in(), &self.library)
+            .map_err(|e| DesignError::Input(e.message))?;
+        Ok(serde_json::to_value(&size).expect("a channel size is JSON"))
     }
 
-    fn run_sizing(&mut self) -> Result<(), DesignError> {
+    pub(super) fn run_sizing(&mut self) -> Result<(), DesignError> {
         self.doc["stages"]["sizing"]["results"] = self.sizing_results()?;
         self.doc["stages"]["sizing"]["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Sizing);

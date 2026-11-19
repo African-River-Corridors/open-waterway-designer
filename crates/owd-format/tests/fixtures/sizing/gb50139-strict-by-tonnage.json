@@ -1,0 +1,30 @@
+{
+  "label": "Label: sourced - GB 50139-2014, the design depth is the draught plus a clearance that depends on the channel class; a CEMT IV vessel is class II by tonnage, whose clearance at the strict end of the range is 0.4 m",
+  "why": "The design depth is the draught plus a clearance: 2.5 m + 0.4 m = 2.9 m. The width comes from the appendix A formula.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "gb50139",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "range_end",
+        "value": "strict"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV",
+    "draught_m": 2.5
+  },
+  "expect": {
+    "output": {
+      "design_depth_m": 2.9,
+      "width_basis": "appendix-a"
+    }
+  }
+}

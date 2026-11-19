@@ -85,9 +85,11 @@ pub fn file_name(stage: &str, version: u32) -> String {
 /// input and output.
 pub fn contracts() -> Vec<StageContract> {
     use crate::design::river::{self, RiverGeometry, RiverIn};
+    use crate::design::sizing::{self, ChannelSize, SizingIn};
     vec![
         StageContract::of::<StageRecord<Value, Value>>("stage-record", STAGE_CONTRACT_VERSION),
         StageContract::of::<StageRecord<RiverIn, RiverGeometry>>(river::STAGE, 1),
+        StageContract::of::<StageRecord<SizingIn, ChannelSize>>(sizing::STAGE, 1),
     ]
 }
 

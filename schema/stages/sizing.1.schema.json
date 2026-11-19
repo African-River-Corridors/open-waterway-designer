@@ -1,0 +1,459 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/SizingIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChannelSize"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "SizingIn": {
+      "description": "What the sizing stage reads.",
+      "type": "object",
+      "properties": {
+        "rule_sets": {
+          "description": "The selected Rule Sets, in selection order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SelectedSet"
+          }
+        },
+        "set_inputs": {
+          "description": "The inputs the sets apply on.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SetInput"
+          },
+          "default": []
+        },
+        "vessel_standard_id": {
+          "description": "The vessel class, by catalogue id. Absent for a custom vessel.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "draught_m": {
+          "description": "The draught, when the class's own is not used.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "custom_vessel": {
+          "description": "A custom vessel, which replaces the class.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CustomVesselIn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "waterway_reaches": {
+          "description": "The marked reaches, in chainage order. None: the whole river is one free-flowing reach.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReachIn"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "rule_sets"
+      ]
+    },
+    "SelectedSet": {
+      "description": "A Rule Set the design selects.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "The set's id, such as `pianc-wg141`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The set's version, such as `0.3.0`.",
+          "type": "string"
+        },
+        "hash": {
+          "description": "The content hash the design was sized with. When given, the loaded set must have it.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ]
+    },
+    "SetInput": {
+      "description": "A set input, such as `se_quality` `B`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The input's name.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Its value.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ]
+    },
+    "CustomVesselIn": {
+      "description": "A custom vessel (spec 0015): the user's own dimensions.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The vessel's name.",
+          "type": "string"
+        },
+        "loa_m": {
+          "description": "Length overall in metres (the whole convoy's, for a convoy).",
+          "type": "number",
+          "format": "double"
+        },
+        "beam_m": {
+          "description": "Beam in metres (the whole convoy's, for a convoy).",
+          "type": "number",
+          "format": "double"
+        },
+        "draught_m": {
+          "description": "Draught in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "formation": {
+          "description": "`motor` or `convoy`.",
+          "type": "string"
+        },
+        "n_abreast": {
+          "description": "Vessels abreast, for a convoy.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        },
+        "n_in_line": {
+          "description": "Vessels in line, for a convoy.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        },
+        "gb_class": {
+          "description": "The GB 50139 channel class, `I` to `VII`.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "air_draught_m": {
+          "description": "Stored only.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "deadweight_t": {
+          "description": "Stored only.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "loa_m",
+        "beam_m",
+        "draught_m",
+        "formation"
+      ]
+    },
+    "ReachIn": {
+      "description": "A marked reach of the river, as the rules read it.",
+      "type": "object",
+      "properties": {
+        "start_m": {
+          "description": "Chainage where the reach starts.",
+          "type": "number",
+          "format": "double"
+        },
+        "end_m": {
+          "description": "Chainage where it ends; absent runs to the end of the river.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "waterway": {
+          "description": "`canal`, `impounded-river` or `free-flowing-river`.",
+          "type": "string"
+        },
+        "reduced_radius_claim": {
+          "description": "`yes` or `no`: the user claims the reduced radius on this reach.",
+          "type": "string",
+          "default": "no"
+        }
+      },
+      "required": [
+        "start_m",
+        "waterway"
+      ]
+    },
+    "ChannelSize": {
+      "description": "What the sizing stage returns: the channel's size and why. The keys are the ones the document has\nalways stored under `stages.sizing.results`.",
+      "type": "object",
+      "properties": {
+        "rule_sets": {
+          "description": "The selection that sized it, such as `pianc-wg141@0.3.0 (se_quality C)`.",
+          "type": "string"
+        },
+        "vessel_standard_id": {
+          "description": "The class's catalogue id; null for a custom vessel.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loa_m": {
+          "description": "The vessel's length overall in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "beam_m": {
+          "description": "The vessel's beam in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "draught_m": {
+          "description": "The draught in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "formation": {
+          "description": "`motor_vessel` or `pushed_convoy`.",
+          "type": "string"
+        },
+        "bottom_width_straight_m": {
+          "description": "The bottom width of the channel on a straight, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_bend_radius_m": {
+          "description": "The minimum bend radius in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "design_depth_m": {
+          "description": "The design depth in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bend_widening_at_rmin_m": {
+          "description": "The bend widening at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bottom_width_at_rmin_m": {
+          "description": "The bottom width at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "width_basis": {
+          "description": "`table`, `appendix-a` or `rule`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where the vessel's figures come from.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Warnings of the sizing.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vessel_label": {
+          "description": "A custom vessel's label (it has no class id); absent for a class.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "design_basis": {
+          "description": "B, the design basis: each quantity with its governing Rule.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BasisRow"
+          }
+        },
+        "rules_notice": {
+          "description": "The notice every output carries while the Rules are unverified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_sets",
+        "loa_m",
+        "beam_m",
+        "draught_m",
+        "formation",
+        "bottom_width_straight_m",
+        "min_bend_radius_m",
+        "design_depth_m",
+        "bend_widening_at_rmin_m",
+        "bottom_width_at_rmin_m",
+        "width_basis",
+        "source",
+        "warnings",
+        "design_basis",
+        "rules_notice"
+      ]
+    },
+    "BasisRow": {
+      "description": "One row of the design basis: a quantity with the Rule that governs it.",
+      "type": "object",
+      "properties": {
+        "quantity": {
+          "description": "`bottom-width`, `min-bend-radius`, `design-depth` or `widening-at-rmin`.",
+          "type": "string"
+        },
+        "waterway": {
+          "description": "The waterway kind of the reach, for the minimum radius.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "The value.",
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "description": "Its unit.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The governing Rule.",
+          "type": "string"
+        },
+        "rule_sets": {
+          "description": "The sets that hold the Rule, as `id@version`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "citation": {
+          "description": "The Rule's citation.",
+          "type": "string"
+        },
+        "origin": {
+          "description": "Where the Rule comes from.",
+          "type": "string"
+        },
+        "status": {
+          "description": "`verified` or `unverified`.",
+          "type": "string"
+        },
+        "other_rules": {
+          "description": "The other Rules of the Requirement that have a limit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OtherRule"
+          }
+        }
+      },
+      "required": [
+        "quantity",
+        "value",
+        "unit",
+        "rule",
+        "rule_sets",
+        "citation",
+        "origin",
+        "status",
+        "other_rules"
+      ]
+    },
+    "OtherRule": {
+      "description": "Another Rule of a Requirement, with its limit.",
+      "type": "object",
+      "properties": {
+        "rule": {
+          "description": "The Rule.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Its limit.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "rule",
+        "limit"
+      ]
+    }
+  }
+}
