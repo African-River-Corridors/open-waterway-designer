@@ -337,6 +337,19 @@ impl Session {
         t
     }
 
+    /// One stage as a [`StageRecord`](crate::stage::StageRecord): the settings, the output (the
+    /// stage's `results`), the dependency hash and the contract version. The document keeps its keys
+    /// until the format moves to 0.5, so this is a typed read of them, not a second copy.
+    pub fn stage_record(&self, stage: Stage) -> crate::stage::StageRecord<Value, Value> {
+        let st = &self.doc["stages"][stage.name()];
+        crate::stage::StageRecord {
+            version: crate::stage::STAGE_CONTRACT_VERSION,
+            depends_on: st["depends_on"].as_str().map(str::to_string),
+            settings: st["settings"].clone(),
+            output: (!st["results"].is_null()).then(|| st["results"].clone()),
+        }
+    }
+
     /// The document as a value.
     pub fn document(&self) -> &Value {
         &self.doc
