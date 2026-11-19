@@ -21,10 +21,10 @@
 # the interpreter, which step 3 forbids. It has no Rust tests; clippy (step 2) and the Wheels workflow build it.
 #
 # The web session (`owd-web`, spec 0011) is excluded from steps 2 and 3: it is built for wasm32, which this
-# fast gate does not do. The `web-parity` and `web-app` CI jobs build, lint and test it.
+# fast gate does not do. The `web-app` CI job (and `web-parity` in nightly.yml) builds, lints and tests it.
 #
-# The desktop app (`owd-app`, spec 0003) is excluded from steps 2 and 3: it needs Node and the Tauri
-# system libraries, and its own CI jobs (`app-linux`, `app-e2e`) build and test it.
+# The desktop app (`owd-app`, spec 0003) is paused: its code stays in app/src-tauri but it is not a
+# workspace member, so no step here builds or tests it.
 #
 # CD_PYTHON picks the Python for step 4 (default python3).
 #
@@ -106,11 +106,11 @@ cargo_test_without_python() {
   # so without it a failing cargo test would fall through and the step would report ok.
   local part=()
   [ -n "$PARTITION" ] && part=(--partition "hash:$PARTITION")
-  PATH="$shims:$PATH" CD_PYTHON="$shims/python3" cargo nextest run --workspace --exclude owd-app --exclude owd-py --exclude owd-web \
+  PATH="$shims:$PATH" CD_PYTHON="$shims/python3" cargo nextest run --workspace --exclude owd-py --exclude owd-web \
     --all-features --profile "${GATES_NEXTEST_PROFILE:-pr}" ${part[@]+"${part[@]}"} || return 1
   # nextest does not run doctests. They run once: with no partition, or in partition 1.
   if [ -z "$PARTITION" ] || [ "${PARTITION%%/*}" = 1 ]; then
-    PATH="$shims:$PATH" CD_PYTHON="$shims/python3" cargo test --doc --workspace --exclude owd-app --exclude owd-py --exclude owd-web \
+    PATH="$shims:$PATH" CD_PYTHON="$shims/python3" cargo test --doc --workspace --exclude owd-py --exclude owd-web \
       --all-features || return 1
   fi
   if [ -e "$marker" ]; then
@@ -122,7 +122,7 @@ cargo_test_without_python() {
 
 if wants fmt; then step "cargo fmt --check" cargo fmt --all --check; fi
 if wants clippy; then
-  step "clippy -D warnings" cargo clippy --workspace --exclude owd-app --exclude owd-web --all-targets --all-features -- -D warnings
+  step "clippy -D warnings" cargo clippy --workspace --exclude owd-web --all-targets --all-features -- -D warnings
 fi
 if wants rust; then step "cargo test (no Python)${PARTITION:+, partition $PARTITION}" cargo_test_without_python; fi
 if wants pytest; then step "pytest" "$PY" -m pytest -q; fi

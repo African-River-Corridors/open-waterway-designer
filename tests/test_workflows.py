@@ -11,9 +11,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WF = ROOT / ".github" / "workflows"
 #: Branch protection requires these check names on main. Renaming one needs a settings change.
-REQUIRED = ("test", "release-guard")
+REQUIRED = ("test", "release-guard", "web-app")
 #: Jobs in ci.yml that run on a pull request only when their inputs change.
-FILTERED = {"app-linux": "app", "app-e2e": "app", "web-parity": "web", "web-app": "web"}
+FILTERED = {"web-app": "web"}
 
 
 def load(name):
@@ -27,6 +27,8 @@ def test_the_required_jobs_exist_and_always_run_on_every_pull_request():
     assert "paths" not in (ci["on"]["pull_request"] or {}), "a path filter on ci.yml could skip a required check"
     for name in REQUIRED:
         job = ci["jobs"][name]
+        if name in FILTERED:  # a skipped job does not block a merge: web-app skips itself on other PRs
+            continue
         assert job.get("if", "always()") == "always()", f"{name} must not be conditional"
         needs = job.get("needs", [])
         assert "changes" not in (needs if isinstance(needs, list) else [needs])
@@ -47,13 +49,15 @@ def test_the_test_check_needs_every_part_of_the_gate_and_fails_unless_all_passed
 def test_the_parts_run_every_step_of_the_gate_and_every_rust_partition():
     jobs = load("ci.yml")["jobs"]
     steps, partitions = [], []
-    for name, job in jobs.items():
-        if not name.startswith("gate-"):
-            continue
-        env = job["steps"][-1]["env"]
-        steps += env["GATES_STEPS"].split(",")
-        if "GATES_PARTITION" in env:
-            partitions = job["strategy"]["matrix"]["partition"]
+    # The pull-request gate (ci.yml) and the nightly (nightly.yml) together run every step once.
+    for doc in (jobs, load("nightly.yml")["jobs"]):
+        for name, job in doc.items():
+            if not name.startswith("gate-"):
+                continue
+            env = job["steps"][-1]["env"]
+            steps += env["GATES_STEPS"].split(",")
+            if "GATES_PARTITION" in env:
+                partitions = job["strategy"]["matrix"]["partition"]
     gates = (ROOT / "tools" / "gates.sh").read_text(encoding="utf-8")
     all_steps = re.search(r'ALL_STEPS="([^"]+)"', gates).group(1).split(",")
     assert sorted(steps) == sorted(all_steps), "each gate step runs in exactly one part"
@@ -69,9 +73,9 @@ def test_a_filtered_job_runs_on_main_and_on_a_pull_request_that_changes_its_inpu
         assert job["needs"] == "changes"
         assert job["if"] == f"github.event_name != 'pull_request' || needs.changes.outputs.{group} == 'true'"
         assert group in outputs
-    # app-e2e runs on any change under app/ (it caught a real bug in #268).
+    # web-app runs on any change under app/ (the front end it builds).
     flt = ci["jobs"]["changes"]["steps"][-1]["with"]["filters"]
-    assert '"app/**"' in flt.split("web:")[0]
+    assert '"app/**"' in flt.split("web:")[1]
 
 
 def test_the_path_filter_and_codeql_actions_are_pinned_to_a_commit():
@@ -95,9 +99,27 @@ def test_codeql_does_not_run_on_pull_requests():
 
 
 def test_the_rust_caches_of_ci_and_the_bundles_save_from_main_only():
-    for name in ("ci.yml", "app-bundles.yml"):
+    for name in ("ci.yml", "app-bundles.yml", "nightly.yml"):
         for job_name, job in load(name)["jobs"].items():
             for step in job.get("steps", []):
                 if str(step.get("uses", "")).startswith("Swatinem/rust-cache"):
                     assert (step.get("with") or {}).get("save-if") == "${{ github.ref == 'refs/heads/main' }}", \
                         f"{name} {job_name}: a pull request must not save a Rust cache"
+
+
+def test_the_desktop_app_is_out_of_the_workspace_and_the_pull_request_checks():
+    members = re.search(r"^members = \[(.*?)\]", (ROOT / "Cargo.toml").read_text(encoding="utf-8"), re.M).group(1)
+    assert "src-tauri" not in members and (ROOT / "app" / "src-tauri").is_dir(), "code kept, not a member"
+    assert "pull_request" not in load("app-bundles.yml")["on"] and "push" not in load("app-bundles.yml")["on"]
+    assert not {"app-linux", "app-e2e"} & set(load("ci.yml")["jobs"])
+
+
+def test_the_pull_request_gate_has_only_the_lean_jobs_and_the_slow_ones_run_nightly():
+    ci, nightly = load("ci.yml"), load("nightly.yml")
+    assert set(ci["jobs"]) == {"changes", "gate-lint", "gate-rust", "test", "release-guard", "web-app"}
+    assert "schedule" not in ci["on"]
+    assert {"gate-python", "drawing-crosscheck", "web-parity", "upstream-main"} <= set(nightly["jobs"])
+
+
+def test_design_impact_is_advisory():
+    assert load("design-impact.yml")["jobs"]["design-impact"]["continue-on-error"] is True

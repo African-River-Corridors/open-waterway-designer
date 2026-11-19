@@ -6,7 +6,7 @@
 # Nothing is deleted. A test in the slow list runs in the nightly workflow instead of on every pull
 # request. A test that is renamed drops out of the list and so runs in the PR job again: the safe
 # direction. The list and one reason per test: docs/agents/slow-tests.md. Local full run:
-#   cargo nextest run --workspace --exclude owd-app --exclude owd-py --all-features --profile nightly
+#   cargo nextest run --workspace --exclude owd-py --all-features --profile nightly
 
 [profile.default]
 fail-fast = false

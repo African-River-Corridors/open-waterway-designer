@@ -18,15 +18,16 @@ its tickets and points here for the rest.
 1. Write the test first. One PR per ticket.
 2. Add one changelog fragment (`changelog.d/README.md`), plus a `design-impact` fragment when a design
    result moves.
-3. Turn on auto-merge (`gh pr merge <n> --auto --squash`). Required checks: `test`, `release-guard`,
-   and, on a PR that touches the app, `app-e2e` and `web-app`. These two skip themselves on other PRs.
-4. After a merge that touches the app, check main's `app-e2e` and `web-app`. If your change turned them
-   red, fix that before the next ticket.
+3. Turn on auto-merge (`gh pr merge <n> --auto --squash`). Required checks: `test`, `release-guard`
+   and, on a PR that touches the web app or what it builds from, `web-app`. It skips itself on other PRs.
+4. After a merge that touches the web app, check main's `web-app`. If your change turned it red, fix
+   that before the next ticket. The Python tests, drawing cross-check and web parity run nightly: look
+   at the nightly run when a change touches them.
 
 ## The app slot
 
-Only one lane at a time has an open PR that touches `app/`, `crates/owd-shell`, `crates/owd-web` or
-`app/src-tauri`. Ask the coordinator for the slot, and say when your app PR has merged and its checks
+The desktop app (`app/src-tauri`) is paused: it is not in the workspace and no CI job builds it. Only one
+lane at a time has an open PR that touches `app/`, `crates/owd-shell` or `crates/owd-web`. Ask the coordinator for the slot, and say when your app PR has merged and its checks
 pass.
 
 ## Release hold

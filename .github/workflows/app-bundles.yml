@@ -4,41 +4,14 @@ name: App bundles
 # They are build artifacts of the run, kept for 14 days. Nothing here publishes a GitHub Release:
 # publishing waits for the maintainer, and signing is a 1.0 gate (the maintainer's purchase).
 
-# Runs only when the app or what it builds from changes: its code, the crates it links (owd-cli pulls in
-# owd-reach and owd-report; not owd-py or owd-web), the toolchain and this file. The same filter on a push to main.
+# Paused (2026-11): the desktop app is out of the pull-request checks and the workspace, so this runs by hand only.
+# The code stays; the app returns later (ROADMAP.md). It may need work to build again.
 on:
-  pull_request:
-    paths:
-      - "app/**"
-      - "crates/owd-core/**"
-      - "crates/owd-format/**"
-      - "crates/owd-cli/**"
-      - "crates/owd-shell/**"
-      - "crates/owd-reach/**"
-      - "crates/owd-report/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - ".github/workflows/app-bundles.yml"
-  push:
-    branches: [main]
-    paths:
-      - "app/**"
-      - "crates/owd-core/**"
-      - "crates/owd-format/**"
-      - "crates/owd-cli/**"
-      - "crates/owd-shell/**"
-      - "crates/owd-reach/**"
-      - "crates/owd-report/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - ".github/workflows/app-bundles.yml"
   workflow_dispatch:
 
 concurrency:
-  group: app-bundles-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: app-bundles-${{ github.sha }}
+  cancel-in-progress: false
 
 # The Rust caches save from main only (`save-if`): a pull request's cache serves no other pull request,
 # and with every PR saving its own, the repository's 10 GB cache limit evicted main's caches.

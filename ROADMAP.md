@@ -4,6 +4,8 @@ Planned work, roughly in order. Each item links to its issue. Comments and pull 
 
 ## Next
 
+- **Desktop app: paused.** The command line tool and the web app ship for now. The desktop app (`app/src-tauri`) is out of the workspace
+  and the pull-request checks, its code stays, and it returns later.
 - **Public example river on an open DEM.** ([#1](https://github.com/African-River-Corridors/open-waterway-designer/issues/1)) A real river reach run end to end on a downloadable
   DEM whose licence allows commercial reuse — **Copernicus GLO-30** (not FABDEM, which is
   non-commercial). The example downloads the tiles; nothing is bundled in the repository.

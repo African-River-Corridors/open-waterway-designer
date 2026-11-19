@@ -1,7 +1,8 @@
 name: Nightly
 
 # Every Rust test, including the slow ones that the pull-request gate leaves out
-# (.config/nextest.toml, docs/agents/slow-tests.md). Nothing is skipped here.
+# (.config/nextest.toml, docs/agents/slow-tests.md), and the checks that left the pull-request gate to keep it
+# fast: the Python tests, the drawing cross-check, web parity and the upstream-main check. Nothing is skipped here.
 on:
   # A change to the slow-test list or to this workflow runs the full suite once, on its pull request.
   pull_request:
@@ -38,4 +39,122 @@ jobs:
         with:
           tool: nextest@0.9.100
       - name: Every Rust test (profile nightly)
-        run: cargo nextest run --workspace --exclude owd-app --exclude owd-py --all-features --profile nightly
+        run: cargo nextest run --workspace --exclude owd-py --all-features --profile nightly
+
+  # The Python tests (pytest against the shipped package): nightly, not on a pull request.
+  gate-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # vessel_designer installs from git. While that repository is private this step needs read
+      # access to it; after release it does not.
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev,dem]'
+      - name: pytest against the shipped package
+        env:
+          GATES_STEPS: pytest
+        run: bash tools/gates.sh
+
+  # The test job uses the pinned git ref in pyproject.toml. This job tries the git
+  # dependency at @main instead, so an upstream change that will break the next pin bump
+  # shows up here first. Nightly and on demand only; it never gates a pull request.
+  upstream-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (git dependencies at @main)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev,dem]'
+          python -m pip install --force-reinstall \
+            'open-vessel-designer @ git+https://github.com/African-River-Corridors/open-vessel-designer@main'
+      - name: Test
+        run: python -m pytest -q
+
+  # The drawing crate against the Python implementation of the same standard (spec 0004): the drawing
+  # documents of every fixture design give equal normalised content in both. The Python tool is
+  # installed at the commit that the pinned otd crate's standard/PIN.json pins (tools/otd.py), so a
+  # suite update moves both together. The plain Rust tests need no Python.
+  drawing-crosscheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build owd
+        run: cargo build -p owd-cli
+      - name: Install the Python implementation of the standard at the pinned commit
+        run: |
+          pin=$(python tools/otd.py pin)
+          python -m pip install --upgrade pip
+          python -m pip install "git+https://github.com/${pin}"
+      - name: Rust and Python give equal normalised content for every fixture drawing document
+        run: python tools/draw_crosscheck.py
+
+  # Web parity (spec 0011): every web fixture gives the same document from the wasm design session as from
+  # native `owd run`, by the ADR 0005 tolerance. Nightly only: it is not part of a pull request's checks. The wasm-bindgen CLI is the version the owd-web crate pins, installed from
+  # its prebuilt release.
+  web-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml) and the wasm32 target
+        run: |
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: The pinned wasm-bindgen version
+        id: wb
+        run: echo "version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' crates/owd-web/Cargo.toml)" >> "$GITHUB_OUTPUT"
+      # The prebuilt binaries (wasm-bindgen and wasm-bindgen-test-runner), checksum-verified, in seconds;
+      # building them from source took about 90 s whenever the cache had lost them.
+      - name: Install wasm-bindgen CLI (prebuilt)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wb.outputs.version }}
+      - name: Lint the web session for wasm
+        run: cargo clippy --target wasm32-unknown-unknown -p owd-web -- -D warnings
+      - name: Build and lint owd-reach for wasm (spec 0012)
+        run: |
+          cargo clippy --target wasm32-unknown-unknown -p owd-reach -- -D warnings
+          cargo build --target wasm32-unknown-unknown -p owd-reach
+      - name: "owd-reach routing, bank, DEM, edge-fit and water-level tests in wasm (spec 0012, same fixtures as native)"
+        run: cargo test --target wasm32-unknown-unknown -p owd-reach --test route --test banks --test dem --test edgefit --test level
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+      - name: Build the web package
+        run: bash tools/build_web.sh
+      # Release: the pool search is far too slow in a debug build.
+      - name: Build owd
+        run: cargo build --release -p owd-cli
+      - name: The comparison fails on a doctored value
+        run: node --test tools/web_parity_compare.test.mjs
+      - name: Parity, wasm against native
+        run: node tools/web_parity.mjs
