@@ -29,10 +29,8 @@ fn the_shell_and_the_cli_give_the_same_limits_text() {
     assert_eq!(from_shell, from_cli);
     let fc: Value = serde_json::from_str(&from_shell).unwrap();
     assert_eq!(fc["screening"], "Screening \u{2014} not for construction");
-    let options = s.snapshot()["document"]["options"]
-        .as_array()
-        .unwrap()
-        .len();
+    let options = owd_format::design::design_lines_of(&s.snapshot()["document"]).len();
+    assert_eq!(options, 1);
     let sides: Vec<&str> = fc["features"]
         .as_array()
         .unwrap()

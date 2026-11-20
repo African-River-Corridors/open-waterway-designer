@@ -74,7 +74,9 @@ fn design(w: f64, islands: &[Vec<Pt>]) -> Session {
     let d = s.document();
     assert!(d["inputs"]["dem"].is_null() && d["inputs"]["water_level"].is_null());
     // The design line is the straight centreline, so its length is L and it has no bend.
-    let line = d["options"][0]["line"]["coordinates"].as_array().unwrap();
+    let line = d["stages"]["alignment"]["results"]["line"]["coordinates"]
+        .as_array()
+        .unwrap();
     assert!(line.iter().all(|p| p[1].as_f64() == Some(Y0)));
     assert_eq!(line[0][0].as_f64(), Some(X0));
     assert_eq!(line[line.len() - 1][0].as_f64(), Some(X0 + L));
@@ -138,7 +140,10 @@ fn a_river_narrower_than_the_fairway_gives_a_cut_with_no_terrain_and_no_water_le
     // The fairway ends square at the two ends of the line, inside the river: the length is L.
     let want = (wide - w) * L;
     let r = row(&s);
-    assert_eq!(r["id"], s.document()["options"][0]["id"]);
+    assert_eq!(
+        r["id"],
+        s.document()["stages"]["alignment"]["results"]["id"]
+    );
     assert!(
         close(num(&r["area_m2"]), want),
         "{} != {want}",
@@ -322,7 +327,10 @@ fn the_cut_exports_as_geojson_one_feature_per_piece() {
     for f in features {
         assert_eq!(f["geometry"]["type"], "Polygon");
         let p = &f["properties"];
-        assert_eq!(p["option"], s.document()["options"][0]["id"]);
+        assert_eq!(
+            p["option"],
+            s.document()["stages"]["alignment"]["results"]["id"]
+        );
         assert!(
             p["label"]
                 .as_str()

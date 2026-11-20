@@ -1,0 +1,941 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/AlignmentIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesignLine"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "AlignmentIn": {
+      "description": "What the alignment stage reads.",
+      "type": "object",
+      "properties": {
+        "river": {
+          "description": "The river stage's output: the centreline (from the mouth when one is stated), the river\npolygon with its islands, and the water level profile on river chainage.",
+          "$ref": "#/$defs/RiverGeometry"
+        },
+        "size": {
+          "description": "The sizing stage's output.",
+          "$ref": "#/$defs/ChannelSize"
+        },
+        "settings": {
+          "description": "The method and the settings of each method.",
+          "$ref": "#/$defs/AlignmentSettings"
+        },
+        "seed": {
+          "description": "Seed legs to join first, for the rolling circle.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SeedLegs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "river",
+        "size",
+        "settings"
+      ]
+    },
+    "RiverGeometry": {
+      "description": "What the river stage returns.",
+      "type": "object",
+      "properties": {
+        "centreline": {
+          "description": "The centreline: the one given, or the smoothed line midway between the banks.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "banks": {
+          "description": "The banks, each turned to run the way the centreline runs; `None` unless both are given.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Banks"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "polygon": {
+          "description": "The river polygon, islands kept.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiverPolygon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "length_m": {
+          "description": "The length of the centreline in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "stations_checked": {
+          "description": "How many stations the bank checks looked at (zero without two banks).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "side_fail_stations": {
+          "description": "How many of them failed the side check.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bank_checks": {
+          "description": "The stations that failed a check, in chainage order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BankCheck"
+          }
+        },
+        "banks_cross": {
+          "description": "Where the two banks cross, if they do (the checks report it, they never repair it).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "reversed": {
+          "description": "True when the lines were turned round so that they start at the mouth.",
+          "type": "boolean"
+        },
+        "mouth": {
+          "description": "The mouth: the first point of the centreline, when a mouth was stated.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "water_profile": {
+          "description": "The water profile. Its chainage is from the mouth when one was stated (the profile is turned\nwith the line when the line is); with no mouth, it is from the start of the line as given.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaterProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "centreline",
+        "length_m",
+        "stations_checked",
+        "side_fail_stations",
+        "bank_checks",
+        "reversed"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "Banks": {
+      "description": "The two banks, both running the way the centreline runs.",
+      "type": "object",
+      "properties": {
+        "left": {
+          "description": "The left bank.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "right": {
+          "description": "The right bank.",
+          "$ref": "#/$defs/Polyline"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ]
+    },
+    "RiverPolygon": {
+      "description": "The river as water: an outer ring and the islands cut out of it. A ring is a [`Polyline`] that is\nclosed by implication (the last point joins the first).",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Islands: each is dry land inside the shell.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "required": [
+        "shell"
+      ]
+    },
+    "BankCheck": {
+      "description": "One station that failed a bank check.",
+      "type": "object",
+      "properties": {
+        "chainage_m": {
+          "description": "Chainage of the station along the banks' reference line, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "checks": {
+          "description": "The names of the checks it failed: `side`, `missing`, `jump`, `width-wide`, `width-narrow`,\n`excursion`, `crossing`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "chainage_m",
+        "checks"
+      ]
+    },
+    "WaterProfile": {
+      "description": "The water level along a river: points sorted by chainage, read linearly between points and held\nflat beyond the first and last. Two points at one chainage make a step (a weir): at that chainage\nthe later point holds.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WaterPoint"
+      }
+    },
+    "WaterPoint": {
+      "description": "One point of a water level profile: a river chainage and the level there, in metres. It is\nwritten as the pair `[chainage, level]`.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "ChannelSize": {
+      "description": "What the sizing stage returns: the channel's size and why. The keys are the ones the document has\nalways stored under `stages.sizing.results`.",
+      "type": "object",
+      "properties": {
+        "rule_sets": {
+          "description": "The selection that sized it, such as `pianc-wg141@0.3.0 (se_quality C)`.",
+          "type": "string"
+        },
+        "vessel_standard_id": {
+          "description": "The class's catalogue id; null for a custom vessel.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loa_m": {
+          "description": "The vessel's length overall in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "beam_m": {
+          "description": "The vessel's beam in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "draught_m": {
+          "description": "The draught in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "formation": {
+          "description": "`motor_vessel` or `pushed_convoy`.",
+          "type": "string"
+        },
+        "bottom_width_straight_m": {
+          "description": "The bottom width of the channel on a straight, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_bend_radius_m": {
+          "description": "The minimum bend radius in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "design_depth_m": {
+          "description": "The design depth in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bend_widening_at_rmin_m": {
+          "description": "The bend widening at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bottom_width_at_rmin_m": {
+          "description": "The bottom width at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "width_basis": {
+          "description": "`table`, `appendix-a` or `rule`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where the vessel's figures come from.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Warnings of the sizing.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vessel_label": {
+          "description": "A custom vessel's label (it has no class id); absent for a class.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "design_basis": {
+          "description": "B, the design basis: each quantity with its governing Rule.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BasisRow"
+          }
+        },
+        "rules_notice": {
+          "description": "The notice every output carries while the Rules are unverified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_sets",
+        "loa_m",
+        "beam_m",
+        "draught_m",
+        "formation",
+        "bottom_width_straight_m",
+        "min_bend_radius_m",
+        "design_depth_m",
+        "bend_widening_at_rmin_m",
+        "bottom_width_at_rmin_m",
+        "width_basis",
+        "source",
+        "warnings",
+        "design_basis",
+        "rules_notice"
+      ]
+    },
+    "BasisRow": {
+      "description": "One row of the design basis: a quantity with the Rule that governs it.",
+      "type": "object",
+      "properties": {
+        "quantity": {
+          "description": "`bottom-width`, `min-bend-radius`, `design-depth` or `widening-at-rmin`.",
+          "type": "string"
+        },
+        "waterway": {
+          "description": "The waterway kind of the reach, for the minimum radius.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "The value.",
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "description": "Its unit.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The governing Rule.",
+          "type": "string"
+        },
+        "rule_sets": {
+          "description": "The sets that hold the Rule, as `id@version`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "citation": {
+          "description": "The Rule's citation.",
+          "type": "string"
+        },
+        "origin": {
+          "description": "Where the Rule comes from.",
+          "type": "string"
+        },
+        "status": {
+          "description": "`verified` or `unverified`.",
+          "type": "string"
+        },
+        "other_rules": {
+          "description": "The other Rules of the Requirement that have a limit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OtherRule"
+          }
+        }
+      },
+      "required": [
+        "quantity",
+        "value",
+        "unit",
+        "rule",
+        "rule_sets",
+        "citation",
+        "origin",
+        "status",
+        "other_rules"
+      ]
+    },
+    "OtherRule": {
+      "description": "Another Rule of a Requirement, with its limit.",
+      "type": "object",
+      "properties": {
+        "rule": {
+          "description": "The Rule.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Its limit.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "rule",
+        "limit"
+      ]
+    },
+    "AlignmentSettings": {
+      "description": "The settings of the alignment stage: the method that makes the design line, one typed part per\nmethod under the method's name, and the given line, as the document holds them. Each method\nknows its own keys only.",
+      "type": "object",
+      "properties": {
+        "method": {
+          "description": "The method that makes the one design line.",
+          "$ref": "#/$defs/AlignMethod",
+          "default": "rolling_circle"
+        },
+        "rolling_circle": {
+          "$ref": "#/$defs/RollingCircleSettings",
+          "default": {
+            "step_m": 10.0,
+            "passes": 2,
+            "check_chord_m": null,
+            "use_water": null,
+            "clearance_m": 0.0,
+            "r_pref_m": null
+          }
+        },
+        "reroute": {
+          "$ref": "#/$defs/RerouteSettings",
+          "default": {
+            "corridor_sweep_m": [
+              40.0,
+              80.0,
+              120.0
+            ],
+            "station_step_m": 100.0,
+            "offset_step_m": 10.0,
+            "side_slope": 3.0,
+            "wet_weight": 1.0,
+            "dry_weight": 1.0,
+            "check_chord_m": null,
+            "fairness_weight": 0.0
+          }
+        },
+        "centreline": {
+          "$ref": "#/$defs/CentrelineSettings",
+          "default": {
+            "check_chord_m": null
+          }
+        },
+        "given": {
+          "description": "The line the user gave, for the method `given`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GivenLine"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "AlignMethod": {
+      "description": "A way of finding a design line.",
+      "oneOf": [
+        {
+          "description": "The rolling circle (water-aware when there is a river polygon).",
+          "type": "string",
+          "const": "rolling_circle"
+        },
+        {
+          "description": "The least-cost re-route over the terrain.",
+          "type": "string",
+          "const": "reroute"
+        },
+        {
+          "description": "The river centreline as it is, with no repair: a line to compare with. It may be tighter\nthan the minimum radius; its checks say so.",
+          "type": "string",
+          "const": "centreline"
+        },
+        {
+          "description": "A line the user gives (ticket C21).",
+          "type": "string",
+          "const": "given"
+        }
+      ]
+    },
+    "RollingCircleSettings": {
+      "description": "The settings of the rolling circle, typed.",
+      "type": "object",
+      "properties": {
+        "step_m": {
+          "description": "The sampling step in metres.",
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "passes": {
+          "description": "The number of passes.",
+          "type": "integer",
+          "format": "int64",
+          "default": 2
+        },
+        "check_chord_m": {
+          "description": "The chord the minimum radius is read on; `None`: a third of R_min.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "use_water": {
+          "description": "Keep the line in the water; `None`: when the document has a river polygon.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "clearance_m": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "r_pref_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "RerouteSettings": {
+      "description": "The settings of the least-cost re-route, typed.",
+      "type": "object",
+      "properties": {
+        "corridor_sweep_m": {
+          "description": "The half-widths of the corridors to try, in metres.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "default": [
+            40.0,
+            80.0,
+            120.0
+          ]
+        },
+        "station_step_m": {
+          "type": "number",
+          "format": "double",
+          "default": 100.0
+        },
+        "offset_step_m": {
+          "type": "number",
+          "format": "double",
+          "default": 10.0
+        },
+        "side_slope": {
+          "type": "number",
+          "format": "double",
+          "default": 3.0
+        },
+        "wet_weight": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "dry_weight": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "check_chord_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "fairness_weight": {
+          "description": "The fairness weight; `None` (a document from before spec 0005) reads as 0.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "CentrelineSettings": {
+      "description": "The settings of the river centreline as a design line: the chord its radius is read on.",
+      "type": "object",
+      "properties": {
+        "check_chord_m": {
+          "description": "The chord the minimum radius is read on; `None`: a third of R_min.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "GivenLine": {
+      "description": "A line the user already has (ticket C21), given as the design line: its name and its points in\nthe project CRS.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name the user gave it.",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line, in the project CRS: a GeoJSON `LineString`.",
+          "$ref": "#/$defs/LineString"
+        }
+      },
+      "required": [
+        "name",
+        "line"
+      ]
+    },
+    "LineString": {
+      "description": "A GeoJSON `LineString`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "Always `LineString`.",
+          "type": "string"
+        },
+        "coordinates": {
+          "description": "The points.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "type",
+        "coordinates"
+      ]
+    },
+    "SeedLegs": {
+      "description": "Seed legs (spec 0005): lines joined first, with pieces the joined line must hold.",
+      "type": "object",
+      "properties": {
+        "legs": {
+          "description": "The legs, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        },
+        "start_pose": {
+          "description": "The pose the joined line must start with.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PoseIn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "end_pose": {
+          "description": "The pose the joined line must end with.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PoseIn"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "must_follow": {
+          "description": "Lines the joined line must follow exactly.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "legs"
+      ]
+    },
+    "PoseIn": {
+      "description": "A pose: a point and a heading in degrees counter-clockwise from the project CRS's +x axis.",
+      "type": "object",
+      "properties": {
+        "point": {
+          "description": "The point.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "heading_deg": {
+          "description": "The heading in degrees.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "point",
+        "heading_deg"
+      ]
+    },
+    "DesignLine": {
+      "description": "What the alignment stage returns: the one design line, how it was made and what it does.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "A short id: `rolling-circle`, `reroute`, `centreline`, `lattice` or `given-<name>`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "A name for people.",
+          "type": "string"
+        },
+        "method": {
+          "description": "The method: `rolling_circle`, `reroute`, `centreline`, `given` or `lattice`.",
+          "type": "string"
+        },
+        "settings": {
+          "description": "The method's settings, as used."
+        },
+        "line": {
+          "description": "The line, from the mouth when the design states one: a GeoJSON `LineString` in the project\nCRS, as every line of the document is.",
+          "$ref": "#/$defs/LineString"
+        },
+        "checks": {
+          "description": "The checks of the line: `r_min_m`, `radius_ok`, `measured_min_radius_m`,\n`radius_check_chord_m`, and `fits_in_water`, `feasible` and `join_guard` where they apply."
+        },
+        "details": {
+          "description": "What the method reports about its own work.",
+          "default": null
+        },
+        "sanity": {
+          "description": "The design sanity check of the line: `{checked, warnings}`.",
+          "default": null
+        },
+        "widening_floor": {
+          "description": "How a bend of this line widens, when not by the rules (`none` for the river centreline).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bends": {
+          "description": "The bends, in chainage order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Bend"
+          }
+        },
+        "cut_offs": {
+          "description": "Where the line leaves the river's water: a list, empty when it never leaves it. Spec 0017\nwrites `cut_offs[]`; this is `null` instead of a list when they were not worked out (no river\npolygon to tell water from land, or a line moved from a 0.4 file), so \"none\" and \"not known\"\nnever read the same.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/CutOff"
+          }
+        },
+        "constraints_touched": {
+          "description": "The names of the constraints the line touches. Empty until constraints exist (ticket 13).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "method",
+        "settings",
+        "line",
+        "checks",
+        "bends",
+        "constraints_touched"
+      ]
+    },
+    "Bend": {
+      "description": "One bend of a design line.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where the bend starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where the bend ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "radius_m": {
+          "description": "The least radius in the bend, in metres, read the way the radius check reads it.",
+          "type": "number",
+          "format": "double"
+        },
+        "r_min_m": {
+          "description": "The minimum radius the sizing allows, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "pass": {
+          "description": "True when the radius meets R_min (within the radius check's tolerance).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "radius_m",
+        "r_min_m",
+        "pass"
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    },
+    "CutOff": {
+      "description": "One stretch where the design line leaves the river's water: a cut-off of the river reach between.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where the line leaves the water.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where it comes back.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_from": {
+          "description": "River chainage where it leaves the river.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_to": {
+          "description": "River chainage where it rejoins the river.",
+          "$ref": "#/$defs/Chainage"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "river_from",
+        "river_to"
+      ]
+    }
+  }
+}

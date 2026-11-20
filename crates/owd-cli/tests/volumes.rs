@@ -196,12 +196,12 @@ fn volumes_equal_the_core_called_directly_on_the_same_dem() {
     assert!(code(&o) == 0 || code(&o) == 1, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
     // The command's row is the saved row with the failed checks it read (ticket A13).
-    let mut row = res["options"][0].clone();
+    let mut row = res["design_line"].clone();
     row.as_object_mut().unwrap().remove("failed_checks");
     let row = &row;
 
     let saved = read_doc(&doc);
-    let line: Vec<Pt> = saved["options"][0]["line"]["coordinates"]
+    let line: Vec<Pt> = saved["stages"]["alignment"]["results"]["line"]["coordinates"]
         .as_array()
         .unwrap()
         .iter()
@@ -249,7 +249,7 @@ fn volumes_equal_the_core_called_directly_on_the_same_dem() {
     assert_eq!(row["excav_m3"].as_f64().unwrap(), direct.excav_m3());
     assert_eq!(row["max_face_h_m"].as_f64().unwrap(), direct.max_face_h_m());
     assert!(direct.dredge_m3() > 0.0);
-    assert_eq!(saved["stages"]["volumes"]["results"]["options"][0], *row);
+    assert_eq!(saved["stages"]["volumes"]["results"], *row);
     let st = run(&["status", &doc, "--json"]);
     assert_eq!(
         serde_json::from_str::<Value>(&out(&st)).unwrap()["stages"]["volumes"],
@@ -410,10 +410,13 @@ fn optimise_adds_the_lattice_option_and_volumes_measure_it() {
     ]);
     assert!(code(&o) <= 1, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
-    assert_eq!(res["option"]["method"], "lattice");
+    assert_eq!(res["design_line"]["method"], "lattice");
     assert!(!res["pools"].as_array().unwrap().is_empty());
     let saved = read_doc(&doc);
-    assert_eq!(saved["options"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        saved["stages"]["optimise"]["results"]["design_line"]["method"],
+        "lattice"
+    );
     let st = run(&["status", &doc, "--json"]);
     let st: Value = serde_json::from_str(&out(&st)).unwrap();
     assert_eq!(st["stages"]["optimise"], "fresh");
@@ -421,14 +424,9 @@ fn optimise_adds_the_lattice_option_and_volumes_measure_it() {
     let o = run(&["volumes", &doc, "--json"]);
     assert!(code(&o) <= 1, "{}", err(&o));
     let v: Value = serde_json::from_str(&out(&o)).unwrap();
-    let ids: Vec<&str> = v["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["id"].as_str().unwrap())
-        .collect();
-    assert_eq!(ids, ["rolling-circle", "lattice"]);
-    assert_eq!(v["options"][1]["water_source"], "optimise");
+    // One design line per run (spec 0017): the lattice's refined line.
+    assert_eq!(v["design_line"]["id"], "lattice");
+    assert_eq!(v["design_line"]["water_source"], "optimise");
 }
 
 #[test]
@@ -509,7 +507,6 @@ fn the_chain_gives_the_same_document_as_run_on_the_same_inputs_and_settings() {
             v["stages"][stage][k] = Value::Null;
         }
     }
-    v["options"] = json!([]);
     let again = dir.join("again.owd");
     std::fs::write(
         &again,
@@ -527,7 +524,7 @@ fn the_chain_gives_the_same_document_as_run_on_the_same_inputs_and_settings() {
 }
 
 #[test]
-fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
+fn export_writes_the_quantity_table_and_the_design_line_with_the_screening_label() {
     let dir = work_dir("export");
     let doc = full_chain(&dir);
     let csv = run(&["export", &doc, "--csv"]);
@@ -544,8 +541,9 @@ fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
         .take_while(|l| l.starts_with("# "))
         .count();
     assert!(text.lines().nth(header).unwrap().contains("failed_checks"));
+    // One design line per run (spec 0017): the lattice's refined line.
     assert!(
-        text.contains("\nrolling-circle,") && text.contains("\nlattice,"),
+        text.contains("\nlattice,") && !text.contains("\nrolling-circle,"),
         "{text}"
     );
     assert!(
@@ -560,7 +558,7 @@ fn export_writes_the_quantity_table_and_the_options_with_the_screening_label() {
     let g = run(&["export", &doc, "--geojson"]);
     let fc: Value = serde_json::from_str(&out(&g)).unwrap();
     assert_eq!(fc["screening"], "Screening — not for construction");
-    assert_eq!(fc["features"].as_array().unwrap().len(), 2);
+    assert_eq!(fc["features"].as_array().unwrap().len(), 1);
     let file = dir.join("wgs84.geojson");
     let w = run(&[
         "export",
@@ -610,13 +608,11 @@ fn a_reroute_that_fails_r_min_is_marked_failed_in_its_summary() {
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
     assert_eq!(res["ok"], false, "{res}");
     assert_eq!(res["failed_checks"], json!(["R_min"]), "{res}");
-    assert_eq!(res["option"]["checks"]["radius_ok"], false);
+    assert_eq!(res["design_line"]["checks"]["radius_ok"], false);
     // The option is saved, with its failed check.
     let saved = read_doc(&doc);
-    let opt = saved["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    let opt = owd_format::design::design_lines_of(&saved)
+        .into_iter()
         .find(|o| o["method"] == "reroute")
         .unwrap();
     assert_eq!(opt["checks"]["radius_ok"], false);

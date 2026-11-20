@@ -78,7 +78,7 @@ fn design(y0: f64, y1: f64) -> Session {
 }
 
 fn row(s: &Session) -> Value {
-    s.document()["stages"]["volumes"]["results"]["options"][0].clone()
+    s.document()["stages"]["volumes"]["results"].clone()
 }
 
 fn num(v: &Value, key: &str) -> f64 {

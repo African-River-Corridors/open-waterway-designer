@@ -1,6 +1,6 @@
 {
-  "format_version": 3,
-  "engine_version": "0.2.0",
+  "format_version": "0.5",
+  "engine_version": "0.3.1",
   "project": {
     "title": "Synthetic river: least-cost re-route, volumes",
     "created": "2026-10-21",
@@ -3842,7 +3842,7 @@
     },
     "dem": {
       "path": "river-dem.tif",
-      "sha256": "859d8ad0564994325608158c2c2df76063958338eebaea8da5792ed594538bba",
+      "sha256": "0d331084e8742baf6a5fb8bb85c34f3f61c90d3e811d74a3a27c4dc502842a84",
       "crs": "EPSG:32630",
       "nodata": null
     },
@@ -3883,12 +3883,12 @@
             "source": "typed"
           }
         ],
-        "vessel_standard_id": "CEMT_IV",
+        "vessel_standard_id": "CEMT-IV",
         "draught_m": 2.6
       },
       "results": {
         "rule_sets": "pianc-wg141@0.3.0 (se_quality B)",
-        "vessel_standard_id": "CEMT_IV",
+        "vessel_standard_id": "CEMT-IV",
         "loa_m": 85.0,
         "beam_m": 9.5,
         "draught_m": 2.6,
@@ -3899,7 +3899,7 @@
         "bend_widening_at_rmin_m": 14.166666666666666,
         "bottom_width_at_rmin_m": 44.56666666666667,
         "width_basis": "rule",
-        "source": "Rule Sets pianc-wg141@0.3.0, owd@0.3.0; vessel WG 141 Table 2.1 (p15)",
+        "source": "Rule Sets pianc-wg141@0.3.0, owd@0.3.0; vessel ECMT Resolution 92/2 (CEMT/CM(92)6/FINAL) Table 1, read from scan p3: https://www.itf-oecd.org/sites/default/files/docs/wat19922e.pdf (via web.archive.org); vessel_designer core/vessel_standards.py (PIANC WG141 Table 2.1 p15)",
         "warnings": [],
         "design_basis": [
           {
@@ -3975,11 +3975,12 @@
         ],
         "rules_notice": "Every Rule is unverified until a second reader checks it against its source."
       },
-      "depends_on": "f504fa0de524d4a864ccaa6b6f266073820893eb6cd9964fcfe74d9e7677f7db",
-      "engine_version": "0.2.0"
+      "depends_on": "69b83fb90cafd2e845a79b8df0db03dcf323e91e13db91bec41fcca874ab93fc",
+      "engine_version": "0.3.1"
     },
     "alignment": {
       "settings": {
+        "method": "reroute",
         "reroute": {
           "corridor_sweep_m": [
             40.0,
@@ -3996,12 +3997,347 @@
         }
       },
       "results": {
-        "methods": [
-          "reroute"
-        ]
+        "id": "reroute",
+        "name": "Least-cost re-route",
+        "method": "reroute",
+        "settings": {
+          "corridor_sweep_m": [
+            40.0,
+            80.0,
+            120.0
+          ],
+          "station_step_m": 100.0,
+          "offset_step_m": 10.0,
+          "side_slope": 3.0,
+          "wet_weight": 1.0,
+          "dry_weight": 1.0,
+          "check_chord_m": null,
+          "fairness_weight": 0.0
+        },
+        "line": {
+          "type": "LineString",
+          "coordinates": [
+            [
+              500000.0,
+              600000.0
+            ],
+            [
+              500068.92558964377,
+              600072.4372597754
+            ],
+            [
+              500141.1720846546,
+              600141.3659311411
+            ],
+            [
+              500220.57080365665,
+              600201.0522284736
+            ],
+            [
+              500309.7119175306,
+              600240.6614805604
+            ],
+            [
+              500404.41176417744,
+              600247.6050259526
+            ],
+            [
+              500496.5840447266,
+              600219.2961077858
+            ],
+            [
+              500579.6298070964,
+              600165.6626126383
+            ],
+            [
+              500654.127949777,
+              600099.3572914267
+            ],
+            [
+              500723.910421153,
+              600027.7874783442
+            ],
+            [
+              500792.4657789772,
+              599954.9840096075
+            ],
+            [
+              500863.02965131815,
+              599884.2304567469
+            ],
+            [
+              500939.2348627664,
+              599820.0739866823
+            ],
+            [
+              501024.66298480413,
+              599771.1814716363
+            ],
+            [
+              501118.1768269569,
+              599750.7480155632
+            ],
+            [
+              501212.2791300129,
+              599766.2094774885
+            ],
+            [
+              501299.1382574662,
+              599811.8499698286
+            ],
+            [
+              501376.47832147166,
+              599874.483981656
+            ],
+            [
+              501447.6096880932,
+              599944.6314570117
+            ],
+            [
+              501516.2506777353,
+              600017.3499539656
+            ],
+            [
+              501585.6559231462,
+              600089.3048809877
+            ],
+            [
+              501659.2456283006,
+              600156.7009255757
+            ],
+            [
+              501740.87702286156,
+              600212.8290142209
+            ],
+            [
+              501832.0129605313,
+              600245.627987874
+            ],
+            [
+              501926.8696948986,
+              600243.9048093976
+            ],
+            [
+              502017.25776891777,
+              600208.3093788793
+            ],
+            [
+              502097.9801142074,
+              600150.6867895178
+            ],
+            [
+              502170.99985551223,
+              600082.6378151289
+            ],
+            [
+              502240.188116331,
+              600010.4634006381
+            ],
+            [
+              502308.9179869858,
+              599937.8318292128
+            ],
+            [
+              502378.8479673999,
+              599866.3994672464
+            ]
+          ]
+        },
+        "checks": {
+          "r_min_m": 255.0,
+          "radius_ok": false,
+          "measured_min_radius_m": 116.86762286629778,
+          "radius_check_chord_m": 85.0
+        },
+        "details": {
+          "corridor_half_m": 40.0,
+          "approx_saving_pct": -3.697869861979185
+        },
+        "sanity": {
+          "checked": true,
+          "warnings": [
+            "a bend between 290 m and 300 m is tighter than R_min: radius 192 m against 255 m",
+            "a bend between 380 m and 410 m is tighter than R_min: radius 134 m against 255 m",
+            "a bend between 470 m and 510 m is tighter than R_min: radius 120 m against 255 m",
+            "a bend between 580 m and 600 m is tighter than R_min: radius 162 m against 255 m",
+            "a bend between 1270 m and 1300 m is tighter than R_min: radius 156 m against 255 m",
+            "a bend between 1360 m and 1400 m is tighter than R_min: radius 114 m against 255 m",
+            "a bend between 1460 m and 1490 m is tighter than R_min: radius 147 m against 255 m",
+            "a bend between 1570 m and 1570 m is tighter than R_min: radius 237 m against 255 m",
+            "a bend between 2160 m and 2180 m is tighter than R_min: radius 174 m against 255 m",
+            "a bend between 2250 m and 2290 m is tighter than R_min: radius 120 m against 255 m",
+            "a bend between 2350 m and 2380 m is tighter than R_min: radius 131 m against 255 m",
+            "a bend between 2450 m and 2470 m is tighter than R_min: radius 178 m against 255 m"
+          ]
+        },
+        "bends": [
+          {
+            "from": 93.5,
+            "to": 110.5,
+            "radius_m": 923.0104792157174,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 170.0,
+            "to": 229.5,
+            "radius_m": 401.6128029562427,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 263.5,
+            "to": 331.5,
+            "radius_m": 195.5901370828826,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 365.5,
+            "to": 433.5,
+            "radius_m": 132.02010675319713,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 459.0,
+            "to": 527.0,
+            "radius_m": 118.62975481760208,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 552.5,
+            "to": 620.5,
+            "radius_m": 160.59640180017598,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 654.5,
+            "to": 714.0,
+            "radius_m": 286.8592941624478,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 765.0,
+            "to": 807.5,
+            "radius_m": 659.8135806360252,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 1062.5,
+            "to": 1105.0,
+            "radius_m": 505.7471641596959,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 1156.0,
+            "to": 1215.5,
+            "radius_m": 259.47129196585325,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 1249.5,
+            "to": 1317.5,
+            "radius_m": 143.63750065674841,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 1343.0,
+            "to": 1411.0,
+            "radius_m": 122.13850683343959,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 1445.0,
+            "to": 1513.0,
+            "radius_m": 143.66066547708306,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 1547.0,
+            "to": 1606.5,
+            "radius_m": 222.98703938389409,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 1649.0,
+            "to": 1700.0,
+            "radius_m": 447.2316270378543,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 1955.0,
+            "to": 1989.0,
+            "radius_m": 706.4544344796392,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 2048.5,
+            "to": 2099.5,
+            "radius_m": 312.9317040501494,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 2142.0,
+            "to": 2201.5,
+            "radius_m": 182.31539569479853,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 2235.5,
+            "to": 2303.5,
+            "radius_m": 119.02596828804894,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 2329.0,
+            "to": 2397.0,
+            "radius_m": 121.84061617438938,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 2431.0,
+            "to": 2490.5,
+            "radius_m": 191.92422633466572,
+            "r_min_m": 255.0,
+            "pass": false
+          },
+          {
+            "from": 2533.0,
+            "to": 2584.0,
+            "radius_m": 339.4600667751635,
+            "r_min_m": 255.0,
+            "pass": true
+          },
+          {
+            "from": 2643.5,
+            "to": 2669.0,
+            "radius_m": 764.5354447142545,
+            "r_min_m": 255.0,
+            "pass": true
+          }
+        ],
+        "cut_offs": [],
+        "constraints_touched": []
       },
-      "depends_on": "2c4382b0a55205479237ff2c6f44ee0815230b66905a9447e7829aeebffd175c",
-      "engine_version": "0.2.0"
+      "depends_on": "e7d6e18076694dfdc2aa0d8cf34a2d01a34a463a728e1cf8e04f3426d614bf36",
+      "engine_version": "0.3.1"
     },
     "optimise": {
       "settings": null,
@@ -4019,592 +4355,687 @@
         "half_width_m": null
       },
       "results": {
-        "options": [
-          {
-            "id": "reroute",
-            "name": "Least-cost re-route",
-            "dredge_m3": 294420.7311026503,
-            "excav_m3": 445932.0073902675,
-            "total_m3": 740352.7384929177,
-            "max_face_h_m": 17.749298241592882,
-            "stations": 120,
-            "radius_ok": false,
-            "water_source": "input",
-            "screening": {
-              "verdict": "not-navigable",
-              "notice": "Screening — not for construction",
-              "rules_notice": "Every Rule is unverified until a second reader checks it against its source.",
-              "blocking_not_evaluated": {
-                "count": 0,
-                "rules": []
-              },
-              "constraint_stretches": [
-                {
-                  "kind": "depth",
-                  "start_chainage_m": 0.0,
-                  "end_chainage_m": 2993.8418701138376,
-                  "start": [
-                    500000.0,
-                    600000.0
-                  ],
-                  "end": [
-                    502378.8479673999,
-                    599866.3994672464
-                  ],
-                  "governing_rule": "pianc-wg141/5.3.4.3/design-depth-b",
-                  "required": 3.25,
-                  "river": 1.4331974983985074,
-                  "worst_chainage_m": 2792.5751897700497,
-                  "deficit": 1.8168025016014926,
-                  "works": "dredge",
-                  "dredge_m3": 294420.7311026502,
-                  "dry_cut_m3": 445932.0073902676
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 0.0,
-                  "end_chainage_m": 0.0,
-                  "start": [
-                    500000.0,
-                    600000.0
-                  ],
-                  "end": [
-                    500000.0,
-                    600000.0
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 30.400000000000002,
-                  "river": 0.0,
-                  "worst_chainage_m": 0.0,
-                  "deficit": 30.400000000000002,
-                  "works": "bank-cut",
-                  "dredge_m3": 1206.2169189455349,
-                  "dry_cut_m3": 2707.6008309141753
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 301.9000205156811,
-                  "end_chainage_m": 301.9000205156811,
-                  "start": [
-                    500219.4177695873,
-                    600206.3707752636
-                  ],
-                  "end": [
-                    500219.4177695873,
-                    600206.3707752636
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 47.7218303215417,
-                  "river": 40.09964518735375,
-                  "worst_chainage_m": 301.9000205156811,
-                  "deficit": 7.622185134187951,
-                  "works": "bank-cut",
-                  "dredge_m3": 2132.125968646375,
-                  "dry_cut_m3": 1628.7092267881985
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 377.37502564460135,
-                  "end_chainage_m": 427.6916957305482,
-                  "start": [
-                    500287.13531581016,
-                    600239.6995966164
-                  ],
-                  "end": [
-                    500335.07657042635,
-                    600251.8376759473
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 59.867958470748334,
-                  "river": 40.33933263646534,
-                  "worst_chainage_m": 402.53336068757477,
-                  "deficit": 19.52862583428299,
-                  "works": "bank-cut",
-                  "dredge_m3": 6399.035649936661,
-                  "dry_cut_m3": 6326.618050600432
-                },
-                {
-                  "kind": "radius",
-                  "start_chainage_m": 427.6916957305482,
-                  "end_chainage_m": 528.3250359024419,
-                  "start": [
-                    500335.07657042635,
-                    600251.8376759473
-                  ],
-                  "end": [
-                    500433.83253383246,
-                    600248.0930176633
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
-                  "required": 255.0,
-                  "river": 222.17252205408292,
-                  "worst_chainage_m": 452.8500307735216,
-                  "deficit": 32.82747794591708,
-                  "works": "cut-through",
-                  "dredge_m3": 10728.951649382721,
-                  "dry_cut_m3": 12000.003858970886
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 478.00836581649503,
-                  "end_chainage_m": 528.3250359024419,
-                  "start": [
-                    500385.2167856727,
-                    600256.0479138969
-                  ],
-                  "end": [
-                    500433.83253383246,
-                    600248.0930176633
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 62.130755750242834,
-                  "river": 40.47280199114472,
-                  "worst_chainage_m": 503.16670085946845,
-                  "deficit": 21.657953759098113,
-                  "works": "bank-cut",
-                  "dredge_m3": 6423.160591425066,
-                  "dry_cut_m3": 6765.930365075054
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 578.6417059883887,
-                  "end_chainage_m": 603.8000410313622,
-                  "start": [
-                    500481.3834288081,
-                    600231.6406720692
-                  ],
-                  "end": [
-                    500504.462072161,
-                    600222.0422861484
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 50.58252749393707,
-                  "river": 40.17359627070368,
-                  "worst_chainage_m": 603.8000410313622,
-                  "deficit": 10.408931223233388,
-                  "works": "bank-cut",
-                  "dredge_m3": 4971.579835769607,
-                  "dry_cut_m3": 4425.6727206543455
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 704.4333812032559,
-                  "end_chainage_m": 704.4333812032559,
-                  "start": [
-                    500586.57864207955,
-                    600163.9719406905
-                  ],
-                  "end": [
-                    500586.57864207955,
-                    600163.9719406905
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 40.46607737238433,
-                  "river": 40.04611290228091,
-                  "worst_chainage_m": 704.4333812032559,
-                  "deficit": 0.4199644701034231,
-                  "works": "bank-cut",
-                  "dredge_m3": 2231.481834921035,
-                  "dry_cut_m3": 1510.8227490968154
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 1207.6000820627244,
-                  "end_chainage_m": 1207.6000820627244,
-                  "start": [
-                    500944.9630471929,
-                    599811.6962493701
-                  ],
-                  "end": [
-                    500944.9630471929,
-                    599811.6962493701
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 41.22789378149232,
-                  "river": 40.14241935399745,
-                  "worst_chainage_m": 1207.6000820627244,
-                  "deficit": 1.0854744274948729,
-                  "works": "bank-cut",
-                  "dredge_m3": 2160.011400844733,
-                  "dry_cut_m3": 1774.6879655134503
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 1283.0750871916446,
-                  "end_chainage_m": 1308.233422234618,
-                  "start": [
-                    501009.05600033933,
-                    599771.83938351
-                  ],
-                  "end": [
-                    501031.70250808116,
-                    599761.5868929717
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 50.460076995687224,
-                  "river": 40.44650794001281,
-                  "worst_chainage_m": 1308.233422234618,
-                  "deficit": 10.013569055674417,
-                  "works": "bank-cut",
-                  "dredge_m3": 4492.467883894058,
-                  "dry_cut_m3": 4690.498568749594
-                },
-                {
-                  "kind": "radius",
-                  "start_chainage_m": 1358.5500923205648,
-                  "end_chainage_m": 1459.1834324924585,
-                  "start": [
-                    501080.53421870456,
-                    599749.4530013399
-                  ],
-                  "end": [
-                    501178.9658682235,
-                    599751.6595720174
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
-                  "required": 255.0,
-                  "river": 220.50475941540358,
-                  "worst_chainage_m": 1408.8667624065117,
-                  "deficit": 34.49524058459642,
-                  "works": "cut-through",
-                  "dredge_m3": 12167.206700033616,
-                  "dry_cut_m3": 15564.832745609949
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 1383.7084273635382,
-                  "end_chainage_m": 1408.8667624065117,
-                  "start": [
-                    501104.95007401623,
-                    599743.386055524
-                  ],
-                  "end": [
-                    501129.512718451,
-                    599742.3776936455
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 56.91186831206023,
-                  "river": 40.54910803006184,
-                  "worst_chainage_m": 1408.8667624065117,
-                  "deficit": 16.36276028199839,
-                  "works": "bank-cut",
-                  "dredge_m3": 4630.437864814307,
-                  "dry_cut_m3": 5824.558350081063
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 1484.341767535432,
-                  "end_chainage_m": 1509.5001025784054,
-                  "start": [
-                    501203.6924431098,
-                    599756.3005112034
-                  ],
-                  "end": [
-                    501226.88144884,
-                    599765.1071523702
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 51.09523390584273,
-                  "river": 40.50694414364781,
-                  "worst_chainage_m": 1484.341767535432,
-                  "deficit": 10.588289762194925,
-                  "works": "bank-cut",
-                  "dredge_m3": 5159.357393180346,
-                  "dry_cut_m3": 5326.486410748927
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 1584.9751077073256,
-                  "end_chainage_m": 1610.133442750299,
-                  "start": [
-                    501292.3182166244,
-                    599802.717068897
-                  ],
-                  "end": [
-                    501312.6427900206,
-                    599817.3689386449
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 41.93010678793733,
-                  "river": 40.18816615391402,
-                  "worst_chainage_m": 1584.9751077073256,
-                  "deficit": 1.7419406340233152,
-                  "works": "bank-cut",
-                  "dredge_m3": 4841.422283532542,
-                  "dry_cut_m3": 4116.666414719839
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 2188.7751487386877,
-                  "end_chainage_m": 2213.9334837816614,
-                  "start": [
-                    501732.1273077126,
-                    600214.0598125687
-                  ],
-                  "end": [
-                    501754.6191257702,
-                    600224.9795161744
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 48.17327215071698,
-                  "river": 40.16476633622533,
-                  "worst_chainage_m": 2188.7751487386877,
-                  "deficit": 8.008505814491656,
-                  "works": "bank-cut",
-                  "dredge_m3": 6412.343886168617,
-                  "dry_cut_m3": 22731.04903862787
-                },
-                {
-                  "kind": "radius",
-                  "start_chainage_m": 2289.4084889105816,
-                  "end_chainage_m": 2390.041829082475,
-                  "start": [
-                    501824.6115237078,
-                    600253.2202780294
-                  ],
-                  "end": [
-                    501924.8002291953,
-                    600253.4109328564
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
-                  "required": 255.0,
-                  "river": 222.45695240282734,
-                  "worst_chainage_m": 2339.7251589965285,
-                  "deficit": 32.54304759717266,
-                  "works": "cut-through",
-                  "dredge_m3": 17941.789998012737,
-                  "dry_cut_m3": 81251.54628437971
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 2289.4084889105816,
-                  "end_chainage_m": 2314.566823953555,
-                  "start": [
-                    501824.6115237078,
-                    600253.2202780294
-                  ],
-                  "end": [
-                    501849.34188551514,
-                    600254.9967349428
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 60.13708523135817,
-                  "river": 40.52304469101831,
-                  "worst_chainage_m": 2289.4084889105816,
-                  "deficit": 19.614040540339857,
-                  "works": "bank-cut",
-                  "dredge_m3": 7390.648725105782,
-                  "dry_cut_m3": 31552.19953175546
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 2364.883494039502,
-                  "end_chainage_m": 2415.2001641254487,
-                  "start": [
-                    501899.64744796854,
-                    600253.9395335519
-                  ],
-                  "end": [
-                    501948.2031818094,
-                    600244.9614499336
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 60.36576700139764,
-                  "river": 40.639213683267585,
-                  "worst_chainage_m": 2390.041829082475,
-                  "deficit": 19.72655331813006,
-                  "works": "bank-cut",
-                  "dredge_m3": 10649.879776065245,
-                  "dry_cut_m3": 46505.51131907408
-                },
-                {
-                  "kind": "width",
-                  "start_chainage_m": 2490.675169254369,
-                  "end_chainage_m": 2515.833504297342,
-                  "start": [
-                    502017.3071433111,
-                    600214.6115091761
-                  ],
-                  "end": [
-                    502037.7438124209,
-                    600200.0758793788
-                  ],
-                  "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
-                  "required": 48.83063600180416,
-                  "river": 40.159980188838944,
-                  "worst_chainage_m": 2490.675169254369,
-                  "deficit": 8.670655812965215,
-                  "works": "bank-cut",
-                  "dredge_m3": 7589.529835746342,
-                  "dry_cut_m3": 20632.549065003375
-                }
-              ]
+        "id": "reroute",
+        "name": "Least-cost re-route",
+        "dredge_m3": 264857.7855018081,
+        "excav_m3": 484884.5877315409,
+        "total_m3": 749742.3732333491,
+        "in_river_m3": 264857.7855018081,
+        "widening_m3": 484884.5877315409,
+        "cut_through_m3": 0.0,
+        "max_face_h_m": 18.06489196927838,
+        "stations": 119,
+        "sanity": {
+          "checked": true,
+          "warnings": []
+        },
+        "radius_ok": false,
+        "water_source": "input",
+        "screening": {
+          "verdict": "not-navigable",
+          "notice": "Screening — not for construction",
+          "rules_notice": "Every Rule is unverified until a second reader checks it against its source.",
+          "blocking_not_evaluated": {
+            "count": 0,
+            "rules": []
+          },
+          "constraint_stretches": [
+            {
+              "kind": "depth",
+              "start_chainage_m": 0.0,
+              "end_chainage_m": 2959.8767082561612,
+              "start": [
+                500000.0,
+                600000.0
+              ],
+              "end": [
+                502378.8479673999,
+                599866.3994672464
+              ],
+              "governing_rule": "pianc-wg141/5.3.4.3/design-depth-b",
+              "required": 3.25,
+              "river": -0.23723363630090671,
+              "worst_chainage_m": 1429.7709522932305,
+              "deficit": 3.487233636300907,
+              "works": "dredge",
+              "dredge_m3": 264857.78550180816,
+              "dry_cut_m3": 484884.587731541
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 0.0,
+              "end_chainage_m": 0.0,
+              "start": [
+                500000.0,
+                600000.0
+              ],
+              "end": [
+                500000.0,
+                600000.0
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 30.4000000001605,
+              "river": 0.0,
+              "worst_chainage_m": 0.0,
+              "deficit": 30.4000000001605,
+              "works": "bank-cut",
+              "dredge_m3": 1206.1969680307677,
+              "dry_cut_m3": 2712.682386579655
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 200.66960733940076,
+              "end_chainage_m": 200.66960733940076,
+              "start": [
+                500141.832862976,
+                600141.8626571823
+              ],
+              "end": [
+                500141.832862976,
+                600141.8626571823
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 40.171774347355466,
+              "river": 40.036326357430184,
+              "worst_chainage_m": 200.66960733940076,
+              "deficit": 0.13544798992528229,
+              "works": "bank-cut",
+              "dredge_m3": 1908.3722026189598,
+              "dry_cut_m3": 1363.3070857260375
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 301.00441100910115,
+              "end_chainage_m": 301.00441100910115,
+              "start": [
+                500222.2437339134,
+                600201.7955837379
+              ],
+              "end": [
+                500222.2437339134,
+                600201.7955837379
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 196.3280137420207,
+              "worst_chainage_m": 301.00441100910115,
+              "deficit": 58.67198625797931,
+              "works": "cut-through",
+              "dredge_m3": 1895.1294328402448,
+              "dry_cut_m3": 1868.3655646791774
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 301.00441100910115,
+              "end_chainage_m": 301.00441100910115,
+              "start": [
+                500222.2437339134,
+                600201.7955837379
+              ],
+              "end": [
+                500222.2437339134,
+                600201.7955837379
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 48.800328771964786,
+              "river": 40.187417371697435,
+              "worst_chainage_m": 301.00441100910115,
+              "deficit": 8.61291140026735,
+              "works": "bank-cut",
+              "dredge_m3": 1895.1294328402448,
+              "dry_cut_m3": 1868.3655646791774
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 376.2555137613764,
+              "end_chainage_m": 401.3392146788015,
+              "start": [
+                500291.0116431511,
+                600232.3521399004
+              ],
+              "end": [
+                500314.3199788141,
+                600240.9993510409
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 138.1521784870386,
+              "worst_chainage_m": 401.3392146788015,
+              "deficit": 116.84782151296139,
+              "works": "cut-through",
+              "dredge_m3": 3021.269623469442,
+              "dry_cut_m3": 5251.6312856607565
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 376.2555137613764,
+              "end_chainage_m": 401.3392146788015,
+              "start": [
+                500291.0116431511,
+                600232.3521399004
+              ],
+              "end": [
+                500314.3199788141,
+                600240.9993510409
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 56.548700943857526,
+              "river": 40.664383016335826,
+              "worst_chainage_m": 401.3392146788015,
+              "deficit": 15.8843179275217,
+              "works": "bank-cut",
+              "dredge_m3": 3021.269623469442,
+              "dry_cut_m3": 5251.6312856607565
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 476.5903174310768,
+              "end_chainage_m": 501.6740183485019,
+              "start": [
+                500389.3696163452,
+                600246.5021114288
+              ],
+              "end": [
+                500413.9721843903,
+                600244.6687293585
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 148.88851833436442,
+              "worst_chainage_m": 501.6740183485019,
+              "deficit": 106.11148166563558,
+              "works": "cut-through",
+              "dredge_m3": 3516.86159582074,
+              "dry_cut_m3": 6671.2467657681045
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 476.5903174310768,
+              "end_chainage_m": 501.6740183485019,
+              "start": [
+                500389.3696163452,
+                600246.5021114288
+              ],
+              "end": [
+                500413.9721843903,
+                600244.6687293585
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 54.66312008752264,
+              "river": 40.281690522212244,
+              "worst_chainage_m": 501.6740183485019,
+              "deficit": 14.381429565310398,
+              "works": "bank-cut",
+              "dredge_m3": 3516.86159582074,
+              "dry_cut_m3": 6671.2467657681045
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 576.9251211007771,
+              "end_chainage_m": 602.0088220182023,
+              "start": [
+                500485.9069588793,
+                600222.5753664491
+              ],
+              "end": [
+                500508.27268750034,
+                600211.7472245244
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 208.55809977975176,
+              "worst_chainage_m": 576.9251211007771,
+              "deficit": 46.44190022024824,
+              "works": "cut-through",
+              "dredge_m3": 3913.3586003546607,
+              "dry_cut_m3": 5132.70280552837
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 576.9251211007771,
+              "end_chainage_m": 602.0088220182023,
+              "start": [
+                500485.9069588793,
+                600222.5753664491
+              ],
+              "end": [
+                500508.27268750034,
+                600211.7472245244
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 47.72131240078899,
+              "river": 40.530653095092504,
+              "worst_chainage_m": 576.9251211007771,
+              "deficit": 7.190659305696485,
+              "works": "bank-cut",
+              "dredge_m3": 3913.3586003546607,
+              "dry_cut_m3": 5132.70280552837
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 677.2599247704776,
+              "end_chainage_m": 677.2599247704776,
+              "start": [
+                500571.48665556696,
+                600170.9217091361
+              ],
+              "end": [
+                500571.48665556696,
+                600170.9217091361
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 40.503270842507234,
+              "river": 40.22982163920989,
+              "worst_chainage_m": 677.2599247704776,
+              "deficit": 0.27344920329734634,
+              "works": "bank-cut",
+              "dredge_m3": 2187.728529732191,
+              "dry_cut_m3": 2187.780940042325
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 1178.9339431189794,
+              "end_chainage_m": 1178.9339431189794,
+              "start": [
+                500933.68593010964,
+                599824.7455823005
+              ],
+              "end": [
+                500933.68593010964,
+                599824.7455823005
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 43.09541131889584,
+              "river": 40.0297332879922,
+              "worst_chainage_m": 1178.9339431189794,
+              "deficit": 3.0656780309036407,
+              "works": "bank-cut",
+              "dredge_m3": 2058.1678006604684,
+              "dry_cut_m3": 1794.3377443261425
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 1279.26874678868,
+              "end_chainage_m": 1279.26874678868,
+              "start": [
+                501020.0208354623,
+                599773.838282428
+              ],
+              "end": [
+                501020.0208354623,
+                599773.838282428
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 159.40038826844048,
+              "worst_chainage_m": 1279.26874678868,
+              "deficit": 95.59961173155952,
+              "works": "cut-through",
+              "dredge_m3": 2163.7483682926527,
+              "dry_cut_m3": 2668.9518272966566
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 1279.26874678868,
+              "end_chainage_m": 1304.3524477061048,
+              "start": [
+                501020.0208354623,
+                599773.838282428
+              ],
+              "end": [
+                501043.943120233,
+                599766.9686215245
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 53.063056465811854,
+              "river": 40.09508860594917,
+              "worst_chainage_m": 1279.26874678868,
+              "deficit": 12.967967859862682,
+              "works": "bank-cut",
+              "dredge_m3": 3909.1632887493643,
+              "dry_cut_m3": 5597.7049710055635
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 1354.5198495409552,
+              "end_chainage_m": 1404.6872513758053,
+              "start": [
+                501092.95413796295,
+                599756.2593569405
+              ],
+              "end": [
+                501142.2042629226,
+                599754.6958390945
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 61.82289278704239,
+              "river": 40.00149369441766,
+              "worst_chainage_m": 1379.6035504583801,
+              "deficit": 21.82139909262473,
+              "works": "bank-cut",
+              "dredge_m3": 4882.342504738876,
+              "dry_cut_m3": 9765.08882392337
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 1379.6035504583801,
+              "end_chainage_m": 1379.6035504583801,
+              "start": [
+                501117.45964682795,
+                599750.9047246485
+              ],
+              "end": [
+                501117.45964682795,
+                599750.9047246485
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 114.96395397083424,
+              "worst_chainage_m": 1379.6035504583801,
+              "deficit": 140.03604602916576,
+              "works": "cut-through",
+              "dredge_m3": 1649.9225507015556,
+              "dry_cut_m3": 2760.0307236846097
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 1454.8546532106554,
+              "end_chainage_m": 1479.9383541280806,
+              "start": [
+                501191.70791251416,
+                599762.8295273089
+              ],
+              "end": [
+                501216.0295599223,
+                599768.1801565936
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 54.96585810962211,
+              "river": 40.08226682600716,
+              "worst_chainage_m": 1479.9383541280806,
+              "deficit": 14.883591283614955,
+              "works": "bank-cut",
+              "dredge_m3": 3357.4508408228858,
+              "dry_cut_m3": 5578.372379472245
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 1479.9383541280806,
+              "end_chainage_m": 1479.9383541280806,
+              "start": [
+                501216.0295599223,
+                599768.1801565936
+              ],
+              "end": [
+                501216.0295599223,
+                599768.1801565936
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 147.05368661984713,
+              "worst_chainage_m": 1479.9383541280806,
+              "deficit": 107.94631338015287,
+              "works": "cut-through",
+              "dredge_m3": 1771.7243213185095,
+              "dry_cut_m3": 2323.5775915378463
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 1580.2731577977809,
+              "end_chainage_m": 1580.2731577977809,
+              "start": [
+                501304.1517091801,
+                599815.9101241352
+              ],
+              "end": [
+                501304.1517091801,
+                599815.9101241352
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 254.257492725531,
+              "worst_chainage_m": 1580.2731577977809,
+              "deficit": 0.7425072744690056,
+              "works": "cut-through",
+              "dredge_m3": 2057.3693846407823,
+              "dry_cut_m3": 1810.6998908130884
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 1580.2731577977809,
+              "end_chainage_m": 1580.2731577977809,
+              "start": [
+                501304.1517091801,
+                599815.9101241352
+              ],
+              "end": [
+                501304.1517091801,
+                599815.9101241352
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 44.60803753421602,
+              "river": 40.032214186610695,
+              "worst_chainage_m": 1580.2731577977809,
+              "deficit": 4.575823347605322,
+              "works": "bank-cut",
+              "dredge_m3": 2057.3693846407823,
+              "dry_cut_m3": 1810.6998908130884
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 2157.1982788985583,
+              "end_chainage_m": 2182.281979815983,
+              "start": [
+                501728.62281199096,
+                600204.4032677575
+              ],
+              "end": [
+                501750.4859719442,
+                600216.2871853425
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 217.16630348321291,
+              "worst_chainage_m": 2182.281979815983,
+              "deficit": 37.833696516787086,
+              "works": "cut-through",
+              "dredge_m3": 6230.985359760683,
+              "dry_cut_m3": 24314.909218167555
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 2157.1982788985583,
+              "end_chainage_m": 2182.281979815983,
+              "start": [
+                501728.62281199096,
+                600204.4032677575
+              ],
+              "end": [
+                501750.4859719442,
+                600216.2871853425
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 47.03471699825313,
+              "river": 40.55685138175196,
+              "worst_chainage_m": 2182.281979815983,
+              "deficit": 6.47786561650117,
+              "works": "bank-cut",
+              "dredge_m3": 6230.985359760683,
+              "dry_cut_m3": 24314.909218167555
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 2257.5330825682586,
+              "end_chainage_m": 2282.6167834856838,
+              "start": [
+                501821.291254003,
+                600241.7693457298
+              ],
+              "end": [
+                501845.69948732987,
+                600245.3793568353
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 158.6983668544433,
+              "worst_chainage_m": 2257.5330825682586,
+              "deficit": 96.3016331455567,
+              "works": "cut-through",
+              "dredge_m3": 5335.5625583739,
+              "dry_cut_m3": 34047.54825168729
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 2257.5330825682586,
+              "end_chainage_m": 2282.6167834856838,
+              "start": [
+                501821.291254003,
+                600241.7693457298
+              ],
+              "end": [
+                501845.69948732987,
+                600245.3793568353
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 53.16330923627811,
+              "river": 40.131509375934144,
+              "worst_chainage_m": 2257.5330825682586,
+              "deficit": 13.031799860343966,
+              "works": "bank-cut",
+              "dredge_m3": 5335.5625583739,
+              "dry_cut_m3": 34047.54825168729
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 2357.867886237959,
+              "end_chainage_m": 2382.951587155384,
+              "start": [
+                501920.93817642966,
+                600244.0125620525
+              ],
+              "end": [
+                501944.6889417802,
+                600236.8874703167
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 138.0882787334494,
+              "worst_chainage_m": 2357.867886237959,
+              "deficit": 116.91172126655059,
+              "works": "cut-through",
+              "dredge_m3": 6664.790548713497,
+              "dry_cut_m3": 32454.559167939005
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 2357.867886237959,
+              "end_chainage_m": 2382.951587155384,
+              "start": [
+                501920.93817642966,
+                600244.0125620525
+              ],
+              "end": [
+                501944.6889417802,
+                600236.8874703167
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 56.560801142095315,
+              "river": 40.74019376593715,
+              "worst_chainage_m": 2357.867886237959,
+              "deficit": 15.820607376158165,
+              "works": "bank-cut",
+              "dredge_m3": 6664.790548713497,
+              "dry_cut_m3": 32454.559167939005
+            },
+            {
+              "kind": "radius",
+              "start_chainage_m": 2458.202689907659,
+              "end_chainage_m": 2458.202689907659,
+              "start": [
+                502014.7063668813,
+                600209.3141381342
+              ],
+              "end": [
+                502014.7063668813,
+                600209.3141381342
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/min-bend-radius-b",
+              "required": 255.0,
+              "river": 185.7229084733099,
+              "worst_chainage_m": 2458.202689907659,
+              "deficit": 69.2770915266901,
+              "works": "cut-through",
+              "dredge_m3": 3393.3167449723414,
+              "dry_cut_m3": 11503.279045303965
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 2458.202689907659,
+              "end_chainage_m": 2483.2863908250843,
+              "start": [
+                502014.7063668813,
+                600209.3141381342
+              ],
+              "end": [
+                502035.44172451564,
+                600195.3290002416
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 49.85101996138053,
+              "river": 40.25296951000833,
+              "worst_chainage_m": 2458.202689907659,
+              "deficit": 9.598050451372202,
+              "works": "bank-cut",
+              "dredge_m3": 6974.1050999055005,
+              "dry_cut_m3": 22019.891421298096
+            },
+            {
+              "kind": "width",
+              "start_chainage_m": 2558.53749357736,
+              "end_chainage_m": 2558.53749357736,
+              "start": [
+                502096.689064039,
+                600151.6083887779
+              ],
+              "end": [
+                502096.689064039,
+                600151.6083887779
+              ],
+              "governing_rule": "pianc-wg141/Table5.7/bottom-width-b",
+              "required": 41.05158889471871,
+              "river": 40.05033855282552,
+              "worst_chainage_m": 2558.53749357736,
+              "deficit": 1.00125034189319,
+              "works": "bank-cut",
+              "dredge_m3": 2721.7436123815455,
+              "dry_cut_m3": 5539.401678350938
             }
-          }
-        ]
+          ],
+          "radius_read_on": "the design line option"
+        }
       },
-      "depends_on": "f803a998a23e5e6a98a94b16ccb5b30019ad69f1812330f882b4da5eff65dde9",
-      "engine_version": "0.2.0"
+      "depends_on": "8b1793a0c5d1d31230bbfae59c757cca30d1cb7d097c7c2630dea8fcf7d98dfc",
+      "engine_version": "0.3.1"
     }
   },
-  "options": [
-    {
-      "id": "reroute",
-      "name": "Least-cost re-route",
-      "method": "reroute",
-      "settings": {
-        "corridor_sweep_m": [
-          40.0,
-          80.0,
-          120.0
-        ],
-        "station_step_m": 100.0,
-        "offset_step_m": 10.0,
-        "side_slope": 3.0,
-        "wet_weight": 1.0,
-        "dry_weight": 1.0,
-        "check_chord_m": null,
-        "fairness_weight": 0.0
-      },
-      "line": {
-        "type": "LineString",
-        "coordinates": [
-          [
-            500000.0,
-            600000.0
-          ],
-          [
-            500068.13555154955,
-            600073.1926665389
-          ],
-          [
-            500139.39286989433,
-            600143.3235606699
-          ],
-          [
-            500217.6096052555,
-            600205.4808436381
-          ],
-          [
-            500307.0088854007,
-            600249.4808525459
-          ],
-          [
-            500405.8368566861,
-            600257.7793664858
-          ],
-          [
-            500499.8250309275,
-            600225.2599801488
-          ],
-          [
-            500581.854549167,
-            600168.3387936852
-          ],
-          [
-            500655.25968637835,
-            600100.4846152877
-          ],
-          [
-            500724.20203462016,
-            600028.0567328758
-          ],
-          [
-            500791.9894332016,
-            599954.5393728183
-          ],
-          [
-            500861.66244054673,
-            599882.8217444506
-          ],
-          [
-            500936.71569648135,
-            599816.8249497166
-          ],
-          [
-            501021.4434943289,
-            599764.1360922426
-          ],
-          [
-            501117.83147098485,
-            599740.185236366
-          ],
-          [
-            501215.37349366414,
-            599758.4929315244
-          ],
-          [
-            501301.8351608272,
-            599808.1869521014
-          ],
-          [
-            501377.9913583162,
-            599872.8880228014
-          ],
-          [
-            501448.202004531,
-            599944.0739865586
-          ],
-          [
-            501516.0690325527,
-            600017.5170828468
-          ],
-          [
-            501584.65603614657,
-            600090.2844847483
-          ],
-          [
-            501657.19050933036,
-            600159.080314887
-          ],
-          [
-            501737.7137989136,
-            600218.1584995511
-          ],
-          [
-            501830.02067877306,
-            600255.4027816232
-          ],
-          [
-            501929.17378041643,
-            600253.3190200697
-          ],
-          [
-            502020.3502354654,
-            600213.2750059627
-          ],
-          [
-            502099.9217936268,
-            600152.8920800507
-          ],
-          [
-            502171.91382855846,
-            600083.5231739929
-          ],
-          [
-            502240.2974082429,
-            600010.563862413
-          ],
-          [
-            502308.24795928533,
-            599937.198200928
-          ],
-          [
-            502378.8479673999,
-            599866.3994672464
-          ]
-        ]
-      },
-      "checks": {
-        "r_min_m": 255.0,
-        "radius_ok": false,
-        "measured_min_radius_m": 102.32149752045488,
-        "radius_check_chord_m": 85.0
-      },
-      "details": {
-        "corridor_half_m": 40.0,
-        "approx_saving_pct": 0.0
-      }
+  "provenance": {
+    "centreline": {
+      "source": "user-file",
+      "date": "2026-11-20",
+      "notice": "User-supplied data",
+      "mark": "user"
+    },
+    "river_polygon": {
+      "source": "user-file",
+      "date": "2026-11-20",
+      "notice": "User-supplied data",
+      "mark": "user"
+    },
+    "dem": {
+      "source": "user-file",
+      "date": "2026-11-20",
+      "notice": "User-supplied data",
+      "mark": "user"
     }
-  ]
+  }
 }

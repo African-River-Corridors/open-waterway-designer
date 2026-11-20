@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/African-River-Corridors/open-waterway-designer/schema/owd.schema.json",
-  "title": "Open Waterway Designer document (.owd), format 0.4",
+  "title": "Open Waterway Designer document (.owd), format 0.5",
   "description": "One screening study of one river reach for one vessel: its inputs, the choices made and the results of each stage. Each stage records a hash of what it depended on; a stage whose hash no longer matches is stale. Numbers are SI. Geometry is GeoJSON in the project CRS.",
   "type": "object",
-  "required": ["format_version", "engine_version", "project", "inputs", "stages", "options"],
+  "required": ["format_version", "engine_version", "project", "inputs", "stages"],
   "additionalProperties": false,
   "properties": {
     "format_version": {
-      "description": "The string \"0.4\" since spec 0015 (the custom vessel). A file with the number 3 (format 0.3, spec 0007) opens and is saved as 0.4. An older file is refused, with no migration: rebuild the design.",
-      "const": "0.4"
+      "description": "The string \"0.5\" since spec 0017 ticket 6 (one design line per run). A 0.4 file opens and is saved as 0.5: its rolling-circle option (or the first other one) becomes the design line, its pool-lattice option the optimise stage's refined line, any other option is not kept, and its stages after sizing are marked stale. A file with the number 3 (format 0.3, spec 0007) opens the same way. An older file is refused, with no migration: rebuild the design.",
+      "const": "0.5"
     },
     "engine_version": { "type": "string", "minLength": 1 },
     "project": {
@@ -231,6 +231,21 @@
             }
           }
         },
+        "mouth": {
+          "description": "Spec 0017: the river mouth, where chainage 0 is. `point` is the first point of the stored centreline, in the project CRS: the river lines are stored running from it, and every river chainage (the water level, the bed depths, the waterway reaches, the low-confidence stretches) counts from it. `stated_as` says whether the user gave the point or said `downstream` (the lower end, by the water level or the ground). Null or absent: no mouth is stated, and chainage runs from the first point of the stored centreline.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["point", "stated_as"],
+              "additionalProperties": false,
+              "properties": {
+                "point": { "$ref": "#/$defs/position" },
+                "stated_as": { "enum": ["point", "downstream"] }
+              }
+            }
+          ]
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
@@ -253,7 +268,7 @@
         "optimise": { "$ref": "#/$defs/stage" },
         "volumes": { "$ref": "#/$defs/stage" },
         "plan_cut": {
-          "description": "Ticket C2b: the plan cut of each design line option, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, an option's line or the settings change. Optional.",
+          "description": "Ticket C2b: the plan cut of the design line, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, the design line or the settings change. Optional.",
           "type": "object",
           "required": ["settings", "results", "depends_on"],
           "properties": {
@@ -279,11 +294,6 @@
     "fits": {
       "description": "The answer to \"what fits\" over every vessel class (spec 0012). It is not a stage: it never reruns by itself, and it shows as stale when the banks or the centreline change.",
       "$ref": "#/$defs/stage"
-    },
-    "options": {
-      "description": "Design line options, added by the alignment and optimise stages.",
-      "type": "array",
-      "items": { "type": "object" }
     },
     "reach": {
       "description": "Spec 0012: the reach the study was started from. Start, end and via points and the trace are the user's own longitude-latitude clicks. The route is OSM way ids only, never OSM geometry (ODbL); a stretch with no waterway near it is kept as the user drew it, kind `as-drawn`. Optional.",
@@ -458,9 +468,22 @@
       "additionalProperties": false,
       "properties": {
         "settings": {
-          "description": "Settings of each alignment method, by method name. A setting left out takes its default.",
+          "description": "The method that makes the one design line (`method`), the settings of each method by method name, and the line the user gave (`given`) for the method `given`. A setting left out takes its default.",
           "type": ["object", "null"],
           "properties": {
+            "method": {
+              "description": "Spec 0017: the method that makes the one design line. Default rolling_circle.",
+              "enum": ["rolling_circle", "reroute", "centreline", "given"]
+            },
+            "given": {
+              "description": "Ticket C21: the line the user gave, for the method `given`: its name and its points in the project CRS.",
+              "type": "object",
+              "required": ["name", "line"],
+              "properties": {
+                "name": { "type": "string" },
+                "line": { "$ref": "#/$defs/line" }
+              }
+            },
             "rolling_circle": {
               "type": "object",
               "properties": {
@@ -492,7 +515,10 @@
             }
           }
         },
-        "results": { "type": ["object", "null"] },
+        "results": {
+          "description": "Spec 0017: the one design line (`schema/stages/alignment.1.schema.json`): its line from the mouth, its method and settings, its checks, its bends and its cut-offs. Null until the stage has run.",
+          "type": ["object", "null"]
+        },
         "depends_on": { "$ref": "#/$defs/hash_or_null" },
         "engine_version": { "type": ["string", "null"] }
       }

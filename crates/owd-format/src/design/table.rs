@@ -187,8 +187,18 @@ mod tests {
                 .join("../../examples/synthetic-river.owd"),
         )
         .unwrap();
+        // A 0.4 file: its first rolling-circle option opens as the one design line.
         let mut doc: Value = serde_json::from_str(&text).unwrap();
+        doc["format_version"] = json!("0.4");
         doc["options"] = options;
+        if doc["options"].as_array().is_some_and(Vec::is_empty) {
+            doc["stages"]["alignment"]["results"] = Value::Null;
+            doc["stages"]["alignment"]["depends_on"] = Value::Null;
+            for st in ["optimise", "volumes"] {
+                doc["stages"][st]["results"] = Value::Null;
+                doc["stages"][st]["depends_on"] = Value::Null;
+            }
+        }
         Session::open(&doc.to_string()).unwrap()
     }
 
@@ -201,12 +211,8 @@ mod tests {
     }
 
     #[test]
-    fn a_failing_option_sorts_first_and_keeps_its_numbers() {
-        let s = session_with(json!([
-            option("a", true, 400.0),
-            option("b", false, 222.0),
-            option("c", true, 350.0)
-        ]));
+    fn a_failing_design_line_keeps_its_numbers() {
+        let s = session_with(json!([option("b", false, 222.0)]));
         let t = s.option_table(None);
         let ids: Vec<&str> = t["rows"]
             .as_array()
@@ -214,11 +220,7 @@ mod tests {
             .iter()
             .map(|r| r["id"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            ids,
-            ["b", "a", "c"],
-            "failures first, the rest in the document's order"
-        );
+        assert_eq!(ids, ["b"], "one design line, one row");
         let b = &t["rows"][0];
         assert_eq!(b["failed_checks"], json!(["R_min"]));
         assert_eq!(b["min_radius_m"], 222.0);
@@ -231,7 +233,7 @@ mod tests {
 
     #[test]
     fn the_checks_list_has_failures_first_with_the_numbers_in_words() {
-        let s = session_with(json!([option("a", true, 400.0), option("b", false, 222.0)]));
+        let s = session_with(json!([option("b", false, 222.0)]));
         let c = s.option_table(None)["checks"].clone();
         assert_eq!(c[0]["option_id"], "b");
         assert_eq!(c[0]["passed"], false);
@@ -239,11 +241,14 @@ mod tests {
             c[0]["detail"],
             "minimum radius 222 m of the design line against the ruleset's 330 m, read on a 110 m chord"
         );
-        assert_eq!(c[1]["passed"], true);
+        let a =
+            session_with(json!([option("a", true, 400.0)])).option_table(None)["checks"].clone();
+        assert_eq!(a[0]["passed"], true);
     }
 
-    /// The app's own example (#312): its option fails `fits_in_water`, not R_min. The radius
-    /// column, the checks and the verdict must agree, and each say what it read.
+    /// The app's own example (#312): its design line fails `fits_in_water` (and, since #366, is
+    /// no feasible line), not R_min. The radius column, the checks and the verdict must agree, and
+    /// each say what it read.
     #[test]
     fn on_the_example_the_table_the_checks_and_the_verdict_agree() {
         let text = std::fs::read_to_string(
@@ -254,7 +259,10 @@ mod tests {
         let t = Session::open(&text).unwrap().option_table(None);
         let row = &t["rows"][0];
         assert_eq!(row["radius_ok"], true, "{row}");
-        assert_eq!(row["failed_checks"], json!(["fits_in_water"]));
+        assert_eq!(
+            row["failed_checks"],
+            json!(["no_feasible_line", "fits_in_water"])
+        );
         let checks: Vec<&Value> = t["checks"].as_array().unwrap().iter().collect();
         let of = |name: &str| *checks.iter().find(|c| c["check"] == name).unwrap();
         // The radius check reads the design line, and passes, as the row's radius column does.
@@ -270,7 +278,7 @@ mod tests {
         // The failing check is listed too, with its stretches in words, first.
         let fiw = of("fits_in_water");
         assert_eq!(fiw["passed"], false);
-        assert_eq!(checks[0]["check"], "fits_in_water");
+        assert_eq!(checks[0]["passed"], false, "failures first");
         assert!(
             fiw["detail"].as_str().unwrap().contains("3 stretches"),
             "{fiw}"
@@ -279,7 +287,7 @@ mod tests {
         assert_eq!(row["verdict"], "not-navigable");
         let why = row["verdict_reason"].as_str().unwrap();
         assert!(why.contains("3 infeasible stretches"), "{why}");
-        assert!(why.contains("the river's own bends"), "{why}");
+        assert!(why.contains("no bend has a feasible line"), "{why}");
     }
 
     #[test]

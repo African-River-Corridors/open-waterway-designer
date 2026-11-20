@@ -280,6 +280,7 @@ export async function createWebPlatform(): Promise<Platform> {
     set_alignment_settings: (a) => change("set_alignment_settings", a.method, JSON.stringify(a.settings)),
     set_terrain_limit: (a) => change("set_terrain_limit", (a.gib as string) ?? ""),
     set_downstream_point: (a) => change("set_downstream_point", (a.point as string) ?? ""),
+    set_mouth: (a) => change("set_mouth", (a.mouth as string) ?? ""),
     edit_bank: (a) => change("edit_bank", a.side, JSON.stringify(a.edit)),
     undo_bank_edit: () => change("undo_bank_edit"),
     run_stage: (a) => runStage(a.stage as string, (a.method as string | null) ?? null),
