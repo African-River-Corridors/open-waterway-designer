@@ -180,3 +180,23 @@ fn a_given_line_beside_the_rolling_circle_is_kept_and_the_advised_run_makes_it_t
     assert_eq!(line["id"], "given-old-study");
     assert_eq!(line["line"]["coordinates"], pts);
 }
+
+/// QA on PR 558, item 6: when the volumes hold no row for the line that is kept, they are removed on
+/// open, and the notes say so.
+#[test]
+fn volumes_with_no_row_for_the_kept_line_are_removed_and_the_notes_say_so() {
+    let mut doc = old();
+    doc["format_version"] = json!("0.4");
+    let rows = doc["stages"]["volumes"]["results"]["options"]
+        .as_array_mut()
+        .unwrap();
+    rows.retain(|r| r["id"] != "rolling-circle");
+    let s = Session::open(&doc.to_string()).unwrap();
+    assert!(s.document()["stages"]["volumes"]["results"].is_null());
+    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::NotRun);
+    let notes = s.open_notes().join("\n");
+    assert!(
+        notes.contains("volumes") && notes.contains("removed"),
+        "{notes}"
+    );
+}
