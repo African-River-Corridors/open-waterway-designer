@@ -33,6 +33,16 @@ fn option_checks_outcome(failed: &str) -> Result {
     }
 }
 
+/// The design sanity warnings of an option or a volumes row (`owd_core::sanity`), one line each on
+/// stderr. They never change the exit code.
+fn print_sanity(name: &str, v: &Value) {
+    for w in v["sanity"]["warnings"].as_array().into_iter().flatten() {
+        if let Some(w) = w.as_str() {
+            eprintln!("owd: warning: {name}: {w}");
+        }
+    }
+}
+
 /// A failed command: its message and exit code (1 a stale-stage refusal, a failed check of a
 /// checking command, or with `--strict` a failed option check; 2 a usage or input error).
 pub struct Failure {
@@ -994,6 +1004,7 @@ pub fn align(
     let c = &option["checks"];
     let failed = failed_checks(&option);
     let ok = failed.is_empty();
+    print_sanity(option["name"].as_str().unwrap_or(method.name()), &option);
     let mut human = format!(
         "{}: minimum radius {:.0} m on a {:.0} m chord against R_min {:.0} m: {}",
         option["name"].as_str().unwrap_or(method.name()),
@@ -1237,6 +1248,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
     let mut json_rows = Vec::new();
     let mut fails = Vec::new();
     for r in rows.as_array().into_iter().flatten() {
+        print_sanity(r["name"].as_str().unwrap_or("?"), r);
         // Issue #366: an option with no feasible line is not a design: flagged, whatever its radius.
         let nfl = r["no_feasible_line"] == true;
         let ok = r["radius_ok"].as_bool().unwrap_or(false) && !nfl;
@@ -1833,6 +1845,15 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         .any(|s| matches!(s, Stage::Alignment | Stage::Optimise));
     let mut options = Vec::new();
     let mut fails = Vec::new();
+    if ran.contains(&Stage::Volumes) {
+        for r in session.document()["stages"]["volumes"]["results"]["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            print_sanity(r["name"].as_str().unwrap_or("?"), r);
+        }
+    }
     if remade {
         for o in session.document()["options"]
             .as_array()
@@ -1841,6 +1862,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         {
             let failed = failed_checks(o);
             let name = o["name"].as_str().unwrap_or("?");
+            print_sanity(name, o);
             if !failed.is_empty() {
                 fails.push(format!("{name} ({})", failed.join(", ")));
                 human.push_str(&format!(
