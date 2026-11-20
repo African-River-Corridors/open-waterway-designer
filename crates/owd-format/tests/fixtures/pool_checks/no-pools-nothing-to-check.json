@@ -1,0 +1,42 @@
+{
+  "label": "Label: property",
+  "why": "Every station is in open river: no pool has a minimum or maximum level, so neither check has a station to read, and neither fails.",
+  "input": {
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "invert_m": 4.0,
+        "depth_m": 4.0,
+        "bed_m": 3.0
+      },
+      {
+        "chainage_m": 250.0,
+        "invert_m": 4.0,
+        "depth_m": 4.0,
+        "bed_m": 9.0
+      }
+    ],
+    "stretches": [
+      {
+        "from": 0.0,
+        "to": 250.0,
+        "source": "given"
+      }
+    ]
+  },
+  "expect": {
+    "output": {
+      "navigation_depth": {
+        "ok": true,
+        "checked_stations": 0,
+        "shortfalls": []
+      },
+      "flood_risk": {
+        "ok": true,
+        "checked_stations": 0,
+        "unchecked_stations": 0,
+        "flags": []
+      }
+    }
+  }
+}

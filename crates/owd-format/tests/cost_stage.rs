@@ -156,3 +156,57 @@ fn the_cost_stage_and_the_rates_table_have_schema_files() {
         "{names:?}"
     );
 }
+
+/// Ticket 14: with no structures, the cost writes no structures line, so a cost made before the
+/// structures stage reads and writes as it did.
+#[test]
+fn a_cost_without_structures_writes_no_structures_line() {
+    let f: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/cost/two-reaches-by-hand.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let input: CostIn = serde_json::from_value(f["input"].clone()).unwrap();
+    assert!(input.structures.is_empty());
+    let v = serde_json::to_value(cost(&input).unwrap()).unwrap();
+    assert!(v["totals"].get("structures").is_none(), "{v}");
+    for r in v["by_reach"].as_array().unwrap() {
+        assert!(r["items"].get("structures").is_none(), "{r}");
+    }
+    assert!(
+        serde_json::to_value(&input)
+            .unwrap()
+            .get("structures")
+            .is_none()
+    );
+}
+
+/// Ticket 14: each reach's total and the run's total include the structures, item by item.
+#[test]
+fn the_structures_line_adds_into_each_total() {
+    let f: Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/cost/structures-by-reach.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let input: CostIn = serde_json::from_value(f["input"].clone()).unwrap();
+    let c = cost(&input).unwrap();
+    let s = |i: &cost::CostItems| i.structures.as_ref().map_or(0.0, |m| m.amount);
+    for r in &c.by_reach {
+        let i = &r.items;
+        assert_eq!(
+            i.total.amount,
+            i.dredge.amount + i.dry_cut.amount + i.disposal.amount + i.haul.amount + s(i)
+        );
+    }
+    assert_eq!(
+        s(&c.totals),
+        c.by_reach.iter().map(|r| s(&r.items)).sum::<f64>()
+    );
+}

@@ -1,0 +1,64 @@
+{
+  "label": "Label: property",
+  "why": "The design line runs only beside the first 800 m of river; a lock at river chainage 900 m is not on it.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        800.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "name": "lock B",
+          "kind": "lock",
+          "site": {
+            "chainage": 900.0
+          },
+          "upstream_level_m": 12.0,
+          "height_m": 5.0,
+          "cost": {
+            "amount": 2000000.0,
+            "currency": "USD"
+          }
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      }
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ],
+      [
+        1000.0,
+        9.0
+      ]
+    ]
+  },
+  "expect": {
+    "error": "WEIRS_SITE_OFF_LINE",
+    "at": 900.0
+  }
+}

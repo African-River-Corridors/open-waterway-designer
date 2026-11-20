@@ -1,0 +1,87 @@
+{
+  "label": "Label: golden",
+  "why": "Pool 0 (300-1000 m) is held at 10 m, minimum 9.5 m. The channel is dug 4 m below the design level: invert 6 m. At 500 m and 750 m the ground on the line (7 m) is above the invert, so the bed after the works is 6 m and the depth at the minimum level is 9.5 - 6 = 3.5 m: 0.5 m short of the 4 m design depth. At 300 m and 1000 m the ground is 5 m, below the invert: 9.5 - 5 = 4.5 m, enough. The stations at 0 m and 250 m are open river and are not checked. Four stations are in the pool and are checked; two fail, as one stretch from 500 m to 750 m.",
+  "input": {
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "invert_m": 4.3,
+        "depth_m": 4.0,
+        "bed_m": 5.0
+      },
+      {
+        "chainage_m": 250.0,
+        "invert_m": 4.3,
+        "depth_m": 4.0,
+        "bed_m": 5.0
+      },
+      {
+        "chainage_m": 300.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 5.0
+      },
+      {
+        "chainage_m": 500.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 7.0
+      },
+      {
+        "chainage_m": 750.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 7.0
+      },
+      {
+        "chainage_m": 1000.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 5.0
+      }
+    ],
+    "stretches": [
+      {
+        "from": 0.0,
+        "to": 300.0,
+        "source": "open_river"
+      },
+      {
+        "from": 300.0,
+        "to": 1000.0,
+        "source": "pool",
+        "pool": 0,
+        "pool_level_m": 10.0,
+        "min_level_m": 9.5,
+        "max_level_m": 11.0
+      }
+    ]
+  },
+  "expect": {
+    "output": {
+      "navigation_depth": {
+        "ok": false,
+        "checked_stations": 4,
+        "shortfalls": [
+          {
+            "pool": 0,
+            "from": 500.0,
+            "to": 750.0,
+            "stations": 2,
+            "min_level_m": 9.5,
+            "design_depth_m": 4.0,
+            "least_depth_m": 3.5,
+            "short_by_m": 0.5,
+            "at": 500.0
+          }
+        ]
+      },
+      "flood_risk": {
+        "ok": true,
+        "checked_stations": 0,
+        "unchecked_stations": 4,
+        "flags": []
+      }
+    }
+  }
+}

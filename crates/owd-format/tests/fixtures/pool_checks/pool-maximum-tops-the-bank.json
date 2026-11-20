@@ -1,0 +1,142 @@
+{
+  "label": "Label: golden",
+  "why": "Pool 0 reaches 11 m at its maximum. At 500 m the first dry ground left of the line is 10.5 m (offset -30 m) and right 12 m: the maximum tops the left bank by 0.5 m. At 750 m the ground at offset +-20 m is dry but cut (the cut face, 9 m, is at or below it), so the banks are the uncut ground at +-30 m: 11.5 m and 12 m, both above 11 m. The station at 1000 m keeps no section profile: not checked. The bed is deep enough everywhere (ground 5 m, invert 6 m, 9.5 - 5 = 4.5 m).",
+  "input": {
+    "stations": [
+      {
+        "chainage_m": 500.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 5.0,
+        "profile": {
+          "offsets_m": [
+            -30.0,
+            -20.0,
+            -10.0,
+            0.0,
+            10.0,
+            20.0,
+            30.0
+          ],
+          "terrain_m": [
+            10.5,
+            9.0,
+            5.0,
+            5.0,
+            5.0,
+            9.0,
+            12.0
+          ],
+          "wet": [
+            false,
+            true,
+            true,
+            true,
+            true,
+            true,
+            false
+          ],
+          "cut_face_m": [
+            null,
+            null,
+            6.0,
+            6.0,
+            6.0,
+            null,
+            null
+          ]
+        }
+      },
+      {
+        "chainage_m": 750.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 5.0,
+        "profile": {
+          "offsets_m": [
+            -30.0,
+            -20.0,
+            -10.0,
+            0.0,
+            10.0,
+            20.0,
+            30.0
+          ],
+          "terrain_m": [
+            11.5,
+            12.5,
+            5.0,
+            5.0,
+            5.0,
+            12.5,
+            12.0
+          ],
+          "wet": [
+            false,
+            false,
+            true,
+            true,
+            true,
+            false,
+            false
+          ],
+          "cut_face_m": [
+            null,
+            9.0,
+            6.0,
+            6.0,
+            6.0,
+            9.0,
+            null
+          ]
+        }
+      },
+      {
+        "chainage_m": 1000.0,
+        "invert_m": 6.0,
+        "depth_m": 4.0,
+        "bed_m": 5.0
+      }
+    ],
+    "stretches": [
+      {
+        "from": 0.0,
+        "to": 300.0,
+        "source": "open_river"
+      },
+      {
+        "from": 300.0,
+        "to": 1000.0,
+        "source": "pool",
+        "pool": 0,
+        "pool_level_m": 10.0,
+        "min_level_m": 9.5,
+        "max_level_m": 11.0
+      }
+    ]
+  },
+  "expect": {
+    "output": {
+      "navigation_depth": {
+        "ok": true,
+        "checked_stations": 3,
+        "shortfalls": []
+      },
+      "flood_risk": {
+        "ok": false,
+        "checked_stations": 2,
+        "unchecked_stations": 1,
+        "flags": [
+          {
+            "pool": 0,
+            "chainage_m": 500.0,
+            "max_level_m": 11.0,
+            "bank_m": 10.5,
+            "side": "left",
+            "over_by_m": 0.5
+          }
+        ]
+      }
+    }
+  }
+}

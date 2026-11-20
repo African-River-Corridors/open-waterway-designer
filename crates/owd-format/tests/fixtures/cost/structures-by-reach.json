@@ -1,0 +1,167 @@
+{
+  "label": "Label: golden",
+  "why": "Two reaches of one station each (250 m apart): 200 m3 of dredge and 50 m3 of dry cut each. Each reach: dredge 2000, dry cut 250, disposal 500, haul 250 x 2 km x 1 = 500; 3250. Weir A holds pool 0, so its 1 000 000 is in the pool's reach (250-500 m), and the open-river reach shows 0 for structures. Totals: 4000 + 500 + 1000 + 1000 + 1 000 000 = 1 006 500.",
+  "input": {
+    "by_reach": [
+      {
+        "from": 0.0,
+        "to": 250.0,
+        "source": "open_river",
+        "stations": 1,
+        "dredge_m3": 200.0,
+        "excav_m3": 50.0,
+        "total_m3": 250.0
+      },
+      {
+        "from": 250.0,
+        "to": 500.0,
+        "source": "pool",
+        "pool": 0,
+        "stations": 1,
+        "dredge_m3": 200.0,
+        "excav_m3": 50.0,
+        "total_m3": 250.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      }
+    ],
+    "volumes_fresh": true,
+    "rates": {
+      "dredge_per_m3": {
+        "amount": 10.0,
+        "currency": "USD"
+      },
+      "dry_cut_per_m3": {
+        "amount": 5.0,
+        "currency": "USD"
+      },
+      "disposal_per_m3": {
+        "amount": 2.0,
+        "currency": "USD"
+      },
+      "haul_per_m3_km": {
+        "amount": 1.0,
+        "currency": "USD"
+      },
+      "haul_km": 2.0
+    },
+    "structures": [
+      {
+        "pool": 0,
+        "chainage": 250.0,
+        "name": "weir A",
+        "cost": {
+          "amount": 1000000.0,
+          "currency": "USD"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "cost": {
+      "currency": "USD",
+      "by_reach": [
+        {
+          "from": 0.0,
+          "to": 250.0,
+          "haul_m3_km": 500.0,
+          "items": {
+            "dredge": {
+              "amount": 2000.0,
+              "currency": "USD"
+            },
+            "dry_cut": {
+              "amount": 250.0,
+              "currency": "USD"
+            },
+            "disposal": {
+              "amount": 500.0,
+              "currency": "USD"
+            },
+            "haul": {
+              "amount": 500.0,
+              "currency": "USD"
+            },
+            "structures": {
+              "amount": 0.0,
+              "currency": "USD"
+            },
+            "total": {
+              "amount": 3250.0,
+              "currency": "USD"
+            }
+          }
+        },
+        {
+          "from": 250.0,
+          "to": 500.0,
+          "haul_m3_km": 500.0,
+          "items": {
+            "dredge": {
+              "amount": 2000.0,
+              "currency": "USD"
+            },
+            "dry_cut": {
+              "amount": 250.0,
+              "currency": "USD"
+            },
+            "disposal": {
+              "amount": 500.0,
+              "currency": "USD"
+            },
+            "haul": {
+              "amount": 500.0,
+              "currency": "USD"
+            },
+            "structures": {
+              "amount": 1000000.0,
+              "currency": "USD"
+            },
+            "total": {
+              "amount": 1003250.0,
+              "currency": "USD"
+            }
+          }
+        }
+      ],
+      "totals": {
+        "dredge": {
+          "amount": 4000.0,
+          "currency": "USD"
+        },
+        "dry_cut": {
+          "amount": 500.0,
+          "currency": "USD"
+        },
+        "disposal": {
+          "amount": 1000.0,
+          "currency": "USD"
+        },
+        "haul": {
+          "amount": 1000.0,
+          "currency": "USD"
+        },
+        "structures": {
+          "amount": 1000000.0,
+          "currency": "USD"
+        },
+        "total": {
+          "amount": 1006500.0,
+          "currency": "USD"
+        }
+      },
+      "cut_volumes": "plain"
+    }
+  }
+}

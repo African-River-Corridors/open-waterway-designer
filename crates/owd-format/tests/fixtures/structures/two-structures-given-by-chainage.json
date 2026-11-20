@@ -1,0 +1,146 @@
+{
+  "label": "Label: golden",
+  "why": "A straight river 1000 m long, the design line 10 m beside it, so design-line chainage equals river chainage. The given profile falls from 9 m at 1000 m to 8 m at the mouth. Lock B (input 0) at 600 m holds 12 m; weir A (input 1) at 300 m holds 10 m: listed upstream first, placed from the mouth. Below A the river is open: 8 + 300/1000 = 8.3 m, so A lifts 10 - 8.3 = 1.7 m and B lifts 12 - 10 = 2 m. Pools 300-600 m at 10 m (min 9.5, max 11) and 600-1000 m at 12 m (min 11.5, max 13), from an allowance of 0.5 m below and 1 m above.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "name": "lock B",
+          "kind": "lock",
+          "site": {
+            "chainage": 600.0
+          },
+          "upstream_level_m": 12.0,
+          "height_m": 5.0,
+          "cost": {
+            "amount": 2000000.0,
+            "currency": "USD"
+          }
+        },
+        {
+          "name": "weir A",
+          "kind": "weir",
+          "site": {
+            "chainage": 300.0
+          },
+          "upstream_level_m": 10.0,
+          "height_m": 4.0,
+          "cost": {
+            "amount": 1000000.0,
+            "currency": "USD"
+          }
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      }
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ],
+      [
+        1000.0,
+        9.0
+      ]
+    ]
+  },
+  "expect": {
+    "output": {
+      "structures": [
+        {
+          "id": 1,
+          "name": "weir A",
+          "kind": "weir",
+          "river_chainage": 300.0,
+          "chainage": 300.0,
+          "point": [
+            300.0,
+            10.0
+          ],
+          "upstream_level_m": 10.0,
+          "downstream_level_m": 8.3,
+          "lift_m": 1.7,
+          "height_m": 4.0,
+          "cost": {
+            "amount": 1000000.0,
+            "currency": "USD"
+          },
+          "source": "given"
+        },
+        {
+          "id": 0,
+          "name": "lock B",
+          "kind": "lock",
+          "river_chainage": 600.0,
+          "chainage": 600.0,
+          "point": [
+            600.0,
+            10.0
+          ],
+          "upstream_level_m": 12.0,
+          "downstream_level_m": 10.0,
+          "lift_m": 2.0,
+          "height_m": 5.0,
+          "cost": {
+            "amount": 2000000.0,
+            "currency": "USD"
+          },
+          "source": "given"
+        }
+      ],
+      "pools": [
+        {
+          "held_by": 0,
+          "river_from": 300.0,
+          "river_to": 600.0,
+          "from": 300.0,
+          "to": 600.0,
+          "level_m": 10.0,
+          "min_level_m": 9.5,
+          "max_level_m": 11.0
+        },
+        {
+          "held_by": 1,
+          "river_from": 600.0,
+          "river_to": 1000.0,
+          "from": 600.0,
+          "to": 1000.0,
+          "level_m": 12.0,
+          "min_level_m": 11.5,
+          "max_level_m": 13.0
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      },
+      "currency": "USD"
+    }
+  }
+}
