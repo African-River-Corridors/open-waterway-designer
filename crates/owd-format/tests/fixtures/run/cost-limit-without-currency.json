@@ -1,0 +1,16 @@
+{
+  "label": "Label: property",
+  "why": "A cost bound with no currency would change meaning with the rates table: refused.",
+  "input": {
+    "limits": [
+      {
+        "measure": "cost",
+        "bound": "at_most",
+        "value": 2000000.0
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_CURRENCY"
+  }
+}

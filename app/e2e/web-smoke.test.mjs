@@ -689,6 +689,36 @@ describe("OWD web smoke tests", () => {
     sameAsNative(page, native, "the mouth");
   });
 
+  it("sets the run's objective, limits and target level: an unknown measure is refused, and the inputs equal owd run-inputs (spec 0017 ticket 11)", async () => {
+    const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-run-inputs-"));
+    const doc = path.join(dir, "synthetic-river.owd");
+    fs.copyFileSync(EXAMPLE, doc);
+    execFileSync(CLI, ["run-inputs", doc, "--objective", "minimise:total_cut", "--limit", "line_length>=500", "--limit", "cost<=1000000 USD", "--target-level", "pre-feasibility"], { encoding: "utf8" });
+    const native = JSON.parse(fs.readFileSync(doc, "utf8"));
+    assert.equal(native.inputs.run.target_level, "pre_feasibility");
+
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), EXAMPLE);
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("synthetic-river.owd"));
+    const set = async (objective, limits, level) => {
+      await (await tid(b, "run-objective")).setValue(objective);
+      await (await tid(b, "run-limits")).setValue(limits);
+      await (await tid(b, "run-target-level")).selectByAttribute("value", level);
+      await (await tid(b, "set-run-inputs")).click();
+    };
+    await set("minimise:beauty", "", "concept");
+    await until(b, "the refusal", async () => (await exists(b, "error")) && /RUN_MEASURE_UNKNOWN/.test(await text(b, "error")));
+    assert.equal((await pageDoc(b)).inputs.run, undefined, "a refusal changes nothing");
+    await set("minimise:total_cut", "line_length>=500\ncost<=1000000 USD", "pre-feasibility");
+    await until(b, "the run inputs stored", async () => (await pageDoc(b)).inputs.run?.target_level === "pre_feasibility");
+    const page = await pageDoc(b);
+    assert.deepEqual(page.inputs, native.inputs, "the same inputs as owd run-inputs");
+    assert.deepEqual(page.stages, native.stages, "no stage moved");
+  });
+
   it("Cancel leaves the design exactly as it was", async () => {
     const FILE = "river-rolling-circle.owd";
     const b = await start();

@@ -1,0 +1,13 @@
+{
+  "label": "Label: property",
+  "why": "A key OWD does not know (a typo) is refused, so a setting is never lost silently.",
+  "input": {
+    "objectve": {
+      "measure": "cost",
+      "sense": "minimise"
+    }
+  },
+  "expect": {
+    "code": "RUN_INPUT_INVALID"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "label": "Label: property",
+  "why": "Only cost is money: a length bound with a currency is refused.",
+  "input": {
+    "limits": [
+      {
+        "measure": "line_length",
+        "bound": "at_most",
+        "value": 9000.0,
+        "currency": "USD"
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_CURRENCY"
+  }
+}

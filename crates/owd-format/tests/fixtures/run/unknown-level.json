@@ -1,0 +1,10 @@
+{
+  "label": "Label: property",
+  "why": "Only concept, pre-feasibility and feasibility are output levels.",
+  "input": {
+    "target_level": "detailed_design"
+  },
+  "expect": {
+    "code": "RUN_LEVEL_UNKNOWN"
+  }
+}

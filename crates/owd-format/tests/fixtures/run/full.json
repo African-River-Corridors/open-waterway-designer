@@ -1,0 +1,33 @@
+{
+  "label": "Label: property",
+  "why": "All three parts: cost to minimise, a total-cut limit, a cost limit in a currency, and a target level.",
+  "input": {
+    "objective": {
+      "measure": "cost",
+      "sense": "minimise"
+    },
+    "limits": [
+      {
+        "measure": "total_cut",
+        "bound": "at_most",
+        "value": 500000.0
+      },
+      {
+        "measure": "cost",
+        "bound": "at_most",
+        "value": 2000000.0,
+        "currency": "USD"
+      },
+      {
+        "measure": "line_length",
+        "bound": "at_least",
+        "value": 1000.0
+      }
+    ],
+    "target_level": "pre_feasibility"
+  },
+  "expect": {
+    "ok": true,
+    "target": "pre_feasibility"
+  }
+}
