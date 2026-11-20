@@ -18,9 +18,7 @@ use crate::cut_model::{
 use crate::geom::{Polygon, Pt, linear};
 use crate::py_sum;
 use crate::pyrepr::repr_str;
-
-/// A terrain sampler: heights for the points `(xs[i], ys[i])`, NaN where unknown.
-pub type TerrainSampler<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
+use crate::types::{Refusal, TerrainSampler};
 
 /// The pool water level: a number, or a function of chainage.
 pub enum Level<'a> {
@@ -247,9 +245,6 @@ pub fn station_frame(line: &[Pt], station_m: f64) -> Result<StationFrame, String
     let th: Vec<f64> = (0..m).map(|i| libm::atan2(gy[i], gx[i])).collect();
     Ok((dsl, xy, th))
 }
-
-/// Why `section_volumes` refused: a Python `ValueError`.
-pub type Refusal = String;
 
 /// Dredge and excavation volumes along `line` under Cut Model A or B.
 ///

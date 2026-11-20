@@ -367,7 +367,7 @@ pub fn tangent_joins(
 #[allow(clippy::too_many_arguments)]
 pub fn optimise_pools_tangent(
     baseline: &[Pt],
-    terrain: crate::volumes::sections::TerrainSampler,
+    terrain: crate::types::TerrainSampler,
     river_polygon: &[Polygon],
     pools: &[(f64, f64, f64)],
     depth_m: f64,

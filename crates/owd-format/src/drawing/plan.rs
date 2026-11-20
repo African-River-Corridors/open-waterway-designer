@@ -18,8 +18,8 @@ use super::gallery::{self, GalleryParams, chainage_text};
 use super::setting_out::{self, BendRow};
 use super::{DrawError, DrawOptions, Sheet, SheetKind};
 use crate::design::Session;
-use crate::design::alignment::Terrain;
 use crate::design::geojson::all_positions;
+use crate::types::TerrainSampler;
 use otd::raster::{Backdrop, Grid, Light};
 use otd::rules::{Rect, text_width};
 use owd_core::alignment::limits::compute_chainages;
@@ -623,7 +623,7 @@ fn strips(
 /// The relief of a window: the terrain at each pixel centre, shaded, as a JPEG.
 fn relief(
     path: &str,
-    terrain: Terrain,
+    terrain: TerrainSampler,
     w: &Win,
     frame: &Rect,
     p: &PlanParams,
@@ -656,7 +656,7 @@ fn grid_step(k: f64) -> f64 {
 fn backdrop(
     stem: &str,
     background: &Background,
-    terrain: Terrain,
+    terrain: TerrainSampler,
     epsg: u64,
     w: &Win,
     frame: &Rect,
@@ -893,7 +893,7 @@ pub(super) fn build(
     session: &Session,
     option_id: &str,
     walk: &SectionVolumes,
-    terrain: Terrain,
+    terrain: TerrainSampler,
     options: &DrawOptions,
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {

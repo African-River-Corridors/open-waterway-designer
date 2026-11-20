@@ -17,7 +17,8 @@ pub mod style;
 mod typical;
 
 use crate::design::terrain::dem_sampler;
-use crate::design::{DemCheck, DesignError, Session, Terrain};
+use crate::design::{DemCheck, DesignError, Session};
+use crate::types::TerrainSampler;
 use otd::raster::WithImages;
 use otd::{NoFiles, RunResult};
 use serde_json::{Value, json};
@@ -204,7 +205,7 @@ impl From<DesignError> for DrawError {
 /// The drawing documents of a design line option, checked against the design's results.
 pub fn sheets(
     session: &Session,
-    terrain: Terrain,
+    terrain: TerrainSampler,
     options: &DrawOptions,
 ) -> Result<Vec<Sheet>, DrawError> {
     sheets_with(session, terrain, options, &Background::Relief)
@@ -213,7 +214,7 @@ pub fn sheets(
 /// [`sheets`], with the plan sheets drawn over `background` (spec 0004, ticket 6).
 pub fn sheets_with(
     session: &Session,
-    terrain: Terrain,
+    terrain: TerrainSampler,
     options: &DrawOptions,
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {

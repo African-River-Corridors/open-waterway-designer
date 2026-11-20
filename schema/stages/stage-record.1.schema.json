@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with)."
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run."
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ]
+}

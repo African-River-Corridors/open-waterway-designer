@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 # Stages are pure functions with typed, versioned contracts
 

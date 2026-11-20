@@ -10,6 +10,7 @@
 
 use super::geojson::all_positions;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
+use crate::types::TerrainSampler;
 use owd_core::alignment::centreline::build_centreline;
 use owd_core::alignment::fairway_fit::{Fixed, Pose};
 use owd_core::alignment::join::{JoinParams, join_legs};
@@ -19,9 +20,6 @@ use owd_core::alignment::route::{self, GridParams, RouteParams};
 use owd_core::geom::linear;
 use owd_core::geom::{Geometry, Polygon, Pt};
 use serde_json::{Value, json};
-
-/// A terrain sampler: heights for the points `(xs[i], ys[i])` in the project CRS, NaN where unknown.
-pub type Terrain<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
 
 /// A way of finding a design line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -379,7 +377,7 @@ impl Session {
         &mut self,
         method: AlignMethod,
         overrides: &Value,
-        terrain: Option<Terrain>,
+        terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         self.upstream_ready()?;
         let shape = self.doc["stages"]["sizing"]["results"].clone();
@@ -473,6 +471,8 @@ impl Session {
                 })
             }
         };
+        let mut option = option;
+        option["sanity"] = sanity_of(&option);
         // Replace the option this method made before, or add one.
         let options = self.doc["options"]
             .as_array_mut()
@@ -499,7 +499,10 @@ impl Session {
 
     /// `run_stage(Alignment)`: rerun the methods that were run, or the rolling circle if none was.
     /// A re-route needs a DEM: without terrain it is refused.
-    pub(super) fn rerun_alignment(&mut self, terrain: Option<Terrain>) -> Result<(), DesignError> {
+    pub(super) fn rerun_alignment(
+        &mut self,
+        terrain: Option<TerrainSampler>,
+    ) -> Result<(), DesignError> {
         let ran: Vec<AlignMethod> = self.doc["stages"]["alignment"]["results"]["methods"]
             .as_array()
             .map(|a| {
@@ -777,6 +780,21 @@ impl Session {
             "details": details,
         }))
     }
+}
+
+/// The design sanity check of an option's line (`owd_core::sanity`): `{"checked": true, "warnings":
+/// [...]}`. Warnings never fail a check.
+fn sanity_of(option: &Value) -> Value {
+    let line = pts_of(&option["line"]).unwrap_or_default();
+    let chord = option["checks"]["radius_check_chord_m"]
+        .as_f64()
+        .unwrap_or(f64::NAN);
+    let r_min = option["checks"]["r_min_m"].as_f64().unwrap_or(f64::NAN);
+    let warnings: Vec<String> = owd_core::sanity::line_findings(&line, chord, r_min)
+        .iter()
+        .map(owd_core::sanity::Finding::message)
+        .collect();
+    json!({"checked": true, "warnings": warnings})
 }
 
 /// The re-route's fairness weight: a number at or above 0, 0 when absent (a document from

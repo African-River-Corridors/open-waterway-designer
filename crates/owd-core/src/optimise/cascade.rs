@@ -32,12 +32,10 @@
 use crate::cut_model::{CUT_MODEL, DX_M, MAXW_M, STATION_M, WET_SLOPE_H_PER_V};
 use crate::geom::{Polygon, Pt};
 use crate::py_sum;
-use crate::volumes::sections::{self, DEFAULT_CHUNK, HalfWidth, Level, TerrainSampler};
+use crate::types::{Refusal, TerrainSampler};
+use crate::volumes::sections::{self, DEFAULT_CHUNK, HalfWidth, Level};
 use ovcd_core::pyfmt::{general, round_to};
 use std::collections::HashMap;
-
-/// A refusal: a Python `ValueError`, with its text.
-pub type Refusal = String;
 
 /// `reach_cost(start_m, end_m, level_m) -> weight`.
 pub type ReachCost<'a> = &'a dyn Fn(f64, f64, f64) -> Result<f64, Refusal>;

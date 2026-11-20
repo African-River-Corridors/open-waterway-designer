@@ -352,8 +352,9 @@ impl AppState {
             ),
             None => None,
         };
-        let terrain: Option<owd_format::design::Terrain> =
-            sampler.as_ref().map(|s| s as owd_format::design::Terrain);
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
         let before = self.session.clone();
         match self.session.run_stale_with(terrain) {
             Ok(ran) => {

@@ -177,7 +177,7 @@ fn match_and_section_lines_are_at_the_results_and_a_moved_one_is_refused() {
     let grid = owd_format::geotiff::read_bytes(&dem).unwrap();
     let t = owd_format::design::terrain::dem_sampler(&grid, Some(32630)).unwrap();
     let walk = session
-        .option_section_walk("rolling-circle", &t as owd_format::design::Terrain)
+        .option_section_walk("rolling-circle", &t as owd_format::types::TerrainSampler)
         .unwrap();
     let o = DrawOptions {
         sheets: vec![SheetKind::Plan],

@@ -6,9 +6,10 @@
 //!
 //! Label: property
 
+use owd_format::design::Session;
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Terrain};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -34,7 +35,7 @@ fn a_setting_the_caller_gives_and_the_stage_does_not_know_is_refused_by_name() {
     let terrain = dem_sampler(&dem, Some(32630)).unwrap();
     let mut s = Session::open(&text).unwrap();
     let before = s.to_text();
-    let run = s.run_volumes(&json!({ WRONG: 50.0 }), Some(&terrain as Terrain));
+    let run = s.run_volumes(&json!({ WRONG: 50.0 }), Some(&terrain as TerrainSampler));
     match run {
         Ok(()) => panic!(
             "the volumes stage ran with the unknown setting `{WRONG}`; its settings are now {}",
@@ -57,7 +58,7 @@ fn a_setting_the_document_holds_and_the_stage_does_not_know_is_refused_by_name()
     // The door may refuse the document, or the stage may refuse to run. Either names the setting.
     let said = match Session::open(&doc.to_string()) {
         Err(e) => e.to_string(),
-        Ok(mut s) => match s.run_volumes(&Value::Null, Some(&terrain as Terrain)) {
+        Ok(mut s) => match s.run_volumes(&Value::Null, Some(&terrain as TerrainSampler)) {
             Err(e) => e.to_string(),
             Ok(()) => panic!(
                 "the document opened and the volumes stage ran with the unknown setting `{WRONG}`"

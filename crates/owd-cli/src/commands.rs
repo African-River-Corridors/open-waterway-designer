@@ -4,7 +4,8 @@ use owd_core::rules::custom::{CustomVessel, Formation};
 use owd_format::design::alignment::WIDTH_ONLY;
 use owd_format::design::export::{failed_checks, no_feasible_line, notes_of};
 use owd_format::design::geopackage;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus, Terrain};
+use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::Path;
@@ -30,6 +31,16 @@ fn option_checks_outcome(failed: &str) -> Result {
     } else {
         eprintln!("owd: {message}");
         Ok(())
+    }
+}
+
+/// The design sanity warnings of an option or a volumes row (`owd_core::sanity`), one line each on
+/// stderr. They never change the exit code.
+fn print_sanity(name: &str, v: &Value) {
+    for w in v["sanity"]["warnings"].as_array().into_iter().flatten() {
+        if let Some(w) = w.as_str() {
+            eprintln!("owd: warning: {name}: {w}");
+        }
     }
 }
 
@@ -994,6 +1005,7 @@ pub fn align(
     let c = &option["checks"];
     let failed = failed_checks(&option);
     let ok = failed.is_empty();
+    print_sanity(option["name"].as_str().unwrap_or(method.name()), &option);
     let mut human = format!(
         "{}: minimum radius {:.0} m on a {:.0} m chord against R_min {:.0} m: {}",
         option["name"].as_str().unwrap_or(method.name()),
@@ -1130,7 +1142,7 @@ pub fn optimise(
     session
         .run_optimise(
             &Value::Object(overrides),
-            sampler.as_ref().map(|s| s as Terrain),
+            sampler.as_ref().map(|s| s as TerrainSampler),
         )
         .map_err(from_design)?;
     let dest = destination(doc, output);
@@ -1225,7 +1237,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
     session
         .run_volumes(
             &Value::Object(overrides),
-            sampler.as_ref().map(|s| s as Terrain),
+            sampler.as_ref().map(|s| s as TerrainSampler),
         )
         .map_err(from_design)?;
     let dest = destination(doc, output);
@@ -1237,6 +1249,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
     let mut json_rows = Vec::new();
     let mut fails = Vec::new();
     for r in rows.as_array().into_iter().flatten() {
+        print_sanity(r["name"].as_str().unwrap_or("?"), r);
         // Issue #366: an option with no feasible line is not a design: flagged, whatever its radius.
         let nfl = r["no_feasible_line"] == true;
         let ok = r["radius_ok"].as_bool().unwrap_or(false) && !nfl;
@@ -1816,7 +1829,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         None => None,
     };
     let ran = session
-        .run_stale_with(sampler.as_ref().map(|s| s as Terrain))
+        .run_stale_with(sampler.as_ref().map(|s| s as TerrainSampler))
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
@@ -1833,6 +1846,15 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         .any(|s| matches!(s, Stage::Alignment | Stage::Optimise));
     let mut options = Vec::new();
     let mut fails = Vec::new();
+    if ran.contains(&Stage::Volumes) {
+        for r in session.document()["stages"]["volumes"]["results"]["options"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            print_sanity(r["name"].as_str().unwrap_or("?"), r);
+        }
+    }
     if remade {
         for o in session.document()["options"]
             .as_array()
@@ -1841,6 +1863,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         {
             let failed = failed_checks(o);
             let name = o["name"].as_str().unwrap_or("?");
+            print_sanity(name, o);
             if !failed.is_empty() {
                 fails.push(format!("{name} ({})", failed.join(", ")));
                 human.push_str(&format!(

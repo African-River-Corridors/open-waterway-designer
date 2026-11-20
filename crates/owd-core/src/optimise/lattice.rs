@@ -35,12 +35,10 @@ use crate::alignment::radius_check::{default_check_chord, min_radius_on_chord, r
 use crate::geom::offset::{Cap, buffer_line};
 use crate::geom::overlay::{Op, contains_xy, overlay};
 use crate::geom::{Geometry, Polygon, Pt, linear};
-use crate::volumes::sections::{TerrainSampler, arange};
+use crate::types::{Refusal, TerrainSampler};
+use crate::volumes::sections::arange;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap};
-
-/// A refusal: a Python `ValueError`, with its text.
-pub type Refusal = String;
 
 /// `(x, y, heading)`.
 pub type Pose = (f64, f64, f64);
@@ -1202,6 +1200,12 @@ pub struct PoolAlignment {
     pub result: LatticeResult,
     /// The baseline segment under the same scorer (straight width).
     pub baseline_cost: f64,
+    /// Whether the lattice line is in the joined line (set by [`optimise_pools`]; a pool that
+    /// converged but kept its baseline is not used).
+    pub used: bool,
+    /// Why the baseline was kept, when it was: the search did not converge, or the baseline is
+    /// cheaper and holds R_min.
+    pub kept_baseline_because: Option<&'static str>,
 }
 
 fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpec) -> f64 {
@@ -1320,6 +1324,8 @@ pub fn optimise_pool(
         grade_m: grade,
         result,
         baseline_cost: segment_cost(&seg, &grid, grade, section),
+        used: false,
+        kept_baseline_because: None,
     })
 }
 
@@ -1335,13 +1341,14 @@ pub struct PoolsResult {
 
 impl PoolsResult {
     pub fn n_replaced(&self) -> usize {
-        self.pools.iter().filter(|p| p.result.converged).count()
+        self.pools.iter().filter(|p| p.used).count()
     }
 }
 
 /// Run [`optimise_pool`] on each `(start_m, end_m, water_level_m)` and splice the results into
 /// `baseline`. A pool keeps its baseline segment when the search does not converge, or
-/// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer.
+/// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer and the
+/// baseline holds R_min (or the lattice line does not).
 ///
 /// Each spliced segment joins the baseline within `cfg.goal_pos_tol_m` at its far end; the join
 /// is a straight step of at most that length.
@@ -1386,8 +1393,31 @@ pub fn optimise_pools(
         let converged = pa.result.converged;
         let dearer = pa.result.cost > pa.baseline_cost;
         let line = pa.result.line.clone();
+        // The baseline is kept when the search did not converge, or when it is cheaper and either
+        // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
+        // breaks R_min is never kept in place of a lattice line that holds it.
+        let (use_it, because) = if !converged {
+            (false, Some("the search did not converge"))
+        } else if keep_if_dearer && dearer {
+            let base_ok = line_of(linear::substring(baseline, a, b))
+                .ok()
+                .and_then(|seg| min_radius_on_chord(&seg, default_check_chord(cfg.r_min_m)).ok())
+                .is_some_and(|r| radius_ok(r, cfg.r_min_m));
+            if base_ok || !pa.result.radius_ok {
+                (
+                    false,
+                    Some("the baseline is cheaper and holds R_min (or the lattice line does not)"),
+                )
+            } else {
+                (true, None)
+            }
+        } else {
+            (true, None)
+        };
+        let mut pa = pa;
+        pa.used = use_it;
+        pa.kept_baseline_because = because;
         out_pools.push(pa);
-        let use_it = converged && !(keep_if_dearer && dearer);
         if !use_it {
             continue;
         }

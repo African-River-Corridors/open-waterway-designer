@@ -1,6 +1,6 @@
 # Spec 0017: Stage contracts
 
-Status: **draft for the maintainer's review, 2026-11-19.** Decision: ADR 0015 (stages are pure
+Status: **approved by the maintainer, 2026-11-19.** Decision: ADR 0015 (stages are pure
 functions with typed, versioned contracts). Builds on ADR 0004 (one channel design document), ADR 0006
 (water level belongs to the river), spec 0002 (the document and CLI), spec 0007 (rules), spec 0014
 (reports) and spec 0016 (the largest vessel). Planned for 0.5.
