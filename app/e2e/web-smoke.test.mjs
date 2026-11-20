@@ -751,6 +751,113 @@ describe("OWD web smoke tests", () => {
     assert.ok(docBefore.stages.optimise.results !== undefined, "the design was opened with every stage run");
   });
 
+  it("Save as asks once: a second press or Enter while it runs does not ask again, and the buttons say what they do", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    // No save dialog in this browser: the name prompt and the download are the fallback, and the buttons say so.
+    // (The page looks again after each file action, so opening the example makes it notice.)
+    await b.execute(() => {
+      Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true });
+      window.__prompts = 0;
+      window.prompt = () => {
+        window.__prompts += 1;
+        return "again.owd";
+      };
+    });
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    assert.match(await (await tid(b, "save-as")).getAttribute("title"), /downloads/i);
+    assert.match(await (await tid(b, "save")).getAttribute("title"), /downloads/i);
+    // Two presses in one breath: the second finds the first still running.
+    await b.execute(() => {
+      const button = document.querySelector("[data-testid=save-as]");
+      button.click();
+      button.click();
+    });
+    await until(b, "the file name", async () => (await text(b, "file-label")).includes("again.owd"));
+    // Enter after the press: the button must not hold focus to take it.
+    await b.keys("Enter");
+    await new Promise((r) => setTimeout(r, 800));
+    assert.equal(await b.execute(() => window.__prompts), 1, "the prompt opened once");
+    assert.match(await text(b, "notice"), /Downloaded again\.owd/);
+  });
+
+  it("Save writes through the browser's save dialog when there is one, and Save again writes to the same file", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await b.execute(() => {
+      window.__writes = [];
+      window.__pickers = 0;
+      window.prompt = () => {
+        throw new Error("no prompt expected");
+      };
+      window.showSaveFilePicker = async (o) => {
+        window.__pickers += 1;
+        return {
+          name: o.suggestedName,
+          createWritable: async () => {
+            let t = "";
+            return { write: async (x) => (t += x), close: async () => window.__writes.push(t) };
+          },
+        };
+      };
+    });
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await (await tid(b, "save")).click();
+    await until(b, "one write", async () => (await b.execute(() => window.__writes.length)) === 1);
+    await (await tid(b, "save")).click();
+    await until(b, "two writes", async () => (await b.execute(() => window.__writes.length)) === 2);
+    assert.equal(await b.execute(() => window.__pickers), 1, "the dialog opened once; the second Save reused the file");
+    const doc = JSON.parse(await b.execute(() => window.__writes[1]));
+    assert.ok(doc.inputs, "the written file is the design");
+    assert.match(await text(b, "notice"), /Saved river-example\.owd/);
+  });
+
+  it("says one true thing everywhere: design line heading, line on screen, bank words, DEM name, mouth with the river, fall and its sign, plain refusal", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the table", async () => (await b.$$("[data-testid=option-row]")).length === 1);
+    // 5: the table is headed with the design line, not Options.
+    assert.equal(await text(b, "tab-options"), "Design line");
+    const head = await (await b.$("[data-testid=option-table] thead")).getText();
+    assert.match(head, /Design line/);
+    assert.doesNotMatch(head, /Option/);
+    // 4: the line on screen and what the next run uses are both said.
+    assert.match(await text(b, "line-on-screen"), /Line on screen: \S/);
+    assert.match(await text(b, "line-next-run"), /Next run uses: Rolling circle/);
+    // 6: a river polygon stands in for the banks.
+    assert.equal(await text(b, "data-left_bank"), "not needed (river polygon loaded)");
+    // 8: the DEM row shows the file name, the full path in its title.
+    assert.equal(await text(b, "data-dem"), "river-dem.tif");
+    assert.ok((await (await tid(b, "data-dem")).getAttribute("title")).endsWith("river-dem.tif"));
+    // 9: the mouth field sits with the river rows, above the DEM row.
+    const order = await b.execute(() => {
+      const pos = (id) => document.querySelector(`[data-testid="${id}"]`).getBoundingClientRect().top;
+      return [pos("data-centreline"), pos("river-mouth"), pos("data-dem")];
+    });
+    assert.ok(order[0] < order[1] && order[1] < order[2], `mouth is between the river rows and the DEM: ${order}`);
+    // 7: a long fall is shown rounded, kept exact, with a line on the sign.
+    await (await tid(b, "water-level")).setValue("10");
+    await (await tid(b, "water-fall")).setValue("-0.0004925721857999721");
+    await (await tid(b, "set-water")).click();
+    await until(b, "the fall to show rounded", async () => (await (await tid(b, "water-fall")).getValue()) === "-0.000493");
+    const pts = (await pageDoc(b)).inputs.water_level.points;
+    const stored = (pts[0][1] - pts[1][1]) / (pts[1][0] - pts[0][0]);
+    assert.ok(Math.abs(stored + 0.0004925721858) < 1e-9, `the stored fall stays exact: ${stored}`);
+    assert.match(await text(b, "water-fall-help"), /Negative: the water level rises|Negative: it rises/);
+    // 3: a stale alignment gives one true reason in the section panel.
+    await (await b.$("input[aria-label=Draught]")).setValue("2.6");
+    await until(b, "alignment stale", async () => (await stageStatus(b)).includes("alignment:stale"));
+    await until(b, "the section note", async () => (await exists(b, "section-note")) && (await text(b, "section-note")).includes("No sections yet"));
+    assert.equal(await text(b, "section-note"), "No sections yet: the alignment is out of date. Run alignment, then volumes.");
+  });
+
   it("still loads when browser storage is blocked", async () => {
     // Blocking cookies and site data makes `localStorage` throw.
     const b = await start({ prefs: { "profile.default_content_setting_values.cookies": 2 } });

@@ -10,6 +10,7 @@
   import MapPanel from "./lib/MapPanel.svelte";
   import BankEditor from "./lib/BankEditor.svelte";
   import StartFromRiver from "./lib/StartFromRiver.svelte";
+  import { plainWarning, sectionReason } from "./lib/words";
   import SheetsView from "./lib/SheetsView.svelte";
   import type * as maplibregl from "maplibre-gl";
   import LeftPanel from "./lib/LeftPanel.svelte";
@@ -198,10 +199,39 @@
     await fileAction(() => api.setRuleSets(ids, inputs));
   }
 
+  /** A file action is running (Save of a large design takes a moment). A second press, or Enter on a
+   * button that still has focus, must not start another: it would ask for the name again. */
+  let fileBusy = $state(false);
+  let fileRunning = false;
+
   async function fileAction(action: () => Promise<Snapshot | null>) {
-    await flush();
-    const next = await guard(action);
-    if (next) snap = next;
+    if (fileRunning) return;
+    fileRunning = true;
+    fileBusy = true;
+    try {
+      await flush();
+      const next = await guard(action);
+      if (next) snap = next;
+      return next;
+    } finally {
+      fileRunning = false;
+      fileBusy = false;
+      canPick = detectPick();
+    }
+  }
+
+  /** What the web version's Save does, said where it is used. */
+  const detectPick = () => isWeb && typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
+  /** Whether the browser has a save dialog; read again after each file action. */
+  let canPick = $state(detectPick());
+  let SAVE_TITLE = $derived(!isWeb ? "Save the design" : canPick ? "Save the design to a file you choose, with your browser's save dialog" : "Your browser downloads the design to its downloads folder; it does not save in place");
+  let SAVE_AS_TITLE = $derived(!isWeb ? "Save the design under another name" : canPick ? "Save the design under a name and place you choose, with your browser's save dialog" : "Asks for a name, then your browser downloads the file to its downloads folder");
+
+  /** A header Save or Save as: let go of the button first (Enter would press it again), then run. */
+  async function saveButton(e: MouseEvent | null, action: () => Promise<Snapshot | null>) {
+    (e?.currentTarget as HTMLElement | null | undefined)?.blur();
+    const saved = await fileAction(action);
+    if (saved && isWeb) notice = canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
   }
 
   /** A snapshot from "Start from a river": a new study keeps no selection from the old one. */
@@ -215,12 +245,21 @@
 
   /** New and Open start a different study: its first option (a failing one, if any) is selected, not the old selection. */
   async function openDoc(action: () => Promise<Snapshot | null>) {
-    await flush();
-    const next = await guard(action);
-    if (!next) return;
-    selectedId = null;
-    station = null;
-    snap = next;
+    if (fileRunning) return;
+    fileRunning = true;
+    fileBusy = true;
+    try {
+      await flush();
+      const next = await guard(action);
+      if (!next) return;
+      selectedId = null;
+      station = null;
+      snap = next;
+    } finally {
+      fileRunning = false;
+      fileBusy = false;
+      canPick = detectPick();
+    }
   }
 
   function onKey(e: KeyboardEvent) {
@@ -228,7 +267,7 @@
     const k = e.key.toLowerCase();
     if (k === "s") {
       e.preventDefault();
-      fileAction(e.shiftKey ? api.saveAs : api.save);
+      saveButton(null, e.shiftKey ? api.saveAs : api.save);
     } else if (k === "o") {
       e.preventDefault();
       openDoc(api.openFile);
@@ -274,7 +313,7 @@
         if (mine !== sectionRequest) return;
         longSection = null;
         crossSection = null;
-        sectionNote = String(e);
+        sectionNote = sectionReason(String(e), snap?.stages);
       },
     );
   });
@@ -414,8 +453,8 @@
     {#if isWeb}<button onclick={() => openDoc(api.openExample)} data-testid="open-example" title="A short synthetic river with its DEM">Open the example</button>{/if}
     <button onclick={() => openDoc(api.openFile)}>Open</button>
     <button class:on={reachView} data-testid="start-from-river" aria-pressed={reachView} onclick={() => (reachView = !reachView)} title="Make a study's inputs from open data for a river reach">Start from a river</button>
-    <button onclick={() => fileAction(api.save)}>Save</button>
-    <button onclick={() => fileAction(api.saveAs)}>Save as</button>
+    <button disabled={fileBusy} data-testid="save" title={SAVE_TITLE} onclick={(e) => saveButton(e, api.save)}>Save</button>
+    <button disabled={fileBusy} data-testid="save-as" title={SAVE_AS_TITLE} onclick={(e) => saveButton(e, api.saveAs)}>Save as</button>
     <button class:on={sheetsView} data-testid="sheets-toggle" aria-pressed={sheetsView} disabled={!(table?.rows.length)} onclick={() => (sheetsView = !sheetsView)} title="The drawing sheets of the active option, as owd draw makes them">Sheets</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("geojson")} title="Design line options as GeoJSON (WGS84), with their checks">Export GeoJSON</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("csv")} title="The quantity table as CSV">Export CSV</button>
@@ -441,7 +480,7 @@
 
   {#if error}
     <div class="banner error" role="alert" data-testid="error">
-      {error}
+      {plainWarning(error)}
       <button onclick={() => (error = null)}>Dismiss</button>
     </div>
   {/if}
@@ -452,7 +491,7 @@
     </div>
   {/if}
   {#each snap?.warnings ?? [] as w}
-    <div class="banner warn" role="status" data-testid="warning">{w}</div>
+    <div class="banner warn" role="status" data-testid="warning">{plainWarning(w)}</div>
   {/each}
 
   <div class="body" style:grid-template-columns="{leftWidth}px 6px 1fr" style:grid-template-rows="1fr 6px {bottomHeight}px">

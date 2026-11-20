@@ -9,6 +9,7 @@
     onRun,
     onCancel,
     onUseWater,
+    lineName = null,
   }: {
     snap: Snapshot | null;
     /** A stage is running (the name), or nothing is. */
@@ -19,7 +20,10 @@
     onCancel: () => void;
     /** Set the rolling circle's water-aware mode (#494). */
     onUseWater: (choice: UseWater) => void;
+    /** What made the design line on the map and in the table (its name in the table), if there is one. */
+    lineName?: string | null;
   } = $props();
+  const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
   const LABEL: Record<StageName, string> = {
@@ -68,6 +72,12 @@
           {/if}
         {/if}
       </li>
+      {#if s.name === "alignment"}
+        <li class="sub lines" data-testid="alignment-line">
+          <span data-testid="line-on-screen">Line on screen: {lineName ?? "none yet"}</span>
+          <span data-testid="line-next-run">Next run uses: {METHOD_LABEL[method]}</span>
+        </li>
+      {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}
         <li class="sub" data-testid="use-water-row">
           <label class="name">
@@ -101,6 +111,7 @@
   .name { flex: 1; }
   .sub { padding-left: var(--sp-3); font-size: var(--fs-12); }
   .sub label { display: flex; gap: var(--sp-2); align-items: center; }
+  .lines { flex-direction: column; align-items: flex-start; gap: 0; color: var(--ink-3); }
   .dim { color: var(--ink-3); }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
