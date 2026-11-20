@@ -451,7 +451,12 @@ impl Session {
     /// Set the run inputs (spec 0017, ticket 11): the objective (`SENSE:MEASURE`), the limits (one
     /// `MEASURE<=VALUE` a line) and the target level, each empty for none, as `owd run-inputs`
     /// sets them, through the same session call.
-    pub fn set_run_inputs(&mut self, objective: &str, limits: &str, target_level: &str) -> Js<String> {
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Js<String> {
         self.edit(|s| s.set_run_inputs(objective, limits, target_level))
     }
 

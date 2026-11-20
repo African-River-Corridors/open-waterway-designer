@@ -8,7 +8,9 @@
 //!
 //! Label: property
 
-use owd_format::design::sections::{StationSource, WALKED_FOR_PROFILE, WALKED_NO_STATIONS};
+use owd_format::design::sections::{
+    StationSource, WALKED_FOR_PROFILE, WALKED_NO_STATIONS, WALKED_STATIONS_INCOMPLETE,
+};
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{DesignError, Session, Stage};
 use owd_format::drawing::{self, DrawOptions, Sheet, SheetKind, Style};
@@ -261,4 +263,43 @@ fn a_stale_record_is_not_drawn_and_a_record_without_stations_says_so() {
             reason: WALKED_NO_STATIONS
         }
     );
+}
+
+#[test]
+fn stations_saved_without_the_top_of_cut_are_walked_again_and_say_so() {
+    // QA on PR 568, finding 1: a record saved in PR 564's format has no top of cut at its stations.
+    // Read as "no top of cut", the plan would draw no top-of-cut lines; it is walked again instead.
+    let (new, dem) = stored();
+    let grid = geotiff::read_bytes(&dem).unwrap();
+    let t = dem_sampler(&grid, Some(32630)).unwrap();
+    let mut doc: Value = serde_json::from_str(&new).unwrap();
+    for st in doc["stages"]["volumes"]["results"]["sections"]["stations"]
+        .as_array_mut()
+        .unwrap()
+    {
+        let o = st.as_object_mut().unwrap();
+        o.shift_remove("top_of_cut_left_m");
+        o.shift_remove("top_of_cut_right_m");
+    }
+    let text = doc.to_string();
+    let s = Session::open(&text).unwrap();
+    assert!(s.stored_stations(ID).unwrap().is_none());
+    let e = s.section_stations(ID, &[], None).unwrap_err().to_string();
+    assert!(e.contains("top of cut"), "{e}");
+    let w = s
+        .section_stations(ID, &[], Some(&t as TerrainSampler))
+        .unwrap();
+    assert_eq!(
+        w.source,
+        StationSource::Walked {
+            reason: WALKED_STATIONS_INCOMPLETE
+        }
+    );
+    assert!(w.top_of_cut.iter().any(|(l, r)| l.is_some() || r.is_some()));
+    // The plan draws the top of cut from the walk, and says so; it equals the fresh stored plan.
+    let o = DrawOptions::default();
+    let walked = all_sheets(&text, &dem, &o);
+    assert!(warned(&walked, SheetKind::Plan, WALKED_STATIONS_INCOMPLETE));
+    let fresh = all_sheets(&new, &dem, &o);
+    assert_same(&fresh, &walked, "top of cut walked again");
 }
