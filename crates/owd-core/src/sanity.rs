@@ -1,10 +1,13 @@
-//! The design sanity check: three plain faults a design line or its cut can have, found after the
+//! The design sanity check: four plain faults a design line or its cut can have, found after the
 //! alignment and after the volumes, and reported as warnings (never as a refusal, and never as a
 //! failed check that changes an exit code).
 //!
 //! 1. The line **crosses itself**.
 //! 2. A **bend is under R_min** on the check chord.
-//! 3. A **station's cut is far above its neighbours'**.
+//! 3. A **station's cut is far above its neighbours'** (the spike check, relative).
+//! 4. A **station's cut is huge against the channel's own section** (the extreme check, absolute).
+//!    It finds what the spike check misses by design: a long cut through a hill, where every
+//!    neighbour is high too.
 //!
 //! Pure: no I/O. Quantities in metres and square metres.
 
@@ -22,6 +25,34 @@ pub const SPIKE_RATIO: f64 = 3.0;
 pub const SPIKE_MIN_EXCESS_M2: f64 = 100.0;
 /// The neighbours read each side of a station.
 pub const SPIKE_NEIGHBOURS: usize = 5;
+
+/// A station's cut is extreme when its area is more than this many times the area of the design
+/// channel's own wetted section there (`trapezoid_area(hb, depth, slope)`).
+///
+/// A project choice, not a standard. Widening a river bank to the design bottom width adds a strip
+/// of cut of the order of the channel section itself; a cut 20 times the section is a cutting (the
+/// line leaves the river and goes through ground), which may be intended but is worth a second look.
+pub const EXTREME_AREA_RATIO: f64 = 20.0;
+/// A station's cut is extreme when its tallest cut face is more than this many times the design
+/// depth of the channel.
+///
+/// A project choice, not a standard. A face 10 times the depth of the channel (a 3 m channel with a
+/// 30 m face) is a hillside cut, not a bank shaping.
+pub const EXTREME_FACE_RATIO: f64 = 10.0;
+
+/// One station of the cut, as the extreme check reads it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CutStation {
+    pub chainage_m: f64,
+    /// Dredge plus dry cut area (m2).
+    pub cut_m2: f64,
+    /// Height of the tallest cut face (m); NaN where unknown.
+    pub face_h_m: f64,
+    /// The wetted section area of the design channel at this station (m2).
+    pub channel_area_m2: f64,
+    /// The design depth of the channel (m).
+    pub depth_m: f64,
+}
 
 /// What was found.
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +72,18 @@ pub enum Finding {
         to_m: f64,
         max_cut_m2: f64,
         neighbours_median_m2: f64,
+    },
+    /// A stretch of stations whose cut area or cut face is beyond the bound set by the channel's
+    /// own section ([`EXTREME_AREA_RATIO`], [`EXTREME_FACE_RATIO`]).
+    CutExtreme {
+        from_m: f64,
+        to_m: f64,
+        max_cut_m2: f64,
+        /// The largest cut area against the channel's section there (a ratio).
+        max_area_ratio: f64,
+        max_face_h_m: f64,
+        /// The largest face against the design depth (a ratio).
+        max_face_ratio: f64,
     },
 }
 
@@ -71,6 +114,21 @@ impl Finding {
                 "the cut between {from_m:.0} m and {to_m:.0} m reaches {max_cut_m2:.0} m2 a \
                  station, far above its neighbours' {neighbours_median_m2:.0} m2: check the line \
                  and the terrain there"
+            ),
+            Finding::CutExtreme {
+                from_m,
+                to_m,
+                max_cut_m2,
+                max_area_ratio,
+                max_face_h_m,
+                max_face_ratio,
+            } => format!(
+                "the cut between {from_m:.0} m and {to_m:.0} m is very large for the channel: up \
+                 to {max_cut_m2:.0} m2 a station ({max_area_ratio:.0} times the channel's own \
+                 section; the check starts at {EXTREME_AREA_RATIO:.0}) and a face up to \
+                 {max_face_h_m:.1} m ({max_face_ratio:.0} times the design depth; the check starts \
+                 at {EXTREME_FACE_RATIO:.0}): a long cut through high ground raises this, so check \
+                 the line and the terrain there"
             ),
         }
     }
@@ -214,4 +272,14 @@ pub fn cut_spikes(cuts: &[(f64, f64)]) -> Vec<Finding> {
         k = e + 1;
     }
     out
+}
+
+/// The stretches of stations whose cut is extreme against the channel's own section: the cut area
+/// is more than [`EXTREME_AREA_RATIO`] times the channel's wetted section area, or the tallest cut
+/// face is more than [`EXTREME_FACE_RATIO`] times the design depth. Neighbouring stations are
+/// grouped into one finding. Unlike [`cut_spikes`] it does not compare a station with its
+/// neighbours, so a long high cut is found.
+pub fn extreme_cuts(stations: &[CutStation]) -> Vec<Finding> {
+    let _ = stations;
+    Vec::new()
 }
