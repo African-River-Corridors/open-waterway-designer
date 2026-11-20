@@ -1,0 +1,16 @@
+{
+  "label": "Label: property",
+  "why": "Every design measure is zero or more: a negative bound is refused.",
+  "input": {
+    "limits": [
+      {
+        "measure": "dredge",
+        "bound": "at_least",
+        "value": -5.0
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_VALUE"
+  }
+}

@@ -113,7 +113,7 @@ fn the_rolled_reverse_bends_are_the_same_through_both_surfaces_and_hold_r_min() 
     let cli_doc: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
 
     assert_eq!(cli_doc, shell_doc);
-    let option = &cli_doc["options"][0];
+    let option = &cli_doc["stages"]["alignment"]["results"];
     assert_eq!(option["method"], json!("rolling_circle"), "{option}");
     let checks = &option["checks"];
     let r_min = checks["r_min_m"].as_f64().unwrap();

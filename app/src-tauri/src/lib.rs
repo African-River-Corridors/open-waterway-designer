@@ -662,6 +662,29 @@ fn set_downstream_point(window: Window, state: State<Shared>, point: String) -> 
     finish(&window, &guard)
 }
 
+/// State the river mouth, `downstream` or `LON,LAT` (spec 0017), through the shell call `owd import
+/// --mouth` uses.
+#[tauri::command]
+fn set_mouth(window: Window, state: State<Shared>, mouth: String) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_mouth(&mouth)?;
+    finish(&window, &guard)
+}
+
+/// Set the run inputs (spec 0017, ticket 11) through the shell call `owd run-inputs` uses.
+#[tauri::command]
+fn set_run_inputs(
+    window: Window,
+    state: State<Shared>,
+    objective: String,
+    limits: String,
+    target_level: String,
+) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_run_inputs(&objective, &limits, &target_level)?;
+    finish(&window, &guard)
+}
+
 /// Run one stage on a worker thread. `method` picks the alignment method (`rolling_circle` or
 /// `reroute`). The design changes only if the stage finishes: a cancel or a failure leaves it as it
 /// was. The reply is the snapshot, with `run` saying how it ended.
@@ -1231,6 +1254,8 @@ pub fn run() {
             set_alignment_settings,
             set_terrain_limit,
             set_downstream_point,
+            set_mouth,
+            set_run_inputs,
             edit_bank,
             undo_bank_edit,
             run_stage,

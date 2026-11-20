@@ -3,8 +3,8 @@
 //! (Drawing Format Standard 1.2, clause 7.3.6).
 //!
 //! Every number is a series of [`Session::long_section`], the call the app's long-section view
-//! makes, so the sheet and the app draw the same values: the station walk the volumes stage sums
-//! (`SectionVolumes`), with the bed read at the design line (the offset nearest zero), as the
+//! makes, so the sheet and the app draw the same values: the volumes stage's stored stations
+//! (`Stations`), with the bed read at the design line (the offset nearest zero), as the
 //! gallery reads its ground. Nothing is computed here but the layout and the factor.
 //!
 //! The scale. The horizontal scale is the first of the style's `scales` at which the whole line
@@ -22,8 +22,8 @@ use super::furniture::{self, Area, Titles, clean};
 use super::gallery::chainage_text;
 use super::{DrawError, DrawOptions, Sheet, SheetKind};
 use crate::design::Session;
+use crate::design::sections::Stations;
 use otd::rules::{ratios, text_width, vertical_denominator};
-use owd_core::volumes::sections::SectionVolumes;
 use serde_json::{Value, json};
 
 /// The vertical exaggeration the style asks for.
@@ -497,16 +497,18 @@ fn key_viewport(area: Area, k: f64, scale: u32, ls_x0: f64, p: &LongSectionParam
 pub(super) fn build(
     session: &Session,
     option_id: &str,
-    walk: &SectionVolumes,
+    stations: &Stations,
     options: &DrawOptions,
 ) -> Result<Vec<Sheet>, DrawError> {
+    let walk = &stations.walk;
     let p = &options.style.long_section();
     let doc = session.document();
-    let option = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-        .ok_or_else(|| DrawError::Input(format!("there is no option `{option_id}`")))?;
-    let s = Series::read(&session.long_section(option_id, walk)?);
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .ok_or_else(|| DrawError::Input(format!("there is no design line `{option_id}`")))?;
+    let s = Series::read(&session.long_section(option_id, stations)?);
     if s.chainage.len() < 2 {
         return Err(DrawError::Missing(format!(
             "option `{option_id}` has fewer than two stations to draw a long section"

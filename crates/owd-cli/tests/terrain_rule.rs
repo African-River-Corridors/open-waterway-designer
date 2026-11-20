@@ -27,7 +27,7 @@ fn design(tag: &str) -> (PathBuf, PathBuf) {
 }
 
 /// `owd align --method reroute`, with `--dem` or without. `Ok` when the stage ran and wrote its
-/// option (exit code 0, or 1 when the option fails a design check). `Err` holds the message of a
+/// option (exit code 0, or 1 when the design line fails a design check). `Err` holds the message of a
 /// refusal.
 fn reroute(doc: &Path, dem: Option<&Path>) -> Result<(), String> {
     let flags = AlignFlags {
@@ -52,11 +52,14 @@ fn read(path: &Path) -> Value {
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
-/// The same document with its re-route option taken out, so a test can tell that the command wrote
+/// The same document with its re-route line taken out, so a test can tell that the command wrote
 /// it again.
 fn without_reroute(doc: &Path) {
     let mut d = read(doc);
-    d["options"] = Value::Array(vec![]);
+    let al = &mut d["stages"]["alignment"];
+    for k in ["results", "depends_on", "engine_version"] {
+        al[k] = Value::Null;
+    }
     std::fs::write(doc, serde_json::to_string_pretty(&d).unwrap()).unwrap();
 }
 
@@ -72,11 +75,9 @@ fn the_reroute_uses_the_terrain_the_document_names() {
         panic!("the re-route did not use the terrain the document names: {why}");
     }
     let d = read(&no_flag);
-    assert!(
-        d["options"]
-            .as_array()
-            .is_some_and(|o| o.iter().any(|o| o["method"] == "reroute")),
-        "the document holds no re-route option"
+    assert_eq!(
+        d["stages"]["alignment"]["results"]["method"], "reroute",
+        "the document holds no re-route line"
     );
     assert_eq!(
         d,

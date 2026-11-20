@@ -13,7 +13,7 @@
 
 use crate::cut_model::{
     CUT_MODEL, CUT_MODEL_B, DX_M, MAXW_M, STATION_M, WET_SLOPE_H_PER_V, cut_model_a_bench_gate,
-    cut_model_a_section_face, normalise_model, section_area,
+    cut_model_a_section_face, normalise_model, section_area_weighted,
 };
 use crate::geom::{Polygon, Pt, linear};
 use crate::py_sum;
@@ -72,6 +72,11 @@ pub struct CrossSection {
     /// under water, `|offset| ≤ hb + wet_slope × depth`: the section has water of its own, so its
     /// dry cut widens the river; with none, its dry cut is a cut-through (ticket C23).
     pub has_water: bool,
+    /// The dredge area with each sample's cut times the cut-rate multiplier there (spec 0017
+    /// ticket 13); `None` when the walk had no multiplier.
+    pub weighted_dredge_area_m2: Option<f64>,
+    /// The dry cut area weighted the same way.
+    pub weighted_excav_area_m2: Option<f64>,
 }
 
 impl CrossSection {
@@ -268,6 +273,46 @@ pub fn section_volumes(
     tag: Option<&dyn Fn(f64) -> String>,
     chunk: usize,
 ) -> Result<SectionVolumes, Refusal> {
+    section_volumes_weighted(
+        line,
+        terrain,
+        river_polygon,
+        wl,
+        depth,
+        hb,
+        model,
+        wet_slope,
+        station_m,
+        maxw_m,
+        dx_m,
+        daylight_run_m,
+        tag,
+        chunk,
+        None,
+    )
+}
+
+/// [`section_volumes`] with the cut-rate multiplier (spec 0017 ticket 13): `weight(xs, ys)` is the
+/// multiplier at each sample (no data, NaN, counts as 1). Each station then also has its cut
+/// weighted sample by sample. The plain areas are the ones [`section_volumes`] gives, bit for bit.
+#[allow(clippy::too_many_arguments)]
+pub fn section_volumes_weighted(
+    line: &[Pt],
+    terrain: TerrainSampler,
+    river_polygon: &[Polygon],
+    wl: &Level,
+    depth: f64,
+    hb: &HalfWidth,
+    model: &str,
+    wet_slope: f64,
+    station_m: f64,
+    maxw_m: f64,
+    dx_m: f64,
+    daylight_run_m: Option<f64>,
+    tag: Option<&dyn Fn(f64) -> String>,
+    chunk: usize,
+    weight: Option<TerrainSampler>,
+) -> Result<SectionVolumes, Refusal> {
     let mdl = normalise_model(model);
     if mdl != CUT_MODEL && mdl != CUT_MODEL_B {
         return Err(format!(
@@ -325,6 +370,20 @@ pub fn section_volumes(
                 m
             ));
         }
+        let w_all = match weight {
+            Some(f) => {
+                let w = f(&ax, &ay);
+                if w.len() != (b - a) * m {
+                    return Err(format!(
+                        "the multiplier gave {} values for {} samples",
+                        w.len(),
+                        (b - a) * m
+                    ));
+                }
+                Some(w)
+            }
+            None => None,
+        };
         for (j, i) in (a..b).enumerate() {
             let s = dsl[i];
             let wl_i = wl.at(s);
@@ -338,7 +397,7 @@ pub fn section_volumes(
                 .map(|&v| if v.is_finite() { v } else { f64::NAN })
                 .collect();
             let wet: Vec<bool> = (0..m).map(|k| zl[k].is_finite() && w[k]).collect();
-            let (dr, ex, fh) = section_area(
+            let areas = section_area_weighted(
                 &zl,
                 &offs,
                 &sidewhich,
@@ -351,7 +410,9 @@ pub fn section_volumes(
                 wet_slope,
                 dx_m,
                 daylight_run_m,
+                w_all.as_ref().map(|w| &w[j * m..(j + 1) * m]),
             )?;
+            let (dr, ex, fh) = (areas.dredge, areas.excav, areas.max_face_h);
             let bench = cut_model_a_bench_gate(
                 &offs,
                 &zl,
@@ -396,6 +457,8 @@ pub fn section_volumes(
                 bench_right: bench.plus,
                 tag: tag.map_or(String::new(), |t| t(s)),
                 has_water,
+                weighted_dredge_area_m2: areas.weighted_dredge,
+                weighted_excav_area_m2: areas.weighted_excav,
             });
         }
         a += chunk;

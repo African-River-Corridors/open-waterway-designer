@@ -21,17 +21,59 @@ pub fn set_strict(on: bool) {
 /// The one exit rule for an option's failed checks (ticket A13), after the document is saved.
 /// `failed` names them (empty: none). Without `--strict` they are a warning on stderr and the
 /// command succeeds; with it, the same words and exit code 1.
-fn option_checks_outcome(failed: &str) -> Result {
+pub(crate) fn option_checks_outcome(failed: &str) -> Result {
     if failed.is_empty() {
         return Ok(());
     }
-    let message = format!("the option fails: {failed}");
+    let message = format!("the design line fails: {failed}");
     if STRICT.load(std::sync::atomic::Ordering::Relaxed) {
         Err(Failure { message, code: 1 })
     } else {
         eprintln!("owd: {message}");
         Ok(())
     }
+}
+
+/// What a design line's channel footprint enters (spec 0017 ticket 13), one line each: the no-go
+/// area or the hard-exclusion ground, with the chainage from and to and the area, and the footprint
+/// tested. Empty when the line has no `no_go_clear` check.
+pub(crate) fn touched_text(option: &Value) -> String {
+    let check = &option["checks"]["no_go_clear"];
+    if !check.is_object() {
+        return String::new();
+    }
+    let width = check["footprint_width_m"].as_f64().unwrap_or(f64::NAN);
+    let mut out = String::new();
+    for t in option["constraints_touched"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let what = if t["kind"] == owd_format::design::constraints::HARD_EXCLUSION_KIND {
+            format!(
+                "hard-exclusion ground in `{}`",
+                t["name"].as_str().unwrap_or("?")
+            )
+        } else {
+            format!(
+                "the no-go area `{}` ({})",
+                t["name"].as_str().unwrap_or("?"),
+                t["kind"].as_str().unwrap_or("?")
+            )
+        };
+        out.push_str(&format!(
+            "\nthe line enters {what} from {:.0} m to {:.0} m, {:.0} m2 of its footprint: FAILS no_go_clear",
+            t["from"].as_f64().unwrap_or(f64::NAN),
+            t["to"].as_f64().unwrap_or(f64::NAN),
+            t["area_m2"].as_f64().unwrap_or(f64::NAN),
+        ));
+    }
+    out.push_str(&format!(
+        "\nno-go areas and hard exclusions ({width:.1} m footprint, the straight bottom width only; \
+         cut slopes and bend widening not tested): {}",
+        if check["ok"] == true { "clear" } else { "FAILS no_go_clear" }
+    ));
+    out
 }
 
 /// The design sanity warnings of an option or a volumes row (`owd_core::sanity`), one line each on
@@ -169,8 +211,40 @@ pub(crate) fn open(path: &str) -> core::result::Result<Session, Failure> {
 fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     owd_format::design::check_file_name(path).map_err(from_design)?;
     let mut session = Session::open(&read(path)?).map_err(from_design)?;
+    // A file from an older format says what opening it changed (spec 0017: one design line).
+    if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+        for n in session.open_notes() {
+            eprintln!("owd: note: {path}: {n}");
+        }
+    }
     load_rule_set_files(&mut session)?;
+    attach_multiplier(path, &mut session);
     Ok(session)
+}
+
+/// Attach the cut-rate multiplier raster the design names (spec 0017 ticket 13), from beside the
+/// document, when it is the file whose hash was recorded. Otherwise say so on stderr: the stages
+/// that read it then refuse by name; none reads it as 1.
+fn attach_multiplier(doc: &str, session: &mut Session) {
+    let Some(p) = session.multiplier_path().map(str::to_string) else {
+        return;
+    };
+    let warn = |w: String| {
+        if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("owd: warning: {w}");
+        }
+    };
+    match std::fs::read(doc_dir(doc).join(&p)) {
+        Ok(bytes) => {
+            if let Err(e) = session.attach_multiplier(&bytes) {
+                warn(e.to_string());
+            }
+        }
+        Err(_) => warn(format!(
+            "the cut-rate multiplier raster `{p}` is missing: the re-route and the volumes will \
+             not run without it"
+        )),
+    }
 }
 
 /// Where a document's relative paths start: its own folder (the working folder for stdin).
@@ -179,6 +253,11 @@ pub(crate) fn doc_dir(doc: &str) -> std::path::PathBuf {
         Some(p) if doc != "-" && !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => std::path::PathBuf::from("."),
     }
+}
+
+/// A file's path as the document records it: relative to the document's folder, with `/`.
+pub(crate) fn relative_path(doc: &str, file: &str) -> String {
+    relative_dem_path(doc, file)
 }
 
 /// The DEM path as the document records it: relative to the document's folder, with `/`.
@@ -321,14 +400,17 @@ pub fn import(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
-    import_toward(doc, inputs, None, dem, water, output, json_mode)
+    import_toward(doc, inputs, None, None, dem, water, output, json_mode)
 }
 
-/// `owd import` with the point the river flows towards (`--downstream LON,LAT`), if given.
+/// `owd import` with the point the river flows towards (`--downstream LON,LAT`) and the river mouth
+/// (`--mouth downstream|LON,LAT`), if given.
+#[allow(clippy::too_many_arguments)]
 pub fn import_toward(
     doc: &str,
     inputs: [(&str, Option<String>); 4],
     downstream: Option<&str>,
+    mouth: Option<&str>,
     dem: Option<String>,
     water: WaterFlags,
     output: &Option<String>,
@@ -368,9 +450,9 @@ pub fn import_toward(
         || water.slope.is_some()
         || water.table.is_some()
         || water.pools.is_some();
-    if texts.is_empty() && dem.is_none() && !has_water {
+    if texts.is_empty() && dem.is_none() && !has_water && mouth.is_none() {
         return Err(input_error(
-            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem or a water level",
+            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem, a water level or --mouth",
         ));
     }
     // The document is read first when it is on stdin: stdin can be read once.
@@ -392,20 +474,51 @@ pub fn import_toward(
         }),
         _ => None,
     };
-    let report = if items.is_empty() && terrain.is_none() {
-        owd_format::design::ImportReport {
-            project_epsg: project_epsg(&session).unwrap_or(0),
-            inputs: Vec::new(),
-            warnings: Vec::new(),
-        }
+    let (report, read_dem) = if items.is_empty() && terrain.is_none() {
+        (
+            owd_format::design::ImportReport {
+                project_epsg: project_epsg(&session).unwrap_or(0),
+                inputs: Vec::new(),
+                warnings: Vec::new(),
+            },
+            None,
+        )
     } else {
-        owd_shell::import::import_toward(&mut session, &items, terrain, &today(), downstream)
-            .map_err(|e| match e {
+        let done =
+            owd_shell::import::import_toward(&mut session, &items, terrain, &today(), downstream)
+                .map_err(|e| match e {
                 owd_shell::import::ImportError::Design(e) => from_design(e),
                 owd_shell::import::ImportError::Terrain(m) => input_error(m),
-            })?
-            .report
+            })?;
+        (done.report, done.dem)
     };
+    // The mouth before the water level of this import, so that level counts from the mouth.
+    let mut mouth_note = None;
+    if let Some(m) = mouth {
+        // The DEM of this import, else the one the design names (when it is the recorded file).
+        let dem = match read_dem {
+            Some(d) => Some(d),
+            None => session
+                .dem_path()
+                .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok())
+                .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
+                .and_then(|b| owd_format::geotiff::read_bytes(&b).ok()),
+        };
+        let sampler = match &dem {
+            Some(d) => Some(
+                owd_format::design::terrain::dem_sampler(d, project_epsg(&session))
+                    .map_err(from_design)?,
+            ),
+            None => None,
+        };
+        let r = owd_shell::import::set_mouth(
+            &mut session,
+            m,
+            sampler.as_ref().map(|s| s as TerrainSampler),
+        )
+        .map_err(from_design)?;
+        mouth_note = Some(r);
+    }
     apply_water(&mut session, &water)?;
     if dem.is_some() && water.holds_bathymetry {
         session
@@ -420,6 +533,19 @@ pub fn import_toward(
             let unit = if name == "dem" { "pixels" } else { "positions" };
             lines.push(format!("{name}: {n} {unit}, from {src}"));
         }
+        if let Some(m) = &mouth_note {
+            lines.push(format!(
+                "mouth: ({:.1}, {:.1}){}",
+                m.point[0],
+                m.point[1],
+                if m.turned {
+                    ": the river was turned to run from it; the later stages are stale"
+                } else {
+                    ""
+                }
+            ));
+            lines.extend(m.notes.iter().map(|n| format!("note: {n}")));
+        }
         // What the bank checks found, after the other lines.
         lines.extend(report.warnings.iter().map(|w| format!("warning: {w}")));
         lines.join("\n")
@@ -433,7 +559,13 @@ pub fn import_toward(
         dest == "-",
         json_mode,
         &human,
-        json!({"ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json, "warnings": report.warnings}),
+        json!({
+            "ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json,
+            "warnings": report.warnings,
+            "mouth": mouth_note.as_ref().map(|m| json!({
+                "point": m.point, "turned": m.turned, "notes": m.notes,
+            })),
+        }),
     );
     Ok(())
 }
@@ -887,9 +1019,11 @@ pub fn align(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
+    // `given` runs the line the design keeps in its settings (`owd design-line` gives one).
     let method = AlignMethod::from_name(method).ok_or_else(|| {
         input_error(format!(
-            "unknown method `{method}`: use rolling-circle, reroute or centreline"
+            "unknown method `{method}`: use rolling-circle, reroute, centreline, or given (the \
+             line `owd design-line` gave)"
         ))
     })?;
     let use_water = match flags.use_water.as_deref().map(str::trim) {
@@ -937,8 +1071,8 @@ pub fn align(
                 put("fairness_weight", json!(v));
             }
         }
-        // The river centreline as it is: no flag but `--chord` applies.
-        AlignMethod::Centreline => {}
+        // The river centreline as it is, and a given line: no flag but `--chord` applies.
+        AlignMethod::Centreline | AlignMethod::Given => {}
     }
     if let Some(v) = flags.chord {
         put("check_chord_m", json!(v));
@@ -997,11 +1131,9 @@ pub fn align(
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
-    let option = session.document()["options"]
-        .as_array()
-        .and_then(|o| o.iter().find(|o| o["method"] == method.name()))
-        .cloned()
-        .unwrap_or(Value::Null);
+    // The alignment's own line (a pool lattice from an earlier run is stale now).
+    let option = owd_format::design::design_line::alignment_line_of(session.document())
+        .map_or(Value::Null, |l| l.to_view());
     let c = &option["checks"];
     let failed = failed_checks(&option);
     let ok = failed.is_empty();
@@ -1035,10 +1167,11 @@ pub fn align(
     if no_feasible_line(&option) {
         human.push_str("\nNO FEASIBLE LINE: every bend is infeasible; the line is not a design");
     }
-    // Issue #367: a failed option is saved, marked failed, and the summary says so.
+    human.push_str(&touched_text(&option));
+    // Issue #367: a failed design line is saved, marked failed, and the summary says so.
     if !ok {
         human.push_str(&format!(
-            "\nthe option is saved, marked failed: {}",
+            "\nthe design line is saved, marked failed: {}",
             failed.join(", ")
         ));
     }
@@ -1046,7 +1179,7 @@ pub fn align(
         dest == "-",
         json_mode,
         &human,
-        json!({"ok": ok, "failed_checks": failed, "option": option}),
+        json!({"ok": ok, "failed_checks": failed, "design_line": option}),
     );
     option_checks_outcome(&failed.join(", "))
 }
@@ -1148,9 +1281,10 @@ pub fn optimise(
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
     let res = session.document()["stages"]["optimise"]["results"].clone();
-    let option = session.document()["options"]
-        .as_array()
-        .and_then(|o| o.iter().find(|o| o["method"] == "lattice"))
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["method"] == "lattice")
         .cloned()
         .unwrap_or(Value::Null);
     // The sanity warnings, a pool join that breaks R_min among them (issue #6).
@@ -1198,9 +1332,10 @@ pub fn optimise(
             "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
         ));
     }
+    human.push_str(&touched_text(&option));
     if !ok {
         human.push_str(&format!(
-            "\nthe option is saved, marked failed: {}",
+            "\nthe design line is saved, marked failed: {}",
             failed.join(", ")
         ));
     }
@@ -1208,7 +1343,7 @@ pub fn optimise(
         dest == "-",
         json_mode,
         &human,
-        json!({"ok": ok, "failed_checks": failed, "cascade": res["cascade"], "pools": res["pools"], "option": option}),
+        json!({"ok": ok, "failed_checks": failed, "cascade": res["cascade"], "pools": res["pools"], "design_line": option}),
     );
     option_checks_outcome(&failed.join(", "))
 }
@@ -1260,13 +1395,13 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
-    let rows = session.document()["stages"]["volumes"]["results"]["options"].clone();
+    let rows = owd_format::design::volume_rows_of(session.document());
     let mut human = Vec::new();
     let mut all_ok = true;
-    // Each option's failed checks, as this command reads them: in the JSON and on stderr.
+    // The design line's failed checks, as this command reads them: in the JSON and on stderr.
     let mut json_rows = Vec::new();
     let mut fails = Vec::new();
-    for r in rows.as_array().into_iter().flatten() {
+    for r in &rows {
         print_sanity(r["name"].as_str().unwrap_or("?"), r);
         // Issue #366: an option with no feasible line is not a design: flagged, whatever its radius.
         let nfl = r["no_feasible_line"] == true;
@@ -1309,7 +1444,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
         dest == "-",
         json_mode,
         &human.join("\n"),
-        json!({"ok": all_ok, "options": json_rows}),
+        json!({"ok": all_ok, "design_line": json_rows.first()}),
     );
     option_checks_outcome(&fails.join("; "))
 }
@@ -1865,23 +2000,16 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
     let mut options = Vec::new();
     let mut fails = Vec::new();
     if ran.contains(&Stage::Volumes) {
-        for r in session.document()["stages"]["volumes"]["results"]["options"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
+        for r in owd_format::design::volume_rows_of(session.document()).iter() {
             print_sanity(r["name"].as_str().unwrap_or("?"), r);
         }
     }
     if remade {
-        for o in session.document()["options"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
+        for o in session.design_lines().iter() {
             let failed = failed_checks(o);
             let name = o["name"].as_str().unwrap_or("?");
             print_sanity(name, o);
+            human.push_str(&touched_text(o));
             if !failed.is_empty() {
                 fails.push(format!("{name} ({})", failed.join(", ")));
                 human.push_str(&format!(
@@ -1894,7 +2022,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
     }
     let mut res = json!({"ok": fails.is_empty(), "ran": names});
     if remade {
-        res["options"] = json!(options);
+        res["design_line"] = json!(options.first());
     }
     say(dest == "-", json_mode, &human, res);
     option_checks_outcome(&fails.join("; "))
@@ -1948,17 +2076,21 @@ pub fn status(doc: &str, json_mode: bool) -> Result {
     if !stale.is_empty() {
         human.push(format!("stale: {}", stale.join(", ")));
     }
-    // Each option's failed checks (spec 0002, spec 0005), and the water-aware note.
-    let options: Vec<Value> = session.document()["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    // A stale pool lattice's line is not the design line (QA on PR 558): say which line is read.
+    let line_note = session.stale_refined_line_note();
+    if let Some(n) = &line_note {
+        human.push(format!("note: {n}"));
+    }
+    // The design line's failed checks (spec 0002, spec 0005), and the water-aware note.
+    let options: Vec<Value> = session
+        .design_lines()
+        .iter()
         .map(|o| {
             let failed = failed_checks(o);
             let note = notes_of(o, None);
             if !failed.is_empty() {
                 human.push(format!(
-                    "option {}: FAILS {}",
+                    "design line {}: FAILS {}",
                     o["id"].as_str().unwrap_or("?"),
                     failed.join(", ")
                 ));
@@ -1985,7 +2117,8 @@ pub fn status(doc: &str, json_mode: bool) -> Result {
     let mut result = json!({
         "stages": Value::Object(stages),
         "stale": stale,
-        "options": options,
+        "design_line": options.first(),
+        "notes": line_note.into_iter().collect::<Vec<_>>(),
         "warnings": session.dem_warning(bytes.as_deref()).into_iter().collect::<Vec<_>>(),
     });
     if fits != StageStatus::NotRun {

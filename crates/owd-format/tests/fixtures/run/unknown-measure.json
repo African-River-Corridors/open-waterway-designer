@@ -1,0 +1,13 @@
+{
+  "label": "Label: property",
+  "why": "A measure OWD does not know is refused by name, never dropped.",
+  "input": {
+    "objective": {
+      "measure": "beauty",
+      "sense": "maximise"
+    }
+  },
+  "expect": {
+    "code": "RUN_MEASURE_UNKNOWN"
+  }
+}

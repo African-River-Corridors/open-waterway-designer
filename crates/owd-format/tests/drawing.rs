@@ -61,7 +61,14 @@ fn otd_accepts_every_document_and_makes_every_output() {
         assert!(out.pdf.starts_with(b"%PDF"));
         assert!(out.svg.contains("<svg"));
         assert!(out.dxf.contains("SECTION"));
-        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        // The example was saved before the volumes stage stored its stations, so the sheet says it
+        // walked the line again (spec 0017 ticket 10); nothing else may warn.
+        let others: Vec<&String> = out
+            .warnings
+            .iter()
+            .filter(|w| *w != owd_format::design::sections::WALKED_NO_STATIONS)
+            .collect();
+        assert!(others.is_empty(), "{others:?}");
         let norm: Value = serde_json::from_str(&out.normalised).unwrap();
         assert!(norm["sheet"]["size"] == "A3");
         if let Ok(dir) = std::env::var("OWD_DRAW_DUMP") {
@@ -256,7 +263,7 @@ fn the_design_must_be_ready_and_the_dem_must_be_there() {
     )
     .unwrap_err()
     .to_string();
-    assert!(e.contains("no design line option `nope`"), "{e}");
+    assert!(e.contains("no design line `nope`"), "{e}");
     // A design whose volumes are stale is not drawn.
     let mut s = Session::open(&text).unwrap();
     s.set_water_profile(&[[0.0, 1.0]]).unwrap();
@@ -872,10 +879,12 @@ fn a_wrong_row_or_a_csv_that_differs_is_refused_naming_the_check() {
     let mut s = good;
     for (n, bytes) in &mut s[0].extra {
         if n.ends_with(".csv") {
-            *bytes = String::from_utf8(bytes.clone())
-                .unwrap()
-                .replacen("500066.180", "500066.181", 1)
-                .into_bytes();
+            // The first station's easting, one millimetre off.
+            let text = String::from_utf8(bytes.clone()).unwrap();
+            let row = text.lines().find(|l| l.starts_with("station,")).unwrap();
+            let mut f: Vec<String> = row.split(',').map(String::from).collect();
+            f[2] = format!("{:.3}", f[2].parse::<f64>().unwrap() + 0.001);
+            *bytes = text.replacen(row, &f.join(","), 1).into_bytes();
         }
     }
     let found = owd_format::drawing::check::setting_out(&s, &t);

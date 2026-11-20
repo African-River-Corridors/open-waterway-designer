@@ -108,7 +108,13 @@ export interface Screening {
   blocking_not_evaluated: { count: number; rules: string[] };
   constraint_stretches: ConstraintStretch[];
 }
-/** The parts of an option's volumes results the app reads. */
+/** The parts of the design line the app reads (spec 0017: one design line per run). */
+export interface DesignLine {
+  id: string;
+  method: string;
+  settings?: { use_water?: boolean | null } & Record<string, unknown>;
+}
+/** The parts of the design line's volumes results the app reads. */
 export interface VolumesOption {
   id: string;
   name: string;
@@ -153,15 +159,19 @@ export interface Snapshot {
       river_polygon: Polygon | null;
       dem: { path: string; sha256?: string } | null;
       water_level: { points: number[][] } | null;
+      /** The river mouth, where chainage 0 is (spec 0017); absent or null: none stated. */
+      mouth?: { point: [number, number]; stated_as: "point" | "downstream" } | null;
+      /** The run inputs (spec 0017); absent: no objective, no limits, target concept. */
+      run?: RunInputs;
     };
     stages: {
       sizing: StageRecord<SizingSettings, ChannelShape>;
-      alignment: StageRecord<AlignmentSettings, unknown>;
+      /** The one design line (spec 0017), with the settings its run used. */
+      alignment: StageRecord<AlignmentSettings, DesignLine>;
       optimise: StageRecord<unknown, unknown>;
-      volumes: StageRecord<unknown, { options: VolumesOption[] }>;
+      /** The volumes of the design line (spec 0017: one per run). */
+      volumes: StageRecord<unknown, VolumesOption>;
     };
-    /** The design line options, with the settings each run used. */
-    options?: { id: string; method: string; settings?: { use_water?: boolean | null } & Record<string, unknown> }[];
     /** Where each generated or loaded input came from (spec 0012). Absent for a design with none. */
     provenance?: Partial<Record<ProvenanceInput, Provenance>>;
   };
@@ -413,7 +423,14 @@ export const setUseWater = (choice: UseWater) =>
 /** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
 export const setTerrainLimit = (gib: string) => invoke<Snapshot>("set_terrain_limit", { gib });
 export const setDownstreamPoint = (point: string) => invoke<Snapshot>("set_downstream_point", { point });
+/** State the river mouth, `downstream` or `LON,LAT`, as `owd import --mouth` does (spec 0017). The river is turned to run from it when it is at the far end, and the stages that read it go stale. Rejects with the reason. */
+export const setMouth = (mouth: string) => invoke<Snapshot>("set_mouth", { mouth });
+/** Set the run's objective (`SENSE:MEASURE`), limits (one `MEASURE<=VALUE` a line) and target level, each empty for none, as `owd run-inputs` does (spec 0017). No stage goes stale. Rejects with the reason and its code. */
+export const setRunInputs = (objective: string, limits: string, targetLevel: string) => invoke<Snapshot>("set_run_inputs", { objective, limits, targetLevel });
 export type RunMethod = "rolling_circle" | "reroute";
+export type OutputLevel = "concept" | "pre_feasibility" | "feasibility";
+export type RunLimit = { measure: string; bound: "at_most" | "at_least"; value: number; currency?: string };
+export type RunInputs = { objective?: { measure: string; sense: "minimise" | "maximise" }; limits?: RunLimit[]; target_level?: OutputLevel };
 /** The snapshot after a run; `run.outcome` is `done` or `cancelled` (a cancelled run leaves the design as it was). Rejects with the reason. */
 export type RunResult = Snapshot & { run: { stage: StageName; outcome: "done" | "cancelled" } };
 export const runStage = (stage: StageName, method?: RunMethod) => invoke<RunResult>("run_stage", { stage, method: method ?? null });
@@ -495,7 +512,7 @@ export const longSection = (option: string) => invoke<LongSection>("long_section
 export const crossSection = (option: string, chainage: number) => invoke<CrossSection>("cross_section", { option, chainage });
 export const stationNear = (option: string, lon: number, lat: number) => invoke<number>("station_near", { option, lon, lat });
 
-/** Export through the session to a file the user picks. Returns the path, or null when they cancel. Rejects with the reason (for example: no options yet). */
+/** Export through the session to a file the user picks. Returns the path, or null when they cancel. Rejects with the reason (for example: no design line yet). */
 export const exportFile = (kind: "geojson" | "csv") => invoke<string | null>("export_file", { kind });
 
 /** A drawing sheet as `owd draw` makes it (spec 0004): its number, title and SVG. */

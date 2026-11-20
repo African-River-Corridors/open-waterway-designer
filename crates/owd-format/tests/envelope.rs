@@ -93,3 +93,21 @@ fn a_bed_model_is_reported_beside_the_answer() {
     assert_eq!(b["shallowest_depth_m"], 1.5);
     assert_eq!(b["draught_m"], 2.0);
 }
+
+/// Spec 0017 ticket 7: the sweep's output is typed (it reads as `EnvelopeResult`, with a schema).
+/// What its hash covers is tested field by field in `screening_hashes.rs`.
+#[test]
+fn the_sweep_is_a_typed_stage() {
+    use owd_format::design::envelope::EnvelopeResult;
+    let mut s = study();
+    s.run_envelope(Settings::default(), true).unwrap();
+    let rec = &s.document()["stages"]["envelope"];
+    let typed: EnvelopeResult = serde_json::from_value(rec["results"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(&typed).unwrap(), rec["results"]);
+    assert!(
+        owd_format::stage::contracts()
+            .iter()
+            .any(|c| c.stage == "envelope"),
+        "the envelope has a schema file"
+    );
+}

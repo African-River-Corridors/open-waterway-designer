@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RunInputs",
+  "description": "The run inputs, as `inputs.run` stores them. Every part is optional; a part not stated is absent\nfrom the JSON, so what was read writes back the same.",
+  "type": "object",
+  "properties": {
+    "objective": {
+      "description": "What the run aims at. Absent: no objective stated; each method keeps its own rule.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Objective"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "limits": {
+      "description": "What the run must stay within. At most one bound of each kind on a measure.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Limit"
+      }
+    },
+    "target_level": {
+      "description": "The output level the run aims at. Absent: concept.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputLevel"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Objective": {
+      "description": "What the run aims at: one design measure and a sense.",
+      "type": "object",
+      "properties": {
+        "measure": {
+          "$ref": "#/$defs/DesignMeasure"
+        },
+        "sense": {
+          "$ref": "#/$defs/Sense"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "measure",
+        "sense"
+      ]
+    },
+    "DesignMeasure": {
+      "description": "One quantity of the whole design (spec 0017). Not the rules engine's Measure, which is per object.",
+      "oneOf": [
+        {
+          "description": "The cost: rates times volumes, plus structures (ticket 12). Money, in the rates' currency.",
+          "type": "string",
+          "const": "cost"
+        },
+        {
+          "description": "Dredge plus dry cut, m³.",
+          "type": "string",
+          "const": "total_cut"
+        },
+        {
+          "description": "The cut in the river, m³.",
+          "type": "string",
+          "const": "dredge"
+        },
+        {
+          "description": "The cut on dry land, m³.",
+          "type": "string",
+          "const": "dry_cut"
+        },
+        {
+          "description": "The area of the channel's top width outside the river polygon, m².",
+          "type": "string",
+          "const": "land_take"
+        },
+        {
+          "description": "The design line's length, m.",
+          "type": "string",
+          "const": "line_length"
+        },
+        {
+          "description": "The number of weirs and locks.",
+          "type": "string",
+          "const": "structure_count"
+        },
+        {
+          "description": "The governing vessel's size. Its unit is open (spec 0017, open assumption 1: deadweight, or\nlength times beam), so a limit on it is refused until the maintainer settles it.",
+          "type": "string",
+          "const": "capacity"
+        }
+      ]
+    },
+    "Sense": {
+      "description": "Minimise or maximise.",
+      "type": "string",
+      "enum": [
+        "minimise",
+        "maximise"
+      ]
+    },
+    "Limit": {
+      "description": "What the run must stay within: one design measure and a bound.",
+      "type": "object",
+      "properties": {
+        "measure": {
+          "$ref": "#/$defs/DesignMeasure"
+        },
+        "bound": {
+          "$ref": "#/$defs/Bound"
+        },
+        "value": {
+          "description": "The bound, in the measure's unit. Zero or more.",
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "description": "ISO 4217 code of a bound on cost (three capital letters). Required for cost, absent for\nevery other measure.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "measure",
+        "bound",
+        "value"
+      ]
+    },
+    "Bound": {
+      "description": "At most or at least.",
+      "type": "string",
+      "enum": [
+        "at_most",
+        "at_least"
+      ]
+    },
+    "OutputLevel": {
+      "description": "How far a run's figures can be trusted (spec 0017): the inputs each reach has decide the level it\nreaches. Ordered from the lowest.",
+      "oneOf": [
+        {
+          "description": "Banks (or a river polygon) and an open elevation model.",
+          "type": "string",
+          "const": "concept"
+        },
+        {
+          "description": "Plus spot levels or a partial survey, and a rates table.",
+          "type": "string",
+          "const": "pre_feasibility"
+        },
+        {
+          "description": "Plus bathymetry and a ground survey covering the reach.",
+          "type": "string",
+          "const": "feasibility"
+        }
+      ]
+    }
+  }
+}
