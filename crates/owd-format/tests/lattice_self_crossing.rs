@@ -4,7 +4,9 @@
 //! long. The river runs backwards at each apex and its lobes nest, but the river line does not
 //! cross itself. Water is a strip of 65 m round it at -8 m, ground is +2 m, on a 5 m grid that reaches 1,200 m
 //! beyond the river. R_min is 340 m
-//! (PIANC WG 141, CEMT class IV, quality A). One weir at 3,500 m with a lift of 0.5 m.
+//! (PIANC WG 141, CEMT class IV, quality A). One weir at 3,500 m with a lift of 0.5 m. The lattice is
+//! coarse (pitch 40 m, cell 20 m, corridor 200 m) so the test runs in a debug build; the first pool's
+//! search loops there as it does at pitch 12 m and cell 5 m.
 //!
 //! Label: property
 
@@ -76,7 +78,11 @@ fn terrain(cl: Vec<Pt>) -> impl Fn(&[f64], &[f64]) -> Vec<f64> {
                 if c < 0.0 || r < 0.0 || c >= cols as f64 || r >= rows as f64 {
                     return f64::NAN;
                 }
-                if wet[r as usize * cols + c as usize] { -8.0 } else { 2.0 }
+                if wet[r as usize * cols + c as usize] {
+                    -8.0
+                } else {
+                    2.0
+                }
             })
             .collect()
     }
@@ -102,11 +108,17 @@ fn design(cl: &[Pt]) -> Session {
     s.import(&[
         (
             Role::Centreline,
-            &format!(r#"{{"type":"LineString"{UTM31},"coordinates":{}}}"#, json!(cl)),
+            &format!(
+                r#"{{"type":"LineString"{UTM31},"coordinates":{}}}"#,
+                json!(cl)
+            ),
         ),
         (
             Role::RiverPolygon,
-            &format!(r#"{{"type":"Polygon"{UTM31},"coordinates":{}}}"#, json!([ring])),
+            &format!(
+                r#"{{"type":"Polygon"{UTM31},"coordinates":{}}}"#,
+                json!([ring])
+            ),
         ),
     ])
     .unwrap();
@@ -148,7 +160,9 @@ fn run(weir_m: f64) -> Value {
             "lifts_m": [0.5],
             "base_level_m": 0.0,
             "terminal_min_level_m": 0.5,
-            "cell_m": 5.0,
+            "pitch_m": 40.0,
+            "corridor_half_m": 200.0,
+            "cell_m": 20.0,
         }),
         Some(&t),
     )
@@ -174,8 +188,9 @@ fn run(weir_m: f64) -> Value {
     o
 }
 
-/// The fault: with the weir at 3,500 m the joined line used to cross itself three times, two of them
-/// inside the first pool, and the option passed. A line that crosses itself must never pass.
+/// The fault: the first pool's search line crosses itself, and the option used to pass with a looped
+/// line. A line that crosses itself must never pass: here the guard moves the pool's search end and
+/// the line is simple, and the check says so.
 #[test]
 fn a_self_crossing_lattice_line_never_passes() {
     let o = run(3500.0);
@@ -187,4 +202,16 @@ fn a_self_crossing_lattice_line_never_passes() {
             first_self_crossing_m(&line)
         );
     }
+    assert!(!is_self_intersecting(&line), "the line crosses itself");
+    assert_eq!(o["checks"]["no_self_crossing"]["ok"], json!(true));
+    assert_eq!(
+        o["checks"]["no_self_crossing"]["first_crossing_m"],
+        Value::Null
+    );
+    assert!(failed_checks(&o).is_empty(), "{:?}", failed_checks(&o));
+    let warnings = o["sanity"]["warnings"].to_string();
+    assert!(
+        warnings.contains("so its search end moved"),
+        "the moved end is named: {warnings}"
+    );
 }
