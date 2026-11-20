@@ -272,8 +272,8 @@ pub fn sheets_with(
             }
         }
     }
-    // A sheet drawn from a new walk says so, and why, with its other warnings.
-    if let StationSource::Walked { reason } = stations.source {
+    // A sheet drawn from a new walk, or with sections cut again, says so, and why.
+    if let StationSource::Walked { reason } | StationSource::Computed { reason } = stations.source {
         for sheet in out.iter_mut().filter(|s| {
             matches!(
                 s.kind,
@@ -289,7 +289,7 @@ pub fn sheets_with(
 /// The stations the sheets read (spec 0017 ticket 10): the volumes stage's stored stations, through
 /// the one door the report and the web app use too. The cross sections and the plan's section
 /// marks need the profile of every station the gallery picks; when one was not kept (a sheet style
-/// with another spacing), the line is walked again on the terrain for these sheets. A neighbour's
+/// with another spacing), that station's section is cut again on the terrain for these sheets. A neighbour's
 /// profile is never drawn as the station asked for.
 fn stations(
     session: &Session,

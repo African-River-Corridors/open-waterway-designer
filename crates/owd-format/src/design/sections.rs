@@ -6,9 +6,10 @@
 //! [`Session::section_stations`] is the one door the drawings, the report and the web app go
 //! through. It gives the stored stations when the record is fresh and keeps the section profile of
 //! every station asked for. A station whose profile was not kept (a sheet drawn at another section
-//! spacing, or a station picked by hand) is never drawn from a neighbour's profile: the line is
-//! walked again on the terrain, the same walk the volumes stage summed, and the stations say so
-//! ([`StationSource::Walked`]). With no terrain to walk, it refuses by name.
+//! spacing, or a station picked by hand) is never drawn from a neighbour's profile: its one section
+//! is cut again on the terrain from its stored record, with the walk's own per-station code, and
+//! the stations say so ([`StationSource::Computed`]). The line is walked again only when the record
+//! holds no usable stations ([`StationSource::Walked`]). With no terrain, it refuses by name.
 
 use super::crs::{Crs, Utm};
 use super::export::SCREENING_LABEL;
@@ -16,7 +17,7 @@ use super::session::{DesignError, Session, Stage, StageStatus};
 use super::volumes_stage::{Volumes, top_of_cut};
 use crate::types::TerrainSampler;
 use owd_core::geom::Pt;
-use owd_core::volumes::sections::{CrossSection, SectionVolumes};
+use owd_core::volumes::sections::{CrossSection, SectionVolumes, StationAt};
 use serde_json::{Value, json};
 
 /// Where a set of stations came from.
@@ -24,16 +25,26 @@ use serde_json::{Value, json};
 pub enum StationSource {
     /// The volumes stage's stored record, read as it is.
     Stored,
-    /// A new walk of the line on the terrain, and why: a station asked for had no stored profile
-    /// ([`WALKED_FOR_PROFILE`]), or the record holds no stations ([`WALKED_NO_STATIONS`]).
+    /// A new walk of the line on the terrain, and why: the record holds no stations
+    /// ([`WALKED_NO_STATIONS`]) or holds them without the top of cut
+    /// ([`WALKED_STATIONS_INCOMPLETE`]).
     Walked { reason: &'static str },
+    /// The stored record, with the section of each station asked for that had no stored profile
+    /// cut again on the terrain, one station at a time ([`COMPUTED_FOR_PROFILE`]). The line is not
+    /// walked again.
+    Computed { reason: &'static str },
 }
 
-/// Why a sheet was drawn from a new walk: a section it draws has no stored profile.
-pub const WALKED_FOR_PROFILE: &str = "the volumes stage keeps the section profile only at the \
+/// Why a sheet's sections were cut again on the DEM: a section it draws has no stored profile.
+pub const COMPUTED_FOR_PROFILE: &str = "the volumes stage keeps the section profile only at the \
     stations the default sheet style draws (every 500 m, the tight bends and the worst stations): \
-    the sections here are drawn from the line walked again on the DEM, the same walk the volumes \
-    stage summed";
+    the other sections here are cut again on the DEM, one station at a time, with the same section \
+    code the volumes stage summed";
+
+/// Why a section with no stored profile is refused when there is no DEM.
+pub const NEEDS_DEM_FOR_PROFILE: &str = "the volumes stage keeps the section profile only at the \
+    stations a cross-section sheet draws by default: a section at another station needs the DEM \
+    (the elevation model) to cut it: load the DEM";
 
 /// Why a sheet was drawn from a new walk: the volumes record holds no stations.
 pub const WALKED_NO_STATIONS: &str = "the volumes stage's record holds no stations (it was saved \
@@ -257,23 +268,57 @@ impl Session {
                 None => "the volumes stage's record holds no stations (it was saved before OWD \
                          stored them): run the volumes stage again, or give the DEM to walk the line"
                     .into(),
-                Some(_) => "the volumes stage keeps the section profile only at the stations a \
-                            cross-section sheet draws by default: a section at another station \
-                            needs the DEM to walk the line again"
-                    .into(),
+                Some(_) => NEEDS_DEM_FOR_PROFILE.into(),
             }));
         };
+        if let Some(stored) = stored {
+            return self.with_sections_at(stored, profiles_at, terrain);
+        }
         let mut walked = Stations::from(self.option_section_walk(option_id, terrain)?);
         walked.source = StationSource::Walked {
-            reason: if stored.is_some() {
-                WALKED_FOR_PROFILE
-            } else if incomplete {
+            reason: if incomplete {
                 WALKED_STATIONS_INCOMPLETE
             } else {
                 WALKED_NO_STATIONS
             },
         };
         Ok(walked)
+    }
+
+    /// The stored stations with the section of each station nearest `profiles_at` that has no
+    /// stored profile, each cut on its own from its stored record (place, heading, half-width,
+    /// water level, depth) and the terrain across that one section: the walk's own per-station
+    /// code, so it is the walk's section there. Nothing else is read from the terrain.
+    fn with_sections_at(
+        &self,
+        mut stations: Stations,
+        profiles_at: &[f64],
+        terrain: TerrainSampler,
+    ) -> Result<Stations, DesignError> {
+        let plan = self.section_plan(&Value::Null)?;
+        let mut wanted: Vec<usize> = profiles_at
+            .iter()
+            .filter(|c| c.is_finite())
+            .filter_map(|&c| stations.nearest(c))
+            .filter(|&i| !stations.has_profile(i))
+            .collect();
+        wanted.sort_unstable();
+        wanted.dedup();
+        for i in wanted {
+            let s = &stations.walk.stations[i];
+            let at = StationAt {
+                chainage_m: s.chainage_m,
+                xy: [s.x, s.y],
+                heading_rad: s.heading_rad,
+                hb: s.hb,
+                wl: s.wl,
+            };
+            stations.walk.stations[i] = self.station_section(&plan, &at, s.depth, terrain)?;
+        }
+        stations.source = StationSource::Computed {
+            reason: COMPUTED_FOR_PROFILE,
+        };
+        Ok(stations)
     }
 
     fn utm(&self) -> Result<Utm, DesignError> {

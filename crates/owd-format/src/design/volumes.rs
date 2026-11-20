@@ -458,6 +458,40 @@ impl Session {
         self.option_sections_weighted(plan, o, terrain, None)
     }
 
+    /// The section of one station of a walk, cut as [`Session::option_sections`] cuts it, from the
+    /// station's place, heading, half-width and water level: the terrain (with the bed model, when
+    /// the document has one) is read across this one section only. Given a station of the walk, it
+    /// is the walk's section there, bit for bit.
+    pub(super) fn station_section(
+        &self,
+        plan: &SectionPlan,
+        station: &owd_core::volumes::sections::StationAt,
+        depth: f64,
+        terrain: TerrainSampler,
+    ) -> Result<owd_core::volumes::sections::CrossSection, DesignError> {
+        let bedded;
+        let terrain: TerrainSampler = match &plan.bed {
+            Some((bed, level)) => {
+                bedded = super::bed::with_bed(bed, level, terrain);
+                &bedded
+            }
+            None => terrain,
+        };
+        owd_core::volumes::sections::section_at(
+            station,
+            terrain,
+            &plan.river,
+            depth,
+            &plan.model,
+            plan.typed.wet_slope,
+            plan.typed.maxw_m,
+            plan.typed.dx_m,
+            None,
+            None,
+        )
+        .map_err(DesignError::Input)
+    }
+
     /// [`Session::option_sections`] with the cut-rate multiplier at points (ticket 13), for the
     /// volumes stage's own walk.
     pub(super) fn option_sections_weighted(

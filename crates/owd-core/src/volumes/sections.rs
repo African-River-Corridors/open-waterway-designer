@@ -338,11 +338,17 @@ pub fn section_volumes_weighted(
         ));
     }
 
-    let offs = arange(-maxw_m, maxw_m + 0.1 * dx_m, dx_m);
-    // Every sample's wet test reads the one river: index it once (the same answers as `contains_xy`).
-    let inside = crate::geom::overlay::PolygonIndex::new(river_polygon);
-    let sidewhich: Vec<i8> = offs.iter().map(|&o| if o < 0.0 { -1 } else { 1 }).collect();
-    let m = offs.len();
+    let cut = SectionCut::new(
+        river_polygon,
+        depth,
+        &mdl,
+        wet_slope,
+        maxw_m,
+        dx_m,
+        daylight_run_m,
+        tag,
+    );
+    let m = cut.offs.len();
     let mut out = SectionVolumes {
         stations: Vec::new(),
         station_m,
@@ -354,12 +360,7 @@ pub fn section_volumes_weighted(
         let mut ax = Vec::with_capacity((b - a) * m);
         let mut ay = Vec::with_capacity((b - a) * m);
         for i in a..b {
-            let nx = -libm::sin(th[i]);
-            let ny = libm::cos(th[i]);
-            for &o in &offs {
-                ax.push(xy[i][0] + o * nx);
-                ay.push(xy[i][1] + o * ny);
-            }
+            cut.sample_points(xy[i], th[i], &mut ax, &mut ay);
         }
         let z_all = terrain(&ax, &ay);
         if z_all.len() != (b - a) * m {
@@ -385,85 +386,218 @@ pub fn section_volumes_weighted(
             None => None,
         };
         for (j, i) in (a..b).enumerate() {
-            let s = dsl[i];
-            let wl_i = wl.at(s);
-            let grade = wl_i - depth;
-            let z = &z_all[j * m..(j + 1) * m];
-            let w: Vec<bool> = (0..m)
-                .map(|k| inside.contains_xy([ax[j * m + k], ay[j * m + k]]))
-                .collect();
-            let zl: Vec<f64> = z
-                .iter()
-                .map(|&v| if v.is_finite() { v } else { f64::NAN })
-                .collect();
-            let wet: Vec<bool> = (0..m).map(|k| zl[k].is_finite() && w[k]).collect();
-            let areas = section_area_weighted(
-                &zl,
-                &offs,
-                &sidewhich,
-                hb_st[i],
-                grade,
-                wl_i,
-                depth,
-                &mdl,
-                &wet,
-                wet_slope,
-                dx_m,
-                daylight_run_m,
-                w_all.as_ref().map(|w| &w[j * m..(j + 1) * m]),
-            )?;
-            let (dr, ex, fh) = (areas.dredge, areas.excav, areas.max_face_h);
-            let bench = cut_model_a_bench_gate(
-                &offs,
-                &zl,
-                hb_st[i],
-                wl_i,
-                depth,
-                Some(&sidewhich),
-                wet_slope,
-            );
-            let face = cut_model_a_section_face(
-                &offs,
-                &zl,
-                hb_st[i],
-                grade,
-                wl_i,
-                depth,
-                wet_slope,
-                &mdl,
-                daylight_run_m,
-            );
-            // Water of this section: inside the river and within the channel under water.
-            let reach = hb_st[i] + wet_slope * depth;
-            let has_water = (0..m).any(|k| w[k] && offs[k].abs() <= reach);
-            out.stations.push(CrossSection {
-                chainage_m: s,
-                x: xy[i][0],
-                y: xy[i][1],
+            let station = StationAt {
+                chainage_m: dsl[i],
+                xy: xy[i],
                 heading_rad: th[i],
-                offsets: offs.clone(),
-                terrain: z.to_vec(),
-                wet: w,
                 hb: hb_st[i],
-                wl: wl_i,
-                grade,
-                depth,
-                model: mdl.clone(),
-                cutface: face.iter().map(|f| f.unwrap_or(f64::NAN)).collect(),
-                dredge_area_m2: dr,
-                excav_area_m2: ex,
-                max_face_h_m: fh,
-                bench_left: bench.minus,
-                bench_right: bench.plus,
-                tag: tag.map_or(String::new(), |t| t(s)),
-                has_water,
-                weighted_dredge_area_m2: areas.weighted_dredge,
-                weighted_excav_area_m2: areas.weighted_excav,
-            });
+                wl: wl.at(dsl[i]),
+            };
+            let span = j * m..(j + 1) * m;
+            out.stations.push(cut.section(
+                &station,
+                &ax[span.clone()],
+                &ay[span.clone()],
+                &z_all[span.clone()],
+                w_all.as_ref().map(|w| &w[span]),
+            )?);
         }
         a += chunk;
     }
     Ok(out)
+}
+
+/// Where one station of a walk stands and what its section is cut to: its chainage, its place,
+/// the line's heading there, the bottom half-width and the pool water level.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StationAt {
+    pub chainage_m: f64,
+    pub xy: Pt,
+    pub heading_rad: f64,
+    pub hb: f64,
+    pub wl: f64,
+}
+
+/// What every section of a walk shares: the offsets, the river, the depth and the cut model's
+/// settings. [`section_volumes_weighted`] and [`section_at`] both cut each section with
+/// [`SectionCut::section`], so one station's section is the walk's section there.
+struct SectionCut<'a> {
+    offs: Vec<f64>,
+    sidewhich: Vec<i8>,
+    /// Every sample's wet test reads the one river: indexed once (the same answers as
+    /// `contains_xy`).
+    inside: crate::geom::overlay::PolygonIndex,
+    depth: f64,
+    mdl: &'a str,
+    wet_slope: f64,
+    dx_m: f64,
+    daylight_run_m: Option<f64>,
+    tag: Option<&'a dyn Fn(f64) -> String>,
+}
+
+impl<'a> SectionCut<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        river_polygon: &[Polygon],
+        depth: f64,
+        mdl: &'a str,
+        wet_slope: f64,
+        maxw_m: f64,
+        dx_m: f64,
+        daylight_run_m: Option<f64>,
+        tag: Option<&'a dyn Fn(f64) -> String>,
+    ) -> Self {
+        let offs = arange(-maxw_m, maxw_m + 0.1 * dx_m, dx_m);
+        let sidewhich = offs.iter().map(|&o| if o < 0.0 { -1 } else { 1 }).collect();
+        SectionCut {
+            offs,
+            sidewhich,
+            inside: crate::geom::overlay::PolygonIndex::new(river_polygon),
+            depth,
+            mdl,
+            wet_slope,
+            dx_m,
+            daylight_run_m,
+            tag,
+        }
+    }
+
+    /// The sample points across the line at `xy`, heading `th`, appended to `ax` and `ay`.
+    fn sample_points(&self, xy: Pt, th: f64, ax: &mut Vec<f64>, ay: &mut Vec<f64>) {
+        let nx = -libm::sin(th);
+        let ny = libm::cos(th);
+        for &o in &self.offs {
+            ax.push(xy[0] + o * nx);
+            ay.push(xy[1] + o * ny);
+        }
+    }
+
+    /// The section of one station from its samples: the points `ax`, `ay`, the terrain `z` there
+    /// and, with a multiplier, its value `w` there.
+    fn section(
+        &self,
+        st: &StationAt,
+        ax: &[f64],
+        ay: &[f64],
+        z: &[f64],
+        weight: Option<&[f64]>,
+    ) -> Result<CrossSection, Refusal> {
+        let (offs, sidewhich, depth, wet_slope) =
+            (&self.offs, &self.sidewhich, self.depth, self.wet_slope);
+        let m = offs.len();
+        let (s, wl_i, hb) = (st.chainage_m, st.wl, st.hb);
+        let grade = wl_i - depth;
+        let w: Vec<bool> = (0..m)
+            .map(|k| self.inside.contains_xy([ax[k], ay[k]]))
+            .collect();
+        let zl: Vec<f64> = z
+            .iter()
+            .map(|&v| if v.is_finite() { v } else { f64::NAN })
+            .collect();
+        let wet: Vec<bool> = (0..m).map(|k| zl[k].is_finite() && w[k]).collect();
+        let areas = section_area_weighted(
+            &zl,
+            offs,
+            sidewhich,
+            hb,
+            grade,
+            wl_i,
+            depth,
+            self.mdl,
+            &wet,
+            wet_slope,
+            self.dx_m,
+            self.daylight_run_m,
+            weight,
+        )?;
+        let (dr, ex, fh) = (areas.dredge, areas.excav, areas.max_face_h);
+        let bench = cut_model_a_bench_gate(offs, &zl, hb, wl_i, depth, Some(sidewhich), wet_slope);
+        let face = cut_model_a_section_face(
+            offs,
+            &zl,
+            hb,
+            grade,
+            wl_i,
+            depth,
+            wet_slope,
+            self.mdl,
+            self.daylight_run_m,
+        );
+        // Water of this section: inside the river and within the channel under water.
+        let reach = hb + wet_slope * depth;
+        let has_water = (0..m).any(|k| w[k] && offs[k].abs() <= reach);
+        Ok(CrossSection {
+            chainage_m: s,
+            x: st.xy[0],
+            y: st.xy[1],
+            heading_rad: st.heading_rad,
+            offsets: offs.clone(),
+            terrain: z.to_vec(),
+            wet: w,
+            hb,
+            wl: wl_i,
+            grade,
+            depth,
+            model: self.mdl.to_string(),
+            cutface: face.iter().map(|f| f.unwrap_or(f64::NAN)).collect(),
+            dredge_area_m2: dr,
+            excav_area_m2: ex,
+            max_face_h_m: fh,
+            bench_left: bench.minus,
+            bench_right: bench.plus,
+            tag: self.tag.map_or(String::new(), |t| t(s)),
+            has_water,
+            weighted_dredge_area_m2: areas.weighted_dredge,
+            weighted_excav_area_m2: areas.weighted_excav,
+        })
+    }
+}
+
+/// The section of one station, cut as [`section_volumes_weighted`] cuts it: the terrain is read
+/// across this one section only (one call, one sample per offset), never along the line. Given a
+/// walk's station (its chainage, place, heading, half-width and level) and the walk's settings, it
+/// is that walk's section at the station, bit for bit (with no multiplier).
+#[allow(clippy::too_many_arguments)]
+pub fn section_at(
+    station: &StationAt,
+    terrain: TerrainSampler,
+    river_polygon: &[Polygon],
+    depth: f64,
+    model: &str,
+    wet_slope: f64,
+    maxw_m: f64,
+    dx_m: f64,
+    daylight_run_m: Option<f64>,
+    tag: Option<&dyn Fn(f64) -> String>,
+) -> Result<CrossSection, Refusal> {
+    let mdl = normalise_model(model);
+    if mdl != CUT_MODEL && mdl != CUT_MODEL_B {
+        return Err(format!(
+            "unknown cut model {}; use 'a' or 'b'",
+            repr_str(model)
+        ));
+    }
+    let cut = SectionCut::new(
+        river_polygon,
+        depth,
+        &mdl,
+        wet_slope,
+        maxw_m,
+        dx_m,
+        daylight_run_m,
+        tag,
+    );
+    let m = cut.offs.len();
+    let (mut ax, mut ay) = (Vec::with_capacity(m), Vec::with_capacity(m));
+    cut.sample_points(station.xy, station.heading_rad, &mut ax, &mut ay);
+    let z = terrain(&ax, &ay);
+    if z.len() != m {
+        return Err(format!(
+            "cannot reshape array of size {} into shape (1,{m})",
+            z.len()
+        ));
+    }
+    cut.section(station, &ax, &ay, &z, None)
 }
 
 /// Defaults of the Python keyword arguments, for callers that take them all.

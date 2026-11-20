@@ -9,7 +9,7 @@
 //! Label: property
 
 use owd_format::design::sections::{
-    StationSource, Stations, WALKED_FOR_PROFILE, WALKED_NO_STATIONS, WALKED_STATIONS_INCOMPLETE,
+    COMPUTED_FOR_PROFILE, StationSource, Stations, WALKED_NO_STATIONS, WALKED_STATIONS_INCOMPLETE,
 };
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{DesignError, Session, Stage};
@@ -116,7 +116,7 @@ fn every_sheet_drawn_from_the_stored_stations_is_the_sheet_drawn_from_the_walk()
         assert!(
             !s.warnings
                 .iter()
-                .any(|w| w == WALKED_NO_STATIONS || w == WALKED_FOR_PROFILE),
+                .any(|w| w == WALKED_NO_STATIONS || w == COMPUTED_FOR_PROFILE),
             "{}: {:?}",
             s.number,
             s.warnings
@@ -161,7 +161,7 @@ fn a_fresh_record_is_drawn_without_reading_the_terrain() {
 }
 
 #[test]
-fn a_sheet_at_another_section_spacing_walks_again_and_says_so() {
+fn a_sheet_at_another_section_spacing_cuts_its_sections_again_and_says_so() {
     let (old, dem) = example();
     let (new, _) = stored();
     let o = DrawOptions {
@@ -174,8 +174,12 @@ fn a_sheet_at_another_section_spacing_walks_again_and_says_so() {
     let before = all_sheets(&old, &dem, &o);
     let after = all_sheets(&new, &dem, &o);
     assert_same(&before, &after, "sections every 300 m");
-    assert!(warned(&after, SheetKind::CrossSections, WALKED_FOR_PROFILE));
-    assert!(warned(&after, SheetKind::Plan, WALKED_FOR_PROFILE));
+    assert!(warned(
+        &after,
+        SheetKind::CrossSections,
+        COMPUTED_FOR_PROFILE
+    ));
+    assert!(warned(&after, SheetKind::Plan, COMPUTED_FOR_PROFILE));
 }
 
 #[test]
@@ -206,8 +210,8 @@ fn a_station_with_no_stored_profile_is_refused_without_terrain_never_a_neighbour
         .unwrap();
     assert_eq!(
         walked.source,
-        StationSource::Walked {
-            reason: WALKED_FOR_PROFILE
+        StationSource::Computed {
+            reason: COMPUTED_FOR_PROFILE
         }
     );
     assert!(walked.has_profile(bare));
