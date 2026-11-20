@@ -71,6 +71,14 @@ fn round_the_hill(r_min: f64) -> (f64, f64, bool) {
     let line = r.line.as_ref().unwrap();
     let on_vertices = min_radius_of_line(&resample_line(line, 25.0).unwrap()).0;
     let on_chord = min_radius_on_chord(line, default_check_chord(r_min)).unwrap();
+    // The geometry itself, junctions included: every three consecutive vertices of the line lie
+    // on a circle no tighter than R_min (vertices sit on the arcs, so this is exact).
+    let (r3, at) = min_radius_of_line(line);
+    assert!(
+        r3 >= r_min * (1.0 - 1e-9),
+        "R_min {r_min}: the vertices about {:?} turn on {r3} m",
+        line[at]
+    );
     (on_vertices, on_chord, r.goal_closed)
 }
 
