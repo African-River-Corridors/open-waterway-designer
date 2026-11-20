@@ -73,6 +73,43 @@ fn ring_area(ring: &[[f64; 2]]) -> f64 {
 }
 
 impl RiverPolygon {
+    /// The polygon in a GeoJSON `Polygon` geometry: the first ring is the shell, the others are holes.
+    /// `None` for anything that is not a `Polygon`. A position that is not two numbers is skipped.
+    /// This is the one place the document's river polygon is read.
+    pub fn from_geometry(v: &serde_json::Value) -> Option<RiverPolygon> {
+        if v["type"] != "Polygon" {
+            return None;
+        }
+        let rings: Vec<Polyline> = v["coordinates"]
+            .as_array()?
+            .iter()
+            .map(|r| {
+                Polyline(
+                    r.as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        let (shell, holes) = rings.split_first()?;
+        Some(RiverPolygon {
+            shell: shell.clone(),
+            holes: holes.to_vec(),
+        })
+    }
+
+    /// The polygon as the core's `Polygon`, holes kept.
+    pub fn to_polygon(&self) -> owd_core::geom::Polygon {
+        owd_core::geom::Polygon {
+            exterior: self.shell.0.clone(),
+            holes: self.holes.iter().map(|h| h.0.clone()).collect(),
+        }
+    }
+
     /// The water area in square metres: the shell less its holes.
     pub fn area_m2(&self) -> f64 {
         ring_area(&self.shell.0) - self.holes.iter().map(|h| ring_area(&h.0)).sum::<f64>()

@@ -10,7 +10,7 @@ use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::types::TerrainSampler;
 use owd_core::alignment::radius_check::{default_check_chord, min_radius_on_chord, radius_ok};
 use owd_core::cut_model::CUT_MODEL;
-use owd_core::geom::{Polygon, Pt, linear};
+use owd_core::geom::{Pt, linear};
 use owd_core::optimise::cascade::{
     CascadeConfig, SectionOptions, build_level_table, cascade_levels, earthworks_reach_cost,
     search_cascade,
@@ -297,24 +297,9 @@ impl Session {
             }
         };
 
-        let polygon = &self.doc["inputs"]["river_polygon"];
-        if polygon.is_null() {
-            return Err(DesignError::Input(
-                "the optimise stage needs the river polygon: import it first".into(),
-            ));
-        }
-        let ring: Vec<Pt> = polygon["coordinates"][0]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let river = [Polygon {
-            exterior: ring,
-            holes: vec![],
-        }];
+        let river = self.river_polygons().ok_or_else(|| {
+            DesignError::Input("the optimise stage needs the river polygon: import it first".into())
+        })?;
 
         // The cascade search.
         let sites: Vec<f64> = match &settings["candidate_sites_m"] {

@@ -355,23 +355,11 @@ impl Session {
         let shape = self.sized_shape()?;
         let depth = shape.design_depth_m;
 
-        let polygon = &self.doc["inputs"]["river_polygon"];
-        let ring: Vec<Pt> = polygon["coordinates"][0]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                    .collect()
-            })
+        // A polygon with no outer ring is no river: there is no water to split the cut by.
+        let river: Vec<Polygon> = self
+            .river_polygons()
+            .map(|ps| ps.into_iter().filter(|p| !p.exterior.is_empty()).collect())
             .unwrap_or_default();
-        let river: Vec<Polygon> = if ring.is_empty() {
-            Vec::new()
-        } else {
-            vec![Polygon {
-                exterior: ring,
-                holes: vec![],
-            }]
-        };
 
         // The bottom half-width: widened in bends from the sizing, unless the settings fix one.
         let fixed_hb = typed.half_width_m;

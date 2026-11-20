@@ -7,9 +7,10 @@
 use super::crs::{Crs, Utm};
 use super::geojson::{self, Role};
 use super::hash::{hash_value, sha256_hex};
+use super::river::{RiverGeometry, RiverIn, river};
 use super::rule_sets::default_settings;
 use super::schema;
-use crate::types::TerrainSampler;
+use crate::types::{Polyline, RiverPolygon, StageError, TerrainSampler};
 use arc_rules::load::Library;
 use owd_core::rules::engine;
 use owd_core::rules::rulesets::ChannelShape;
@@ -823,84 +824,38 @@ impl Session {
     }
 
     /// The bank checks on the document's two banks, as one line per failed check (none when the
-    /// document lacks a bank). The seed is the centreline, or the mid-line of the banks, at the
-    /// station step of `owd check-banks`. With `report_crossing`, banks that cross (the unchecked
-    /// import keeps them) are reported too, with the first crossing point.
+    /// document lacks a bank). They are the river stage's checks ([`super::river::river`]): the
+    /// import keeps no copy. With `report_crossing`, banks that cross (the unchecked import keeps
+    /// them) are reported too, with the first crossing point.
     fn bank_check_warnings(&self, report_crossing: bool) -> Vec<String> {
-        use owd_core::banks::check::{CheckParams, assess, lines_cross};
-        use owd_core::banks::stations::arc;
-        const STATION_M: f64 = 20.0;
-        let inputs = &self.doc["inputs"];
-        let (Some(left), Some(right)) = (
-            line_points(&inputs[Role::LeftBank.name()]),
-            line_points(&inputs[Role::RightBank.name()]),
-        ) else {
-            return Vec::new();
+        // The polygon is not under test here, and a bad one must not hide a bank warning.
+        let input = RiverIn {
+            river_polygon: None,
+            ..self.river_input()
         };
-        if left.len() < 2 || right.len() < 2 {
-            return Vec::new();
+        river(&input)
+            .map(|g| g.warnings(report_crossing))
+            .unwrap_or_default()
+    }
+
+    /// What the river stage reads, taken from the document.
+    pub fn river_input(&self) -> RiverIn {
+        let inputs = &self.doc["inputs"];
+        let line = |role: Role| line_points(&inputs[role.name()]).map(Polyline);
+        RiverIn {
+            left_bank: line(Role::LeftBank),
+            right_bank: line(Role::RightBank),
+            centreline: line(Role::Centreline),
+            river_polygon: RiverPolygon::from_geometry(&inputs[Role::RiverPolygon.name()]),
+            crs_epsg: self.doc["project"]["crs"]["epsg"]
+                .as_u64()
+                .map(|c| c as u32),
         }
-        let centre = line_points(&inputs[Role::Centreline.name()])
-            .filter(|c| c.len() >= 2)
-            .unwrap_or_else(|| super::bank_edit::centreline(&left, &right, STATION_M));
-        // The checks at every station (as `check_banks` gives the failing ones), so the share of
-        // stations that fail the side check is known.
-        let (reference, _, checks, _, _) = assess(
-            &left,
-            &right,
-            &centre,
-            &CheckParams::at_step(STATION_M),
-            &[],
-        );
-        let s = arc(&reference);
-        let failed: Vec<(f64, owd_core::banks::check::Checks)> = checks
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.any())
-            .map(|(i, c)| (s[i], *c))
-            .collect();
-        let side_fails = failed.iter().filter(|(_, c)| c.side).count();
-        let mut out = Vec::new();
-        // One fact wrong (the direction or the names), not hundreds: one plain message first.
-        let wholesale = side_wholesale_message(side_fails, checks.len());
-        out.extend(wholesale.clone());
-        for name in [
-            "side",
-            "missing",
-            "jump",
-            "width-wide",
-            "width-narrow",
-            "excursion",
-            "crossing",
-        ] {
-            if name == "side" && wholesale.is_some() {
-                continue;
-            }
-            let at: Vec<f64> = failed
-                .iter()
-                .filter(|(_, c)| c.names().contains(&name))
-                .map(|(s, _)| *s)
-                .collect();
-            if let (Some(first), Some(last)) = (
-                at.iter().copied().reduce(f64::min),
-                at.iter().copied().reduce(f64::max),
-            ) {
-                let n = at.len();
-                out.push(format!(
-                    "the banks fail the `{name}` check at {n} station{} of {STATION_M} m, between \
-                     {first:.0} m and {last:.0} m: run `owd check-banks` for the list",
-                    if n == 1 { "" } else { "s" }
-                ));
-            }
-        }
-        if report_crossing && let Some(x) = lines_cross(&left, &right) {
-            out.push(format!(
-                "the left bank and the right bank cross at ({:.1}, {:.1}): run `owd check-banks` \
-                 for the list",
-                x[0], x[1]
-            ));
-        }
-        out
+    }
+
+    /// The river stage on the document's inputs: the geometry, with the bank checks.
+    pub fn river_geometry(&self) -> Result<RiverGeometry, StageError> {
+        river(&self.river_input())
     }
 
     /// The banks after an import of `converted` (in the project CRS), as a sound pair; `None` when

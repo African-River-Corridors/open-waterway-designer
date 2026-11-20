@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/RiverIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RiverGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "RiverIn": {
+      "description": "What the river stage reads: the river inputs and the CRS they are in.",
+      "type": "object",
+      "properties": {
+        "left_bank": {
+          "description": "The left bank, looking downstream.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "right_bank": {
+          "description": "The right bank, looking downstream.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "centreline": {
+          "description": "The river centreline.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "river_polygon": {
+          "description": "The river as water, with its islands.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiverPolygon"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "crs_epsg": {
+          "description": "The EPSG code of the coordinates. A geographic CRS (4326) is checked in the UTM zone of the\nmiddle of the left bank.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0,
+          "default": null
+        }
+      }
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "RiverPolygon": {
+      "description": "The river as water: an outer ring and the islands cut out of it. A ring is a [`Polyline`] that is\nclosed by implication (the last point joins the first).",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Islands: each is dry land inside the shell.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "required": [
+        "shell"
+      ]
+    },
+    "RiverGeometry": {
+      "description": "What the river stage returns.",
+      "type": "object",
+      "properties": {
+        "centreline": {
+          "description": "The centreline: the one given, or the smoothed line midway between the banks.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "banks": {
+          "description": "The banks, each turned to run the way the centreline runs; `None` unless both are given.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Banks"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "polygon": {
+          "description": "The river polygon, islands kept.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiverPolygon"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "length_m": {
+          "description": "The length of the centreline in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "stations_checked": {
+          "description": "How many stations the bank checks looked at (zero without two banks).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "side_fail_stations": {
+          "description": "How many of them failed the side check.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bank_checks": {
+          "description": "The stations that failed a check, in chainage order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BankCheck"
+          }
+        },
+        "banks_cross": {
+          "description": "Where the two banks cross, if they do (the checks report it, they never repair it).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "centreline",
+        "length_m",
+        "stations_checked",
+        "side_fail_stations",
+        "bank_checks"
+      ]
+    },
+    "Banks": {
+      "description": "The two banks, both running the way the centreline runs.",
+      "type": "object",
+      "properties": {
+        "left": {
+          "description": "The left bank.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "right": {
+          "description": "The right bank.",
+          "$ref": "#/$defs/Polyline"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ]
+    },
+    "BankCheck": {
+      "description": "One station that failed a bank check.",
+      "type": "object",
+      "properties": {
+        "chainage_m": {
+          "description": "Chainage of the station along the banks' reference line, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "checks": {
+          "description": "The names of the checks it failed: `side`, `missing`, `jump`, `width-wide`, `width-narrow`,\n`excursion`, `crossing`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "chainage_m",
+        "checks"
+      ]
+    }
+  }
+}

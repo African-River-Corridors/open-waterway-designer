@@ -1,0 +1,64 @@
+{
+  "label": "Label: property",
+  "why": "A river polygon with an island keeps the island. Shell 1000 x 100 m is 100 000 m2; the island 200 x 20 m is 4 000 m2; the water is 96 000 m2.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "river_polygon": {
+      "shell": [
+        [
+          0.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          50.0
+        ],
+        [
+          0.0,
+          50.0
+        ]
+      ],
+      "holes": [
+        [
+          [
+            400.0,
+            -10.0
+          ],
+          [
+            600.0,
+            -10.0
+          ],
+          [
+            600.0,
+            10.0
+          ],
+          [
+            400.0,
+            10.0
+          ]
+        ]
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "length_m": 1000.0
+    },
+    "holes": 1,
+    "polygon_area_m2": 96000.0
+  }
+}
