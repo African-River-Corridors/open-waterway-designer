@@ -1,0 +1,39 @@
+{
+  "label": "Label: property",
+  "why": "The volumes stage has stored no volumes by reach: run it first.",
+  "input": {
+    "by_reach": [],
+    "volumes_fresh": true,
+    "rates": {
+      "dredge_per_m3": {
+        "amount": 10.0,
+        "currency": "USD"
+      },
+      "dry_cut_per_m3": {
+        "amount": 5.0,
+        "currency": "USD"
+      },
+      "disposal_per_m3": {
+        "amount": 2.0,
+        "currency": "USD"
+      },
+      "haul_per_m3_km": {
+        "amount": 1.0,
+        "currency": "USD"
+      },
+      "haul_km": 3.0,
+      "haul_by_reach": [
+        {
+          "reach": {
+            "from": 1000.0,
+            "to": 2000.0
+          },
+          "km": 5.0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "code": "COST_NO_VOLUMES"
+  }
+}

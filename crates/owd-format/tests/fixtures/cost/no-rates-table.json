@@ -1,0 +1,32 @@
+{
+  "label": "Label: property",
+  "why": "With no rates table there is no cost (the run continues without it; level capped at concept, ticket 17).",
+  "input": {
+    "by_reach": [
+      {
+        "from": 0.0,
+        "to": 1000.0,
+        "source": "given",
+        "stations": 41,
+        "dredge_m3": 1000.0,
+        "excav_m3": 200.0,
+        "total_m3": 1200.0
+      },
+      {
+        "from": 1000.0,
+        "to": 2000.0,
+        "source": "pool",
+        "pool": 0,
+        "stations": 40,
+        "dredge_m3": 0.0,
+        "excav_m3": 500.0,
+        "total_m3": 500.0
+      }
+    ],
+    "volumes_fresh": true,
+    "rates": null
+  },
+  "expect": {
+    "code": "COST_NO_RATES"
+  }
+}
