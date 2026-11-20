@@ -40,6 +40,23 @@ pub const WALKED_NO_STATIONS: &str = "the volumes stage's record holds no statio
     before OWD stored them): this is drawn from the line walked again on the DEM; run the volumes \
     stage again to store them";
 
+/// Why a sheet was drawn from a new walk: the record's stations were saved without the top of cut
+/// (by PR 564's format, before each station kept it). Read as they are, the plan would draw no
+/// top-of-cut lines.
+pub const WALKED_STATIONS_INCOMPLETE: &str = "the volumes stage's stored stations have no top of \
+    cut (they were saved before OWD stored it): this is drawn from the line walked again on the \
+    DEM; run the volumes stage again to store it";
+
+/// True when every stored station holds both top-of-cut keys. A key that is present but `null` is a
+/// station with no top of cut on that side; a key that is missing is a record saved before OWD kept
+/// it.
+fn stations_complete(sections: &Value) -> bool {
+    sections["stations"].as_array().is_some_and(|a| {
+        a.iter()
+            .all(|s| s.get("top_of_cut_left_m").is_some() && s.get("top_of_cut_right_m").is_some())
+    })
+}
+
 /// The stations of the design line, as the drawings and the report read them.
 ///
 /// `walk` holds every station. Where the source is [`StationSource::Stored`], a station whose profile
@@ -189,7 +206,8 @@ impl Session {
     }
 
     /// The volumes stage's stored stations for `option_id`, read as they are, or `None` when the
-    /// fresh record holds none (it was saved before OWD stored them). Refuses when the volumes
+    /// fresh record holds none (it was saved before OWD stored them) or holds stations with no top
+    /// of cut (saved before OWD stored that). Refuses when the volumes
     /// stage is stale or has not run, or ran on another line.
     pub fn stored_stations(&self, option_id: &str) -> Result<Option<Stations>, DesignError> {
         self.volumes_fresh()?;
@@ -200,7 +218,7 @@ impl Session {
                 res["id"].as_str().unwrap_or("?")
             )));
         }
-        if res["sections"].is_null() {
+        if res["sections"].is_null() || !stations_complete(&res["sections"]) {
             return Ok(None);
         }
         let v: Volumes = serde_json::from_value(res["sections"].clone()).map_err(|e| {
@@ -226,8 +244,14 @@ impl Session {
             Some(st) if st.profiles_at(profiles_at) => return Ok(st),
             stored => stored,
         };
+        let incomplete =
+            stored.is_none() && !self.doc["stages"]["volumes"]["results"]["sections"].is_null();
         let Some(terrain) = terrain else {
             return Err(DesignError::Input(match stored {
+                None if incomplete => "the volumes stage's stored stations have no top of cut \
+                                       (they were saved before OWD stored it): run the volumes \
+                                       stage again, or give the DEM to walk the line"
+                    .into(),
                 None => "the volumes stage's record holds no stations (it was saved before OWD \
                          stored them): run the volumes stage again, or give the DEM to walk the line"
                     .into(),
@@ -241,6 +265,8 @@ impl Session {
         walked.source = StationSource::Walked {
             reason: if stored.is_some() {
                 WALKED_FOR_PROFILE
+            } else if incomplete {
+                WALKED_STATIONS_INCOMPLETE
             } else {
                 WALKED_NO_STATIONS
             },
