@@ -78,11 +78,10 @@ async function pick(b, open, file) {
 }
 const openButton = (b) => b.$("button=Open");
 const sameAsNative = (page, native, what) => {
-  for (const key of ["stages", "options"]) {
-    const r = compare(native[key], page[key]);
-    assert.deepEqual(r.problems.slice(0, 5), [], `${what}: ${key} equal to native (ADR 0005 tolerance)`);
-    assert.ok(r.numbers > 0 || key === "options", `${what}: ${key} had numbers to compare`);
-  }
+  // One design line per run (spec 0017): it is in the stages, so the stages are the whole answer.
+  const r = compare(native.stages, page.stages);
+  assert.deepEqual(r.problems.slice(0, 5), [], `${what}: stages equal to native (ADR 0005 tolerance)`);
+  assert.ok(r.numbers > 0, `${what}: stages had numbers to compare`);
 };
 
 let reach;
@@ -267,7 +266,7 @@ describe("OWD web smoke tests", () => {
     sameAsNative(await pageDoc(b), nativeDoc("river-example.owd", ["--set-input", "se_quality=A"]), "example at quality A");
     // The verdict, in words, and the stretches of the option, as the document holds them.
     const doc = await pageDoc(b);
-    const sc = doc.stages.volumes.results.options[0].screening;
+    const sc = doc.stages.volumes.results.screening;
     await until(b, "the verdict", async () => (await b.$$("[data-testid=verdict]")).length === 1);
     assert.equal(await (await tid(b, "verdict")).getAttribute("data-verdict"), sc.verdict);
     assert.match(await text(b, "verdict"), new RegExp(sc.verdict.replace(/-/g, " ")));
@@ -282,7 +281,7 @@ describe("OWD web smoke tests", () => {
     assert.match(await text(b, "screening-notice"), /Screening/);
     const last = sc.constraint_stretches.length - 1;
     await b.execute((i) => document.querySelector(`[data-testid=stretch-row][data-index="${i}"]`).click(), last);
-    const option = doc.stages.volumes.results.options[0].id;
+    const option = doc.stages.volumes.results.id;
     await until(b, "the map to show the picked stretch", async () => (await (await tid(b, "plan-map")).getAttribute("data-stretch")) === `${option}:${last}`);
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
@@ -644,9 +643,50 @@ describe("OWD web smoke tests", () => {
     // `owd align` with no flag stores the setting unset (null), as Default does.
     assert.equal(page.stages.alignment.settings.rolling_circle.use_water, null);
     sameAsNative(page, aligned([]), "Default");
-    // The option records the value the run used: the example has a river polygon, so on.
-    assert.equal(page.options.find((o) => o.method === "rolling_circle").settings.use_water, true);
+    // The design line records the value the run used: the example has a river polygon, so on.
+    assert.equal(page.stages.alignment.results.settings.use_water, true);
     assert.match(await text(b, "use-water-last"), /Keep to the water/);
+  });
+
+  it("states the river mouth: downstream with nothing to tell the ends apart is refused, and a point gives the document owd import --mouth gives (spec 0017)", async () => {
+    const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-mouth-"));
+    const doc = path.join(dir, "synthetic-river.owd");
+    fs.copyFileSync(EXAMPLE, doc);
+    // The far end of the left bank, in longitude and latitude, from the command line's own export.
+    const banks = path.join(dir, "banks.geojson");
+    execFileSync(CLI, ["export", doc, "--banks", banks, "--wgs84"], { encoding: "utf8" });
+    const left = JSON.parse(fs.readFileSync(banks, "utf8")).features.find((f) => f.properties.role === "left_bank");
+    const far = left.geometry.coordinates[left.geometry.coordinates.length - 1];
+    const mouth = `${far[0]},${far[1]}`;
+    let refused = "";
+    try {
+      execFileSync(CLI, ["import", doc, "--mouth", "downstream"], { encoding: "utf8", stdio: "pipe" });
+    } catch (e) {
+      refused = String(e.stderr);
+    }
+    assert.match(refused, /RIVER_MOUTH_UNKNOWN/);
+    execFileSync(CLI, ["import", doc, "--mouth", mouth], { encoding: "utf8" });
+    const native = JSON.parse(fs.readFileSync(doc, "utf8"));
+    assert.equal(native.inputs.mouth.stated_as, "point");
+
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), EXAMPLE);
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("synthetic-river.owd"));
+    const set = async (value) => {
+      const field = await tid(b, "river-mouth");
+      await field.setValue(value);
+      await (await tid(b, "set-river-mouth")).click();
+    };
+    await set("downstream");
+    await until(b, "the refusal", async () => (await exists(b, "error")) && /RIVER_MOUTH_UNKNOWN/.test(await text(b, "error")));
+    await set(mouth);
+    await until(b, "the mouth stored", async () => (await pageDoc(b)).inputs.mouth?.stated_as === "point");
+    const page = await pageDoc(b);
+    assert.deepEqual(page.inputs, native.inputs, "the same inputs, turned to run from the mouth");
+    sameAsNative(page, native, "the mouth");
   });
 
   it("Cancel leaves the design exactly as it was", async () => {

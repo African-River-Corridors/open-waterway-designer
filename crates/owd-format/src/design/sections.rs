@@ -33,10 +33,11 @@ impl Session {
                 ));
             }
         }
-        let option = self.doc["options"]
-            .as_array()
-            .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-            .ok_or_else(|| DesignError::Input(format!("there is no option `{option_id}`")))?;
+        let lines = crate::design::design_lines_of(&self.doc);
+        let option = lines
+            .iter()
+            .find(|o| o["id"] == option_id)
+            .ok_or_else(|| DesignError::Input(format!("there is no design line `{option_id}`")))?;
         let plan = self.section_plan(&Value::Null)?;
         self.option_sections(&plan, option, terrain)
     }

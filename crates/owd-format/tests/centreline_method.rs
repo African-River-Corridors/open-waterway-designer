@@ -51,12 +51,15 @@ fn points(line: &Value) -> Vec<Pt> {
 }
 
 fn option<'a>(s: &'a Session, method: &str) -> &'a Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|o| o["method"] == method)
-        .unwrap_or_else(|| panic!("no option of the method `{method}`"))
+    // The one design line (spec 0017), or the pool lattice's refined line.
+    let d = s.document();
+    [
+        &d["stages"]["alignment"]["results"],
+        &d["stages"]["optimise"]["results"]["design_line"],
+    ]
+    .into_iter()
+    .find(|o| o["method"] == method)
+    .unwrap_or_else(|| panic!("no design line of the method `{method}`"))
 }
 
 /// 600 m straight, a quarter circle of radius `r` to the left, 600 m straight; a point about
@@ -104,8 +107,8 @@ fn the_line_is_the_centreline_and_a_tight_bend_is_reported_not_repaired() {
 
     assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Fresh);
     assert_eq!(
-        s.document()["stages"]["alignment"]["results"]["methods"],
-        json!(["centreline"])
+        s.document()["stages"]["alignment"]["results"]["method"],
+        json!("centreline")
     );
 }
 
@@ -141,22 +144,26 @@ fn with_two_banks_and_no_centreline_the_line_is_the_one_the_stage_builds() {
 }
 
 #[test]
-fn the_centreline_option_sits_beside_the_rolling_circle_option() {
+fn the_centreline_replaces_the_rolling_circle_line_and_a_stage_run_keeps_the_method() {
     let r_min = r_min(&design(&[[500_000.0, 600_000.0], [501_500.0, 600_000.0]]));
     let mut s = design(&line_with_bend(r_min / 2.0));
     s.align(AlignMethod::RollingCircle, &Value::Null, None)
         .unwrap();
-    let rolled = option(&s, "rolling_circle").clone();
     s.align(method(), &Value::Null, None).unwrap();
-    s.align(method(), &Value::Null, None).unwrap();
-    assert_eq!(s.document()["options"].as_array().unwrap().len(), 2);
-    assert_eq!(option(&s, "rolling_circle"), &rolled);
-    assert_eq!(
-        s.document()["stages"]["alignment"]["results"]["methods"],
-        json!(["rolling_circle", "centreline"])
+    let line = option(&s, "centreline").clone();
+    // One design line per run (spec 0017): the centreline is it, and it records its tight bend.
+    assert!(s.document().get("options").is_none());
+    assert!(
+        line["bends"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|b| b["pass"] == false),
+        "{}",
+        line["bends"]
     );
-    // A rerun of the stage runs both again and keeps both.
+    // A rerun of the stage runs the stored method again and gives the same line.
     s.run_stage(Stage::Alignment).unwrap();
-    assert_eq!(s.document()["options"].as_array().unwrap().len(), 2);
+    assert_eq!(option(&s, "centreline"), &line);
     assert_eq!(method().name(), "centreline");
 }

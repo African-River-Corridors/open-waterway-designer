@@ -274,9 +274,9 @@ pub fn sheets_with(
 /// The constraint stretches of an option (spec 0007), as the volumes stage stored them in its
 /// screening. Empty when there are none.
 pub(super) fn stretches(session: &Session, option_id: &str) -> Vec<Value> {
-    session.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|r| r["id"] == option_id))
+    crate::design::volume_rows_of(session.document())
+        .iter()
+        .find(|r| r["id"] == option_id)
         .and_then(|r| r["screening"]["constraint_stretches"].as_array())
         .cloned()
         .unwrap_or_default()
@@ -292,21 +292,16 @@ pub(super) fn worst_chainages(session: &Session, option_id: &str) -> Vec<f64> {
 
 /// The id of the option asked for: by id or by name, or the first option.
 fn resolve_option(session: &Session, asked: Option<&str>) -> Result<String, DrawError> {
-    let list = session.document()["options"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let list = crate::design::design_lines_of(session.document());
     let found = match asked {
         None => list.first(),
         Some(a) => list.iter().find(|o| o["id"] == a || o["name"] == a),
     };
     match (found, asked) {
         (Some(o), _) => Ok(o["id"].as_str().unwrap_or_default().to_string()),
-        (None, Some(a)) => Err(DrawError::Input(format!(
-            "there is no design line option `{a}`"
-        ))),
+        (None, Some(a)) => Err(DrawError::Input(format!("there is no design line `{a}`"))),
         (None, None) => Err(DrawError::Input(
-            "the design has no design line option to draw: run `owd align` first".into(),
+            "the design has no design line to draw: run `owd align` first".into(),
         )),
     }
 }

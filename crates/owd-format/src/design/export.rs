@@ -83,10 +83,8 @@ impl Session {
     }
 
     pub(super) fn volumes_row(&self, id: &str) -> Option<&Value> {
-        self.doc["stages"]["volumes"]["results"]["options"]
-            .as_array()?
-            .iter()
-            .find(|r| r["id"] == id)
+        let r = &self.doc["stages"]["volumes"]["results"];
+        (r.is_object() && r["id"] == id).then_some(r)
     }
 
     pub(super) fn volumes_status_name(&self, dem: Option<&[u8]>) -> &'static str {
@@ -98,7 +96,7 @@ impl Session {
     }
 
     pub(super) fn options_list(&self) -> Vec<Value> {
-        self.doc["options"].as_array().cloned().unwrap_or_default()
+        super::design_line::design_lines_of(&self.doc)
     }
 
     /// The quantity table: one comment line with the screening label, a header, then one row per
@@ -159,7 +157,7 @@ impl Session {
             });
         if self.options_list().is_empty() {
             return Err(DesignError::Input(
-                "there are no design line options to export: run the alignment stage first".into(),
+                "there is no design line to export: run the alignment stage first".into(),
             ));
         }
         let status = self.volumes_status_name(dem);
@@ -244,7 +242,7 @@ impl Session {
             });
         if self.options_list().is_empty() {
             return Err(DesignError::Input(
-                "there are no design line options to export: run the alignment stage first".into(),
+                "there is no design line to export: run the alignment stage first".into(),
             ));
         }
         let size = self.channel_size()?;

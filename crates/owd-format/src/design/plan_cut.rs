@@ -117,12 +117,8 @@ impl Session {
     /// id and line of every option, and the settings.
     fn plan_cut_dependency_hash(&self) -> String {
         let inp = &self.doc["inputs"];
-        let options: Vec<Value> = self
-            .doc
-            .get("options")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
+        let options: Vec<Value> = super::design_line::design_lines_of(&self.doc)
+            .iter()
             .map(|o| json!({"id": o["id"], "line": o["line"]}))
             .collect();
         hash_value(&json!({
@@ -192,15 +188,10 @@ impl Session {
                 )));
             }
         }
-        let options: Vec<Value> = self
-            .doc
-            .get("options")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
+        let options: Vec<Value> = super::design_line::design_lines_of(&self.doc);
         if options.is_empty() {
             return Err(DesignError::Input(
-                "there are no design line options: run the alignment stage first".into(),
+                "there is no design line: run the alignment stage first".into(),
             ));
         }
         let size = self.channel_size()?;

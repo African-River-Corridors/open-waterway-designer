@@ -77,11 +77,11 @@ pub fn schedule(ctx: &Context) -> (Vec<Value>, Vec<Value>) {
 }
 
 fn options(ctx: &Context) -> Vec<Value> {
-    let options = ctx.doc["options"].as_array().cloned().unwrap_or_default();
+    let options = owd_format::design::design_lines_of(ctx.doc);
     if options.is_empty() {
         return vec![
             json!({"type": "section", "id": "no-options", "title": "Quantities", "body": [
-                prose("The design has no design line option, so it has no quantities.".into()),
+                prose("The design has no design line, so it has no quantities.".into()),
             ]}),
         ];
     }
@@ -102,10 +102,9 @@ fn options(ctx: &Context) -> Vec<Value> {
 fn option_section(ctx: &Context, i: usize, o: &Value, status: &str) -> Value {
     let id = text(&o["id"], "");
     let name = text(&o["name"], id);
-    let v = ctx.doc["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|r| r["id"] == o["id"]))
-        .cloned()
+    let v = owd_format::design::volume_rows_of(ctx.doc)
+        .into_iter()
+        .find(|r| r["id"] == o["id"])
         .unwrap_or(Value::Null);
     let walk = walk(ctx, id);
     let mut body = vec![prose(format!(

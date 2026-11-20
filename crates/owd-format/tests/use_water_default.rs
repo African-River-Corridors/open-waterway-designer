@@ -90,10 +90,8 @@ fn rolled(case: Case, overrides: Value) -> (Value, Session) {
     let mut s = sized(case);
     s.align(AlignMethod::RollingCircle, &overrides, None)
         .unwrap();
-    let option = s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    let option = owd_format::design::design_lines_of(s.document())
+        .into_iter()
         .find(|o| o["method"] == "rolling_circle")
         .expect("a rolling-circle option")
         .clone();
@@ -163,7 +161,7 @@ fn a_stored_setting_is_kept_and_honoured_by_a_rerun() {
     );
     s.run_stale_with(None).unwrap();
     let (off, _) = rolled(Case::TwoBanks, json!({"use_water": false}));
-    let option = &s.document()["options"][0];
+    let option = &s.document()["stages"]["alignment"]["results"];
     assert_eq!(option["line"], off["line"]);
     assert_eq!(option["settings"]["use_water"], json!(false));
 }

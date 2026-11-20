@@ -284,9 +284,10 @@ pub(super) fn build(
     .filter(|l| super::gallery::layer_on(&layers, l))
     .collect();
     let title = doc["project"]["title"].as_str().unwrap_or("DESIGN");
-    let option_name = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
+    let lines = crate::design::design_lines_of(doc);
+    let option_name = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
         .and_then(|o| o["name"].as_str())
         .unwrap_or(option_id)
         .to_string();

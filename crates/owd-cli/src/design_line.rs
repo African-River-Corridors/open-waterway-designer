@@ -1,5 +1,5 @@
-//! `owd design-line`: add a design line the user already has as an option (ticket C21). It gets the
-//! radius check the other options get; a line under the minimum radius is reported, not refused.
+//! `owd design-line`: make a line the user already has the design line (ticket C21). It gets the
+//! radius check every design line gets; a line under the minimum radius is reported, not refused.
 
 use crate::commands::{Result, destination, from_design, open, read_vector, say, write};
 
@@ -17,9 +17,10 @@ pub fn design_line(
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
-    let option = session.document()["options"]
-        .as_array()
-        .and_then(|o| o.iter().find(|o| o["id"] == id.as_str()))
+    let lines = owd_format::design::design_lines_of(session.document());
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == id.as_str())
         .cloned()
         .unwrap_or(serde_json::Value::Null);
     let c = &option["checks"];
@@ -33,7 +34,7 @@ pub fn design_line(
         if c["radius_ok"] == true {
             "ok"
         } else {
-            "FAILS R_min (kept, and reported with the option)"
+            "FAILS R_min (kept, and reported with the design line)"
         }
     );
     say(dest == "-", json_mode, &human, option);

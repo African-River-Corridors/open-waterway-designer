@@ -176,11 +176,7 @@ fn stage_limits(ctx: &Context) -> String {
     if let Some(n) = ctx.session.depth_note() {
         items.push(format!("The depth is {}.", md(n)));
     }
-    for o in d["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
+    for o in owd_format::design::volume_rows_of(d).iter() {
         let singles = o["screening"]["constraint_stretches"]
             .as_array()
             .into_iter()
@@ -370,10 +366,8 @@ fn what_fits(ctx: &Context) -> Value {
         }
         None => body.push(prose("The design has no fits answer (`owd fits`).")),
     }
-    let rows: Vec<Vec<String>> = d["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let rows: Vec<Vec<String>> = owd_format::design::volume_rows_of(d)
+        .iter()
         .filter(|o| o["screening"].is_object())
         .map(|o| {
             let s = &o["screening"];
@@ -621,15 +615,12 @@ fn design_basis(ctx: &Context) -> Value {
 
 fn quantities(ctx: &Context) -> Value {
     let d = ctx.doc;
-    let rows: Vec<Vec<String>> = d["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let rows: Vec<Vec<String>> = owd_format::design::design_lines_of(d)
+        .iter()
         .map(|o| {
-            let v = d["stages"]["volumes"]["results"]["options"]
-                .as_array()
-                .and_then(|a| a.iter().find(|r| r["id"] == o["id"]))
-                .cloned()
+            let v = owd_format::design::volume_rows_of(d)
+                .into_iter()
+                .find(|r| r["id"] == o["id"])
                 .unwrap_or(Value::Null);
             let failed = failed_checks(o);
             // Issue #366: an option with no feasible line is not a design and has no quantities.
@@ -659,9 +650,7 @@ fn quantities(ctx: &Context) -> Value {
         })
         .collect();
     let body = if rows.is_empty() {
-        vec![prose(
-            "The design has no design line option, so it has no works.",
-        )]
+        vec![prose("The design has no design line, so it has no works.")]
     } else {
         let mut t = table(
             "quantities-table",

@@ -16,8 +16,8 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 | Test (binary: name) | Debug time | Why it moved |
 |---|---|---|
 | owd-cli::volumes: `the_chain_gives_the_same_document_as_run_on_the_same_inputs_and_settings` | 101 s | Runs the whole chain twice through the CLI on the full river and DEM. |
-| owd-format::optimise: `volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels` | 63 s | Optimises a lattice option, then measures volumes at every pool level. |
-| owd-cli::volumes: `export_writes_the_quantity_table_and_the_options_with_the_screening_label` | 54 s | Full alignment, optimise and volumes run before the export. |
+| owd-format::optimise: `volumes_measure_the_lattice_line_under_the_pool_levels` | 63 s | Optimises a lattice option, then measures volumes at every pool level. |
+| owd-cli::volumes: `export_writes_the_quantity_table_and_the_design_line_with_the_screening_label` | 54 s | Full alignment, optimise and volumes run before the export. |
 | owd-cli::volumes: `optimise_adds_the_lattice_option_and_volumes_measure_it` | 53 s | Same full pipeline with the lattice option. |
 | owd-core: `alignment::rolling_circle::water::tests::at_46_m_the_fairway_fit_places_every_bend` | 50 s | Fairway fit on every bend of the synthetic river. |
 | owd-format::optimise: `weirs_pools_and_the_lattice_option_equal_the_core_called_directly` | 50 s | Runs the optimiser twice (stage and core) to compare. |
@@ -34,14 +34,14 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 | owd-format::volumes: `a_new_dem_reference_marks_volumes_stale` | 24 s | Long run on the full river or DEM in a debug build. |
 | owd-format::volumes: `a_saved_document_reloads_with_the_same_volumes` | 24 s | Long run on the full river or DEM in a debug build. |
 | owd-format::volumes: `a_changed_dem_file_warns_on_open_and_marks_volumes_stale` | 23 s | Long run on the full river or DEM in a debug build. |
-| owd-cli::owd: `align_adds_a_rolling_circle_option_and_replaces_it_when_run_again` | 23 s | Long run on the full river or DEM in a debug build. |
+| owd-cli::owd: `align_makes_the_rolling_circle_design_line_and_replaces_it_when_run_again` | 23 s | Long run on the full river or DEM in a debug build. |
 | owd-format::wgs84_river: `a_wgs84_river_is_reprojected_and_gives_the_volumes_of_the_utm_river` | 23 s | Long run on the full river or DEM in a debug build. |
 | owd-format::sections: `the_long_section_sums_to_the_volumes_the_table_shows` | 23 s | Long run on the full river or DEM in a debug build. |
 | owd-format::sections: `a_cross_section_is_the_walk_s_station_and_its_cut_agrees_with_the_long_section` | 22 s | Long run on the full river or DEM in a debug build. |
 | owd-format::sections: `a_point_picked_on_the_map_gives_the_nearest_station` | 22 s | Long run on the full river or DEM in a debug build. |
 | owd-format::volumes: `volumes_needs_a_water_level_and_a_fresh_alignment` | 22 s | Long run on the full river or DEM in a debug build. |
 | owd-format::volumes: `volumes_refuses_without_a_dem_and_names_the_dem_it_cannot_read` | 21 s | Long run on the full river or DEM in a debug build. |
-| owd-format::alignment: `two_methods_give_two_options_and_a_rerun_replaces_only_its_own` | 20 s | Long run on the full river or DEM in a debug build. |
+| owd-format::alignment: `a_second_method_replaces_the_design_line_and_the_reroute_starts_from_the_river` | 20 s | Long run on the full river or DEM in a debug build. |
 | owd-reach::bankcheck: `the_recorded_whole_river_gives_a_centreline_about_as_long_as_its_seed` | 30 s | The bank checks on 144 km of recorded banks (issue #373); the gap rule's fast guard is `midline::tests::a_gap_in_a_bank_does_not_tangle_the_mid_line`. |
 | owd-reach::bankcheck: `one_more_round_with_only_the_side_repairs_moves_nothing_at_the_ends` | 106 s | Runs the bank checks twice on 144 km of recorded banks (issue #411). |
 

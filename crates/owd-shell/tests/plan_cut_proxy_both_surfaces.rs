@@ -65,7 +65,9 @@ fn design(w: f64, islands: &[Vec<Pt>]) -> String {
     .unwrap();
     let d = s.document();
     assert!(d["inputs"]["dem"].is_null() && d["inputs"]["water_level"].is_null());
-    let line = d["options"][0]["line"]["coordinates"].as_array().unwrap();
+    let line = d["stages"]["alignment"]["results"]["line"]["coordinates"]
+        .as_array()
+        .unwrap();
     assert!(line.iter().all(|p| p[1].as_f64() == Some(Y0)));
     assert_eq!(line[line.len() - 1][0].as_f64(), Some(X0 + L));
     s.to_text()

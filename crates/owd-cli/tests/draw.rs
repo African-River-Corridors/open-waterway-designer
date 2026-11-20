@@ -108,11 +108,7 @@ fn draw_needs_out_or_document_and_refuses_what_it_cannot_draw() {
     assert_eq!(code(&run(&["draw", ex])), 2);
     let o = run(&["draw", ex, "--document", "--option", "nope"]);
     assert_eq!(code(&o), 2);
-    assert!(
-        err(&o).contains("no design line option `nope`"),
-        "{}",
-        err(&o)
-    );
+    assert!(err(&o).contains("no design line `nope`"), "{}", err(&o));
     let o = run(&["draw", ex, "--document", "--sheets", "zz"]);
     assert_eq!(code(&o), 2);
     assert!(err(&o).contains("unknown sheet kind `zz`"), "{}", err(&o));

@@ -1,34 +1,40 @@
-//! The alignment stage: design line options from the rolling circle and the least-cost re-route
-//! (spec 0002). Each run adds or replaces the option of its own method, with its line and its
-//! checks: `radius_ok`, the measured minimum radius and the chord it was read on.
+//! The alignment stage on the document (spec 0002, spec 0017 ticket 6): one design line per run.
+//!
+//! The method is a setting (`stages.alignment.settings.method`); the stage itself is the pure
+//! function [`super::design_line::alignment`], and the session only reads its inputs from the
+//! document and stores the [`DesignLine`] it returns under `stages.alignment.results`.
 //!
 //! Spec 0005 (#100): the rolling circle is water-aware when a river polygon is present (setting
 //! `use_water`, default on then, whether the user gave the polygon or the import built it from the
-//! two banks; a document from before spec 0005 records it off on open). Its option records the
-//! value used and then carries the `fits_in_water` check. Optional `seed_legs` in the inputs are joined
-//! first (`join_legs`, with the `fixed` pieces held), and the option carries the `join_guard` check.
+//! two banks; a document from before spec 0005 records it off on open). Its line records the value
+//! used and then carries the `fits_in_water` check. Optional `seed_legs` in the inputs are joined
+//! first (`join_legs`, with the `fixed` pieces held), and the line carries the `join_guard` check.
 
+use super::design_line::{AlignmentIn, DesignLine, GivenLine, PoseIn, SeedLegs, alignment};
 use super::geojson::all_positions;
+use super::rule_sets::stage_error;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
-use crate::types::{RiverPolygon, TerrainSampler};
+use crate::types::{Polyline, RiverPolygon, TerrainSampler};
 use owd_core::alignment::centreline::build_centreline;
-use owd_core::alignment::fairway_fit::{Fixed, Pose};
-use owd_core::alignment::join::{JoinParams, join_legs};
-use owd_core::alignment::navigable::Stretch;
-use owd_core::alignment::rolling_circle::{WaterInput, rolling_circle_with_water};
-use owd_core::alignment::route::{self, GridParams, RouteParams};
-use owd_core::geom::linear;
-use owd_core::geom::{Geometry, Polygon, Pt};
+use owd_core::geom::{Polygon, Pt};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// A way of finding a design line.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum AlignMethod {
+    /// The rolling circle (water-aware when there is a river polygon).
+    #[default]
     RollingCircle,
+    /// The least-cost re-route over the terrain.
     Reroute,
     /// The river centreline as it is, with no repair: a line to compare with. It may be tighter
     /// than the minimum radius; its checks say so.
     Centreline,
+    /// A line the user gives (ticket C21).
+    Given,
 }
 
 impl AlignMethod {
@@ -37,6 +43,7 @@ impl AlignMethod {
             AlignMethod::RollingCircle => "rolling_circle",
             AlignMethod::Reroute => "reroute",
             AlignMethod::Centreline => "centreline",
+            AlignMethod::Given => "given",
         }
     }
 
@@ -45,29 +52,33 @@ impl AlignMethod {
             "rolling_circle" | "rolling-circle" => Some(AlignMethod::RollingCircle),
             "reroute" => Some(AlignMethod::Reroute),
             "centreline" => Some(AlignMethod::Centreline),
+            "given" => Some(AlignMethod::Given),
             _ => None,
         }
     }
 
-    fn option_id(self) -> &'static str {
+    pub(crate) fn option_id(self) -> &'static str {
         match self {
             AlignMethod::RollingCircle => "rolling-circle",
             AlignMethod::Reroute => "reroute",
             AlignMethod::Centreline => "centreline",
+            AlignMethod::Given => "given",
         }
     }
 
-    fn option_name(self) -> &'static str {
+    pub(crate) fn option_name(self) -> &'static str {
         match self {
             AlignMethod::RollingCircle => "Rolling circle",
             AlignMethod::Reroute => "Least-cost re-route",
             AlignMethod::Centreline => "River centreline",
+            AlignMethod::Given => "Given line",
         }
     }
 }
 
 /// The settings of the rolling circle, typed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct RollingCircleSettings {
     /// The sampling step in metres.
     pub step_m: f64,
@@ -82,7 +93,8 @@ pub struct RollingCircleSettings {
 }
 
 /// The settings of the least-cost re-route, typed.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct RerouteSettings {
     /// The half-widths of the corridors to try, in metres.
     pub corridor_sweep_m: Vec<f64>,
@@ -96,27 +108,31 @@ pub struct RerouteSettings {
     pub fairness_weight: Option<f64>,
 }
 
-/// The settings of the alignment stage: one typed part per method, under the method's name, as
-/// the document holds them. Each method knows its own keys only.
-#[derive(Debug, Clone, PartialEq)]
+/// The settings of the alignment stage: the method that makes the design line, one typed part per
+/// method under the method's name, and the given line, as the document holds them. Each method
+/// knows its own keys only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct AlignmentSettings {
+    /// The method that makes the one design line.
+    pub method: AlignMethod,
     pub rolling_circle: RollingCircleSettings,
     pub reroute: RerouteSettings,
     pub centreline: CentrelineSettings,
+    /// The line the user gave, for the method `given`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub given: Option<GivenLine>,
 }
 
 /// The settings of the river centreline as a design line: the chord its radius is read on.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(default, deny_unknown_fields)]
 pub struct CentrelineSettings {
     /// The chord the minimum radius is read on; `None`: a third of R_min.
     pub check_chord_m: Option<f64>,
 }
 
 impl CentrelineSettings {
-    fn to_value(&self) -> Value {
-        json!({"check_chord_m": self.check_chord_m})
-    }
-
     fn apply(&self, source: &Value) -> Result<CentrelineSettings, DesignError> {
         let mut out = self.clone();
         let Some(o) = source.as_object() else {
@@ -139,6 +155,7 @@ impl CentrelineSettings {
 impl Default for AlignmentSettings {
     fn default() -> Self {
         AlignmentSettings {
+            method: AlignMethod::RollingCircle,
             rolling_circle: RollingCircleSettings {
                 step_m: 10.0,
                 passes: 2,
@@ -160,18 +177,30 @@ impl Default for AlignmentSettings {
             centreline: CentrelineSettings {
                 check_chord_m: None,
             },
+            given: None,
         }
     }
 }
 
-impl RollingCircleSettings {
-    fn to_value(&self) -> Value {
-        json!({
-            "step_m": self.step_m, "passes": self.passes, "check_chord_m": self.check_chord_m,
-            "use_water": self.use_water, "clearance_m": self.clearance_m, "r_pref_m": self.r_pref_m,
-        })
+impl Default for RollingCircleSettings {
+    fn default() -> Self {
+        AlignmentSettings::default().rolling_circle
     }
+}
 
+impl Default for RerouteSettings {
+    fn default() -> Self {
+        AlignmentSettings::default().reroute
+    }
+}
+
+impl Default for CentrelineSettings {
+    fn default() -> Self {
+        AlignmentSettings::default().centreline
+    }
+}
+
+impl RollingCircleSettings {
     fn apply(&self, source: &Value) -> Result<RollingCircleSettings, DesignError> {
         let mut out = self.clone();
         let Some(o) = source.as_object() else {
@@ -211,19 +240,6 @@ impl RollingCircleSettings {
 }
 
 impl RerouteSettings {
-    fn to_value(&self) -> Value {
-        json!({
-            "corridor_sweep_m": self.corridor_sweep_m,
-            "station_step_m": self.station_step_m,
-            "offset_step_m": self.offset_step_m,
-            "side_slope": self.side_slope,
-            "wet_weight": self.wet_weight,
-            "dry_weight": self.dry_weight,
-            "check_chord_m": self.check_chord_m,
-            "fairness_weight": self.fairness_weight,
-        })
-    }
-
     fn apply(&self, source: &Value) -> Result<RerouteSettings, DesignError> {
         let mut out = self.clone();
         let Some(o) = source.as_object() else {
@@ -272,20 +288,73 @@ impl RerouteSettings {
 impl AlignmentSettings {
     /// The settings as the stage writes them into the document.
     pub fn to_value(&self) -> Value {
-        json!({
-            "rolling_circle": self.rolling_circle.to_value(),
-            "reroute": self.reroute.to_value(),
-            "centreline": self.centreline.to_value(),
-        })
+        serde_json::to_value(self).expect("the settings are JSON")
+    }
+
+    /// The settings of one method as a value.
+    fn part(&self, method: AlignMethod) -> Value {
+        match method {
+            AlignMethod::RollingCircle => serde_json::to_value(&self.rolling_circle),
+            AlignMethod::Reroute => serde_json::to_value(&self.reroute),
+            AlignMethod::Centreline => serde_json::to_value(&self.centreline),
+            AlignMethod::Given => Ok(json!({})),
+        }
+        .expect("the settings are JSON")
+    }
+
+    /// Lay `source` (the settings of `method`, an object or null) over this method's part. A key the
+    /// method does not know, or a bad value, is refused by name.
+    fn apply_part(&mut self, method: AlignMethod, source: &Value) -> Result<(), DesignError> {
+        match method {
+            AlignMethod::RollingCircle => {
+                self.rolling_circle = self.rolling_circle.apply(source)?
+            }
+            AlignMethod::Reroute => self.reroute = self.reroute.apply(source)?,
+            AlignMethod::Centreline => self.centreline = self.centreline.apply(source)?,
+            AlignMethod::Given => {
+                if source.as_object().is_some_and(|o| !o.is_empty()) {
+                    return Err(DesignError::Input(
+                        "a given design line has no settings: give the line with `owd design-line`"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The defaults with the document's stored settings laid over them, each key checked.
+    fn from_document(stored: &Value) -> Result<AlignmentSettings, DesignError> {
+        let mut out = AlignmentSettings::default();
+        for m in [
+            AlignMethod::RollingCircle,
+            AlignMethod::Reroute,
+            AlignMethod::Centreline,
+        ] {
+            out.apply_part(m, &stored[m.name()])?;
+        }
+        if let Some(name) = stored.get("method").filter(|v| !v.is_null()) {
+            out.method = name
+                .as_str()
+                .and_then(AlignMethod::from_name)
+                .ok_or_else(|| {
+                    DesignError::Input(format!(
+                        "the alignment method `{name}` is not one OWD knows: use rolling_circle, \
+                         reroute, centreline or given"
+                    ))
+                })?;
+        }
+        if let Some(g) = stored.get("given").filter(|v| !v.is_null()) {
+            out.given = Some(serde_json::from_value(g.clone()).map_err(|e| {
+                DesignError::Input(format!("the given design line cannot be read: {e}"))
+            })?);
+        }
+        Ok(out)
     }
 }
 
 pub(super) fn pts_of(line: &Value) -> Option<Vec<Pt>> {
     (line["type"] == "LineString").then(|| all_positions(line))
-}
-
-fn line_json(pts: &[Pt]) -> Value {
-    json!({"type": "LineString", "coordinates": pts})
 }
 
 fn num(v: &Value, key: &str) -> Result<f64, DesignError> {
@@ -319,7 +388,8 @@ impl Session {
     }
 
     /// The river centreline the methods start from: the imported one, or the smoothed line midway
-    /// between the two banks.
+    /// between the two banks. It is the river stage's centreline: the inputs are stored from the
+    /// mouth when the design states one.
     pub(super) fn base_line(&self) -> Result<Vec<Pt>, DesignError> {
         let inp = &self.doc["inputs"];
         if let Some(c) = pts_of(&inp["centreline"]) {
@@ -334,22 +404,22 @@ impl Session {
         }
     }
 
+    /// The alignment settings the document holds, over the defaults. A key a method does not know
+    /// is refused by name.
+    pub fn alignment_settings(&self) -> Result<AlignmentSettings, DesignError> {
+        AlignmentSettings::from_document(&self.doc["stages"]["alignment"]["settings"])
+    }
+
     /// The settings of one method: the defaults, then the document's, then `overrides`. A key the
     /// method does not know, in the document or from the caller, is refused by name.
     fn method_settings(
         &self,
         method: AlignMethod,
         overrides: &Value,
-    ) -> Result<Value, DesignError> {
-        let d = AlignmentSettings::default();
-        let stored = &self.doc["stages"]["alignment"]["settings"][method.name()];
-        Ok(match method {
-            AlignMethod::RollingCircle => {
-                d.rolling_circle.apply(stored)?.apply(overrides)?.to_value()
-            }
-            AlignMethod::Reroute => d.reroute.apply(stored)?.apply(overrides)?.to_value(),
-            AlignMethod::Centreline => d.centreline.apply(stored)?.apply(overrides)?.to_value(),
-        })
+    ) -> Result<AlignmentSettings, DesignError> {
+        let mut s = self.alignment_settings()?;
+        s.apply_part(method, overrides)?;
+        Ok(s)
     }
 
     /// Set settings of one method in the document's alignment settings: the defaults, then what
@@ -366,13 +436,54 @@ impl Session {
         if !st.is_object() {
             *st = json!({});
         }
-        st[method.name()] = merged;
+        st[method.name()] = merged.part(method);
         Ok(())
     }
 
-    /// Run one method and add its option, or replace the option that method made before. The
-    /// least-cost re-route needs a terrain sampler (a DEM) and a water level; it starts from the
-    /// rolling-circle option's line when there is one, else from the river centreline.
+    /// The seed legs and fixed pieces of the inputs (spec 0005), when there are legs.
+    fn seed_legs(&self) -> Option<SeedLegs> {
+        let legs: Vec<Polyline> = self.doc["inputs"]["seed_legs"]
+            .as_array()?
+            .iter()
+            .filter_map(pts_of)
+            .map(Polyline)
+            .collect();
+        if legs.is_empty() {
+            return None;
+        }
+        let f = &self.doc["inputs"]["fixed"];
+        let pose = |v: &Value| -> Option<PoseIn> {
+            let p = v["point"].as_array()?;
+            Some(PoseIn {
+                point: [p.first()?.as_f64()?, p.get(1)?.as_f64()?],
+                heading_deg: v["heading_deg"].as_f64()?,
+            })
+        };
+        Some(SeedLegs {
+            legs,
+            start_pose: pose(&f["start_pose"]),
+            end_pose: pose(&f["end_pose"]),
+            must_follow: f["must_follow"]
+                .as_array()
+                .map(|a| a.iter().filter_map(pts_of).map(Polyline).collect())
+                .unwrap_or_default(),
+        })
+    }
+
+    /// What the alignment stage reads, from the document, with `settings` for the settings.
+    pub fn alignment_input(&self, settings: AlignmentSettings) -> Result<AlignmentIn, DesignError> {
+        let river = self.river_geometry().map_err(stage_error)?;
+        Ok(AlignmentIn {
+            river,
+            size: self.channel_size()?,
+            settings,
+            seed: self.seed_legs(),
+        })
+    }
+
+    /// Run the alignment stage with `method` and store its one design line, replacing the line any
+    /// earlier run made. The least-cost re-route needs a terrain sampler (a DEM) and a water level.
+    /// The method and its settings are stored with the line; nothing changes when the stage refuses.
     pub fn align(
         &mut self,
         method: AlignMethod,
@@ -380,403 +491,71 @@ impl Session {
         terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         self.upstream_ready()?;
-        let size = self.channel_size()?;
-        let r_min = size.min_bend_radius_m;
-        let settings = self.method_settings(method, overrides)?;
-        let option = match method {
-            AlignMethod::RollingCircle => self.water_aware_rolling_circle(&settings, r_min)?,
-            AlignMethod::Centreline => self.centreline_option(&settings, r_min)?,
-            AlignMethod::Reroute => {
-                let terrain = terrain.ok_or_else(|| {
-                    DesignError::Input("the re-route needs terrain: give it a DEM".into())
-                })?;
-                let river = self.river_polygons().ok_or_else(|| {
-                    DesignError::Input(
-                        "the re-route needs the river polygon: import it first".into(),
-                    )
-                })?;
-                let profile = self.input_water_profile().ok_or_else(|| {
-                    DesignError::Input(
-                        "the re-route needs a water level: set one with `owd import --water-level LEVEL` (a constant), `--water-slope` or `--water-table FILE`".into(),
-                    )
-                })?;
-                let depth = size.design_depth_m;
-                // The line it starts from: the rolling-circle option's, if there is one.
-                let start = self.doc["options"]
-                    .as_array()
-                    .and_then(|o| o.iter().find(|o| o["method"] == "rolling_circle"))
-                    .and_then(|o| pts_of(&o["line"]))
-                    .map_or_else(|| self.base_line(), Ok)?;
-                let sweep: Vec<f64> = settings["corridor_sweep_m"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(Value::as_f64).collect())
-                    .unwrap_or_default();
-                let widest = sweep.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let params = GridParams {
-                    bottom_width: size.bottom_width_straight_m,
-                    depth,
-                    side_slope: num(&settings, "side_slope")?,
-                    corridor_half: widest,
-                    station_step: num(&settings, "station_step_m")?,
-                    offset_step: num(&settings, "offset_step_m")?,
-                    transect_step: 2.0,
-                    daylight_m: None,
-                };
-                let centre = self.river_centreline()?;
-                let level = self.water_level_along(&profile, &start, &centre);
-                let grade = move |s: f64| level(s) - depth;
-                let grid = route::build_cost_grid(&start, terrain, &river, &grade, &params)
-                    .map_err(|e| DesignError::Input(e.message))?;
-                let r = route::optimise_route(
-                    &grid,
-                    &RouteParams {
-                        r_min,
-                        wet_weight: num(&settings, "wet_weight")?,
-                        dry_weight: num(&settings, "dry_weight")?,
-                        corridor_sweep: sweep,
-                        check_chord_m: opt_num(&settings, "check_chord_m")?,
-                        fairness_weight: fairness_weight(&settings)?,
-                    },
-                )
-                .map_err(|e| DesignError::Input(e.message))?;
-                json!({
-                    "id": method.option_id(), "name": method.option_name(),
-                    "method": method.name(), "settings": settings,
-                    "line": line_json(&r.line),
-                    "checks": {
-                        "r_min_m": r_min,
-                        "radius_ok": r.radius_ok,
-                        "measured_min_radius_m": r.measured_min_radius_m,
-                        "radius_check_chord_m": r.radius_check_chord_m,
-                    },
-                    "details": {
-                        "corridor_half_m": r.corridor_half_m,
-                        "approx_saving_pct": r.approx_saving_pct,
-                    },
-                })
-            }
-        };
-        let mut option = option;
-        option["sanity"] = sanity_of(&option);
-        // Replace the option this method made before, or add one.
-        let options = self.doc["options"]
-            .as_array_mut()
-            .expect("options is a list");
-        match options.iter().position(|o| o["method"] == method.name()) {
-            Some(i) => options[i] = option,
-            None => options.push(option),
-        }
-        // The stage's settings hold each method's settings; its results list the methods run.
-        self.doc["stages"]["alignment"]["settings"][method.name()] = settings;
-        let mut ran: Vec<Value> = self.doc["stages"]["alignment"]["results"]["methods"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
-        if !ran.iter().any(|m| m == method.name()) {
-            ran.push(json!(method.name()));
-        }
-        self.doc["stages"]["alignment"]["results"] = json!({"methods": ran});
-        self.doc["stages"]["alignment"]["engine_version"] = json!(ENGINE_VERSION);
-        let h = self.dependency_hash(Stage::Alignment);
-        self.doc["stages"]["alignment"]["depends_on"] = json!(h);
+        let mut settings = self.method_settings(method, overrides)?;
+        settings.method = method;
+        let input = self.alignment_input(settings.clone())?;
+        let line = alignment(&input, terrain).map_err(stage_error)?;
+        self.store_design_line(&settings, method, &line);
         Ok(())
     }
 
-    /// `run_stage(Alignment)`: rerun the methods that were run, or the rolling circle if none was.
-    /// A re-route needs a DEM: without terrain it is refused.
+    /// Store the alignment's settings and its design line, with the hash of what it read.
+    pub(super) fn store_design_line(
+        &mut self,
+        settings: &AlignmentSettings,
+        method: AlignMethod,
+        line: &DesignLine,
+    ) {
+        let st = &mut self.doc["stages"]["alignment"];
+        if !st["settings"].is_object() {
+            st["settings"] = json!({});
+        }
+        st["settings"]["method"] = json!(method.name());
+        if method != AlignMethod::Given {
+            // The method's settings as set: the defaults filled in, a setting left unset still null.
+            st["settings"][method.name()] = settings.part(method);
+        }
+        match &settings.given {
+            Some(g) => st["settings"]["given"] = json!(g),
+            None => {
+                if let Some(o) = st["settings"].as_object_mut() {
+                    o.remove("given");
+                }
+            }
+        }
+        st["results"] = serde_json::to_value(line).expect("a design line is JSON");
+        st["engine_version"] = json!(ENGINE_VERSION);
+        let h = self.dependency_hash(Stage::Alignment);
+        self.doc["stages"]["alignment"]["depends_on"] = json!(h);
+    }
+
+    /// `run_stage(Alignment)`: run the method the settings name (the rolling circle by default). A
+    /// re-route needs a DEM: without terrain it is refused.
     pub(super) fn rerun_alignment(
         &mut self,
         terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
-        let ran: Vec<AlignMethod> = self.doc["stages"]["alignment"]["results"]["methods"]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|m| m.as_str().and_then(AlignMethod::from_name))
-                    .collect()
-            })
-            .unwrap_or_default();
-        // A given line (ticket C21) is kept, and checked again against the sizing of the moment.
-        let given = self.doc["stages"]["alignment"]["results"]["methods"]
-            .as_array()
-            .is_some_and(|a| a.iter().any(|m| m == super::given_line::GIVEN));
-        if ran.is_empty() && !given {
-            return self.align(AlignMethod::RollingCircle, &Value::Null, None);
+        let method = self.alignment_settings()?.method;
+        if method == AlignMethod::Reroute && terrain.is_none() {
+            return Err(DesignError::NotAvailable(
+                "the re-route needs a DEM: rerun it with `owd align --method reroute --dem FILE`"
+                    .into(),
+            ));
         }
-        for m in ran {
-            if m == AlignMethod::Reroute && terrain.is_none() {
-                return Err(DesignError::NotAvailable(
-                    "the re-route needs a DEM: rerun it with `owd align --method reroute --dem FILE`".into(),
-                ));
-            }
-            self.align(m, &Value::Null, terrain)?;
-        }
-        if given {
-            self.recheck_given_lines()?;
-            self.doc["stages"]["alignment"]["engine_version"] = json!(ENGINE_VERSION);
-            let h = self.dependency_hash(Stage::Alignment);
-            self.doc["stages"]["alignment"]["depends_on"] = json!(h);
-        }
-        Ok(())
+        self.align(method, &Value::Null, terrain)
     }
-}
 
-/// The text every export of a water-aware option carries (spec 0005).
-pub const WIDTH_ONLY: &str = "width only, no depth data";
-
-/// What an option whose every bend is infeasible says (issue #366). Its line is the fit that
-/// breaks the rules least, not a design: the volumes stage does not cost it.
-pub const NO_FEASIBLE_LINE: &str = "no feasible line";
-
-/// A stretch as the document records it.
-fn stretch_json(line: &[Pt], s: &Stretch) -> Value {
-    let (a, b) = (linear::project(line, s.start), linear::project(line, s.end));
-    json!({
-        "start_chainage_m": a.min(b), "end_chainage_m": a.max(b),
-        "start": s.start, "end": s.end, "reason": s.reason.as_str(),
-    })
-}
-
-/// A pose input: `{"point": [x, y], "heading_deg": d}`, degrees counter-clockwise from the
-/// project CRS's +x (east) axis.
-fn pose_of(v: &Value) -> Option<Pose> {
-    let p = v["point"].as_array()?;
-    Some(Pose {
-        at: [p.first()?.as_f64()?, p.get(1)?.as_f64()?],
-        heading_rad: v["heading_deg"].as_f64()?.to_radians(),
-    })
-}
-
-impl Session {
     /// The river polygon(s), with holes, when the inputs have one. The one place the document's
     /// polygon is read ([`RiverPolygon::from_geometry`]); every stage that needs it asks here.
     pub(super) fn river_polygons(&self) -> Option<Vec<Polygon>> {
         RiverPolygon::from_geometry(&self.doc["inputs"]["river_polygon"])
             .map(|p| vec![p.to_polygon()])
     }
-
-    /// The seed legs and fixed pieces of the inputs (spec 0005), when there are legs.
-    fn seed_legs(&self) -> Option<(Vec<Vec<Pt>>, Fixed)> {
-        let legs: Vec<Vec<Pt>> = self.doc["inputs"]["seed_legs"]
-            .as_array()?
-            .iter()
-            .filter_map(pts_of)
-            .collect();
-        if legs.is_empty() {
-            return None;
-        }
-        let f = &self.doc["inputs"]["fixed"];
-        let fixed = Fixed {
-            start_pose: pose_of(&f["start_pose"]),
-            end_pose: pose_of(&f["end_pose"]),
-            must_follow: f["must_follow"]
-                .as_array()
-                .map(|a| a.iter().filter_map(pts_of).collect())
-                .unwrap_or_default(),
-        };
-        Some((legs, fixed))
-    }
-
-    /// The rolling-circle option: seed legs joined first when there are any, then the rolling
-    /// circle, water-aware when `use_water` holds (default: when there is a river polygon).
-    /// The river centreline as a design line: the base line point for point, with its radius read
-    /// as the rolling circle reads it. Its bends widen by their own radius (`widening_floor`).
-    fn centreline_option(&self, settings: &Value, r_min: f64) -> Result<Value, DesignError> {
-        use owd_core::alignment::radius_check::{
-            default_check_chord, min_radius_on_chord, radius_ok,
-        };
-        use owd_core::cut_model::WideningFloor;
-        let line = self.base_line()?;
-        let chord =
-            opt_num(settings, "check_chord_m")?.unwrap_or_else(|| default_check_chord(r_min));
-        let measured =
-            min_radius_on_chord(&line, chord).map_err(|e| DesignError::Input(e.message))?;
-        let method = AlignMethod::Centreline;
-        Ok(json!({
-            "id": method.option_id(), "name": method.option_name(),
-            "method": method.name(), "settings": settings,
-            "line": line_json(&line),
-            "checks": {
-                "r_min_m": r_min,
-                "radius_ok": radius_ok(measured, r_min),
-                "measured_min_radius_m": measured,
-                "radius_check_chord_m": chord,
-            },
-            "widening_floor": WideningFloor::None.name(),
-        }))
-    }
-
-    fn water_aware_rolling_circle(
-        &self,
-        settings: &Value,
-        r_min: f64,
-    ) -> Result<Value, DesignError> {
-        let input = |e: owd_core::alignment::PyError| DesignError::Input(e.message);
-        let chord = opt_num(settings, "check_chord_m")?;
-        let river = self.river_polygons();
-        let use_water = match &settings["use_water"] {
-            Value::Bool(b) => *b,
-            // Unset: keep to the water whenever there is a river polygon, given or built.
-            Value::Null => river.is_some(),
-            _ => {
-                return Err(DesignError::Input(
-                    "the setting `use_water` must be true, false or null".into(),
-                ));
-            }
-        };
-        let clearance = opt_num(settings, "clearance_m")?.unwrap_or(0.0);
-        let r_pref = opt_num(settings, "r_pref_m")?;
-        let size = if use_water || self.seed_legs().is_some() {
-            Some(self.channel_size()?)
-        } else {
-            None
-        };
-        let water: Option<Vec<Polygon>> = if use_water {
-            Some(river.clone().ok_or_else(|| {
-                DesignError::Input(
-                    "`use_water` is on but there is no river polygon: import one, or set it off"
-                        .into(),
-                )
-            })?)
-        } else {
-            None
-        };
-        let mut checks = serde_json::Map::new();
-        let mut join_stretches: Vec<Stretch> = Vec::new();
-        let base = match self.seed_legs() {
-            None => self.base_line()?,
-            Some((legs, fixed)) => {
-                let shape = size
-                    .as_ref()
-                    .expect("a channel size when there are seed legs")
-                    .shape()
-                    .map_err(super::rule_sets::stage_error)?;
-                // Without water the legs are joined in open space: a box well round them.
-                let open = || {
-                    let all: Vec<Pt> = legs.iter().flatten().copied().collect();
-                    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-                    for p in &all {
-                        for k in 0..2 {
-                            lo[k] = lo[k].min(p[k]);
-                            hi[k] = hi[k].max(p[k]);
-                        }
-                    }
-                    let m = 10.0 * r_min;
-                    vec![Polygon {
-                        exterior: vec![
-                            [lo[0] - m, lo[1] - m],
-                            [hi[0] + m, lo[1] - m],
-                            [hi[0] + m, hi[1] + m],
-                            [lo[0] - m, hi[1] + m],
-                            [lo[0] - m, lo[1] - m],
-                        ],
-                        holes: vec![],
-                    }]
-                };
-                let w = water.clone().unwrap_or_else(open);
-                let mut jp = JoinParams::new(r_min);
-                jp.clearance_m = clearance;
-                let j = join_legs(&legs, &w, shape, &fixed, &jp).map_err(input)?;
-                checks.insert(
-                    "join_guard".into(),
-                    json!({"ok": j.guard_failed.is_empty(), "joins": j.guard_failed}),
-                );
-                join_stretches = j.infeasible.clone();
-                j.line
-            }
-        };
-        let wi = match (&water, &size) {
-            (Some(w), Some(sh)) => Some(WaterInput {
-                water: w,
-                shape: sh.shape().map_err(super::rule_sets::stage_error)?,
-                clearance_m: clearance,
-                smooth_m: 0.0,
-                r_pref_m: r_pref,
-            }),
-            _ => None,
-        };
-        let r = rolling_circle_with_water(
-            &Geometry::LineString(base),
-            r_min,
-            num(settings, "step_m")?,
-            settings["passes"].as_i64().unwrap_or(2),
-            &["left".to_string(), "right".to_string()],
-            None,
-            chord,
-            wi.as_ref(),
-        )
-        .map_err(input)?;
-        let line = &r.result.centreline;
-        let mut base_checks = json!({
-            "r_min_m": r_min,
-            "radius_ok": r.result.radius_ok,
-            "measured_min_radius_m": r.result.measured_min_radius_m,
-            "radius_check_chord_m": r.result.radius_check_chord_m,
-        });
-        if wi.is_some() {
-            let stretches: Vec<Value> = r
-                .infeasible
-                .iter()
-                .chain(&join_stretches)
-                .map(|s| stretch_json(line, s))
-                .collect();
-            checks.insert(
-                "fits_in_water".into(),
-                json!({"ok": stretches.is_empty(), "stretches": stretches, "note": WIDTH_ONLY}),
-            );
-            // Issue #366: every bend infeasible is no feasible line, not a design.
-            let mut feasible = json!({"ok": r.feasible});
-            if !r.feasible {
-                feasible["note"] = json!(NO_FEASIBLE_LINE);
-            }
-            checks.insert("feasible".into(), feasible);
-        }
-        for (k, v) in checks {
-            base_checks[k] = v;
-        }
-        // The option records the value used, also when it came from the default.
-        let mut used = settings.clone();
-        used["use_water"] = json!(use_water);
-        let mut details = json!({"arcs": r.result.circles.len()});
-        if wi.is_some() {
-            details["rungs"] = json!(r.rungs.iter().map(|b| b.rung.as_str()).collect::<Vec<_>>());
-        }
-        Ok(json!({
-            "id": AlignMethod::RollingCircle.option_id(),
-            "name": AlignMethod::RollingCircle.option_name(),
-            "method": AlignMethod::RollingCircle.name(), "settings": used,
-            "line": line_json(line),
-            "checks": base_checks,
-            "details": details,
-        }))
-    }
 }
 
-/// The design sanity check of an option's line (`owd_core::sanity`): `{"checked": true, "warnings":
-/// [...]}`. Warnings never fail a check.
-pub(super) fn sanity_of(option: &Value) -> Value {
-    let line = pts_of(&option["line"]).unwrap_or_default();
-    let chord = option["checks"]["radius_check_chord_m"]
-        .as_f64()
-        .unwrap_or(f64::NAN);
-    let r_min = option["checks"]["r_min_m"].as_f64().unwrap_or(f64::NAN);
-    let warnings: Vec<String> = owd_core::sanity::line_findings(&line, chord, r_min)
-        .iter()
-        .map(owd_core::sanity::Finding::message)
-        .collect();
-    json!({"checked": true, "warnings": warnings})
-}
+/// The text every export of a water-aware line carries (spec 0005).
+pub const WIDTH_ONLY: &str = "width only, no depth data";
 
-/// The re-route's fairness weight: a number at or above 0, 0 when absent (a document from
-/// before spec 0005).
-fn fairness_weight(settings: &Value) -> Result<f64, DesignError> {
-    match &settings["fairness_weight"] {
-        Value::Null => Ok(0.0),
-        v => match v.as_f64() {
-            Some(w) if w.is_finite() && w >= 0.0 => Ok(w),
-            _ => Err(DesignError::Input(
-                "the setting `fairness_weight` must be a number at or above 0".into(),
-            )),
-        },
-    }
-}
+/// What a line whose every bend is infeasible says (issue #366). Its line is the fit that breaks
+/// the rules least, not a design: the volumes stage does not cost it.
+pub const NO_FEASIBLE_LINE: &str = "no feasible line";

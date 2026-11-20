@@ -5,8 +5,9 @@
 //! checks, the session calls and the provenance records.
 
 use owd_format::design::provenance::{Mark, record};
-use owd_format::design::{DesignError, ImportReport, Role, Session};
+use owd_format::design::{DesignError, ImportReport, MouthReport, Role, Session, parse_mouth};
 use owd_format::geotiff::Dem;
+use owd_format::types::TerrainSampler;
 
 /// A terrain file to import, already read by the caller.
 pub struct Terrain<'a> {
@@ -151,6 +152,19 @@ fn project_epsg(session: &Session) -> Option<u32> {
     session.document()["project"]["crs"]["epsg"]
         .as_u64()
         .map(|c| c as u32)
+}
+
+/// State the river mouth of `session` (spec 0017): `text` is `downstream` or `LON,LAT`, as the
+/// command line's `--mouth` and the app's field give it. `terrain` is the design's elevation model,
+/// for `downstream` with no water level. The one path for every surface: the same text gives the
+/// same document. A refusal leaves `session` as it was.
+pub fn set_mouth(
+    session: &mut Session,
+    text: &str,
+    terrain: Option<TerrainSampler>,
+) -> Result<MouthReport, DesignError> {
+    let at = parse_mouth(text)?;
+    session.set_mouth(at, terrain)
 }
 
 /// Import a bank dataset file (ticket B7) into `session`: the banks and the river polygon through

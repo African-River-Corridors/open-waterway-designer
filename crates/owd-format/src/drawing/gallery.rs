@@ -609,10 +609,11 @@ pub(super) fn build(
     let params = options.style.gallery();
     let p = &params;
     let doc = session.document();
-    let option = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-        .ok_or_else(|| DrawError::Input(format!("there is no option `{option_id}`")))?;
+    let lines = crate::design::design_lines_of(doc);
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .ok_or_else(|| DrawError::Input(format!("there is no design line `{option_id}`")))?;
     let picks = pick(walk, option, &super::worst_chainages(session, option_id), p);
     if picks.is_empty() {
         return Err(DrawError::Missing(format!(

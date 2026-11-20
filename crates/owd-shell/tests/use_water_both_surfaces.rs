@@ -101,7 +101,7 @@ fn true_gives_the_same_document_through_both_surfaces() {
     );
     assert_eq!(cli, shell);
     assert_ne!(
-        cli["options"][0]["line"],
-        both(false).0["options"][0]["line"]
+        cli["stages"]["alignment"]["results"]["line"],
+        both(false).0["stages"]["alignment"]["results"]["line"]
     );
 }
