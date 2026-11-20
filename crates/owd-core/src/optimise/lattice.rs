@@ -1202,6 +1202,12 @@ pub struct PoolAlignment {
     pub result: LatticeResult,
     /// The baseline segment under the same scorer (straight width).
     pub baseline_cost: f64,
+    /// Whether the lattice line is in the joined line (set by [`optimise_pools`]; a pool that
+    /// converged but kept its baseline is not used).
+    pub used: bool,
+    /// Why the baseline was kept, when it was: the search did not converge, or the baseline is
+    /// cheaper and holds R_min.
+    pub kept_baseline_because: Option<&'static str>,
 }
 
 fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpec) -> f64 {
@@ -1320,6 +1326,8 @@ pub fn optimise_pool(
         grade_m: grade,
         result,
         baseline_cost: segment_cost(&seg, &grid, grade, section),
+        used: false,
+        kept_baseline_because: None,
     })
 }
 
@@ -1386,8 +1394,10 @@ pub fn optimise_pools(
         let converged = pa.result.converged;
         let dearer = pa.result.cost > pa.baseline_cost;
         let line = pa.result.line.clone();
-        out_pools.push(pa);
         let use_it = converged && !(keep_if_dearer && dearer);
+        let mut pa = pa;
+        pa.used = use_it;
+        out_pools.push(pa);
         if !use_it {
             continue;
         }
