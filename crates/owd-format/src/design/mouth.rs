@@ -151,6 +151,22 @@ impl Session {
     /// river is `len` metres long). Returns what it could not turn, in plain words.
     fn turn_river(&mut self, len: f64) -> Vec<String> {
         let mut notes = Vec::new();
+        // The optimise stage's candidate weir sites are metres along the design line (the
+        // alignment's line, else the river centreline): counted from the other end of that line.
+        let line_len = super::design_line::alignment_line_of(&self.doc)
+            .map_or(len, |l| l.line.length_m());
+        if let Some(sites) = self
+            .doc
+            .pointer_mut("/stages/optimise/settings/candidate_sites_m")
+            .and_then(Value::as_array_mut)
+        {
+            for c in sites.iter_mut() {
+                if let Some(x) = c.as_f64() {
+                    *c = json!(line_len - x);
+                }
+            }
+            sites.reverse();
+        }
         self.turn_lines();
         // `pointer_mut`, not indexing: indexing would add every missing key as null.
         let doc = &mut self.doc;
