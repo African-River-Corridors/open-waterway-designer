@@ -326,3 +326,103 @@ fn the_stage_says_what_it_needs() {
         Err(DesignError::Input(m)) if m.contains("needs a DEM")
     ));
 }
+
+/// The length weight (a cost per metre of design line) is a setting of the stage, off (0) by
+/// default. Off, it is not written into the document; on, it is, through the same reading as `owd
+/// optimise --length-weight`. A negative value is refused by name and changes nothing.
+///
+/// Label: property
+#[test]
+fn the_length_weight_is_a_setting_off_by_default() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert_eq!(d.length_weight, 0.0);
+    assert!(d.to_value().get("length_weight").is_none());
+    let mut s = design();
+    s.set_optimise_settings(&json!({"length_weight": 25.0}))
+        .unwrap();
+    let st = &s.document()["stages"]["optimise"]["settings"];
+    assert_eq!(st["length_weight"], json!(25.0));
+    // The rest are the defaults.
+    let mut want = d.to_value();
+    want["length_weight"] = json!(25.0);
+    assert_eq!(st, &want);
+    for bad in [json!(-1.0), json!("ten")] {
+        let before = s.to_text();
+        let e = s
+            .set_optimise_settings(&json!({ "length_weight": bad }))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("length_weight"), "{e}");
+        assert_eq!(s.to_text(), before);
+    }
+    // Back to 0: the key goes, and the settings are the defaults again.
+    s.set_optimise_settings(&json!({"length_weight": 0.0}))
+        .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// At weight 0 the stage writes the same document, byte for byte, as a run that never names the
+/// weight. A positive weight makes a fresh stage stale, is kept in the settings and shown in the
+/// lattice's details with each pool's line length and length cost; the cascade does not read it
+/// (every cascade covers the whole line, so a cost per metre would add the same to each), so its
+/// weirs and costs are unchanged.
+///
+/// Label: property
+#[test]
+fn a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let mut zero = design();
+    let mut with_zero = example_settings();
+    with_zero["length_weight"] = json!(0.0);
+    zero.run_optimise(&with_zero, Some(&terrain)).unwrap();
+    assert_eq!(zero.to_text(), plain.to_text());
+
+    // On: the fresh stage goes stale, then runs with it.
+    assert_eq!(zero.stage_status(Stage::Optimise), StageStatus::Fresh);
+    zero.set_optimise_settings(&json!({"length_weight": 50.0}))
+        .unwrap();
+    assert_eq!(zero.stage_status(Stage::Optimise), StageStatus::Stale);
+    zero.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    assert_eq!(zero.stage_status(Stage::Optimise), StageStatus::Fresh);
+    let doc = zero.document();
+    assert_eq!(
+        doc["stages"]["optimise"]["settings"]["length_weight"],
+        json!(50.0)
+    );
+    let base = plain.document();
+    assert_eq!(
+        doc["stages"]["optimise"]["results"]["cascade"],
+        base["stages"]["optimise"]["results"]["cascade"]
+    );
+    let opt = owd_format::design::design_lines_of(doc)
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert_eq!(opt["details"]["length_weight"], json!(50.0));
+    for p in opt["details"]["pools"].as_array().unwrap() {
+        if p["converged"] == json!(true) {
+            let len = p["line_length_m"].as_f64().unwrap();
+            assert!(len > 0.0);
+            assert_eq!(p["length_cost"].as_f64().unwrap(), 50.0 * len);
+            assert!(p["cost"].as_f64().unwrap() >= 50.0 * len);
+        }
+    }
+    let off = owd_format::design::design_lines_of(base)
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert!(off["details"].get("length_weight").is_none());
+    assert!(
+        off["details"]["pools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p.get("line_length_m").is_none())
+    );
+}
