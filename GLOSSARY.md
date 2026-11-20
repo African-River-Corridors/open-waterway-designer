@@ -59,6 +59,15 @@ is a raster whose cell value multiplies the cut rate in that cell: the re-route 
 it, the volumes stage stores the **weighted volumes** beside the plain ones, and the cost prices
 dredge and dry cut on them. A cell at or above 1e6 is a **hard exclusion**, as a no-go area is.
 
+**Structure**:
+A weir, a lock, or a weir with a lock beside it, on the design line. Structures are optional. The
+engineer gives each one (its site, the mean water level it holds upstream, its height and cost);
+OWD places it and holds a **pool** above it: flat at that level up to the next structure. Each pool
+has a **minimum level** and a **maximum level**, its level less and plus an allowance: navigation
+depth is checked at the minimum and flood risk at the maximum. The **structures seam** is where a
+structures tool can work out a structure's height, footprint and cost from its site, levels and
+channel width; today it returns what the engineer gave.
+
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,
 optimisation, volumes, drawings. A stage is **stale** when anything it depends on has changed

@@ -393,8 +393,15 @@ stale, and it is saved as 0.5.
 4. **Haul is a rate per m³ per km,** with the haul distance a setting per reach (no disposal-site
    geometry yet).
 5. **Line refinement stays** as an optional stage, since it is how the pool lattice fits "one design".
-6. **The structures stage checks levels step down to the mouth** but does not check pool depth over
-   the bed upstream of each structure; the hydraulics seam will.
+6. **The structures stage checks levels step down to the mouth.** Amended by the maintainer on
+   2026-11-19 (issue 532): for each pool it also sets a minimum and a maximum water level from the
+   pool level, checks depth for navigation at the minimum level and flags flood risk at the maximum
+   level. Built in ticket 14: the minimum is the pool level less an allowance and the maximum the
+   pool level plus an allowance (`pool_levels.below_m` and `above_m`, one pair for the run, 0.5 m
+   each when not given, written out in the input). The checks `navigation_depth` and `flood_risk`
+   read the volumes stage's stored stations; they are saved with the volumes and fail under
+   `--strict` like R_min. Pool depth over the bed is not modelled (no hydraulics): the pools are flat,
+   and the hydraulics seam will replace them.
 
 ## Tickets
 
