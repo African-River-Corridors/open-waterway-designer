@@ -4,11 +4,12 @@
 //! radius and infeasible stretches, every covered stretch has one band and one label on the plan with
 //! its own values, its worst station is a gallery section once, and turning the rules off removes all of
 //! it. A design with no stretch shows none.
+use owd_format::design::Session;
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Terrain};
 use owd_format::drawing::plan::{CONSTRAINT_KINDS, LabelRule, labels, stretch_text};
 use owd_format::drawing::{self, DrawOptions, Sheet, SheetKind, Style};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -76,7 +77,7 @@ fn session_and_walk() -> (Session, owd_core::volumes::sections::SectionVolumes) 
     let grid = geotiff::read_bytes(&dem).unwrap();
     let t = dem_sampler(&grid, Some(32630)).unwrap();
     let walk = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     (s, walk)
 }

@@ -102,15 +102,16 @@ fn two_design_lines_through_the_same_place_see_the_same_water() {
 
 #[test]
 fn a_profile_steps_at_a_weir_and_holds_flat_beyond_its_ends() {
-    use owd_format::design::water::level_at;
-    let p = [[0.0, 1.0], [100.0, 1.0], [100.0, 2.0], [300.0, 4.0]];
+    use owd_format::types::{Chainage, WaterProfile};
+    let level_at = |p: &WaterProfile, c: f64| p.level_at(Chainage(c));
+    let p = WaterProfile::from_pairs(&[[0.0, 1.0], [100.0, 1.0], [100.0, 2.0], [300.0, 4.0]]);
     assert_eq!(level_at(&p, -50.0), 1.0);
     assert_eq!(level_at(&p, 50.0), 1.0);
     assert_eq!(level_at(&p, 100.0), 2.0, "at a step the later level holds");
     assert_eq!(level_at(&p, 200.0), 3.0);
     assert_eq!(level_at(&p, 900.0), 4.0);
     assert_eq!(
-        level_at(&[[5.0, 7.0]], 123.0),
+        level_at(&WaterProfile::from_pairs(&[[5.0, 7.0]]), 123.0),
         7.0,
         "one point is a constant"
     );
@@ -138,7 +139,7 @@ fn an_old_document_with_a_start_level_and_slope_converts_and_its_stages_are_stal
     old["stages"]["volumes"]["settings"]["water_surface_slope"] = json!(0.001);
     let opened = Session::open(&serde_json::to_string(&old).unwrap()).unwrap();
     let len = linear::length(&river.centreline);
-    let got = opened.input_water_profile().unwrap();
+    let got = opened.input_water_profile().unwrap().to_pairs();
     assert_eq!(got.len(), 2);
     assert_eq!(got[0], [0.0, 3.0]);
     assert!((got[1][0] - len).abs() < 1e-9 && (got[1][1] - (3.0 - 0.001 * len)).abs() < 1e-9);

@@ -6,9 +6,6 @@
 //! the banks, the centreline or the project CRS makes it stale, and only an explicit run
 //! (`owd fits`) replaces it. Its status is worked out on load from its recorded dependency hash.
 
-/// A DEM sampler that the classes of a full answer can share across threads.
-pub type SyncTerrain<'a> = &'a (dyn Fn(&[f64], &[f64]) -> Vec<f64> + Sync);
-
 /// Run `f` on every job and give the answers in the jobs' order: on as many threads as the machine
 /// has when `parallel` (native), or one after another (always in wasm, which has no threads here).
 pub(super) fn run_all<J: Sync, T: Send>(
@@ -55,6 +52,7 @@ pub(super) fn run_all<J: Sync, T: Send>(
 }
 use super::hash::hash_value;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
+use crate::types::SyncTerrainSampler;
 use owd_core::fits::{ClassFit, Fits, PLAN_ONLY_LABEL, plan_only_fits_at};
 use owd_core::rules::engine::old_name_choice;
 use serde_json::{Value, json};
@@ -277,7 +275,7 @@ impl Session {
     pub fn run_fits_with(
         &mut self,
         choices: Option<&[String]>,
-        terrain: Option<SyncTerrain>,
+        terrain: Option<SyncTerrainSampler>,
     ) -> Result<(), DesignError> {
         self.run_fits_on(choices, terrain, PlanLine::default())
     }
@@ -289,7 +287,7 @@ impl Session {
     pub fn run_fits_on(
         &mut self,
         choices: Option<&[String]>,
-        terrain: Option<SyncTerrain>,
+        terrain: Option<SyncTerrainSampler>,
         plan_line: PlanLine,
     ) -> Result<(), DesignError> {
         self.run_fits_classes(choices, terrain, plan_line, false)
@@ -301,7 +299,7 @@ impl Session {
     pub fn run_fits_classes(
         &mut self,
         choices: Option<&[String]>,
-        terrain: Option<SyncTerrain>,
+        terrain: Option<SyncTerrainSampler>,
         plan_line: PlanLine,
         all_classes: bool,
     ) -> Result<(), DesignError> {
@@ -314,7 +312,7 @@ impl Session {
     pub fn run_fits_at(
         &mut self,
         choices: Option<&[String]>,
-        terrain: Option<SyncTerrain>,
+        terrain: Option<SyncTerrainSampler>,
         plan_line: PlanLine,
         all_classes: bool,
         draught_m: Option<f64>,
@@ -419,7 +417,7 @@ impl Session {
         &self,
         results: &mut Value,
         centre: &[[f64; 2]],
-        terrain: SyncTerrain,
+        terrain: SyncTerrainSampler,
         parallel: bool,
         plan_line: PlanLine,
         draught_m: Option<f64>,

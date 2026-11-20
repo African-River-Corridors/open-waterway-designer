@@ -5,9 +5,10 @@
 //! walk's result, the same design gives the same bytes, and a drawn value that differs is refused with
 //! the sheet and the check named.
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, Session, Stage, Terrain};
+use owd_format::design::{AlignMethod, Session, Stage};
 use owd_format::drawing::{self, DrawError, DrawOptions, Sheet, SheetKind, check};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -37,7 +38,7 @@ fn walk() -> owd_core::volumes::sections::SectionVolumes {
     let s = Session::open(&text).unwrap();
     let grid = geotiff::read_bytes(&dem).unwrap();
     let t = dem_sampler(&grid, Some(32630)).unwrap();
-    s.option_section_walk("rolling-circle", &t as Terrain)
+    s.option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap()
 }
 
@@ -282,7 +283,7 @@ fn a_tight_bend_adds_a_section_at_its_middle() {
     // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
     s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
-    s.run_stage_with(Stage::Volumes, Some(&t as Terrain))
+    s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
         .unwrap();
     let map = s.map_geometry().unwrap();
     let centreline = map["options"]
@@ -305,7 +306,7 @@ fn a_tight_bend_adds_a_section_at_its_middle() {
         option: Some("centreline".to_string()),
         ..DrawOptions::default()
     };
-    let sheets = drawing::sheets(&s, &t as Terrain, &o).unwrap();
+    let sheets = drawing::sheets(&s, &t as TerrainSampler, &o).unwrap();
     let drawn: Vec<Value> = sheets.iter().flat_map(viewports).collect();
     let tagged = drawn
         .iter()
@@ -455,7 +456,7 @@ fn the_gallery_reads_its_spacing_and_extra_sections_from_the_style() {
     // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
     s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
-    s.run_stage_with(Stage::Volumes, Some(&t as Terrain))
+    s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
         .unwrap();
     let count_bends = |style: Style| {
         let o = DrawOptions {
@@ -463,7 +464,7 @@ fn the_gallery_reads_its_spacing_and_extra_sections_from_the_style() {
             option: Some("centreline".to_string()),
             ..DrawOptions::default()
         };
-        drawing::sheets(&s, &t as Terrain, &o)
+        drawing::sheets(&s, &t as TerrainSampler, &o)
             .unwrap()
             .iter()
             .flat_map(viewports)

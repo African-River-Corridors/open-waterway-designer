@@ -12,8 +12,9 @@ use super::{
     read_float,
 };
 use owd_core::optimise::cascade::{
-    self as cs, Cascade, CascadeConfig, CascadeSearch, LevelTable, Refusal, SectionOptions,
+    self as cs, Cascade, CascadeConfig, CascadeSearch, LevelTable, SectionOptions,
 };
+use owd_core::types::Refusal;
 use owd_core::volumes::sections::HalfWidth;
 use serde_json::{Value, json};
 

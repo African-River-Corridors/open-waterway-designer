@@ -4,12 +4,12 @@
 //! The document is a JSON value (`schema/owd.schema.json`). A stage's status is never stored:
 //! it is worked out on load from the stage's recorded dependency hash.
 
-use super::alignment::Terrain;
 use super::crs::{Crs, Utm};
 use super::geojson::{self, Role};
 use super::hash::{hash_value, sha256_hex};
 use super::rule_sets::default_settings;
 use super::schema;
+use crate::types::TerrainSampler;
 use arc_rules::load::Library;
 use owd_core::rules::engine;
 use owd_core::rules::rulesets::ChannelShape;
@@ -337,6 +337,19 @@ impl Session {
         t
     }
 
+    /// One stage as a [`StageRecord`](crate::stage::StageRecord): the settings, the output (the
+    /// stage's `results`), the dependency hash and the contract version. The document keeps its keys
+    /// until the format moves to 0.5, so this is a typed read of them, not a second copy.
+    pub fn stage_record(&self, stage: Stage) -> crate::stage::StageRecord<Value, Value> {
+        let st = &self.doc["stages"][stage.name()];
+        crate::stage::StageRecord {
+            version: crate::stage::STAGE_CONTRACT_VERSION,
+            depends_on: st["depends_on"].as_str().map(str::to_string),
+            settings: st["settings"].clone(),
+            output: (!st["results"].is_null()).then(|| st["results"].clone()),
+        }
+    }
+
     /// The document as a value.
     pub fn document(&self) -> &Value {
         &self.doc
@@ -535,7 +548,7 @@ impl Session {
     pub fn run_stage_with(
         &mut self,
         stage: Stage,
-        terrain: Option<Terrain>,
+        terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         for earlier in Stage::ALL.iter().take_while(|s| **s != stage) {
             if self.stage_status(*earlier) == StageStatus::Stale {
@@ -578,7 +591,10 @@ impl Session {
     /// Run every stage that is due (stale, or with settings but no results), in order, on
     /// `terrain`. Returns the stages that ran. This is the one "run what is due" loop: the command
     /// line and the app shells all call it. A stage that cannot run is an error.
-    pub fn run_stale_with(&mut self, terrain: Option<Terrain>) -> Result<Vec<Stage>, DesignError> {
+    pub fn run_stale_with(
+        &mut self,
+        terrain: Option<TerrainSampler>,
+    ) -> Result<Vec<Stage>, DesignError> {
         let mut ran = Vec::new();
         for stage in Stage::ALL {
             if self.is_due(stage) {

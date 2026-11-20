@@ -12,6 +12,8 @@ owd-core.workspace = true
 arc-rules.workspace = true
 otd.workspace = true
 otd-imagery = { workspace = true, optional = true }
+serde.workspace = true
+schemars.workspace = true
 serde_json.workspace = true
 libm = "0.2"
 png = "0.18"

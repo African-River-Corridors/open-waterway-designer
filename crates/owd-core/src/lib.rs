@@ -16,7 +16,9 @@ pub mod optimise;
 pub mod plan_cut;
 pub mod pyrepr;
 pub mod rules;
+pub mod sanity;
 pub mod synthetic;
+pub mod types;
 pub mod volumes;
 
 /// Python's `min(a, b)`: `b` only if `b < a`. Differs from `f64::min` when a value is NaN.

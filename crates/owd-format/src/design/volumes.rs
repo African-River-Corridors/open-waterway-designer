@@ -3,11 +3,11 @@
 //! option its dredge, dry cut and tallest face by calling the core's `section_volumes` on the DEM,
 //! under the cut model chosen in the settings.
 
-use super::alignment::Terrain;
 use super::geojson::all_positions;
 use super::hash::sha256_hex;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::geotiff::Dem;
+use crate::types::{TerrainSampler, WaterProfile};
 use owd_core::cut_model::{CUT_MODEL, WIDEN_RMAX, widened_hb_from_shape};
 use owd_core::geom::{Polygon, Pt};
 use owd_core::volumes::sections::{
@@ -213,7 +213,7 @@ impl Session {
     pub fn run_volumes(
         &mut self,
         overrides: &Value,
-        terrain: Option<Terrain>,
+        terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         // The settings first, before the terrain or any work: an unknown key changes nothing.
         self.volumes_settings(overrides)?;
@@ -275,6 +275,19 @@ impl Session {
                 "cut_through_m3": v.cut_through_m3(),
                 "max_face_h_m": v.max_face_h_m(),
                 "stations": v.stations.len(),
+                // The design sanity check of the cut: stations far above their neighbours.
+                "sanity": {
+                    "checked": true,
+                    "warnings": owd_core::sanity::cut_spikes(
+                        &v.stations
+                            .iter()
+                            .map(|s| (s.chainage_m, s.dredge_area_m2 + s.excav_area_m2))
+                            .collect::<Vec<_>>(),
+                    )
+                    .iter()
+                    .map(owd_core::sanity::Finding::message)
+                    .collect::<Vec<_>>(),
+                },
                 // A failed check stays with the option's numbers.
                 "radius_ok": o["checks"]["radius_ok"],
                 "water_source": plan.water_source,
@@ -306,7 +319,7 @@ impl Session {
 pub(super) struct SectionPlan {
     pub(super) settings: Value,
     typed: VolumesSettings,
-    profile: Vec<[f64; 2]>,
+    profile: WaterProfile,
     pub(super) water_source: &'static str,
     pub(super) centre: Vec<Pt>,
     model: String,
@@ -315,7 +328,7 @@ pub(super) struct SectionPlan {
     pub(super) river: Vec<Polygon>,
     fixed_hb: Option<f64>,
     /// The bed model, when the document has one (spec 0012), with the water level it hangs from.
-    bed: Option<(owd_core::bed::BedModel, Vec<[f64; 2]>)>,
+    bed: Option<(owd_core::bed::BedModel, WaterProfile)>,
 }
 
 impl Session {
@@ -392,13 +405,13 @@ impl Session {
         &self,
         plan: &SectionPlan,
         o: &Value,
-        terrain: Terrain,
+        terrain: TerrainSampler,
     ) -> Result<owd_core::volumes::sections::SectionVolumes, DesignError> {
         let id = o["id"].as_str().unwrap_or("?");
         let line: Vec<Pt> = all_positions(&o["line"]);
         // Where the document has a bed model, it is the bed inside the water; the DEM is the rest.
         let bedded;
-        let terrain: Terrain = match &plan.bed {
+        let terrain: TerrainSampler = match &plan.bed {
             Some((bed, level)) => {
                 bedded = super::bed::with_bed(bed, level, terrain);
                 &bedded

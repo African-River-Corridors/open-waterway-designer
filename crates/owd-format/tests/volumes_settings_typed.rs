@@ -6,8 +6,9 @@
 //! Label: property
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Terrain, VolumesSettings};
+use owd_format::design::{Session, VolumesSettings};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -32,7 +33,7 @@ fn example_before_volumes() -> (Session, geotiff::Dem) {
 fn a_run_with_no_settings_writes_the_typed_defaults() {
     let (mut s, dem) = example_before_volumes();
     let terrain = dem_sampler(&dem, Some(32630)).unwrap();
-    s.run_volumes(&Value::Null, Some(&terrain as Terrain))
+    s.run_volumes(&Value::Null, Some(&terrain as TerrainSampler))
         .unwrap();
     assert_eq!(
         s.document()["stages"]["volumes"]["settings"],
@@ -44,8 +45,11 @@ fn a_run_with_no_settings_writes_the_typed_defaults() {
 fn a_setting_the_caller_gives_changes_that_setting_only() {
     let (mut s, dem) = example_before_volumes();
     let terrain = dem_sampler(&dem, Some(32630)).unwrap();
-    s.run_volumes(&json!({"station_m": 50.0}), Some(&terrain as Terrain))
-        .unwrap();
+    s.run_volumes(
+        &json!({"station_m": 50.0}),
+        Some(&terrain as TerrainSampler),
+    )
+    .unwrap();
     let mut want = VolumesSettings::default().to_value();
     assert_ne!(want["station_m"], json!(50.0));
     want["station_m"] = json!(50.0);
