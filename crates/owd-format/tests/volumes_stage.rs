@@ -227,6 +227,69 @@ fn the_stage_refuses_by_code() {
     assert_eq!(e.code, "VOLUMES_NO_LINE");
 }
 
+/// No terrain anywhere along the line: the raster does not reach it.
+fn nothing(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
+    vec![f64::NAN; xs.len()]
+}
+
+/// The flat terrain, ending 50 m past chainage 1500 m (x = 1550): beyond, a whole section has none.
+fn ends_at_1550(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
+    xs.iter()
+        .map(|&x| if x <= 1550.0 { TERRAIN_M } else { f64::NAN })
+        .collect()
+}
+
+/// A sampler that answers with the wrong number of heights.
+fn short(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
+    vec![TERRAIN_M; xs.len() / 2]
+}
+
+#[test]
+fn no_terrain_on_the_line_is_refused_with_the_chainage_of_the_first_station() {
+    let e = volumes_stage(&input(vec![], vec![]), &nothing)
+        .err()
+        .unwrap();
+    assert_eq!(e.code, "VOLUMES_NO_ELEVATION", "{e}");
+    assert_eq!(e.at, Some(Chainage(0.0)));
+}
+
+#[test]
+fn a_station_off_the_raster_is_refused_with_its_chainage() {
+    let e = volumes_stage(&input(vec![], vec![]), &ends_at_1550)
+        .err()
+        .unwrap();
+    assert_eq!(e.code, "VOLUMES_OUTSIDE_RASTER", "{e}");
+    // Samples reach 200 m either side of a station across the line, not along it: the first
+    // station past x = 1550 has no terrain at all. Stations are 25 m apart.
+    assert_eq!(e.at, Some(Chainage(1575.0)));
+}
+
+#[test]
+fn an_unknown_cut_model_and_a_broken_sampler_are_refused_by_code() {
+    let mut inp = input(vec![], vec![]);
+    inp.settings.cut_model = "z".into();
+    let e = volumes_stage(&inp, &flat).err().unwrap();
+    assert_eq!(e.code, "VOLUMES_CUT_MODEL", "{e}");
+    // What is left of the catch-all: a terrain sampler that breaks its contract.
+    let e = volumes_stage(&input(vec![], vec![]), &short).err().unwrap();
+    assert_eq!(e.code, "VOLUMES_WALK", "{e}");
+}
+
+#[test]
+fn a_fixed_half_width_does_not_need_the_channel_shape() {
+    // A size read back from JSON has no Rule engine shape.
+    let read: ChannelSize =
+        serde_json::from_value(serde_json::to_value(channel()).unwrap()).unwrap();
+    assert!(read.shape().is_err(), "the read size has no shape");
+    let mut inp = input(vec![], vec![]);
+    inp.size = read.clone();
+    let e = volumes_stage(&inp, &flat).err().unwrap();
+    assert_eq!(e.code, "SIZING_NO_SHAPE", "{e}");
+    inp.settings.half_width_m = Some(20.0);
+    let out = volumes_stage(&inp, &flat).unwrap();
+    assert!(out.stations.iter().all(|s| s.half_width_m == 20.0));
+}
+
 #[test]
 fn the_stage_has_a_schema_file() {
     assert!(
@@ -303,6 +366,11 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
     // The totals are the row's numbers, exactly.
     assert_eq!(json!(stored.totals.dredge_m3), res["dredge_m3"]);
     assert_eq!(json!(stored.totals.excav_m3), res["excav_m3"]);
+    assert_eq!(json!(stored.totals.total_m3), res["total_m3"]);
+    assert_eq!(json!(stored.totals.in_river_m3), res["in_river_m3"]);
+    assert_eq!(json!(stored.totals.widening_m3), res["widening_m3"]);
+    assert_eq!(json!(stored.totals.cut_through_m3), res["cut_through_m3"]);
+    assert_eq!(json!(stored.totals.max_face_h_m), res["max_face_h_m"]);
     assert_eq!(json!(stored.stations.len()), res["stations"]);
     // The reaches are the water stage's stretches: the given pool table, then beyond its last
     // point (held flat).
@@ -336,21 +404,38 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
             .collect::<Vec<_>>(),
         col("bed_m")
     );
-    // A profiled station's section is the walk's.
-    let st = stored
+    // Every profiled station's section is the walk's (more than one is kept).
+    let kept: Vec<_> = stored
         .stations
         .iter()
-        .find(|st| st.profile.is_some())
-        .unwrap();
-    let cs = s.cross_section(&walk, st.chainage_m).unwrap();
-    let p = st.profile.as_ref().unwrap();
-    assert_eq!(json!(p.offsets_m), cs["offsets_m"]);
-    assert_eq!(json!(p.terrain_m), cs["terrain_m"]);
-    assert_eq!(json!(p.cut_face_m), cs["cut_face_m"]);
-    assert_eq!(json!(p.wet), cs["wet"]);
+        .filter(|st| st.profile.is_some())
+        .collect();
+    assert!(kept.len() > 1, "{} profiles kept", kept.len());
+    for st in kept {
+        let cs = s.cross_section(&walk, st.chainage_m).unwrap();
+        assert_eq!(json!(st.chainage_m), cs["chainage_m"]);
+        let p = st.profile.as_ref().unwrap();
+        assert_eq!(json!(p.offsets_m), cs["offsets_m"]);
+        assert_eq!(json!(p.terrain_m), cs["terrain_m"]);
+        assert_eq!(json!(p.cut_face_m), cs["cut_face_m"]);
+        assert_eq!(json!(p.wet), cs["wet"]);
+    }
     // It reopens and validates.
     let back = Session::open(&s.to_text()).unwrap();
     assert!(back.validate().is_empty(), "{:?}", back.validate());
+}
+
+#[test]
+fn a_refused_volumes_run_leaves_the_document_as_it_was() {
+    let mut s = design();
+    s.run_volumes(&Value::Null, Some(&flat)).unwrap();
+    let before = s.to_text();
+    let e = s.run_volumes(&json!({"cut_model": "z"}), Some(&flat));
+    assert!(e.is_err());
+    assert_eq!(s.to_text(), before, "nothing is half written");
+    let e = s.run_volumes(&Value::Null, Some(&nothing));
+    assert!(e.is_err());
+    assert_eq!(s.to_text(), before, "nothing is half written");
 }
 
 /// The document size on the web example, with the stations stored: before (no `sections`), after,
