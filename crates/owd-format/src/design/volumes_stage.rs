@@ -160,6 +160,11 @@ fn refuse(code: &str, message: &str) -> StageError {
 
 /// The station walk along `line`: the core's `section_volumes` with the settings, the size, the
 /// river and the level at each station. The session's walk and the pure stage both call it.
+///
+/// Refusals: `VOLUMES_CUT_MODEL` (a cut model the core does not know), `VOLUMES_NO_ELEVATION` (no
+/// station has a height at any sample: the terrain does not reach the line; at the first station),
+/// `VOLUMES_OUTSIDE_RASTER` (a station with no height at any sample, at its design-line chainage),
+/// and `VOLUMES_WALK` for what is left (a terrain sampler that breaks its contract).
 pub(super) fn walk(
     line: &[Pt],
     size: &ChannelSize,
@@ -168,13 +173,28 @@ pub(super) fn walk(
     settings: &VolumesSettings,
     terrain: TerrainSampler,
 ) -> Result<SectionVolumes, StageError> {
-    let engine_shape = size.shape()?;
-    let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
+    let model = owd_core::cut_model::normalise_model(&settings.cut_model);
+    if model != owd_core::cut_model::CUT_MODEL && model != owd_core::cut_model::CUT_MODEL_B {
+        return Err(refuse(
+            "VOLUMES_CUT_MODEL",
+            &format!(
+                "the cut model `{}` is not one OWD knows: use `a` or `b`",
+                settings.cut_model
+            ),
+        ));
+    }
+    // A fixed half-width needs no channel shape: read the shape only when the bends widen it.
+    let engine_shape;
+    let from_shape;
     let half_width = match settings.half_width_m {
         Some(h) => HalfWidth::Fixed(h),
-        None => HalfWidth::FromStations(&from_shape),
+        None => {
+            engine_shape = size.shape()?;
+            from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
+            HalfWidth::FromStations(&from_shape)
+        }
     };
-    section_volumes(
+    let v = section_volumes(
         line,
         terrain,
         river,
@@ -190,7 +210,29 @@ pub(super) fn walk(
         None,
         owd_core::volumes::sections::DEFAULT_CHUNK,
     )
-    .map_err(|e| refuse("VOLUMES_WALK", &e.to_string()))
+    .map_err(|e| refuse("VOLUMES_WALK", &e.to_string()))?;
+    let blind = |s: &CrossSection| s.terrain.iter().all(|z| !z.is_finite());
+    if let Some(first) = v.stations.first()
+        && v.stations.iter().all(blind)
+    {
+        return Err(refuse(
+            "VOLUMES_NO_ELEVATION",
+            "the terrain has no height anywhere along the design line: the DEM does not reach it",
+        )
+        .at(Chainage(first.chainage_m)));
+    }
+    if let Some(s) = v.stations.iter().find(|s| blind(s)) {
+        return Err(refuse(
+            "VOLUMES_OUTSIDE_RASTER",
+            &format!(
+                "the station at {:.1} m of the design line is outside the DEM: no height at any \
+                 point of its section",
+                s.chainage_m
+            ),
+        )
+        .at(Chainage(s.chainage_m)));
+    }
+    Ok(v)
 }
 
 fn opt(v: f64) -> Option<f64> {
