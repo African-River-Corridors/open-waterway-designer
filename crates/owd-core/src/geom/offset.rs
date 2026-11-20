@@ -425,6 +425,17 @@ fn raw_offset_curve(pts: &[Pt], d: f64, quad_segs: i32) -> Vec<Pt> {
     out
 }
 
+/// A polygon ring as the buffer reads it: repeated points removed, and closed if its last point
+/// is not its first (shapely closes such a ring; the curves below assume a closed one). An
+/// unclosed island ring once made the whole fairway one cut piece (issue #510).
+fn ring_of(ring: &[Pt]) -> Vec<Pt> {
+    let mut r = remove_repeated(ring);
+    if r.len() >= 3 && r.first() != r.last() {
+        r.push(r[0]);
+    }
+    r
+}
+
 /// GEOS `RepeatedPointRemover::removeRepeatedPoints`: consecutive equal points become one.
 fn remove_repeated(line: &[Pt]) -> Vec<Pt> {
     let mut out: Vec<Pt> = Vec::with_capacity(line.len());
@@ -659,7 +670,7 @@ pub fn buffer_polygons_q(polys: &[Polygon], distance: f64, quad_segs: i32) -> Ve
     let mut curves: Vec<depth::Curve> = Vec::new();
     if distance == 0.0 {
         for p in polys {
-            let shell = remove_repeated(&p.exterior);
+            let shell = ring_of(&p.exterior);
             if shell.len() < 3 {
                 continue;
             }
@@ -667,7 +678,7 @@ pub fn buffer_polygons_q(polys: &[Polygon], distance: f64, quad_segs: i32) -> Ve
                 curves.push((shell.clone(), if ccw(&shell) { 1 } else { -1 }));
             }
             for h in &p.holes {
-                let hole = remove_repeated(h);
+                let hole = ring_of(h);
                 if hole.len() >= 4 {
                     curves.push((hole.clone(), if ccw(&hole) { -1 } else { 1 }));
                 }
@@ -697,13 +708,13 @@ pub fn buffer_polygons_q(polys: &[Polygon], distance: f64, quad_segs: i32) -> Ve
         curves.push((curve, if interior_left { 1 } else { -1 }));
     };
     for p in polys {
-        let shell = remove_repeated(&p.exterior);
+        let shell = ring_of(&p.exterior);
         if shell.len() < 3 || (distance < 0.0 && is_eroded_completely(&shell, distance)) {
             continue;
         }
         add_ring(&shell, side, true);
         for h in &p.holes {
-            let hole = remove_repeated(h);
+            let hole = ring_of(h);
             if distance > 0.0 && is_eroded_completely(&hole, -distance) {
                 continue;
             }

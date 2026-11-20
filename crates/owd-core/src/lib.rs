@@ -16,6 +16,7 @@ pub mod optimise;
 pub mod plan_cut;
 pub mod pyrepr;
 pub mod rules;
+pub mod sanity;
 pub mod synthetic;
 pub mod types;
 pub mod volumes;

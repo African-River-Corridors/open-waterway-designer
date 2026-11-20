@@ -456,6 +456,8 @@ impl Session {
                 })
             }
         };
+        let mut option = option;
+        option["sanity"] = sanity_of(&option);
         // Replace the option this method made before, or add one.
         let options = self.doc["options"]
             .as_array_mut()
@@ -747,6 +749,21 @@ impl Session {
             "details": details,
         }))
     }
+}
+
+/// The design sanity check of an option's line (`owd_core::sanity`): `{"checked": true, "warnings":
+/// [...]}`. Warnings never fail a check.
+fn sanity_of(option: &Value) -> Value {
+    let line = pts_of(&option["line"]).unwrap_or_default();
+    let chord = option["checks"]["radius_check_chord_m"]
+        .as_f64()
+        .unwrap_or(f64::NAN);
+    let r_min = option["checks"]["r_min_m"].as_f64().unwrap_or(f64::NAN);
+    let warnings: Vec<String> = owd_core::sanity::line_findings(&line, chord, r_min)
+        .iter()
+        .map(owd_core::sanity::Finding::message)
+        .collect();
+    json!({"checked": true, "warnings": warnings})
 }
 
 /// The re-route's fairness weight: a number at or above 0, 0 when absent (a document from
