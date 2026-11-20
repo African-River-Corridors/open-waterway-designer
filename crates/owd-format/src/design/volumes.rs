@@ -275,6 +275,19 @@ impl Session {
                 "cut_through_m3": v.cut_through_m3(),
                 "max_face_h_m": v.max_face_h_m(),
                 "stations": v.stations.len(),
+                // The design sanity check of the cut: stations far above their neighbours.
+                "sanity": {
+                    "checked": true,
+                    "warnings": owd_core::sanity::cut_spikes(
+                        &v.stations
+                            .iter()
+                            .map(|s| (s.chainage_m, s.dredge_area_m2 + s.excav_area_m2))
+                            .collect::<Vec<_>>(),
+                    )
+                    .iter()
+                    .map(owd_core::sanity::Finding::message)
+                    .collect::<Vec<_>>(),
+                },
                 // A failed check stays with the option's numbers.
                 "radius_ok": o["checks"]["radius_ok"],
                 "water_source": plan.water_source,
