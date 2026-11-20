@@ -301,7 +301,6 @@ fn a_design_with_built_in_sets_is_unchanged_with_and_without_the_option() {
         d["provenance"] = Value::Null;
     }
     assert_eq!(da["stages"], db["stages"]);
-    assert_eq!(da["options"], db["options"]);
 }
 
 #[test]

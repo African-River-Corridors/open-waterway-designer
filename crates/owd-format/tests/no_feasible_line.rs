@@ -58,7 +58,7 @@ fn aligned(width: f64) -> Session {
 }
 
 fn option(s: &Session) -> Value {
-    s.document()["options"][0].clone()
+    s.document()["stages"]["alignment"]["results"].clone()
 }
 
 fn with_volumes(width: f64) -> Session {
@@ -115,7 +115,7 @@ fn a_wide_river_gives_a_feasible_line() {
 #[test]
 fn volumes_flag_an_option_with_no_feasible_line() {
     let s = with_volumes(40.0);
-    let row = &s.document()["stages"]["volumes"]["results"]["options"][0];
+    let row = &s.document()["stages"]["volumes"]["results"];
     assert_eq!(row["no_feasible_line"], true, "{row}");
     assert_eq!(row["note"], "no feasible line", "{row}");
     for k in ["dredge_m3", "excav_m3", "total_m3", "max_face_h_m"] {
@@ -127,7 +127,7 @@ fn volumes_flag_an_option_with_no_feasible_line() {
 #[test]
 fn volumes_cost_a_feasible_option_as_before() {
     let s = with_volumes(300.0);
-    let row = &s.document()["stages"]["volumes"]["results"]["options"][0];
+    let row = &s.document()["stages"]["volumes"]["results"];
     assert!(row["no_feasible_line"].is_null(), "{row}");
     assert!(row["total_m3"].as_f64().is_some(), "{row}");
 }

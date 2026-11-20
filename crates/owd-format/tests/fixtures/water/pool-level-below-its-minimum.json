@@ -1,0 +1,38 @@
+{
+ "label": "Label: property",
+ "why": "A pool's design level must lie between its minimum and its maximum level.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "pools": [
+   {
+    "from": 0.0,
+    "to": 1000.0,
+    "level_m": 10.0,
+    "min_level_m": 10.5
+   }
+  ]
+ },
+ "expect": {
+  "error": "WATER_POOL_LEVELS_INVALID"
+ }
+}

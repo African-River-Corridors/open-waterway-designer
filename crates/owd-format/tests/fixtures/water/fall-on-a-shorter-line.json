@@ -1,0 +1,81 @@
+{
+ "label": "Label: golden",
+ "why": "A fall (a two-point profile, 10 m at the mouth to 12 m at 1000 m). The design line starts 200 m up the river and is 600 m long, so design chainage s sits at river chainage 200 + s and reads 10 + 2 (200 + s)/1000.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    200.0,
+    5.0
+   ],
+   [
+    800.0,
+    5.0
+   ]
+  ],
+  "step_m": 200.0,
+  "given": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    12.0
+   ]
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 600.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 200.0,
+     "level_m": 10.4,
+     "source": "given"
+    },
+    {
+     "chainage": 200.0,
+     "river_chainage": 400.0,
+     "level_m": 10.8,
+     "source": "given"
+    },
+    {
+     "chainage": 400.0,
+     "river_chainage": 600.0,
+     "level_m": 11.2,
+     "source": "given"
+    },
+    {
+     "chainage": 600.0,
+     "river_chainage": 800.0,
+     "level_m": 11.6,
+     "source": "given"
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 600.0,
+     "source": "given"
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    300.0,
+    11.0
+   ]
+  ]
+ }
+}

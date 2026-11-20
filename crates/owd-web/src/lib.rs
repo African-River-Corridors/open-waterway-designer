@@ -437,6 +437,12 @@ impl Session {
         self.edit(|s| s.set_downstream_point_text(point))
     }
 
+    /// State the river mouth (spec 0017): `downstream` or `LON,LAT`, as `owd import --mouth` reads
+    /// it, through the same shell call.
+    pub fn set_mouth(&mut self, mouth: &str) -> Js<String> {
+        self.edit(|s| s.set_mouth(mouth))
+    }
+
     /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as JSON
     /// text, as `owd align --use-water` does (ticket #494). Nothing runs.
     pub fn set_alignment_settings(&mut self, method: &str, settings: &str) -> Js<String> {

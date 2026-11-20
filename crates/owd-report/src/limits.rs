@@ -47,7 +47,7 @@ pub fn items(ctx: &Context) -> Vec<(String, String)> {
     ];
     // The size sweep (spec 0016 T3): the banks can set its limit.
     if let Some(e) = ctx.session.envelope_result() {
-        let low = d["inputs"]["reference_line"]["low_confidence"]
+        let low = d["stages"]["reference_line"]["results"]["low_confidence"]
             .as_array()
             .map_or(0, Vec::len);
         let mut v = text(&e["bank_caveat"], "").to_string();

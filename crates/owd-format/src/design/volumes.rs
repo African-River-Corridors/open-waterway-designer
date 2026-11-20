@@ -1,6 +1,6 @@
 //! The volumes stage and the DEM reference (spec 0002). The DEM is named by relative path, SHA-256,
-//! CRS and nodata value; its bytes are never in the document. The stage gives every design line
-//! option its dredge, dry cut and tallest face by calling the core's `section_volumes` on the DEM,
+//! CRS and nodata value; its bytes are never in the document. The stage gives the design line (spec
+//! 0017: one per run) its dredge, dry cut and tallest face by calling the core's `section_volumes` on the DEM,
 //! under the cut model chosen in the settings.
 
 use super::geojson::all_positions;
@@ -205,7 +205,8 @@ impl Session {
         }
     }
 
-    /// Run the volumes stage: dredge, dry cut and tallest face for every design line option.
+    /// Run the volumes stage: dredge, dry cut and tallest face of the design line (the lattice's when
+    /// the optimise stage has refined it, else the alignment's).
     ///
     /// The water level is the document's profile along the river centreline (ADR 0006), or the pool
     /// levels of the optimise stage once it has run. `terrain` is the DEM in the project CRS, or `None`
@@ -250,60 +251,58 @@ impl Session {
                 "the DEM `{dem_path}` is missing: the volumes stage cannot run without it"
             ))
         })?;
-        let options: Vec<Value> = self.doc["options"].as_array().cloned().unwrap_or_default();
-        if options.is_empty() {
+        let Some(o) = self.design_lines().into_iter().next() else {
             return Err(DesignError::Input(
-                "there are no design line options: run the alignment stage first".into(),
+                "there is no design line: run the alignment stage first".into(),
             ));
-        }
+        };
 
         let plan = self.section_plan(overrides)?;
-        let mut rows = Vec::new();
-        for o in &options {
-            let id = o["id"].as_str().unwrap_or("?");
-            let v = self.option_sections(&plan, o, terrain)?;
-            let screening = self.screening_value(o, &v, &plan.river, &plan.centre)?;
-            rows.push(json!({
-                "id": id,
-                "name": o["name"],
-                "dredge_m3": v.dredge_m3(),
-                "excav_m3": v.excav_m3(),
-                "total_m3": v.total_m3(),
-                // The three kinds of cut (ticket C23); they add up to the total.
-                "in_river_m3": v.in_river_m3(),
-                "widening_m3": v.widening_m3(),
-                "cut_through_m3": v.cut_through_m3(),
-                "max_face_h_m": v.max_face_h_m(),
-                "stations": v.stations.len(),
-                // The design sanity check of the cut: stations far above their neighbours, and
-                // stations whose cut is huge against the channel's own section.
-                "sanity": {
-                    "checked": true,
-                    "warnings": cut_warnings(&v, plan.typed.wet_slope),
-                },
-                // A failed check stays with the option's numbers.
-                "radius_ok": o["checks"]["radius_ok"],
-                "water_source": plan.water_source,
-                // A, the verdict, and C, the constraint stretches (spec 0007).
-                "screening": screening,
-            }));
-            let row = rows.last_mut().expect("a row was just pushed");
-            // Issue #366: an option with no feasible line keeps its numbers, flagged: not a design.
-            if super::export::no_feasible_line(o) {
-                row["no_feasible_line"] = json!(true);
-                row["note"] = json!(super::alignment::NO_FEASIBLE_LINE);
-            }
-            if let Some(note) = self.depth_note() {
-                row["depth_basis"] = json!(note);
-            }
+        let id = o["id"].as_str().unwrap_or("?");
+        let v = self.option_sections(&plan, &o, terrain)?;
+        let screening = self.screening_value(&o, &v, &plan.river, &plan.centre)?;
+        let mut row = json!({
+            "id": id,
+            "name": o["name"],
+            "dredge_m3": v.dredge_m3(),
+            "excav_m3": v.excav_m3(),
+            "total_m3": v.total_m3(),
+            // The three kinds of cut (ticket C23); they add up to the total.
+            "in_river_m3": v.in_river_m3(),
+            "widening_m3": v.widening_m3(),
+            "cut_through_m3": v.cut_through_m3(),
+            "max_face_h_m": v.max_face_h_m(),
+            "stations": v.stations.len(),
+            // The design sanity check of the cut: stations far above their neighbours, and
+            // stations whose cut is huge against the channel's own section.
+            "sanity": {
+                "checked": true,
+                "warnings": cut_warnings(&v, plan.typed.wet_slope),
+            },
+            // A failed check stays with the line's numbers.
+            "radius_ok": o["checks"]["radius_ok"],
+            "water_source": plan.water_source,
+            // A, the verdict, and C, the constraint stretches (spec 0007).
+            "screening": screening,
+        });
+        // Issue #366: a line that is not feasible keeps its numbers, flagged: not a design.
+        if super::export::no_feasible_line(&o) {
+            row["no_feasible_line"] = json!(true);
+            row["note"] = json!(super::alignment::NO_FEASIBLE_LINE);
+        }
+        if let Some(note) = self.depth_note() {
+            row["depth_basis"] = json!(note);
         }
         let settings = plan.settings;
         let st = &mut self.doc["stages"]["volumes"];
         st["settings"] = settings;
-        st["results"] = json!({ "options": rows });
+        st["results"] = row;
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Volumes);
         self.doc["stages"]["volumes"]["depends_on"] = json!(h);
+        // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
+        // after the settings, so its step is the stations' step. The walk read the same levels.
+        self.run_water()?;
         Ok(())
     }
 }
@@ -356,7 +355,10 @@ impl Session {
     /// the river, once, for the station walk of every option.
     /// The volumes settings: the defaults, then the document's, then `overrides`. A key the stage
     /// does not know, in the document or from the caller, is refused by name.
-    fn volumes_settings(&self, overrides: &Value) -> Result<VolumesSettings, DesignError> {
+    pub(super) fn volumes_settings(
+        &self,
+        overrides: &Value,
+    ) -> Result<VolumesSettings, DesignError> {
         VolumesSettings::default()
             .apply(&self.doc["stages"]["volumes"]["settings"])?
             .apply(overrides)
@@ -426,8 +428,26 @@ impl Session {
             }
             None => terrain,
         };
-        let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
-        let level = Level::AtChainage(&wl);
+        // The level at each station: through the water stage's own reader (one path, spec 0017
+        // ticket 8). Only the port tests' hidden sampling by design-line chainage reads otherwise.
+        let water_in = self.water_input_on(
+            crate::types::Polyline(line.clone()),
+            crate::types::Polyline(plan.centre.clone()),
+        );
+        let stage_level;
+        let port_level;
+        let wl: &dyn Fn(f64) -> f64 = match self.water_sampling {
+            super::water::WaterSampling::Projection => {
+                stage_level = super::water_stage::level_reader(&water_in)
+                    .map_err(|e| DesignError::Input(e.message))?;
+                &stage_level
+            }
+            super::water::WaterSampling::DesignLineChainage => {
+                port_level = self.water_level_along(&plan.profile, &line, &plan.centre);
+                &port_level
+            }
+        };
+        let level = Level::AtChainage(wl);
         let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
         let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
         let half_width = match plan.fixed_hb {

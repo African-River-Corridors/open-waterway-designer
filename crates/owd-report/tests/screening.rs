@@ -72,14 +72,22 @@ fn every_number_is_the_documents() {
     in_order(after(&html, "The design basis"), &basis);
 
     // The option's verdict and the volumes stage's quantities.
-    let v = &doc["stages"]["volumes"]["results"]["options"][0];
-    let quantities = vec![
-        v["name"].as_str().unwrap().to_string(),
-        grouped(v["dredge_m3"].as_f64().unwrap(), 0),
-        grouped(v["excav_m3"].as_f64().unwrap(), 0),
-        grouped(v["total_m3"].as_f64().unwrap(), 0),
-        grouped(v["max_face_h_m"].as_f64().unwrap(), 2),
-    ];
+    let v = &doc["stages"]["volumes"]["results"];
+    // Issue #366: the example's water-aware line has no feasible bend, so it has no quantities: the
+    // table says so in place of each number.
+    let quantities = if v["no_feasible_line"] == true {
+        let mut q = vec![v["name"].as_str().unwrap().to_string()];
+        q.extend(std::iter::repeat_n("no feasible line".to_string(), 4));
+        q
+    } else {
+        vec![
+            v["name"].as_str().unwrap().to_string(),
+            grouped(v["dredge_m3"].as_f64().unwrap(), 0),
+            grouped(v["excav_m3"].as_f64().unwrap(), 0),
+            grouped(v["total_m3"].as_f64().unwrap(), 0),
+            grouped(v["max_face_h_m"].as_f64().unwrap(), 2),
+        ]
+    };
     in_order(
         &html,
         &[v["screening"]["verdict"].as_str().unwrap().to_string()],
@@ -282,7 +290,7 @@ fn a_design_with_no_option_says_so() {
     );
     assert!(html.contains("no screened design line option"), "{html}");
     assert!(
-        html.contains("no design line option, so it has no works"),
+        html.contains("no design line, so it has no works"),
         "{html}"
     );
 }

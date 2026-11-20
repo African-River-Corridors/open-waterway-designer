@@ -1,0 +1,105 @@
+{
+ "label": "Label: golden",
+ "why": "A pool table whose step (12 m to 10 m at 500 m) falls on a sample. The step is kept: two points at 500 m, the lower chainage's level first.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "given": [
+   [
+    0.0,
+    12.0
+   ],
+   [
+    500.0,
+    12.0
+   ],
+   [
+    500.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 10.0,
+     "source": "given"
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 1000.0,
+     "source": "given"
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    499.0,
+    12.0
+   ],
+   [
+    500.0,
+    10.0
+   ]
+  ]
+ }
+}
