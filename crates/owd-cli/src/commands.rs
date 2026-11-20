@@ -1215,6 +1215,8 @@ pub fn optimise(
         .find(|o| o["method"] == "lattice")
         .cloned()
         .unwrap_or(Value::Null);
+    // The sanity warnings, a pool join that breaks R_min among them (issue #6).
+    print_sanity(option["name"].as_str().unwrap_or("Pool lattice"), &option);
     let weirs: Vec<String> = res["cascade"]["weirs"]
         .as_array()
         .into_iter()
