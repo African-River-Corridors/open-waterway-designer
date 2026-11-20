@@ -24,14 +24,14 @@ pub fn cost(doc: &str, rates: Option<&str>, output: &Option<String>, json_mode: 
     let mut human = format!("cost ({}), by reach:", c.currency);
     for r in &c.by_reach {
         human.push_str(&format!(
-            "\n  {:.0} m to {:.0} m: dredge {:.2}, dry cut {:.2}, disposal {:.2}, haul {:.2} ({} km); total {:.2}",
+            "\n  {:.0} m to {:.0} m: dredge {:.2}, dry cut {:.2}, disposal {:.2}, haul {:.2} ({:.0} m³·km); total {:.2}",
             r.from.0,
             r.to.0,
             r.items.dredge.amount,
             r.items.dry_cut.amount,
             r.items.disposal.amount,
             r.items.haul.amount,
-            r.haul_km,
+            r.haul_m3_km,
             r.items.total.amount
         ));
     }

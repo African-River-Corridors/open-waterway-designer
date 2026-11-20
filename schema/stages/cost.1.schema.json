@@ -49,6 +49,18 @@
             "$ref": "#/$defs/ReachVolumes"
           }
         },
+        "station_m": {
+          "description": "The station step, m: each station stands for this length.",
+          "type": "number",
+          "format": "double"
+        },
+        "stations": {
+          "description": "The stored stations, in order of chainage: each reach holds the next `stations` of them.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CostStation"
+          }
+        },
         "volumes_fresh": {
           "description": "True when the volumes stage is fresh: nothing it read has changed since it ran.",
           "type": "boolean"
@@ -68,6 +80,8 @@
       },
       "required": [
         "by_reach",
+        "station_m",
+        "stations",
         "volumes_fresh"
       ]
     },
@@ -155,6 +169,30 @@
         }
       ]
     },
+    "CostStation": {
+      "description": "One stored station's cut, as the cost reads it (the volumes stage's station has more).",
+      "type": "object",
+      "properties": {
+        "chainage_m": {
+          "description": "Design-line chainage.",
+          "type": "number",
+          "format": "double"
+        },
+        "dredge_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "excav_area_m2": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "chainage_m",
+        "dredge_area_m2",
+        "excav_area_m2"
+      ]
+    },
     "RatesTable": {
       "description": "The rates table: one rate per item, in one currency. A rate left out is refused when the cost is\nworked out, never read as zero.",
       "type": "object",
@@ -204,7 +242,7 @@
           ]
         },
         "haul_km": {
-          "description": "The haul distance of the run, km: for every reach without one of its own.",
+          "description": "The haul distance of the run, km: for every station no stretch covers.",
           "type": [
             "number",
             "null"
@@ -246,7 +284,7 @@
       "type": "object",
       "properties": {
         "reach": {
-          "description": "The stretch of design-line chainage. A reach of the volumes takes this distance when it\nlies wholly inside the stretch.",
+          "description": "The stretch of design-line chainage, ends included. Each station in it hauls this distance.",
           "$ref": "#/$defs/Reach"
         },
         "km": {
@@ -328,8 +366,8 @@
           "description": "Design-line chainage where it ends.",
           "$ref": "#/$defs/Chainage"
         },
-        "haul_km": {
-          "description": "The haul distance used, km.",
+        "haul_m3_km": {
+          "description": "The reach's cut times its haul distance, summed station by station, m³·km.",
           "type": "number",
           "format": "double"
         },
@@ -351,7 +389,7 @@
       "required": [
         "from",
         "to",
-        "haul_km",
+        "haul_m3_km",
         "items"
       ]
     },

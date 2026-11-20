@@ -3,7 +3,8 @@
 //!
 //! The **rates table** (`inputs.rates`) holds one rate for each item, each as [`Money`]: dredge and
 //! dry cut per m³, disposal per m³ of all cut, and haul per m³ per km. The haul distance is the run's
-//! (`haul_km`), or a reach's own where `haul_by_reach` gives one. One table serves the whole run
+//! (`haul_km`), or that of a stretch of design-line chainage (`haul_by_reach`), which may follow
+//! the disposal sites and need not match the reaches. One table serves the whole run
 //! (spec 0017, open assumption 3), in one currency.
 //!
 //! [`cost`] is a pure function from a [`CostIn`] to a [`Cost`]. For each reach of the volumes stage:
@@ -11,9 +12,11 @@
 //! - dredge = dredge rate × dredge m³
 //! - dry cut = dry-cut rate × dry cut m³
 //! - disposal = disposal rate × (dredge + dry cut) m³
-//! - haul = haul rate × (dredge + dry cut) m³ × the reach's haul distance in km
+//! - haul = haul rate × the sum, over the reach's stored stations, of each station's cut (dredge
+//!   plus dry cut area × the station step) × the haul distance at its chainage
 //!
-//! and the reach's total is their sum. The totals add the reach figures, item by item, so a reader
+//! and the reach's total is their sum. The haul is taken station by station so that a haul stretch
+//! may start or end inside a reach (QA on PR 571). The totals add the reach figures, item by item, so a reader
 //! checks them by adding a column. Each reach figure and the totals have room for the output level
 //! they reached (`level`), which the design measures stage sets (ticket 17).
 //!
@@ -41,8 +44,7 @@ pub const RATES_CONTRACT: &str = "inputs.rates";
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HaulStretch {
-    /// The stretch of design-line chainage. A reach of the volumes takes this distance when it
-    /// lies wholly inside the stretch.
+    /// The stretch of design-line chainage, ends included. Each station in it hauls this distance.
     pub reach: Reach,
     /// The haul distance, km.
     pub km: f64,
@@ -65,7 +67,7 @@ pub struct RatesTable {
     /// Per m³ of all cut per km hauled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub haul_per_m3_km: Option<Money>,
-    /// The haul distance of the run, km: for every reach without one of its own.
+    /// The haul distance of the run, km: for every station no stretch covers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub haul_km: Option<f64>,
     /// Haul distances of stretches of design-line chainage, not overlapping.
@@ -161,37 +163,34 @@ impl RatesTable {
         Ok(())
     }
 
-    /// The haul distance of a reach from `from` to `to`: the stretch that holds it, else the run's.
-    fn haul_km_of(&self, from: Chainage, to: Chainage) -> Result<f64, StageError> {
-        for s in &self.haul_by_reach {
-            let overlaps = s.reach.from.0 < to.0 && from.0 < s.reach.to.0;
-            if s.reach.contains(from) && s.reach.contains(to) {
-                return Ok(s.km);
-            }
-            if overlaps {
-                return Err(refuse(
-                    "COST_HAUL_SPLIT",
-                    format!(
-                        "the haul distance from {} m to {} m covers only part of the reach from \
-                         {} m to {} m: give the reach one distance",
-                        s.reach.from.0, s.reach.to.0, from.0, to.0
-                    ),
-                )
-                .at(from));
-            }
+    /// The haul distance at a station's chainage: the stretch that holds it (the first, at a
+    /// shared end), else the run's. Refuses chainage that no distance covers
+    /// (`COST_HAUL_UNCOVERED`, at the station).
+    fn haul_km_at(&self, c: Chainage) -> Result<f64, StageError> {
+        if let Some(s) = self.haul_by_reach.iter().find(|s| s.reach.contains(c)) {
+            return Ok(s.km);
         }
         self.haul_km.ok_or_else(|| {
             refuse(
-                "COST_RATE_MISSING",
+                "COST_HAUL_UNCOVERED",
                 format!(
-                    "the reach from {} m to {} m has no haul distance: give `haul_km` for the run \
-                     or one for the reach",
-                    from.0, to.0
+                    "no haul distance covers chainage {} m: give `haul_km` for the run or a \
+                     stretch that covers it",
+                    c.0
                 ),
             )
-            .at(from)
+            .at(c)
         })
     }
+}
+
+/// One stored station's cut, as the cost reads it (the volumes stage's station has more).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CostStation {
+    /// Design-line chainage.
+    pub chainage_m: f64,
+    pub dredge_area_m2: f64,
+    pub excav_area_m2: f64,
 }
 
 /// What the cost stage reads.
@@ -199,6 +198,10 @@ impl RatesTable {
 pub struct CostIn {
     /// The volumes by reach, as the volumes stage stored them.
     pub by_reach: Vec<ReachVolumes>,
+    /// The station step, m: each station stands for this length.
+    pub station_m: f64,
+    /// The stored stations, in order of chainage: each reach holds the next `stations` of them.
+    pub stations: Vec<CostStation>,
     /// True when the volumes stage is fresh: nothing it read has changed since it ran.
     pub volumes_fresh: bool,
     /// The rates table, if the run has one.
@@ -224,8 +227,8 @@ pub struct ReachCost {
     pub from: Chainage,
     /// Design-line chainage where it ends.
     pub to: Chainage,
-    /// The haul distance used, km.
-    pub haul_km: f64,
+    /// The reach's cut times its haul distance, summed station by station, m³·km.
+    pub haul_m3_km: f64,
     pub items: CostItems,
     /// The output level this figure reached; set by the design measures stage (ticket 17).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -268,8 +271,9 @@ fn items(d: f64, x: f64, p: f64, h: f64, currency: &str) -> CostItems {
 /// Refusals: `COST_NO_RATES` (the run has no rates table: no cost; the run goes on without it),
 /// `COST_VOLUMES_STALE` (the volumes were made from inputs that have changed), `COST_NO_VOLUMES` (no
 /// volumes by reach are stored), `COST_RATE_MISSING` (a rate, or a reach's haul distance, is not
-/// given; at the reach), `COST_MIXED_CURRENCY`, `COST_RATE_INVALID`, and `COST_HAUL_SPLIT` (a haul
-/// stretch covers only part of a reach; at the reach).
+/// given), `COST_HAUL_UNCOVERED` (a station's chainage that no haul distance covers; at it),
+/// `COST_MIXED_CURRENCY`, `COST_RATE_INVALID`, and `COST_VOLUMES_INCONSISTENT` (the stations do not
+/// add up to the volumes by reach).
 pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
     let rates = input.rates.as_ref().ok_or_else(|| {
         refuse(
@@ -303,15 +307,46 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
     let dry = rate("dry_cut_per_m3", &rates.dry_cut_per_m3)?;
     let disposal = rate("disposal_per_m3", &rates.disposal_per_m3)?;
     let haul = rate("haul_per_m3_km", &rates.haul_per_m3_km)?;
+    let counted: usize = input.by_reach.iter().map(|r| r.stations).sum();
+    if counted != input.stations.len() {
+        return Err(refuse(
+            "COST_VOLUMES_INCONSISTENT",
+            format!(
+                "the volumes by reach count {counted} stations but {} are stored: run the volumes \
+                 stage again",
+                input.stations.len()
+            ),
+        ));
+    }
     let mut by_reach = Vec::with_capacity(input.by_reach.len());
     let mut sum = [0.0; 4];
+    let mut next = 0;
     for r in &input.by_reach {
-        let km = rates.haul_km_of(r.from, r.to)?;
+        let stations = &input.stations[next..next + r.stations];
+        next += r.stations;
+        let mut cut_m3 = 0.0;
+        let mut haul_m3_km = 0.0;
+        for st in stations {
+            let v = (st.dredge_area_m2 + st.excav_area_m2) * input.station_m;
+            cut_m3 += v;
+            haul_m3_km += v * rates.haul_km_at(Chainage(st.chainage_m))?;
+        }
+        if (cut_m3 - r.total_m3).abs() > 1e-9 * r.total_m3.abs().max(1.0) {
+            return Err(refuse(
+                "COST_VOLUMES_INCONSISTENT",
+                format!(
+                    "the stations of the reach from {} m to {} m hold {cut_m3} m³ but the reach \
+                     holds {} m³: run the volumes stage again",
+                    r.from.0, r.to.0, r.total_m3
+                ),
+            )
+            .at(r.from));
+        }
         let figures = [
             dredge * r.dredge_m3,
             dry * r.excav_m3,
             disposal * r.total_m3,
-            haul * r.total_m3 * km,
+            haul * haul_m3_km,
         ];
         for (s, f) in sum.iter_mut().zip(figures) {
             *s += f;
@@ -320,7 +355,7 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
         by_reach.push(ReachCost {
             from: r.from,
             to: r.to,
-            haul_km: km,
+            haul_m3_km,
             items: items(d, x, p, h, &currency),
             level: None,
         });
@@ -381,19 +416,25 @@ impl Session {
     /// What the cost stage reads from this document: the volumes stage's stored volumes by reach,
     /// whether that stage is fresh, and the rates table.
     pub fn cost_input(&self) -> Result<CostIn, DesignError> {
-        let stored = &self.doc["stages"]["volumes"]["results"]["sections"]["by_reach"];
-        let by_reach: Vec<ReachVolumes> = if stored.is_null() {
-            Vec::new()
-        } else {
-            serde_json::from_value(stored.clone()).map_err(|e| {
-                DesignError::Input(format!(
-                    "the volumes stage's stored volumes by reach do not read: {e}. Run the \
-                     volumes stage again"
-                ))
-            })?
+        let sections = &self.doc["stages"]["volumes"]["results"]["sections"];
+        let read = |key: &str| -> Result<Value, DesignError> {
+            Ok(if sections.is_null() {
+                Value::Array(vec![])
+            } else {
+                sections[key].clone()
+            })
         };
+        let bad = |e: serde_json::Error| {
+            DesignError::Input(format!(
+                "the volumes stage's stored volumes do not read: {e}. Run the volumes stage again"
+            ))
+        };
+        let by_reach: Vec<ReachVolumes> = serde_json::from_value(read("by_reach")?).map_err(bad)?;
+        let stations: Vec<CostStation> = serde_json::from_value(read("stations")?).map_err(bad)?;
         Ok(CostIn {
             by_reach,
+            station_m: sections["station_m"].as_f64().unwrap_or(0.0),
+            stations,
             volumes_fresh: self.stage_status(super::Stage::Volumes)
                 == super::session::StageStatus::Fresh,
             rates: self.rates()?,
