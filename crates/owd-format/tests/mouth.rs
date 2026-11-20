@@ -226,3 +226,47 @@ fn a_mouth_text_is_read_one_way_for_every_surface() {
         assert!(parse_mouth(bad).is_err(), "{bad}");
     }
 }
+
+/// A straight river 3 km long, given from upstream (x = 503 000) to its mouth (x = 500 000), sized,
+/// with the centreline as its design line.
+fn straight_from_upstream() -> Session {
+    let line: Vec<Pt> = (0..=30)
+        .map(|i| [503_000.0 - 100.0 * f64::from(i), 600_000.0])
+        .collect();
+    let mut s = Session::new("Straight", "2026-11-20");
+    s.import(&[(Role::Centreline, &line_text(&line))]).unwrap();
+    s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
+        .unwrap();
+    s.set_vessel("CEMT_IV", Some(2.5)).unwrap();
+    s.run_stage(Stage::Sizing).unwrap();
+    s.align(AlignMethod::Centreline, &Value::Null, None)
+        .unwrap();
+    s
+}
+
+/// The mouth of [`straight_from_upstream`], as longitude and latitude.
+fn straight_mouth() -> MouthAt {
+    MouthAt::LonLat(lon_lat([500_000.0, 600_000.0]))
+}
+
+/// `doc` with `edit` made, opened again.
+fn edited(s: &Session, edit: impl FnOnce(&mut Value)) -> Session {
+    let mut doc = s.document().clone();
+    edit(&mut doc);
+    Session::open(&doc.to_string()).unwrap()
+}
+
+/// QA on PR 558, item 4: the optimise stage's candidate weir sites are metres along the design line:
+/// the turn counts them from the other end too.
+#[test]
+fn the_candidate_weir_sites_turn_with_the_river() {
+    let s = straight_from_upstream();
+    let mut s = edited(&s, |d| {
+        d["stages"]["optimise"]["settings"] = json!({"candidate_sites_m": [500.0, 1000.0]});
+    });
+    assert!(s.set_mouth(straight_mouth(), None).unwrap().turned);
+    assert_eq!(
+        s.document()["stages"]["optimise"]["settings"]["candidate_sites_m"],
+        json!([2000.0, 2500.0])
+    );
+}
