@@ -178,7 +178,7 @@ pub fn import_bank_dataset(
     let file = owd_format::design::banks::read_bank_file(text).map_err(ImportError::Design)?;
     let mut s = session.clone();
     let imported = import(&mut s, &file.items(), None, date)?;
-    s.set_bank_metadata(&file.banks);
+    s.set_bank_metadata_from(&file);
     *session = s;
     Ok(imported)
 }

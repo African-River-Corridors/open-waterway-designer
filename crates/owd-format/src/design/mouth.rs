@@ -153,8 +153,8 @@ impl Session {
         let mut notes = Vec::new();
         // The optimise stage's candidate weir sites are metres along the design line (the
         // alignment's line, else the river centreline): counted from the other end of that line.
-        let line_len = super::design_line::alignment_line_of(&self.doc)
-            .map_or(len, |l| l.line.length_m());
+        let line_len =
+            super::design_line::alignment_line_of(&self.doc).map_or(len, |l| l.line.length_m());
         if let Some(sites) = self
             .doc
             .pointer_mut("/stages/optimise/settings/candidate_sites_m")
