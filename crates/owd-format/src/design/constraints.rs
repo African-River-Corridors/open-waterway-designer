@@ -294,7 +294,7 @@ pub fn constraints_touched(
         return Vec::new();
     }
     let total = linear::length(line);
-    if !(total > 0.0) {
+    if total.is_nan() || total <= 0.0 {
         return Vec::new();
     }
     let n = (total / TOUCH_STEP_M).ceil().max(1.0) as usize;
@@ -313,7 +313,7 @@ pub fn constraints_touched(
             let c = (i as f64 + 0.5) * ds;
             let (p, a, b) = (at(c), at(c - ds / 2.0), at(c + ds / 2.0));
             let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            let len = dx.hypot(dy);
+            let len = libm::hypot(dx, dy);
             let (nx, ny) = if len > 0.0 {
                 (-dy / len, dx / len)
             } else {

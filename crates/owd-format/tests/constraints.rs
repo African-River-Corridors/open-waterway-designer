@@ -167,9 +167,17 @@ fn each_bad_input_is_refused_by_its_code_and_changes_nothing() {
     kindless.kind = String::new();
     assert!(try_set(&mut s, vec![kindless]).contains("CONSTRAINTS_KIND_MISSING"));
     assert!(try_set(&mut s, vec![ok(), ok()]).contains("CONSTRAINTS_NAME_DUPLICATE"));
-    let line = area("flat", Polyline(vec![[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]), vec![]);
+    let line = area(
+        "flat",
+        Polyline(vec![[0.0, 0.0], [10.0, 0.0], [20.0, 0.0]]),
+        vec![],
+    );
     assert!(try_set(&mut s, vec![line]).contains("CONSTRAINTS_POLYGON_INVALID"));
-    let nan = area("nan", Polyline(vec![[0.0, 0.0], [f64::NAN, 0.0], [5.0, 5.0]]), vec![]);
+    let nan = area(
+        "nan",
+        Polyline(vec![[0.0, 0.0], [f64::NAN, 0.0], [5.0, 5.0]]),
+        vec![],
+    );
     assert!(try_set(&mut s, vec![nan]).contains("CONSTRAINTS_POLYGON_INVALID"));
     assert_eq!(s.to_text(), text, "a refusal changes nothing");
 
@@ -179,10 +187,16 @@ fn each_bad_input_is_refused_by_its_code_and_changes_nothing() {
     // A feature with no name, or one that is not a polygon.
     let mut g = geojson();
     g["features"][0]["properties"] = json!({"kind": "farmland"});
-    assert_eq!(no_go_from_geojson(&g).unwrap_err().code, "CONSTRAINTS_NAME_MISSING");
+    assert_eq!(
+        no_go_from_geojson(&g).unwrap_err().code,
+        "CONSTRAINTS_NAME_MISSING"
+    );
     let mut g = geojson();
     g["features"][1]["geometry"] = json!({"type": "LineString", "coordinates": [[0, 0], [1, 1]]});
-    assert_eq!(no_go_from_geojson(&g).unwrap_err().code, "CONSTRAINTS_POLYGON_INVALID");
+    assert_eq!(
+        no_go_from_geojson(&g).unwrap_err().code,
+        "CONSTRAINTS_POLYGON_INVALID"
+    );
 }
 
 #[test]
@@ -318,7 +332,10 @@ fn a_document_with_no_constraints_opens_saves_and_designs_as_before() {
         assert_eq!(after[k], before[k], "{k}");
     }
     let sections = after["sections"].to_string();
-    assert!(!sections.contains("weighted"), "no weighted cut without a multiplier");
+    assert!(
+        !sections.contains("weighted"),
+        "no weighted cut without a multiplier"
+    );
     assert_eq!(
         s.document()["stages"]["alignment"]["results"]["constraints_touched"],
         json!([])
@@ -511,7 +528,10 @@ fn a_patch_of_two_over_half_the_stations_weighs_their_cut_twice_by_hand() {
             lo += 1;
             1.0
         };
-        assert!(close(s.weighted_dredge_area_m2.unwrap(), k * p.dredge_area_m2));
+        assert!(close(
+            s.weighted_dredge_area_m2.unwrap(),
+            k * p.dredge_area_m2
+        ));
         assert_eq!(p.weighted_dredge_area_m2, None);
     }
     assert!(lo > 0 && hi > 0);

@@ -15,6 +15,7 @@ use owd_core::alignment::route::{
     GridConstraints, GridParams, HARD_EXCLUSION, build_cost_grid, build_cost_grid_constrained,
 };
 use owd_core::geom::{Polygon, Pt};
+use owd_core::types::TerrainSampler;
 use owd_core::volumes::sections::{
     DEFAULT_CHUNK, HalfWidth, Level, SectionVolumes, section_volumes, section_volumes_weighted,
 };
@@ -26,7 +27,7 @@ fn flat(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
     vec![10.0; xs.len()]
 }
 
-fn walk(weight: Option<&dyn Fn(&[f64], &[f64]) -> Vec<f64>>) -> SectionVolumes {
+fn walk(weight: Option<TerrainSampler>) -> SectionVolumes {
     let line: Vec<Pt> = vec![[0.0, 0.0], [1000.0, 0.0]];
     section_volumes_weighted(
         &line,
@@ -94,8 +95,14 @@ fn a_multiplier_of_one_weighs_exactly_the_plain_cut_and_moves_no_plain_number() 
     let one = |xs: &[f64], _: &[f64]| vec![1.0; xs.len()];
     let (a, b) = (walk(Some(&one)), plain());
     for (x, y) in a.stations.iter().zip(&b.stations) {
-        assert_eq!(x.dredge_area_m2, y.dredge_area_m2, "plain numbers do not move");
-        assert_eq!(x.excav_area_m2, y.excav_area_m2, "plain numbers do not move");
+        assert_eq!(
+            x.dredge_area_m2, y.dredge_area_m2,
+            "plain numbers do not move"
+        );
+        assert_eq!(
+            x.excav_area_m2, y.excav_area_m2,
+            "plain numbers do not move"
+        );
         assert_eq!(x.weighted_dredge_area_m2, Some(x.dredge_area_m2));
         assert_eq!(x.weighted_excav_area_m2, Some(x.excav_area_m2));
     }
@@ -124,8 +131,16 @@ fn a_patch_of_two_over_the_far_half_doubles_the_cut_there_by_hand() {
         .sum::<f64>()
         * STATION_M;
     // (20 stations at 1, 21 at 2) × 92 m² × 25 m.
-    close(weighted, (20.0 + 2.0 * 21.0) * SECTION_M2 * STATION_M, "weighted m³");
-    close(v.excav_m3(), 41.0 * SECTION_M2 * STATION_M, "plain m³ unchanged");
+    close(
+        weighted,
+        (20.0 + 2.0 * 21.0) * SECTION_M2 * STATION_M,
+        "weighted m³",
+    );
+    close(
+        v.excav_m3(),
+        41.0 * SECTION_M2 * STATION_M,
+        "plain m³ unchanged",
+    );
 }
 
 fn params() -> GridParams {
@@ -204,7 +219,12 @@ fn a_no_go_area_blocks_the_cells_whose_footprint_reaches_it() {
     )
     .unwrap();
     let k = |o: f64| g.offsets.iter().position(|x| (x - o).abs() < 1e-9).unwrap();
-    let i = |s: f64| g.stations_m.iter().position(|x| (x - s).abs() < 1e-9).unwrap();
+    let i = |s: f64| {
+        g.stations_m
+            .iter()
+            .position(|x| (x - s).abs() < 1e-9)
+            .unwrap()
+    };
     // At 500 m: offset 40 (footprint 20 to 60) is in the box; offset -40 is far from it.
     assert!(g.blocked(i(500.0), k(40.0)));
     assert!(!g.blocked(i(500.0), k(-40.0)));
@@ -243,7 +263,12 @@ fn a_multiplier_at_the_hard_exclusion_value_is_impassable() {
     )
     .unwrap();
     let k = |o: f64| g.offsets.iter().position(|x| (x - o).abs() < 1e-9).unwrap();
-    let i = |s: f64| g.stations_m.iter().position(|x| (x - s).abs() < 1e-9).unwrap();
+    let i = |s: f64| {
+        g.stations_m
+            .iter()
+            .position(|x| (x - s).abs() < 1e-9)
+            .unwrap()
+    };
     assert!(g.blocked(i(500.0), k(-40.0)));
     assert!(!g.blocked(i(500.0), k(40.0)));
 }

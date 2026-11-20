@@ -88,7 +88,10 @@ fn multiplier() -> Constraints {
     }
 }
 
-fn reroute(c: Option<Constraints>, weight: Option<TerrainSampler>) -> Result<DesignLine, StageError> {
+fn reroute(
+    c: Option<Constraints>,
+    weight: Option<TerrainSampler>,
+) -> Result<DesignLine, StageError> {
     alignment_with(&input("reroute", c), Some(&flat), weight)
 }
 
@@ -125,9 +128,16 @@ fn the_re_route_goes_round_a_no_go_area_it_would_otherwise_cross() {
     assert!(!crossed.is_empty(), "the free line crosses the area");
 
     let line = reroute(Some(no_go(vec![pond])), None).unwrap();
-    assert!(line.constraints_touched.is_empty(), "{:?}", line.constraints_touched);
+    assert!(
+        line.constraints_touched.is_empty(),
+        "{:?}",
+        line.constraints_touched
+    );
     let y = y_at(&line, 1500.0);
-    assert!(y.abs() >= 60.0 + half_width(&i), "round, not through: y = {y}");
+    assert!(
+        y.abs() >= 60.0 + half_width(&i),
+        "round, not through: y = {y}"
+    );
     assert_eq!(line.checks["radius_ok"], true, "and it still meets R_min");
 }
 
@@ -187,7 +197,10 @@ fn a_hard_exclusion_in_the_multiplier_is_impassable() {
     let i = input("reroute", None);
     let line = reroute(Some(multiplier()), Some(&wall)).unwrap();
     let y = y_at(&line, 1500.0);
-    assert!(y.abs() >= 60.0 + half_width(&i), "round, not through: y = {y}");
+    assert!(
+        y.abs() >= 60.0 + half_width(&i),
+        "round, not through: y = {y}"
+    );
 }
 
 #[test]
@@ -207,5 +220,9 @@ fn the_centreline_does_not_steer_and_reports_the_area_it_enters() {
     assert_eq!((t.name.as_str(), t.kind.as_str()), ("pond", "settlement"));
     assert!((t.from.0 - 1300.0).abs() <= 5.0 && (t.to.0 - 1700.0).abs() <= 5.0);
     let want = 400.0 * 2.0 * half_width(&i);
-    assert!((t.area_m2 - want).abs() <= 0.02 * want, "{} vs {want}", t.area_m2);
+    assert!(
+        (t.area_m2 - want).abs() <= 0.02 * want,
+        "{} vs {want}",
+        t.area_m2
+    );
 }
