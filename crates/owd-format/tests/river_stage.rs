@@ -68,8 +68,8 @@ fn polygon_area(g: &RiverGeometry) -> f64 {
 #[test]
 fn every_fixture_gives_what_it_says() {
     let all = fixtures();
-    assert!(all.len() >= 8, "the fixtures are there: {}", all.len());
-    for (name, f) in all {
+    assert!(all.len() >= 18, "the fixtures are there: {}", all.len());
+    for (name, f) in all.clone() {
         assert!(
             f["label"]
                 .as_str()
@@ -119,12 +119,40 @@ fn every_fixture_gives_what_it_says() {
                 "{name}"
             );
         }
-        for (key, pick) in [("right_first", 0_usize), ("right_last", usize::MAX)] {
+        for key in [
+            "centreline_first",
+            "centreline_last",
+            "left_first",
+            "left_last",
+            "right_first",
+            "right_last",
+        ] {
             if let Some(p) = want.get(key) {
-                let r = &g.banks.as_ref().expect("banks").right.0;
-                let at = if pick == 0 { r[0] } else { r[r.len() - 1] };
+                let (part, end) = key.split_once('_').unwrap();
+                let line = match part {
+                    "centreline" => &g.centreline.0,
+                    "left" => &g.banks.as_ref().expect("banks").left.0,
+                    _ => &g.banks.as_ref().expect("banks").right.0,
+                };
+                let at = if end == "first" {
+                    line[0]
+                } else {
+                    line[line.len() - 1]
+                };
                 contained(&json!(at), p, key).unwrap_or_else(|m| panic!("{name}: {m}"));
             }
+        }
+        if let Some(other) = want["same_output_as"].as_str() {
+            let o = &all
+                .iter()
+                .find(|(n, _)| n == other)
+                .expect("the other fixture")
+                .1;
+            let oin: RiverIn = serde_json::from_value(o["input"].clone()).unwrap();
+            // The same geometry; `reversed` says only whether this input had to be turned.
+            let (mut a, mut b) = (river(&oin).unwrap(), g.clone());
+            (a.reversed, b.reversed) = (false, false);
+            assert_eq!(a, b, "{name}: the same design as {other}");
         }
         if want["banks_cross_is_some"] == true {
             assert!(g.banks_cross.is_some(), "{name}: the crossing is reported");
@@ -333,4 +361,69 @@ fn an_island_across_the_channel_is_dry_not_water_in_the_volumes() {
         dry_island > dry_open,
         "they are dry cut instead: {dry_island} > {dry_open}"
     );
+}
+
+// --- chainage from the mouth --------------------------------------------------------------------------
+
+/// A winding river (a sine curve) with banks and a falling water profile, given from either end.
+fn winding(reverse_all: bool, mouth: Value) -> RiverIn {
+    let n = 60;
+    let at = |i: i32, off: f64| -> [f64; 2] {
+        let x = 50.0 * f64::from(i);
+        let y = 120.0 * libm::sin(x / 400.0);
+        // The bank is 40 m to the side of the line, along the normal of the sine curve.
+        let slope = 120.0 / 400.0 * libm::cos(x / 400.0);
+        let norm = libm::hypot(1.0, slope);
+        [x - off * slope / norm, y + off / norm]
+    };
+    let line = |off: f64| -> Vec<[f64; 2]> { (0..=n).map(|i| at(i, off)).collect() };
+    let (mut c, mut l, mut r) = (line(0.0), line(40.0), line(-40.0));
+    let length = owd_core::geom::linear::length(&c);
+    // The level falls 5 m over the line, from the start to the end.
+    let mut profile = vec![[0.0, 15.0], [length, 10.0]];
+    if reverse_all {
+        c.reverse();
+        l.reverse();
+        r.reverse();
+        profile = profile
+            .iter()
+            .rev()
+            .map(|[ch, lv]| [length - ch, *lv])
+            .collect();
+    }
+    serde_json::from_value(json!({
+        "centreline": c, "left_bank": l, "right_bank": r, "water_profile": profile,
+        "mouth": mouth, "crs_epsg": 32630
+    }))
+    .unwrap()
+}
+
+#[test]
+fn a_winding_river_gives_one_design_whichever_end_it_was_digitised_from() {
+    // The river as digitised downstream, and the same river digitised upstream, with its banks and its
+    // profile. The mouth is the lower end in both, found two ways: by point and by the profile.
+    let end = json!({"point": [3000.0, 120.0 * libm::sin(3000.0 / 400.0)]});
+    for mouth in [end, json!("downstream")] {
+        let (mut fwd, mut back) = (
+            river(&winding(false, mouth.clone())).unwrap(),
+            river(&winding(true, mouth.clone())).unwrap(),
+        );
+        assert_ne!(fwd.reversed, back.reversed, "one of them had to be turned");
+        (fwd.reversed, back.reversed) = (false, false);
+        // The length is summed from the other end, so its last bit may differ: compare it by
+        // tolerance (ADR 0005), then the rest exactly.
+        assert!(
+            (fwd.length_m - back.length_m).abs() <= 1e-9 * fwd.length_m,
+            "{mouth}"
+        );
+        back.length_m = fwd.length_m;
+        assert!(fwd == back, "{mouth}: the two designs differ");
+        // Chainage 0 is the mouth, which is the low end: the level rises with chainage.
+        let w = fwd.water_profile.as_ref().unwrap();
+        assert!(
+            w.level_at(owd_format::types::Chainage(0.0))
+                < w.level_at(owd_format::types::Chainage(fwd.length_m))
+        );
+        assert!(fwd.bank_checks.is_empty(), "{:?}", fwd.bank_checks);
+    }
 }

@@ -1,0 +1,77 @@
+{
+  "label": "Label: property",
+  "why": "The mouth is stated at the start of the line, which already runs from the mouth: nothing is turned.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ],
+      [
+        300.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        500.0,
+        0.0
+      ],
+      [
+        600.0,
+        0.0
+      ],
+      [
+        700.0,
+        0.0
+      ],
+      [
+        800.0,
+        0.0
+      ],
+      [
+        900.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "mouth": {
+      "point": [
+        0.0,
+        0.0
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "reversed": false,
+      "mouth": [
+        0.0,
+        0.0
+      ],
+      "length_m": 1000.0
+    },
+    "centreline_first": [
+      0.0,
+      0.0
+    ],
+    "centreline_last": [
+      1000.0,
+      0.0
+    ]
+  }
+}

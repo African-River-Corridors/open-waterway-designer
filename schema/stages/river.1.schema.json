@@ -99,6 +99,44 @@
           "format": "uint32",
           "minimum": 0,
           "default": null
+        },
+        "mouth": {
+          "description": "Where chainage 0 is. Absent: the lines are used as given and the answer states no mouth.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mouth"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "water_profile": {
+          "description": "The water level along the given centreline, by its chainage (as given, before any turning).\nWith `Downstream`, it says which end is lower.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaterProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "end_levels_m": {
+          "description": "The level of the ground (from the elevation model) at the start and at the end of the given\ncentreline. With `Downstream` and no water profile, it says which end is lower.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "default": null
         }
       }
     },
@@ -134,6 +172,52 @@
       "required": [
         "shell"
       ]
+    },
+    "Mouth": {
+      "description": "Where the river meets the sea, a lake or the river it flows into: where chainage 0 is.",
+      "oneOf": [
+        {
+          "description": "A point in the project CRS. The end of the centreline nearer to it is the mouth.",
+          "type": "object",
+          "properties": {
+            "point": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "point"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "The lower end of the centreline is the mouth. The water profile or the levels at the ends\ndecide which end is lower.",
+          "type": "string",
+          "const": "downstream"
+        }
+      ]
+    },
+    "WaterProfile": {
+      "description": "The water level along a river: points sorted by chainage, read linearly between points and held\nflat beyond the first and last. Two points at one chainage make a step (a weir): at that chainage\nthe later point holds.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WaterPoint"
+      }
+    },
+    "WaterPoint": {
+      "description": "One point of a water level profile: a river chainage and the level there, in metres. It is\nwritten as the pair `[chainage, level]`.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
     },
     "RiverGeometry": {
       "description": "What the river stage returns.",
@@ -201,6 +285,34 @@
           },
           "minItems": 2,
           "maxItems": 2
+        },
+        "reversed": {
+          "description": "True when the lines were turned round so that they start at the mouth.",
+          "type": "boolean"
+        },
+        "mouth": {
+          "description": "The mouth: the first point of the centreline, when a mouth was stated.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "water_profile": {
+          "description": "The water profile, with its chainage from the mouth (turned with the line when it is).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaterProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -208,7 +320,8 @@
         "length_m",
         "stations_checked",
         "side_fail_stations",
-        "bank_checks"
+        "bank_checks",
+        "reversed"
       ]
     },
     "Banks": {

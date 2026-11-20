@@ -1,0 +1,67 @@
+{
+  "label": "Label: property",
+  "why": "A water profile that is the same at both ends does not say which end is lower: RIVER_MOUTH_UNKNOWN.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ],
+      [
+        300.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        500.0,
+        0.0
+      ],
+      [
+        600.0,
+        0.0
+      ],
+      [
+        700.0,
+        0.0
+      ],
+      [
+        800.0,
+        0.0
+      ],
+      [
+        900.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "mouth": "downstream",
+    "water_profile": [
+      [
+        0.0,
+        5.0
+      ],
+      [
+        1000.0,
+        5.0
+      ]
+    ],
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "error": "RIVER_MOUTH_UNKNOWN"
+  }
+}
