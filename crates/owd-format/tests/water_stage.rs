@@ -8,7 +8,10 @@
 //!
 //! Label: property
 
-use owd_format::design::water_stage::{DEFAULT_STEP_M, DesignWater, WaterIn, WaterSource, water};
+use owd_format::design::MouthAt;
+use owd_format::design::water_stage::{
+    DEFAULT_STEP_M, DesignWater, WaterIn, WaterSource, level_on_line, water,
+};
 use owd_format::design::{AlignMethod, Role, Session, Stage, StageStatus};
 use owd_format::geotiff::Dem;
 use owd_format::types::Chainage;
@@ -271,4 +274,157 @@ fn without_a_design_line_the_water_stage_says_so() {
     let mut s = Session::new("Bare", "2026-11-20");
     let e = s.run_water().unwrap_err();
     assert!(e.to_string().contains("design line"), "{e}");
+}
+
+// --- QA on PR 563 ---------------------------------------------------------------------------
+
+/// The synthetic meandering river: the rolling circle's line leaves the centreline in the bends.
+fn meander() -> (Session, impl Fn(&[f64], &[f64]) -> Vec<f64>) {
+    use owd_core::synthetic::{RiverParams, synthetic_river};
+    let r = synthetic_river(RiverParams::default()).unwrap();
+    let shift = |p: &[f64; 2]| [p[0] + X0, p[1] + Y0];
+    let ring: Vec<[f64; 2]> = r.polygon.exterior.iter().map(shift).collect();
+    let centre: Vec<[f64; 2]> = r.centreline.iter().map(shift).collect();
+    let length: f64 = centre
+        .windows(2)
+        .map(|w| libm::hypot(w[1][0] - w[0][0], w[1][1] - w[0][1]))
+        .sum();
+    let mut s = Session::new("Meander", "2026-11-20");
+    s.import(&[
+        (
+            Role::Centreline,
+            &format!(
+                r#"{{"type":"LineString"{UTM30},"coordinates":{}}}"#,
+                json!(centre)
+            ),
+        ),
+        (
+            Role::RiverPolygon,
+            &format!(
+                r#"{{"type":"Polygon"{UTM30},"coordinates":{}}}"#,
+                json!([ring])
+            ),
+        ),
+    ])
+    .unwrap();
+    s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
+        .unwrap();
+    s.set_vessel("CEMT_IV", Some(2.5)).unwrap();
+    s.run_stage(Stage::Sizing).unwrap();
+    s.align(
+        AlignMethod::RollingCircle,
+        &json!({"use_water": false}),
+        None,
+    )
+    .unwrap();
+    let dem = Dem {
+        width: 2,
+        height: 2,
+        data: vec![0.0; 4],
+        geotransform: [1.0, 0.0, 0.0, 0.0, -1.0, 2.0],
+        nodata: Some(-9999.0),
+        epsg: Some(32630),
+    };
+    s.set_dem("dem.tif", b"a stand-in terrain file", &dem);
+    // A sloped profile, so where a station projects onto the river changes its level.
+    s.set_water_profile(&[[0.0, 10.0], [length, 14.0]]).unwrap();
+    let terrain = move |xs: &[f64], ys: &[f64]| -> Vec<f64> {
+        xs.iter()
+            .zip(ys)
+            .map(|(&x, &y)| r.terrain(x - X0, y - Y0))
+            .collect()
+    };
+    (s, terrain)
+}
+
+/// Item A: one path. On a line that leaves the centreline, the volumes walk's level at each
+/// station is the water stage's level there, exactly, and so is the stored point at a station.
+#[test]
+fn the_walk_reads_its_levels_through_the_water_stage_on_a_line_that_leaves_the_centreline() {
+    let (mut s, terrain) = meander();
+    s.run_volumes(&Value::Null, Some(&terrain)).unwrap();
+    let id = s.final_line().unwrap().id.clone();
+    let walk = s.option_section_walk(&id, &terrain).unwrap();
+    let input = s.water_input().unwrap();
+    // The line does leave the centreline: some station's river chainage differs from its own.
+    let w = s.design_water().unwrap();
+    assert!(
+        w.points
+            .iter()
+            .any(|p| (p.chainage.0 - p.river_chainage.0).abs() > 0.1),
+        "the line follows the centreline everywhere"
+    );
+    for st in &walk.stations {
+        assert_eq!(
+            st.wl,
+            level_on_line(&input, st.chainage_m),
+            "at {} m",
+            st.chainage_m
+        );
+        if let Some(p) = w
+            .points
+            .iter()
+            .rev()
+            .find(|p| p.chainage.0 == st.chainage_m)
+        {
+            assert_eq!(p.level_m, st.wl, "stored point at {} m", st.chainage_m);
+        }
+    }
+    // Item B: every station is a point of the stored answer.
+    let at_stations = walk
+        .stations
+        .iter()
+        .filter(|st| w.points.iter().any(|p| p.chainage.0 == st.chainage_m))
+        .count();
+    assert_eq!(at_stations, walk.stations.len());
+}
+
+/// Items C and D: the stored water goes stale on a new design line, new pools and a new step.
+#[test]
+fn the_stored_water_goes_stale_on_the_line_the_pools_and_the_step() {
+    let mut s = design();
+    s.run_water().unwrap();
+    assert_eq!(s.water_status(), StageStatus::Fresh);
+
+    let mut doc = s.document().clone();
+    for p in doc["stages"]["alignment"]["results"]["line"]["coordinates"]
+        .as_array_mut()
+        .unwrap()
+    {
+        p[1] = json!(p[1].as_f64().unwrap() + 5.0);
+    }
+    let t = Session::open(&doc.to_string()).unwrap();
+    assert_eq!(t.water_status(), StageStatus::Stale, "design line");
+
+    let mut doc = s.document().clone();
+    doc["stages"]["optimise"] = json!({"settings": {}, "results": {"profile": [[0.0, 9.0], [3000.0, 9.0]]},
+        "depends_on": "0".repeat(64), "engine_version": doc["engine_version"]});
+    let t = Session::open(&doc.to_string()).unwrap();
+    assert_eq!(t.water_status(), StageStatus::Stale, "pools");
+
+    let mut doc = s.document().clone();
+    doc["stages"]["volumes"]["settings"] = json!({"station_m": 10.0});
+    let t = Session::open(&doc.to_string()).unwrap();
+    assert_eq!(t.water_status(), StageStatus::Stale, "step");
+}
+
+/// Item D: with a mouth stated at the far end, the river and its water are turned: the stored
+/// water's chainage runs from the mouth, where the level is lowest.
+#[test]
+fn with_a_mouth_the_water_runs_from_the_mouth() {
+    let mut s = design();
+    s.set_mouth(MouthAt::Downstream, None).unwrap();
+    s.align(
+        AlignMethod::RollingCircle,
+        &json!({"use_water": false}),
+        None,
+    )
+    .unwrap();
+    s.run_water().unwrap();
+    let w = s.design_water().unwrap();
+    let first = &w.points[0];
+    let last = w.points.last().unwrap();
+    assert!(first.river_chainage.0 < 1.0, "{}", first.river_chainage.0);
+    assert_eq!(first.level_m, 8.0, "the mouth is the low end");
+    assert_eq!(last.level_m, 12.0);
 }
