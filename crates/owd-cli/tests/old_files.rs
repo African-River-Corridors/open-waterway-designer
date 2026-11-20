@@ -35,14 +35,14 @@ fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// A folder holding the fixture `name` (edited by `edit`) as `old.owd`, with the DEM beside it.
-fn work(name: &str, edit: impl Fn(&mut Value)) -> (PathBuf, Value) {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("owd-old-files-{name}"));
+/// A folder `tag` holding the fixture `name` (edited by `edit`) as `old.owd`, with the DEM beside it.
+fn work(tag: &str, name: &str, edit: impl Fn(&mut Value)) -> (PathBuf, Value) {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("owd-old-files-{tag}"));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let text = std::fs::read_to_string(
-        root().join(format!("crates/owd-format/tests/data/format-0.4-{name}.owd")),
-    )
+    let text = std::fs::read_to_string(root().join(format!(
+        "crates/owd-format/tests/data/format-0.4-{name}.owd"
+    )))
     .unwrap();
     let mut doc: Value = serde_json::from_str(&text).unwrap();
     edit(&mut doc);
@@ -61,7 +61,7 @@ fn read(p: &Path) -> Value {
 
 #[test]
 fn a_fresh_old_file_opens_fresh_and_its_volumes_run_again_with_the_same_numbers() {
-    let (path, before) = work("rolling-circle", |_| {});
+    let (path, before) = work("fresh", "rolling-circle", |_| {});
     let doc = path.to_str().unwrap();
     let st = run(&["status", doc]);
     assert_eq!(code(&st), 0, "{}", err(&st));
@@ -103,7 +103,9 @@ fn a_fresh_old_file_opens_fresh_and_its_volumes_run_again_with_the_same_numbers(
 
 #[test]
 fn with_no_water_level_the_dem_beside_the_file_says_which_end_is_the_mouth() {
-    let (path, _) = work("rolling-circle", |d| d["inputs"]["water_level"] = Value::Null);
+    let (path, _) = work("dem-mouth", "rolling-circle", |d| {
+        d["inputs"]["water_level"] = Value::Null
+    });
     let st = run(&["status", path.to_str().unwrap()]);
     assert_eq!(code(&st), 0, "{}", err(&st));
     let e = err(&st);

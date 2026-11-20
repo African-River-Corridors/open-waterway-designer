@@ -135,7 +135,10 @@ fn a_file_with_only_a_fresh_lattice_line_opens_with_it_as_the_fresh_design_line(
     assert_same_numbers(&rows[0], old_row(&before, "lattice"));
     // The pools and the weirs are kept as they were.
     let op = &s.document()["stages"]["optimise"]["results"];
-    assert_eq!(op["pools"], before["stages"]["optimise"]["results"]["pools"]);
+    assert_eq!(
+        op["pools"],
+        before["stages"]["optimise"]["results"]["pools"]
+    );
     assert_eq!(
         op["cascade"],
         before["stages"]["optimise"]["results"]["cascade"]
@@ -157,20 +160,29 @@ fn a_stale_stage_stays_stale_and_a_fresh_one_stays_fresh() {
     );
     let notes = s.open_notes().join("\n");
     assert!(notes.contains("kept fresh"), "{notes}");
-    assert!(notes.contains("volumes") && notes.contains("stale"), "{notes}");
+    assert!(
+        notes.contains("volumes") && notes.contains("stale"),
+        "{notes}"
+    );
 }
 
 #[test]
 fn a_file_stale_when_it_was_saved_stays_stale() {
-    // Format 0.3, every stage run and then the draught changed (see `one_design_line.rs`).
+    // Format 0.3, every stage run and then the draught changed and the sizing run again (see
+    // `one_design_line.rs`): the sizing is fresh, the stages after it stale.
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/format-0.3-two-lines.owd");
     let s = Session::open(&std::fs::read_to_string(p).unwrap()).unwrap();
-    assert_eq!(statuses(&s), [Stale, Stale, Stale, Stale]);
+    assert_eq!(statuses(&s), [Fresh, Stale, Stale, Stale]);
 }
 
 #[test]
 fn a_moved_file_saves_and_reopens_unchanged() {
-    for name in ["rolling-circle", "lattice-only", "stale-volumes", "reversed"] {
+    for name in [
+        "rolling-circle",
+        "lattice-only",
+        "stale-volumes",
+        "reversed",
+    ] {
         let s = Session::open(&text(name)).unwrap();
         let again = Session::open(&s.to_text()).unwrap();
         assert_eq!(again.to_text(), s.to_text(), "{name}");
@@ -230,7 +242,10 @@ fn a_reversed_file_opens_from_the_mouth_with_the_same_design_and_stays_fresh() {
     );
     assert_eq!(coords(&d["inputs"]["centreline"]), reversed(old_centre));
     let wl = d["inputs"]["water_level"]["points"].as_array().unwrap();
-    let (first, last) = (wl[0][1].as_f64().unwrap(), wl.last().unwrap()[1].as_f64().unwrap());
+    let (first, last) = (
+        wl[0][1].as_f64().unwrap(),
+        wl.last().unwrap()[1].as_f64().unwrap(),
+    );
     assert!(first < last, "the water rises from the mouth: {wl:?}");
     // The same design: each line is the stored line, turned.
     let al = &d["stages"]["alignment"]["results"];
@@ -250,7 +265,9 @@ fn a_reversed_file_opens_from_the_mouth_with_the_same_design_and_stays_fresh() {
     let base_len = old_op["pools"].as_array().unwrap().last().unwrap()[1]
         .as_f64()
         .unwrap();
-    let old_weir = old_op["cascade"]["weirs"][0]["chainage_m"].as_f64().unwrap();
+    let old_weir = old_op["cascade"]["weirs"][0]["chainage_m"]
+        .as_f64()
+        .unwrap();
     let weir = op["cascade"]["weirs"][0]["chainage_m"].as_f64().unwrap();
     assert!((weir - (base_len - old_weir)).abs() < 1e-9, "{weir}");
     let pools = op["pools"].as_array().unwrap();
@@ -293,7 +310,10 @@ fn a_file_with_no_water_level_and_no_dem_is_not_turned_and_says_why() {
 fn opening_twice_does_not_turn_twice() {
     let mut s = Session::open(&text("reversed")).unwrap();
     let once = s.to_text();
-    assert!(s.settle_old_mouth(None).is_empty(), "nothing is left to settle");
+    assert!(
+        s.settle_old_mouth(None).is_empty(),
+        "nothing is left to settle"
+    );
     assert_eq!(s.to_text(), once);
     let again = Session::open(&once).unwrap();
     assert_eq!(again.to_text(), once);

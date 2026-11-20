@@ -143,8 +143,11 @@ treats both as impassable.
   `RIVER_MOUTH_UNKNOWN`. For a new cut canal or a basin, the engineer names the start point.
 - The river stage reverses the centreline, the banks and the water profile so that all run from the
   mouth. Every chainage OWD writes is from the mouth.
-- Opening a 0.4 document: if its line runs from upstream, the river stage reverses it, and every later
-  stage is stale.
+- Opening a 0.4 document: if its line runs from upstream, the river stage reverses it. *Changed by the
+  owner on 20 November 2026:* the stored results are turned with it (design lines, pools, weirs, water
+  profile, constraint stretches), so a stage that was fresh stays fresh. The mouth is the end with the
+  lower water level, else the lower end of the elevation model; with neither, the file is not turned
+  and a note says to state the mouth.
 
 ### Output levels [new]
 
@@ -362,8 +365,9 @@ its design measures. A comparison table across documents is a later tool, outsid
 Format 0.5. `inputs` gains `run`, `constraints`, `rates`, `structures`, `survey`. `stages` holds
 `river`, `sizing`, `reference_line`, `alignment`, `structures`, `water`, `refine`, `volumes`, `cost`,
 `measures`, `fits`, `envelope`, `plan_cut`. `options[]` is removed. A 0.4 file opens: its inputs are
-read, its alignment's rolling-circle (or lattice) line becomes the design line, its stages are marked
-stale, and it is saved as 0.5.
+read, its alignment's rolling-circle (or lattice) line becomes the design line, and it is saved as 0.5.
+*Changed by the owner on 20 November 2026:* a stage that was fresh under the 0.4 rules when the file
+opens stays fresh, with its numbers; a stale one stays stale.
 
 ## Testing decisions
 

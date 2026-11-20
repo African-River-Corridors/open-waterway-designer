@@ -231,7 +231,8 @@ impl DesignLine {
     }
 
     /// A design line from an option of a 0.4 document. Its bends and cut-offs were never worked out:
-    /// they are left empty and unknown, and the stage that holds it is marked stale on open.
+    /// they are left empty and unknown here. A line the move keeps fresh gets them worked out from
+    /// its points; a stale one keeps them empty until its stage runs again.
     pub fn from_old_option(o: &Value) -> Option<DesignLine> {
         let line: Vec<Pt> = super::geojson::all_positions(&o["line"]);
         if line.len() < 2 {

@@ -20,7 +20,8 @@ pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The document format version this engine writes: the string `"0.5"` since spec 0017 ticket 6 (one
 /// design line). A 0.4 file opens and is saved as 0.5 ([`super::migrate::from_0_4`]): its design
-/// line options become the one design line, and its stages after sizing are marked stale. A file with
+/// line options become the one design line; a stage that was fresh under the 0.4 rules stays fresh,
+/// a stale one stays stale; and it is turned to run from its mouth when that can be told. A file with
 /// the number `3` (format 0.3, spec 0007) opens as 0.4 first. An older file is refused; there is no
 /// migration. Until format 1.0 (after an external review) a format change raises the minor number.
 pub const FORMAT_VERSION: &str = "0.5";
@@ -198,6 +199,9 @@ pub struct Session {
     /// whose hash it recorded, when the host has attached it. Not stored: the document holds only
     /// its reference, as for the DEM.
     pub(super) multiplier: Option<std::sync::Arc<crate::geotiff::Dem>>,
+    /// A file moved from format 0.4 whose mouth only the elevation model can tell, while the host
+    /// has not loaded it yet ([`Session::settle_old_mouth`]). Not stored.
+    pub(super) old_mouth_pending: bool,
 }
 
 fn empty_stage() -> Value {
@@ -219,6 +223,7 @@ impl Session {
             library: engine::built_in().clone(),
             notes: Vec::new(),
             multiplier: None,
+            old_mouth_pending: false,
             doc: json!({
                 "format_version": FORMAT_VERSION,
                 "engine_version": ENGINE_VERSION,
@@ -236,28 +241,37 @@ impl Session {
     }
 
     /// Parse and validate `.owd` text.
+    ///
+    /// A format 0.4 (or 0.3) file moves to this format ([`super::migrate`]): each stage that was
+    /// fresh under the 0.4 rules when it opened stays fresh, with its numbers; a stale one stays
+    /// stale. Its mouth is worked out from its water level and stored, and when the mouth is the far
+    /// end the river and the stored results are turned to run from it. With no water level to tell,
+    /// the elevation model tells, once the host has loaded it ([`Session::settle_old_mouth`]).
     pub fn open(text: &str) -> Result<Session, DesignError> {
         let mut doc: Value = serde_json::from_str(text)
             .map_err(|e| DesignError::Input(format!("the file is not valid JSON: {e}")))?;
         let mut notes = Vec::new();
-        match &doc["format_version"] {
+        // The stages kept fresh by a move from format 0.4, if the file is one.
+        let mut moved: Option<Vec<Stage>> = None;
+        if let Value::Number(n) = &doc["format_version"]
+            && n.as_i64() == Some(FORMAT_0_3)
+        {
             // Format 0.3 reads as 0.4 (spec 0015), which moves to 0.5 below.
-            Value::Number(n) if n.as_i64() == Some(FORMAT_0_3) => {
-                doc["format_version"] = json!(FORMAT_0_4);
-                notes = super::migrate::from_0_4(&mut doc);
-            }
-            Value::String(v) if v == FORMAT_0_4 => {
-                notes = super::migrate::from_0_4(&mut doc);
-            }
-            _ => {}
+            doc["format_version"] = json!(FORMAT_0_4);
+        }
+        if doc["format_version"] == FORMAT_0_4 {
+            let fresh = super::migrate::fresh_0_4(&doc);
+            let (n, keep) = super::migrate::from_0_4(&mut doc, &fresh);
+            notes = n;
+            moved = Some(keep);
         }
         // Answers stored by an older OWD say why they show stale (read before the line moves: the
         // old hashes read `inputs.reference_line`).
         notes.extend(super::fits::older_answer_note(&doc));
         notes.extend(super::envelope::older_answer_note(&doc));
         // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
-        let (moved, moved_fresh) = super::reference_line::move_from_inputs(&mut doc);
-        notes.extend(moved);
+        let (moved_line, moved_fresh) = super::reference_line::move_from_inputs(&mut doc);
+        notes.extend(moved_line);
         match &doc["format_version"] {
             Value::Number(n) => {
                 return Err(DesignError::Input(format!(
@@ -284,14 +298,24 @@ impl Session {
             library: engine::built_in().clone(),
             notes,
             multiplier: None,
+            old_mouth_pending: false,
         };
         // A moved line that was fresh keeps a fresh record: its hash becomes the record's own.
         if moved_fresh && let Some(h) = s.reference_line_record_hash() {
             s.doc["stages"][super::reference_line::STAGE]["depends_on"] = json!(h);
         }
+        // The stages a move from 0.4 kept fresh get the hash of this format.
+        if let Some(keep) = &moved {
+            s.finish_moved_lines(keep, false);
+            s.stamp_fresh(keep);
+        }
         if s.doc["inputs"].is_object() && s.validate_schema_only().is_empty() {
             s.migrate_water_settings();
             s.canonical_vessel_ids();
+            if moved.is_some() {
+                let n = s.old_file_mouth(None, true);
+                s.notes.extend(n);
+            }
         }
         let errors = s.validate();
         if errors.is_empty() {
@@ -434,6 +458,11 @@ impl Session {
     /// What a stage depended on, hashed: the inputs, the project CRS, and the settings and results
     /// of the stage and of every stage before it.
     pub(super) fn dependency_hash(&self, stage: Stage) -> String {
+        self.dependency_hash_with(stage, self.selected_set_hashes())
+    }
+
+    /// [`Session::dependency_hash`] with `rule_sets` as the content hashes of the selected Rule Sets.
+    pub(super) fn dependency_hash_with(&self, stage: Stage, rule_sets: Value) -> String {
         let st = |s: Stage| &self.doc["stages"][s.name()];
         let part = |s: Stage| json!({"settings": st(s)["settings"], "results": st(s)["results"]});
         let upto = |s: Stage| Stage::ALL.iter().take_while(|x| **x != s).count();
@@ -451,7 +480,7 @@ impl Session {
         });
         // The content of every selected Rule Set, as the engine holds it now: a changed set makes the
         // sizing stage, and so every stage after it, stale.
-        dep["rule_sets"] = self.selected_set_hashes();
+        dep["rule_sets"] = rule_sets;
         // The marked reaches decide which radius Rule applies where, so sizing depends on them.
         if let Some(r) = self.doc["inputs"].get("waterway_reaches") {
             dep["waterway_reaches"] = r.clone();

@@ -385,7 +385,8 @@ fn the_sizing_choices_list_rule_sets_with_their_inputs_and_vessel_classes_with_l
 
 /// A study saved before the shared catalogue names its class by an old id (`CEMT_IV`): it opens with
 /// its sizing fresh, the same sizing, and saves the catalogue id (spec 0015 T0). The file is format
-/// 0.3, so its stages after sizing open stale (spec 0017: one design line).
+/// 0.3; its alignment and volumes were up to date when it was saved, so they open fresh too (the
+/// owner's rule for old files, 20 November 2026).
 #[test]
 fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
     let text = std::fs::read_to_string(
@@ -413,7 +414,7 @@ fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
         "the sizing was fresh in the file and stays fresh"
     );
     for stage in [Stage::Alignment, Stage::Volumes] {
-        assert_eq!(s.stage_status(stage), StageStatus::Stale, "{stage:?}");
+        assert_eq!(s.stage_status(stage), StageStatus::Fresh, "{stage:?}");
     }
     for k in [
         "bottom_width_straight_m",

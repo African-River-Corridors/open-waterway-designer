@@ -211,6 +211,19 @@ pub(crate) fn open(path: &str) -> core::result::Result<Session, Failure> {
 fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     owd_format::design::check_file_name(path).map_err(from_design)?;
     let mut session = Session::open(&read(path)?).map_err(from_design)?;
+    // A file from format 0.4 records no mouth: with no water level to tell, its DEM tells, when the
+    // file beside the document is the one whose hash was recorded.
+    if session.old_mouth_pending() {
+        let dem = session
+            .dem_path()
+            .and_then(|p| std::fs::read(doc_dir(path).join(p)).ok())
+            .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
+            .and_then(|b| owd_format::geotiff::read_bytes(&b).ok());
+        let sampler = dem
+            .as_ref()
+            .and_then(|d| owd_format::design::terrain::dem_sampler(d, project_epsg(&session)).ok());
+        session.settle_old_mouth(sampler.as_ref().map(|s| s as TerrainSampler));
+    }
     // A file from an older format says what opening it changed (spec 0017: one design line).
     if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
         for n in session.open_notes() {
