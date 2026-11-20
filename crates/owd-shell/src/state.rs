@@ -221,8 +221,28 @@ impl AppState {
     /// A path with the old file extension is refused with a message to rename it (spec 0006).
     pub fn open(path: &Path, text: &str, dem_bytes: Option<&[u8]>) -> Result<AppState, String> {
         owd_format::design::check_file_name(&path.to_string_lossy()).map_err(message)?;
-        let session = Session::open(text).map_err(message)?;
-        let warnings = session.dem_warning(dem_bytes).into_iter().collect();
+        let mut session = Session::open(text).map_err(message)?;
+        // A file from format 0.4 records no mouth: with no water level to tell, its DEM tells, when
+        // it is the file whose hash was recorded.
+        if session.old_mouth_pending() {
+            let epsg = session.document()["project"]["crs"]["epsg"]
+                .as_u64()
+                .map(|c| c as u32);
+            let dem = dem_bytes
+                .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
+                .and_then(|b| read_bytes(b).ok());
+            let sampler = dem
+                .as_ref()
+                .and_then(|d| owd_format::design::terrain::dem_sampler(d, epsg).ok());
+            session.settle_old_mouth(
+                sampler
+                    .as_ref()
+                    .map(|s| s as owd_format::types::TerrainSampler),
+            );
+        }
+        // What opening changed (a file from an older format) shows first, then the DEM's warning.
+        let mut warnings: Vec<String> = session.open_notes().to_vec();
+        warnings.extend(session.dem_warning(dem_bytes));
         let dem_file = session
             .dem_path()
             .map(|rel| path.parent().unwrap_or(Path::new(".")).join(rel));

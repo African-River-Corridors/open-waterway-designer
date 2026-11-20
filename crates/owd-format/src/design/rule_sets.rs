@@ -463,6 +463,35 @@ impl Session {
         )
     }
 
+    /// As [`Session::selected_set_hashes`], but a set the library does not hold yet (one loaded from a
+    /// file after the design opens) takes the hash the design was sized with. For a move from an older
+    /// format, which runs before the host loads the files: a file that does not match is refused
+    /// later ([`Session::rule_set_problem`]), so nothing is kept fresh in error.
+    pub(super) fn set_hashes_as_sized(&self) -> Value {
+        let settings = self.sizing_settings();
+        let stored = |id: &str, version: &str| {
+            settings["rule_sets"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|s| s["id"] == id && s["version"] == version)
+                .and_then(|s| s["hash"].as_str().map(str::to_string))
+        };
+        json!(
+            selected(&settings)
+                .iter()
+                .map(|(id, version)| json!({
+                    "set": format!("{id}@{version}"),
+                    "hash": self
+                        .library
+                        .find(id, version)
+                        .map(|s| s.hash.clone())
+                        .or_else(|| stored(id, version)),
+                }))
+                .collect::<Vec<_>>()
+        )
+    }
+
     /// Why the design's Rule Sets cannot be confirmed now, or `None` (ticket #491). Every surface
     /// asks this before a stage after sizing, so the user is told what to give rather than that
     /// sizing is stale:

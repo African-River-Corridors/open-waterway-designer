@@ -12,7 +12,10 @@
 //! upstream, so the river stage gives the bank checks the banks the other way round.
 //!
 //! A design with no mouth keeps its lines as they were given, and chainage runs from the first point
-//! of the stored centreline, as before (a document from format 0.4 opens this way).
+//! of the stored centreline, as before. A document from format 0.4 records no mouth: on open it is
+//! worked out from the water level, else from the elevation model, and the design is turned with its
+//! stored results so that the stages that were fresh stay fresh ([`Session::old_file_mouth`]). When
+//! neither can tell, the design is not turned, and the notes say to state the mouth.
 
 use super::river::{Mouth, RiverIn, river};
 use super::session::{DesignError, Session};
@@ -151,10 +154,16 @@ impl Session {
     /// river is `len` metres long). Returns what it could not turn, in plain words.
     fn turn_river(&mut self, len: f64) -> Vec<String> {
         let mut notes = Vec::new();
-        // The optimise stage's candidate weir sites are metres along the design line (the
-        // alignment's line, else the river centreline): counted from the other end of that line.
-        let line_len =
-            super::design_line::alignment_line_of(&self.doc).map_or(len, |l| l.line.length_m());
+        // The optimise stage's candidate weir sites are metres along its baseline (the line it ran
+        // on, as it stored it; else the alignment's line, else the river centreline): counted from
+        // the other end of that line.
+        let baseline =
+            super::geojson::all_positions(&self.doc["stages"]["optimise"]["results"]["baseline"]);
+        let line_len = if baseline.len() >= 2 {
+            owd_core::geom::linear::length(&baseline)
+        } else {
+            super::design_line::alignment_line_of(&self.doc).map_or(len, |l| l.line.length_m())
+        };
         if let Some(sites) = self
             .doc
             .pointer_mut("/stages/optimise/settings/candidate_sites_m")
@@ -293,5 +302,360 @@ impl Session {
             self.turn_lines();
         }
         Ok(())
+    }
+}
+
+/// How the note begins that says a moved file waits for its elevation model to find its mouth.
+const WAITS_FOR_DEM: &str =
+    "no mouth is recorded and the water level does not say which end is lower";
+
+/// The length of a stored GeoJSON line, in metres; 0 for anything else.
+fn line_len(v: &Value) -> f64 {
+    owd_core::geom::linear::length(&super::geojson::all_positions(v))
+}
+
+/// Stretches `{<from>, <to>}` measured from the other end of a line `len` metres long, in the other
+/// order. The points named `start` and `end`, where a stretch has them, change places too. Unlike
+/// [`turn_stretches`], an end is never read as open.
+fn turn_spans(v: &mut Value, from: &str, to: &str, len: f64) {
+    let Some(a) = v.as_array_mut() else { return };
+    a.reverse();
+    for s in a.iter_mut() {
+        let (f, t) = (s[from].as_f64(), s[to].as_f64());
+        if let (Some(f), Some(t)) = (f, t) {
+            // Never below 0 by a rounding of the length.
+            s[from] = json!((len - t).max(0.0));
+            s[to] = json!((len - f).max(0.0));
+        }
+        if let Some(o) = s.as_object_mut()
+            && o.contains_key("start")
+            && o.contains_key("end")
+        {
+            let (a, b) = (o.remove("start"), o.remove("end"));
+            o.insert("start".into(), b.unwrap_or(Value::Null));
+            o.insert("end".into(), a.unwrap_or(Value::Null));
+        }
+    }
+}
+
+/// A chainage written in a sentence (`between 120 m and 480 m`, `near 300 m along the line`),
+/// counted from the other end of a line `len` metres long. The text gives whole metres, so the
+/// turned number is within a metre of the exact one.
+fn turn_text(text: &str, len: f64) -> String {
+    let num = |s: &str| s.trim().parse::<f64>().ok();
+    let m = |x: f64| format!("{:.0}", (len - x).max(0.0));
+    if let Some(i) = text.find("between ")
+        && let Some(j) = text[i..].find(" m and ")
+        && let Some(k) = text[i + j + 7..].find(" m")
+    {
+        let a = &text[i + 8..i + j];
+        let b = &text[i + j + 7..i + j + 7 + k];
+        if let (Some(a), Some(b)) = (num(a), num(b)) {
+            return format!(
+                "{}between {} m and {} m{}",
+                &text[..i],
+                m(b),
+                m(a),
+                &text[i + j + 7 + k + 2..]
+            );
+        }
+    }
+    if let Some(i) = text.find("near ")
+        && let Some(j) = text[i..].find(" m along the line")
+        && let Some(x) = num(&text[i + 5..i + j])
+    {
+        return format!("{}near {} m{}", &text[..i], m(x), &text[i + j + 2..]);
+    }
+    text.to_string()
+}
+
+/// A design line (as stored) turned to run from the other end: the line, and every chainage along
+/// it that is not worked out again ([`Session::finish_moved_lines`] works out its bends, cut-offs
+/// and sanity check). `baseline_len` is the length of the line a lattice's pools are counted on.
+fn turn_design_line(v: &mut Value, baseline_len: f64) {
+    if !v.is_object() {
+        return;
+    }
+    let len = line_len(&v["line"]);
+    reverse_line(&mut v["line"]);
+    if let Some(s) = v.pointer_mut("/checks/fits_in_water/stretches") {
+        turn_spans(s, "start_chainage_m", "end_chainage_m", len);
+    }
+    if let Some(s) = v.get_mut("constraints_touched") {
+        turn_spans(s, "from", "to", len);
+    }
+    if let Some(p) = v.pointer_mut("/details/pools") {
+        turn_spans(p, "start_m", "end_m", baseline_len);
+    }
+}
+
+impl Session {
+    /// True when this design was moved from format 0.4 and only its elevation model can say which
+    /// end is the mouth, and the host has not given it yet: call [`Session::settle_old_mouth`] with
+    /// the DEM once it is loaded.
+    pub fn old_mouth_pending(&self) -> bool {
+        self.old_mouth_pending
+    }
+
+    /// Work out the mouth of a design moved from format 0.4 from its elevation model (`terrain`, the
+    /// DEM the document names, in the project CRS), and turn the design to run from it when it is
+    /// the far end. Does nothing unless [`Session::old_mouth_pending`]. With no terrain, or one that
+    /// cannot tell, nothing is turned and the note says to state the mouth. Returns the notes, which
+    /// are added to [`Session::open_notes`] too.
+    pub fn settle_old_mouth(&mut self, terrain: Option<TerrainSampler>) -> Vec<String> {
+        if !self.old_mouth_pending {
+            return Vec::new();
+        }
+        self.old_mouth_pending = false;
+        // The note that said it waits for the elevation model gives way to what it found.
+        self.notes.retain(|n| !n.starts_with(WAITS_FOR_DEM));
+        let notes = self.old_file_mouth(terrain, false);
+        self.notes.extend(notes.iter().cloned());
+        notes
+    }
+
+    /// The mouth of a file moved from format 0.4, which records none (spec 0017): the end with the
+    /// lower water level, else (with `terrain`) the lower end of the ground. When it is the far end,
+    /// the river inputs are turned as [`Session::set_mouth`] turns them, and the stored results of
+    /// every stage that was fresh are turned with them, so they stay fresh: the design lines, the
+    /// optimise stage's baseline, pools, water profile and weirs, and the volumes' constraint
+    /// stretches and warnings. When it is the first end, the mouth is recorded and nothing else
+    /// changes. With `may_wait`, no terrain and a DEM named, it waits for the host
+    /// ([`Session::old_mouth_pending`]).
+    pub(super) fn old_file_mouth(
+        &mut self,
+        terrain: Option<TerrainSampler>,
+        may_wait: bool,
+    ) -> Vec<String> {
+        // A design with no river has no end to orient.
+        if self.stored_mouth().is_some() || self.base_line().is_err() {
+            return Vec::new();
+        }
+        let state = "state the mouth with `owd import --mouth downstream` (or `--mouth LON,LAT`); \
+                     chainage still runs from the first point of the stored centreline";
+        let mut fresh: Vec<super::session::Stage> = super::session::Stage::ALL
+            .into_iter()
+            .filter(|s| self.fresh_as_sized(*s))
+            .collect();
+        let river_len = self.river_geometry().map(|g| g.length_m).unwrap_or(0.0);
+        let bed_on_line = self.bed_model_value().is_some() && self.bed_axis_hash().is_some();
+        let report = match self.set_mouth(MouthAt::Downstream, terrain) {
+            Ok(r) => r,
+            Err(_) if may_wait && terrain.is_none() && self.dem_path().is_some() => {
+                self.old_mouth_pending = true;
+                return vec![format!(
+                    "{WAITS_FOR_DEM}: the mouth is worked out from the elevation model once it is \
+                     loaded (the command line and the app load it beside the file); without it, \
+                     {state}"
+                )];
+            }
+            Err(_) => {
+                return vec![format!(
+                    "no mouth is recorded, and neither the water level nor the elevation model \
+                     says which end is lower, so the design is not turned: {state}"
+                )];
+            }
+        };
+        let by = if self.input_water_profile().is_some_and(|p| {
+            let (a, b) = (
+                p.level_at(crate::types::Chainage(0.0)),
+                p.level_at(crate::types::Chainage(river_len)),
+            );
+            (a - b).abs() > 1e-9
+        }) {
+            "the water level"
+        } else {
+            "the elevation model"
+        };
+        let mut notes = Vec::new();
+        if !report.turned {
+            notes.push(format!(
+                "the mouth is the first end of the stored centreline (the lower end, by {by}); it \
+                 is recorded, and nothing else changes"
+            ));
+        } else {
+            notes.push(format!(
+                "the mouth is the far end of the stored centreline (the lower end, by {by}), so the \
+                 design is turned to run from it: the river, its inputs and the stored results \
+                 now count chainage from the mouth"
+            ));
+            notes.extend(report.notes);
+            if bed_on_line && fresh.contains(&super::session::Stage::Volumes) {
+                fresh.retain(|s| *s != super::session::Stage::Volumes);
+                notes.push(
+                    "the volumes read a bed centred on the reference line, which is made again \
+                     from the mouth, so they are marked stale: run `owd volumes`"
+                        .to_string(),
+                );
+            }
+            notes.extend(self.turn_results(river_len, &fresh));
+        }
+        self.finish_moved_lines(&fresh, report.turned);
+        self.stamp_fresh(&fresh);
+        notes
+    }
+
+    /// Turn the stored results of a design whose river was just turned (it is `river_len` metres
+    /// long): every stage's, fresh or not, so no chainage is left counting from the old start.
+    /// Returns what could not be turned exactly, in plain words.
+    fn turn_results(&mut self, river_len: f64, fresh: &[super::session::Stage]) -> Vec<String> {
+        use super::session::Stage;
+        let mut notes = Vec::new();
+        let doc = &mut self.doc;
+        let baseline_len = line_len(&doc["stages"]["optimise"]["results"]["baseline"]);
+        turn_design_line(&mut doc["stages"]["alignment"]["results"], baseline_len);
+        let op = &mut doc["stages"]["optimise"];
+        if op["results"].is_object() {
+            let r = &mut op["results"];
+            reverse_line(&mut r["baseline"]);
+            if let Some(p) = r["pools"].as_array_mut() {
+                p.reverse();
+                for q in p.iter_mut() {
+                    if let (Some(a), Some(b)) = (q[0].as_f64(), q[1].as_f64()) {
+                        q[0] = json!((baseline_len - b).max(0.0));
+                        q[1] = json!((baseline_len - a).max(0.0));
+                    }
+                }
+            }
+            if let Some(l) = r["pools"][0][2].as_f64() {
+                r["base_level_m"] = json!(l);
+            }
+            turn_points(&mut r["profile"], river_len);
+            // A weir now sits between the same two pools the other way round: the pool after it
+            // (from the mouth) is the one that was before it, and its lift changes sign.
+            if let Some(w) = r["cascade"]["weirs"].as_array_mut() {
+                w.reverse();
+                for x in w.iter_mut() {
+                    if let Some(c) = x["chainage_m"].as_f64() {
+                        x["chainage_m"] = json!(baseline_len - c);
+                    }
+                    if let (Some(level), Some(lift)) =
+                        (x["pool_level_m"].as_f64(), x["lift_m"].as_f64())
+                    {
+                        x["pool_level_m"] = json!(level - lift);
+                        x["lift_m"] = json!(-lift);
+                    }
+                }
+            }
+            turn_design_line(&mut r["design_line"], baseline_len);
+            if fresh.contains(&Stage::Optimise) {
+                notes.push(
+                    "the pools and the weirs are the same, counted from the mouth: a weir's pool \
+                     level is now the level on its upstream side looking from the mouth, and its \
+                     lift is negative where the water steps down going upstream. The optimise \
+                     settings (the base level and the terminal level) are kept as they were, but \
+                     they now read from the mouth: check them before you run `owd optimise` again"
+                        .to_string(),
+                );
+            }
+        }
+        // The volumes: the row of the design line the later stages read.
+        let id = doc["stages"]["volumes"]["results"]["id"].clone();
+        let row_len = [
+            &doc["stages"]["optimise"]["results"]["design_line"],
+            &doc["stages"]["alignment"]["results"],
+        ]
+        .iter()
+        .find(|l| l["id"] == id)
+        .map(|l| line_len(&l["line"]));
+        let vo = &mut doc["stages"]["volumes"]["results"];
+        if vo.is_object()
+            && let Some(len) = row_len
+        {
+            if let Some(cs) = vo.pointer_mut("/screening/constraint_stretches") {
+                turn_spans(cs, "start_chainage_m", "end_chainage_m", len);
+                if let Some(a) = cs.as_array_mut() {
+                    for s in a.iter_mut() {
+                        if let Some(w) = s["worst_chainage_m"].as_f64() {
+                            s["worst_chainage_m"] = json!((len - w).max(0.0));
+                        }
+                    }
+                    // In start order, as the volumes stage writes them (they may overlap).
+                    a.sort_by(|x, y| {
+                        let at = |v: &Value| v["start_chainage_m"].as_f64().unwrap_or(0.0);
+                        at(x).total_cmp(&at(y))
+                    });
+                }
+            }
+            let mut texts = false;
+            if let Some(w) = vo
+                .pointer_mut("/sanity/warnings")
+                .and_then(Value::as_array_mut)
+            {
+                for t in w.iter_mut() {
+                    if let Some(s) = t.as_str() {
+                        let turned = turn_text(s, len);
+                        texts |= turned != s;
+                        *t = json!(turned);
+                    }
+                }
+            }
+            if fresh.contains(&Stage::Volumes) {
+                notes.push(
+                    "the volumes keep their totals (the same line, the same cut); their stations \
+                     were walked from the old start, so a new `owd volumes` run, which walks from \
+                     the mouth, may move the totals a little"
+                        .to_string(),
+                );
+                if texts {
+                    notes.push(
+                        "the chainages in the volumes' warnings are turned from whole metres, so \
+                         each is within a metre"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        for (k, what) in [("fits", "fits"), ("envelope", "envelope")] {
+            let stored = |v: Option<&Value>| v.is_some_and(|v| !v.is_null());
+            if stored(doc.get(k)) || stored(doc["stages"].get(k)) {
+                notes.push(format!(
+                    "the {what} answer stored with the file ran from the other end: it shows as \
+                     stale; run `owd {what}` again"
+                ));
+            }
+        }
+        notes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Label: property
+    use super::*;
+
+    #[test]
+    fn a_chainage_in_a_sentence_counts_from_the_other_end() {
+        assert_eq!(
+            turn_text(
+                "the cut between 120 m and 480 m reaches 90 m2 a station",
+                1000.0
+            ),
+            "the cut between 520 m and 880 m reaches 90 m2 a station"
+        );
+        assert_eq!(
+            turn_text(
+                "the design line crosses itself near 300 m along the line, at (1.0, 2.0)",
+                1000.0
+            ),
+            "the design line crosses itself near 700 m along the line, at (1.0, 2.0)"
+        );
+        assert_eq!(turn_text("no chainage here", 1000.0), "no chainage here");
+    }
+
+    #[test]
+    fn a_stretch_turns_and_its_ends_change_places() {
+        let mut v = json!([
+            {"from": 0.0, "to": 100.0, "start": [0, 0], "end": [1, 1]},
+            {"from": 600.0, "to": 1000.0}
+        ]);
+        turn_spans(&mut v, "from", "to", 1000.0);
+        assert_eq!(
+            v,
+            json!([
+                {"from": 0.0, "to": 400.0},
+                {"from": 900.0, "to": 1000.0, "start": [1, 1], "end": [0, 0]}
+            ])
+        );
     }
 }

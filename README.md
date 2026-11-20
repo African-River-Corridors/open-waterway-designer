@@ -88,7 +88,9 @@ catalogue (`--vessel CEMT-VIb-motor`), or for a vessel of your own: `owd size de
 --loa 140 --beam 29 --draught 4.7 --formation motor` (a convoy also takes `--abreast` and `--in-line`; GB 50139 reads
 `--gb-class`). Every output labels it `Custom: My barge, 140 × 29 × 4.7 m`, and `owd fits` adds it as one more row.
 Designs are document format 0.5, with one design line each (spec 0017); a format 0.4 or 0.3 file opens and is
-saved as 0.5, its stages after sizing marked stale, and an older file is refused and must be rebuilt. `owd import
+saved as 0.5: a stage that was up to date when it was saved stays up to date, with its numbers, and the design is
+turned to run from the river mouth (the lower end, by the water level or the DEM). An older file is refused and must
+be rebuilt. `owd import
 --mouth downstream` (or `--mouth LON,LAT`) states the river mouth, and every chainage then counts from it. See [docs/rules/channel-rules.md](docs/rules/channel-rules.md).
 
 `owd fits` reads the river on the reference line: one smooth line in the water, made from the banks, that belongs
