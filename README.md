@@ -234,6 +234,14 @@ The search cost is a search objective. Re-measure the winner with `volumes.secti
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.
 
+## Map imagery (the Imagery setting)
+
+The app draws satellite imagery under the design. Open **Imagery** in the header to choose the source. The choice is yours alone: it is kept on your machine (in the browser's storage for the web app) and is never saved in a design file, an export, a report or a drawing. A design opened on another machine shows that machine's own choice. Drawings and reports use no imagery.
+
+- **Sentinel-2 cloudless 2016 (EOX, open)** is the default. It needs no key.
+- **Esri World Imagery (your Esri key)** uses your own Esri account. Sign up for an ArcGIS Location Platform account at <https://location.arcgis.com>, create API key credentials with the basemap privilege (for these tiles, the Static Basemap Tiles privilege), and paste the key into the field. A key expires, after at most one year. OWD stores the key only on your machine, shows only its last four characters, and sends it only to Esri to ask for tiles. Esri's own terms apply to your use of its imagery; OWD does not cache or save Esri tiles. The map shows "Powered by Esri" and Esri's data sources. If the key is wrong or has expired, the map says so in one line and goes back to the open imagery.
+- **Custom tiles** takes an XYZ tile address with `{z}`, `{x}` and `{y}`, and an attribution text that the map shows. Check that the provider's terms allow your use.
+
 ## Exit codes
 
 Every `owd` command exits with one of these codes. A failed check on an option is part of the result,

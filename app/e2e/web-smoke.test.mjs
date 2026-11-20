@@ -531,13 +531,13 @@ describe("OWD web smoke tests", () => {
       }
     };
     walk(DIST);
-    // Hosts that are not data sources: the basemap (EOX), and standards and docs that libraries name in
+    // Hosts that are not data sources: the basemaps (EOX, and Esri for a user who enters their own key), and standards and docs that libraries name in
     // comments and messages. None is a server of ours; a new host fails here until it is looked at.
     // tribby.com and scripts.sil.org are in the name table of the drawing font (Barlow, SIL OFL), which
     // the PDF writer embeds in the wasm: its designer's site and its licence's. Text, never fetched.
     // www.opengis.net and www.google.com are the KML 2.2 namespace and its `gx` extension, written into
     // the QA overlay's KMZ (spec 0013): names of XML vocabularies, never fetched.
-    const KNOWN = ["tiles.maps.eox.at", "cloudless.eox.at", "www.w3.org", "svelte.dev", "maplibre.org", "maplibre.invalid", "github.com", "wiki.openstreetmap.org", "json-schema.org", "tribby.com", "scripts.sil.org", "www.opengis.net", "www.google.com"];
+    const KNOWN = ["tiles.maps.eox.at", "cloudless.eox.at", "static-map-tiles-api.arcgis.com", "www.w3.org", "svelte.dev", "maplibre.org", "maplibre.invalid", "github.com", "wiki.openstreetmap.org", "json-schema.org", "tribby.com", "scripts.sil.org", "www.opengis.net", "www.google.com"];
     const allowed = (h) => [...PUBLIC_HOSTS, ...KNOWN].some((k) => h === k || h.startsWith(k)) || reportEngineHost(h) || catalogueHost(h);
     const unknown = [...hosts].filter((h) => !allowed(h));
     assert.deepEqual(unknown, [], `hosts in the web bundle that are neither a public source nor known: ${unknown.join(" ")}`);
@@ -893,6 +893,100 @@ describe("OWD web smoke tests", () => {
     await until(b, "alignment stale", async () => (await stageStatus(b)).includes("alignment:stale"));
     await until(b, "the section note", async () => (await exists(b, "section-note")) && (await text(b, "section-note")).includes("No sections yet"));
     assert.equal(await text(b, "section-note"), "No sections yet: the alignment is out of date. Run alignment, then volumes.");
+  });
+
+  it("the Imagery setting: custom tiles change the attribution and are remembered; a failing Esri request says so and falls back; the key stays out of the design", async () => {
+    // Esri is never called in a test: its requests are stubbed. Headless Chrome here has no WebGL, so no tile is asked for at all.
+    const KEY = "FAKE-KEY-not-real-7f3a9c1d";
+    {
+      const b = await start();
+      await b.url(`${origin}/owd/app`);
+      await loaded(b);
+      assert.match(await text(b, "attribution"), /EOxCloudless/, "the open default is shown at first");
+      assert.equal(await (await tid(b, "attribution")).getAttribute("data-source"), "open");
+      // Esri requests never leave the machine in a test: refuse them in the page.
+      await b.execute(() => {
+        window.__esriCalls = 0;
+        const real = window.fetch;
+        window.fetch = (u, ...rest) => {
+          if (String(u).includes("arcgis.com")) {
+            window.__esriCalls += 1;
+            return Promise.reject(new TypeError("blocked in the test"));
+          }
+          return real(u, ...rest);
+        };
+        window.showSaveFilePicker = async () => ({
+          name: "x.owd",
+          createWritable: async () => {
+            let t = "";
+            return { write: async (x) => (t += x), close: async () => (window.__saved = t) };
+          },
+        });
+      });
+      // Custom tiles.
+      await (await tid(b, "imagery-toggle")).click();
+      await (await tid(b, "imagery-select")).selectByAttribute("value", "custom");
+      const apply = await tid(b, "imagery-custom-apply");
+      assert.equal(await apply.isEnabled(), false, "custom tiles need an address and an attribution");
+      await (await tid(b, "imagery-url")).setValue(`http://127.0.0.1:9/{z}/{x}/{y}.png`);
+      await (await tid(b, "imagery-attribution")).setValue("Tiles by the Test Tile Server");
+      await apply.click();
+      await until(b, "the custom attribution", async () => (await text(b, "attribution")) === "Tiles by the Test Tile Server");
+      assert.equal(await (await tid(b, "attribution")).getAttribute("data-source"), "custom");
+      // Remembered on this machine: a reload shows it again.
+      await b.refresh();
+      await loaded(b);
+      await until(b, "the custom attribution after a reload", async () => (await text(b, "attribution")) === "Tiles by the Test Tile Server");
+      // Esri: a failing request shows one line and the open default is back.
+      await b.execute(() => {
+        window.showSaveFilePicker = async () => ({
+          name: "x.owd",
+          createWritable: async () => {
+            let t = "";
+            return { write: async (x) => (t += x), close: async () => (window.__saved = t) };
+          },
+        });
+        const real = window.fetch;
+        window.fetch = (u, ...rest) => {
+          if (String(u).includes("arcgis.com")) {
+            window.__esriCalls = (window.__esriCalls ?? 0) + 1;
+            return Promise.reject(new TypeError("blocked in the test"));
+          }
+          return real(u, ...rest);
+        };
+      });
+      await (await tid(b, "imagery-toggle")).click();
+      await (await tid(b, "imagery-select")).selectByAttribute("value", "esri");
+      await (await tid(b, "imagery-key")).setValue(KEY);
+      await (await tid(b, "imagery-key-set")).click();
+      await until(b, "the Esri failure line", async () => await exists(b, "imagery-note"));
+      assert.equal(await text(b, "imagery-note"), "Esri imagery could not load: check your key (it needs the basemap privilege) or choose another imagery source\nDismiss");
+      assert.match(await text(b, "attribution"), /EOxCloudless/, "the open default is back, with its own attribution");
+      assert.equal(await (await tid(b, "attribution")).getAttribute("data-source"), "open");
+      assert.ok((await b.execute(() => window.__esriCalls)) >= 1, "the stub saw the Esri request");
+      // The key is masked in the field, with a Clear button.
+      const masked = await text(b, "imagery-key-masked");
+      assert.ok(masked.endsWith("9c1d"), "the last four characters show");
+      assert.ok(!masked.includes("7f3a"), "and no more");
+      assert.ok(!masked.includes("FAKE"));
+      assert.equal(await exists(b, "imagery-key-clear"), true);
+      // The key is kept in this browser, and nowhere in the design, the page title or the page text.
+      assert.ok(await b.execute((k) => localStorage.getItem("owd-imagery").includes(k), KEY), "the key is stored on this machine");
+      await (await tid(b, "open-example")).click();
+      await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+      await (await tid(b, "save")).click();
+      await until(b, "the saved design", async () => (await b.execute(() => window.__saved)) !== undefined && (await b.execute(() => window.__saved)) !== null);
+      const saved = await b.execute(() => window.__saved);
+      assert.ok(saved.length > 1000 && JSON.parse(saved).inputs, "the saved text is the design");
+      assert.ok(!saved.includes(KEY), "the key is not in the saved design");
+      assert.ok(!saved.includes("owd-imagery"));
+      assert.ok(!(await b.getTitle()).includes(KEY));
+      const page = await b.execute(() => document.body.innerText + document.documentElement.outerHTML.replace(/<input[^>]*>/g, ""));
+      assert.ok(!page.includes(KEY), "the key is not shown anywhere on the page");
+      // Clear removes it.
+      await (await tid(b, "imagery-key-clear")).click();
+      assert.equal(await b.execute(() => (localStorage.getItem("owd-imagery") ?? "").includes("7f3a9c1d")), false);
+    }
   });
 
   it("still loads when browser storage is blocked", async () => {

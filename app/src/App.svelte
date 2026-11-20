@@ -8,6 +8,8 @@
   import { currentTheme, optionVar, setTheme, type ThemeChoice } from "./lib/theme";
   import { BASEMAP_TILES } from "./lib/basemap";
   import MapPanel from "./lib/MapPanel.svelte";
+  import ImageryControl from "./lib/ImageryControl.svelte";
+  import { layerFor, DEFAULT_IMAGERY, type ImageryLayer } from "./lib/imagery";
   import BankEditor from "./lib/BankEditor.svelte";
   import StartFromRiver from "./lib/StartFromRiver.svelte";
   import { lineOnScreen, plainWarning, sectionReason } from "./lib/words";
@@ -33,6 +35,9 @@
   let offline = $state(false);
   let hillshade = $state<Hillshade | null>(null);
   let tiles = $state<string | null>(null);
+  let imagery = $state<ImageryLayer>(layerFor(DEFAULT_IMAGERY));
+  let imageryNote = $state<string | null>(null);
+  let imageryControl = $state<ImageryControl | undefined>();
   let shadeFor: string | null = null;
   let map = $state<maplibregl.Map | undefined>();
   let editingBanks = $state(false);
@@ -470,6 +475,7 @@
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("csv")} title="The quantity table as CSV">Export CSV</button>
     <button class="primary" disabled={!anyStale || busy !== null} onclick={runStale} title="Run every stage that is due (stale, or set up and not run yet), in order">Run stale</button>
     <span class="grow"></span>
+    {#if tiles}<ImageryControl bind:this={imageryControl} openTiles={tiles} bind:layer={imagery} bind:note={imageryNote} />{/if}
     <label class="theme">
       Theme
       <select aria-label="Theme" bind:value={theme} onchange={() => setTheme(theme)}>
@@ -500,6 +506,12 @@
       <button onclick={() => (notice = null)}>Dismiss</button>
     </div>
   {/if}
+  {#if imageryNote}
+    <div class="banner warn" role="status" data-testid="imagery-note">
+      {imageryNote}
+      <button onclick={() => (imageryNote = null)}>Dismiss</button>
+    </div>
+  {/if}
   {#each snap?.warnings ?? [] as w}
     <div class="banner warn" role="status" data-testid="warning">{plainWarning(w)}</div>
   {/each}
@@ -516,7 +528,7 @@
     <section class="main">
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {tiles} stationPosition={crossSection?.position ?? null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={crossSection?.position ?? null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">

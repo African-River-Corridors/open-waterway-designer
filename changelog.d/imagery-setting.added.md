@@ -1,0 +1,1 @@
+- **The map's background imagery is now a per-user setting.** Choose the open Sentinel-2 cloudless imagery (the default), Esri World Imagery with your own Esri key, or custom tiles with an attribution. The choice and the key stay on your machine and are never saved in a design, export, report or drawing.
