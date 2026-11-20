@@ -113,3 +113,122 @@ fn constraints_are_stored_read_by_the_stages_and_a_missing_multiplier_is_refused
     assert!(read(&doc)["inputs"].get("constraints").is_none());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A design with a given line from `a` to `b` and a no-go box `half` metres each side of `centre`.
+fn given_line_design(tag: &str) -> (std::path::PathBuf, [f64; 2], [f64; 2]) {
+    let dir = std::env::temp_dir().join(format!("owd-constraints-{tag}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web");
+    let doc = dir.join("river-example.owd");
+    std::fs::copy(web.join("river-example.owd"), &doc).unwrap();
+    let d = read(&doc);
+    let c: Vec<[f64; 2]> =
+        serde_json::from_value(d["inputs"]["centreline"]["coordinates"].clone()).unwrap();
+    (doc, c[c.len() / 4], c[c.len() / 2])
+}
+
+fn write_no_go(doc: &std::path::Path, at: [f64; 2], half: f64) {
+    let [x, y] = at;
+    let f = doc.with_file_name("no-go.geojson");
+    std::fs::write(
+        &f,
+        json!({"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"name": "orchard", "kind": "farmland"},
+             "geometry": {"type": "Polygon", "coordinates": [[
+                 [x - half, y - half], [x + half, y - half], [x + half, y + half],
+                 [x - half, y + half], [x - half, y - half]]]}}]})
+        .to_string(),
+    )
+    .unwrap();
+    let o = owd(&[
+        "constraints",
+        doc.to_str().unwrap(),
+        "--no-go",
+        f.to_str().unwrap(),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+}
+
+fn write_line(doc: &std::path::Path, a: [f64; 2], b: [f64; 2]) -> std::path::PathBuf {
+    let f = doc.with_file_name("line.geojson");
+    std::fs::write(
+        &f,
+        format!(
+            r#"{{"type":"LineString","crs":{{"type":"name","properties":{{"name":"urn:ogc:def:crs:EPSG::32630"}}}},"coordinates":{}}}"#,
+            json!([a, b])
+        ),
+    )
+    .unwrap();
+    f
+}
+
+#[test]
+fn a_given_line_through_a_no_go_area_is_saved_marked_failed_and_fails_under_strict() {
+    let (doc, a, b) = given_line_design("given-fails");
+    let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+    write_no_go(&doc, mid, 30.0);
+    let line = write_line(&doc, a, b);
+    let doc_s = doc.to_str().unwrap();
+    let line_s = line.to_str().unwrap();
+
+    // Without --strict: saved, the failed check printed with what it touches, exit 0.
+    let o = owd(&["design-line", doc_s, "--line", line_s, "--name", "through"]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let out = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(out.contains("no_go_clear"), "{out}");
+    assert!(out.contains("orchard"), "{out}");
+    assert!(out.contains(" m to "), "the chainage from and to: {out}");
+    let d = read(&doc);
+    let r = &d["stages"]["alignment"]["results"];
+    assert_eq!(r["method"], "given");
+    assert_eq!(r["checks"]["no_go_clear"]["ok"], false);
+    assert_eq!(r["constraints_touched"][0]["name"], "orchard");
+
+    // With --strict: still saved, exit 1.
+    let o = owd(&[
+        "--strict",
+        "design-line",
+        doc_s,
+        "--line",
+        line_s,
+        "--name",
+        "through",
+    ]);
+    assert_eq!(
+        o.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(String::from_utf8_lossy(&o.stderr).contains("no_go_clear"));
+    let _ = std::fs::remove_dir_all(doc.parent().unwrap());
+}
+
+#[test]
+fn a_given_line_clear_of_every_no_go_area_passes_under_strict() {
+    let (doc, a, b) = given_line_design("given-clear");
+    // A box well off the line: 2 km away.
+    write_no_go(&doc, [a[0] + 2000.0, a[1] + 2000.0], 30.0);
+    let line = write_line(&doc, a, b);
+    let o = owd(&[
+        "--strict",
+        "design-line",
+        doc.to_str().unwrap(),
+        "--line",
+        line.to_str().unwrap(),
+        "--name",
+        "clear",
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let d = read(&doc);
+    assert_eq!(
+        d["stages"]["alignment"]["results"]["checks"]["no_go_clear"]["ok"],
+        true
+    );
+    let _ = std::fs::remove_dir_all(doc.parent().unwrap());
+}

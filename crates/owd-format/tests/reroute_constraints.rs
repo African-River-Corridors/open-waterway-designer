@@ -10,9 +10,13 @@
 
 use owd_core::rules::engine;
 use owd_format::design::constraints::{
-    Area, Constraints, HARD_EXCLUSION, MultiplierRaster, NoGoArea, constraints_touched,
+    Area, Constraints, HARD_EXCLUSION, HARD_EXCLUSION_KIND, Multiplier, MultiplierRaster, NoGoArea,
+    constraints_touched,
 };
-use owd_format::design::design_line::{AlignmentIn, DesignLine, alignment, alignment_with};
+use owd_format::design::design_line::{
+    AlignmentIn, DesignLine, alignment, alignment_with, check_constraints,
+};
+use owd_format::design::export::failed_checks;
 use owd_format::design::river::{RiverIn, river};
 use owd_format::design::sizing::{SizingIn, size};
 use owd_format::design::{AlignMethod, AlignmentSettings};
@@ -88,11 +92,20 @@ fn multiplier() -> Constraints {
     }
 }
 
+/// A multiplier given as a function of the point, read on cells `cell_m` across.
+fn per_cell(at: TerrainSampler, cell_m: f64) -> Multiplier {
+    Multiplier { at, cell_m }
+}
+
 fn reroute(
     c: Option<Constraints>,
     weight: Option<TerrainSampler>,
 ) -> Result<DesignLine, StageError> {
-    alignment_with(&input("reroute", c), Some(&flat), weight)
+    alignment_with(
+        &input("reroute", c),
+        Some(&flat),
+        weight.map(|w| per_cell(w, 5.0)),
+    )
 }
 
 /// The line's offset from the river centreline (y) where it crosses `x`.
@@ -146,10 +159,144 @@ fn an_area_no_line_can_go_round_is_refused_by_name() {
     // From bank to bank: no offset clears it.
     let wall = box_area("wall", 1400.0, 1600.0, -250.0, 250.0);
     let e = reroute(Some(no_go(vec![wall])), None).unwrap_err();
-    assert!(
-        e.code == "ALIGN_NO_GO_CROSSED" || e.code == "ALIGN_NO_ROUTE",
-        "{e}"
+    // The grid has no passable cell at the wall's stations, so the search finds no route.
+    assert_eq!(e.code, "ALIGN_NO_ROUTE", "{e}");
+}
+
+/// A line straight down the middle of the river, given by the user.
+fn given_input(constraints: Option<Constraints>) -> AlignmentIn {
+    let mut i = input("given", constraints);
+    i.settings.given = Some(
+        serde_json::from_value(json!({
+            "name": "straight",
+            "line": {"type": "LineString", "coordinates": [[0.0, 0.0], [3000.0, 0.0]]}
+        }))
+        .unwrap(),
     );
+    i
+}
+
+#[test]
+fn a_re_route_whose_final_line_still_enters_a_no_go_area_is_refused_with_its_own_code() {
+    // The grid keeps a margin round a no-go area, so the search itself does not end in one: the
+    // stage's last step is what refuses such a line. It is tested on a line through the area.
+    let pond = box_area("pond", 1300.0, 1700.0, -60.0, 60.0);
+    let i = given_input(Some(no_go(vec![pond])));
+    let mut line = alignment_with(&i, None, None).unwrap();
+    let mut as_reroute = i.clone();
+    as_reroute.settings.method = AlignMethod::Reroute;
+    let e = check_constraints(&mut line, &as_reroute, None).unwrap_err();
+    assert_eq!(e.code, "ALIGN_NO_GO_CROSSED", "{e}");
+    assert!(e.message.contains("pond"), "{e}");
+    let at = e.at.expect("the refusal has a chainage").0;
+    assert!((at - 1300.0).abs() <= 5.0, "{at}");
+}
+
+/// ×1e6 (a hard exclusion) on a strip 4 m wide across the whole river, x 1310..1314: narrower than
+/// the 25 m station step, between two stations.
+fn narrow_strip(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
+    xs.iter()
+        .map(|&x| {
+            if (1310.0..1314.0).contains(&x) {
+                HARD_EXCLUSION
+            } else {
+                f64::NAN
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn a_hard_exclusion_strip_narrower_than_the_station_step_is_not_crossed_in_silence() {
+    // Every line from one end of the river to the other crosses the strip, and the grid's stations
+    // (25 m apart, at 1300 m and 1325 m) do not see it. The final line is walked over the raster
+    // at its cell size, so the re-route refuses by name.
+    let e = alignment_with(
+        &input("reroute", Some(multiplier())),
+        Some(&flat),
+        Some(per_cell(&narrow_strip, 1.0)),
+    )
+    .unwrap_err();
+    assert_eq!(e.code, "ALIGN_HARD_EXCLUSION_CROSSED", "{e}");
+    let at = e.at.expect("the refusal has a chainage").0;
+    assert!((1300.0..1325.0).contains(&at), "{at}");
+}
+
+#[test]
+fn every_method_lists_the_hard_exclusion_ground_its_footprint_enters() {
+    for method in ["centreline", "given", "rolling_circle"] {
+        let mut i = given_input(Some(multiplier()));
+        i.settings.method = serde_json::from_value(json!(method)).unwrap();
+        let line = alignment_with(&i, None, Some(per_cell(&narrow_strip, 1.0))).unwrap();
+        let hard: Vec<_> = line
+            .constraints_touched
+            .iter()
+            .filter(|t| t.kind == HARD_EXCLUSION_KIND)
+            .collect();
+        assert_eq!(hard.len(), 1, "{method}: {:?}", line.constraints_touched);
+        let t = hard[0];
+        assert_eq!(t.name, "weights.tif", "named by the raster");
+        assert!(
+            t.from.0 >= 1305.0 && t.to.0 <= 1320.0 && t.from.0 < t.to.0,
+            "{t:?}"
+        );
+        // The strip is 4 m wide across the whole footprint: 4 m × the bottom width, by hand.
+        let want = 4.0 * 2.0 * half_width(&i);
+        assert!(
+            (t.area_m2 - want).abs() <= 0.25 * want,
+            "{method}: {} vs {want}",
+            t.area_m2
+        );
+        assert_eq!(t.footprint_width_m, 2.0 * half_width(&i));
+        assert_eq!(line.checks["no_go_clear"]["ok"], false, "{method}");
+        assert!(failed_checks(&line.to_view()).contains(&"no_go_clear"));
+    }
+}
+
+#[test]
+fn a_named_multiplier_with_no_raster_to_read_is_refused_by_every_method() {
+    for method in ["centreline", "given", "rolling_circle"] {
+        let mut i = given_input(Some(multiplier()));
+        i.settings.method = serde_json::from_value(json!(method)).unwrap();
+        let e = alignment_with(&i, None, None).unwrap_err();
+        assert_eq!(e.code, "ALIGN_NO_MULTIPLIER", "{method}: {e}");
+    }
+}
+
+#[test]
+fn a_given_line_through_a_no_go_area_is_saved_and_fails_no_go_clear() {
+    let pond = box_area("pond", 1300.0, 1700.0, -60.0, 60.0);
+    let i = given_input(Some(no_go(vec![pond])));
+    let line = alignment_with(&i, None, None).unwrap();
+    assert_eq!(line.constraints_touched.len(), 1);
+    let c = &line.checks["no_go_clear"];
+    assert_eq!(c["ok"], false);
+    assert_eq!(c["footprint_width_m"], json!(2.0 * half_width(&i)));
+    assert!(c["note"].as_str().unwrap().contains("bottom width"));
+    assert_eq!(failed_checks(&line.to_view()), vec!["no_go_clear"]);
+}
+
+#[test]
+fn a_clean_given_line_passes_no_go_clear() {
+    let far = box_area("far", 1300.0, 1700.0, 120.0, 180.0);
+    let i = given_input(Some(no_go(vec![far])));
+    let line = alignment_with(&i, None, None).unwrap();
+    assert!(line.constraints_touched.is_empty());
+    assert_eq!(line.checks["no_go_clear"]["ok"], true);
+    assert!(failed_checks(&line.to_view()).is_empty());
+}
+
+#[test]
+fn with_no_constraints_a_line_has_no_no_go_clear_check() {
+    // The check is not written at all without constraints, so a stored line does not change.
+    for method in ["centreline", "given", "rolling_circle"] {
+        let mut i = given_input(None);
+        i.settings.method = serde_json::from_value(json!(method)).unwrap();
+        let line = alignment_with(&i, None, None).unwrap();
+        assert!(line.checks.get("no_go_clear").is_none(), "{method}");
+    }
+    let line = reroute(None, None).unwrap();
+    assert!(line.checks.get("no_go_clear").is_none());
 }
 
 #[test]
@@ -196,6 +343,11 @@ fn a_hard_exclusion_in_the_multiplier_is_impassable() {
     };
     let i = input("reroute", None);
     let line = reroute(Some(multiplier()), Some(&wall)).unwrap();
+    assert!(
+        line.constraints_touched.is_empty(),
+        "{:?}",
+        line.constraints_touched
+    );
     let y = y_at(&line, 1500.0);
     assert!(
         y.abs() >= 60.0 + half_width(&i),
