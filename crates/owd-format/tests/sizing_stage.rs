@@ -221,3 +221,40 @@ fn a_stage_that_reads_the_size_refuses_a_stale_sizing_and_says_to_run_it() {
     .unwrap();
     s.run_plan_cut(&json!({})).unwrap();
 }
+
+#[test]
+fn a_size_read_from_json_gives_a_typed_error_where_it_has_no_shape_not_a_panic() {
+    // The type is public and reads from JSON, with no engine shape beside the data. Asking it for the
+    // shape or for the widening at a radius must not panic on any public path.
+    let s = sized_session();
+    let typed: ChannelSize =
+        serde_json::from_value(s.document()["stages"]["sizing"]["results"].clone()).unwrap();
+    let r = std::panic::catch_unwind(|| typed.bend_widening_m(300.0));
+    assert!(
+        r.is_ok(),
+        "bend_widening_m panicked on a size read from JSON"
+    );
+    let r = std::panic::catch_unwind(|| typed.bottom_width_at_m(300.0));
+    assert!(
+        r.is_ok(),
+        "bottom_width_at_m panicked on a size read from JSON"
+    );
+    let r = std::panic::catch_unwind(|| {
+        let _ = typed.shape();
+    });
+    assert!(r.is_ok(), "shape panicked on a size read from JSON");
+}
+
+#[test]
+fn a_rule_set_entry_with_no_hash_is_refused() {
+    // The old path refused a selected set that records no content hash: the design cannot say which
+    // rules it was sized with. The pure function keeps that refusal.
+    let all = fixtures();
+    let f = &all.iter().find(|(n, _)| n == "cemt-iv-pianc-c").unwrap().1;
+    let mut input: SizingIn = serde_json::from_value(f["input"].clone()).unwrap();
+    for set in &mut input.rule_sets {
+        set.hash = None;
+    }
+    let e = size(&input, engine::built_in()).expect_err("a set with no hash is refused");
+    assert_eq!(e.code, "SIZING_RULE_SET_NO_HASH", "{e}");
+}

@@ -114,3 +114,27 @@ fn clean_banks_pass_and_a_bank_on_the_wrong_side_fails_with_exit_1() {
         "check-banks changes nothing"
     );
 }
+
+#[test]
+fn a_bad_river_polygon_does_not_hide_the_bank_checks_and_the_import_agrees() {
+    // The import's warnings leave the polygon out (it is not under test, and a bad one must not hide
+    // a bank warning). `check-banks` reads the same input, so a polygon with a ring of two points
+    // changes neither: the banks are checked and the answer is the one the banks give.
+    let doc = study("badpoly", -220.0);
+    let mut d: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
+    d["inputs"]["river_polygon"] = json!({
+        "type": "Polygon",
+        "coordinates": [[[500_000.0, 600_000.0], [500_100.0, 600_000.0]]]
+    });
+    std::fs::write(&doc, serde_json::to_string_pretty(&d).unwrap()).unwrap();
+    let o = run(&["check-banks", &doc, "--json"]);
+    assert_eq!(
+        o.status.code(),
+        Some(1),
+        "the banks fail their checks, whatever the polygon: {}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let v: Value = serde_json::from_slice(&o.stdout).expect("a report, not a polygon refusal");
+    assert_eq!(v["ok"], false);
+}
