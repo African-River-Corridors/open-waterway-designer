@@ -229,7 +229,7 @@ fn optimise_follows_the_rule() {
     check_failing_edited(
         "optimise",
         &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
-        &[&["align", "--method", "rolling-circle"]],
+        &[&["align", "--method", "centreline"]],
         "optimise",
         &["--sites", "1200"],
     );
