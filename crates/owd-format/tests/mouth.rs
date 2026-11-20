@@ -317,3 +317,85 @@ fn a_bank_dataset_imported_after_the_mouth_counts_its_stretches_from_it() {
     );
     assert!((lc["to_m"].as_f64().unwrap() - 2800.0).abs() < 1e-6, "{lc}");
 }
+
+/// QA on PR 558, item 8: every river chainage the inputs hold turns with the river, the poses and
+/// legs of a joined line change ends, and a reference line made from the other end is removed.
+#[test]
+fn every_chainage_input_turns_and_the_reference_line_is_removed() {
+    let s = straight_from_upstream();
+    let line = |a: f64, b: f64| json!({"type": "LineString", "coordinates": [[a, 600_000.0], [b, 600_000.0]]});
+    let mut s = edited(&s, |d| {
+        let inp = &mut d["inputs"];
+        inp["bed_model"] =
+            json!({"points": [[0.0, 2.0], [1000.0, 3.0]], "shape": "parabola", "season": null});
+        inp["banks"] =
+            json!({"low_confidence": [{"from_m": 100.0, "to_m": 300.0, "reason": "trees"}]});
+        inp["seed_legs"] = json!([line(503_000.0, 502_000.0), line(502_000.0, 500_000.0)]);
+        inp["fixed"] = json!({
+            "start_pose": {"point": [503_000.0, 600_000.0], "heading_deg": 180.0},
+            "end_pose": {"point": [500_000.0, 600_000.0], "heading_deg": 180.0},
+            "must_follow": [line(501_000.0, 500_500.0)]
+        });
+        inp["reference_line"] =
+            json!({"line": line(503_000.0, 500_000.0), "parameters": {}, "depends_on": "x"});
+        d["low_confidence_width"] = json!({"min_width_m": 30.0, "stretches": [{"from_m": 0.0, "to_m": 400.0, "kind": "narrow"}]});
+    });
+    let r = s.set_mouth(straight_mouth(), None).unwrap();
+    assert!(r.turned);
+    assert!(
+        r.notes.iter().any(|n| n.contains("reference line")),
+        "{:?}",
+        r.notes
+    );
+    let d = s.document();
+    let inp = &d["inputs"];
+    assert_eq!(
+        inp["bed_model"]["points"],
+        json!([[2000.0, 3.0], [3000.0, 2.0]])
+    );
+    assert_eq!(
+        inp["banks"]["low_confidence"],
+        json!([{"from_m": 2700.0, "to_m": 2900.0, "reason": "trees"}])
+    );
+    assert_eq!(
+        d["low_confidence_width"]["stretches"],
+        json!([{"from_m": 2600.0, "to_m": 3000.0, "kind": "narrow"}])
+    );
+    assert_eq!(
+        inp["seed_legs"],
+        json!([line(500_000.0, 502_000.0), line(502_000.0, 503_000.0)])
+    );
+    assert_eq!(
+        inp["fixed"]["start_pose"],
+        json!({"point": [500_000.0, 600_000.0], "heading_deg": 0.0})
+    );
+    assert_eq!(
+        inp["fixed"]["end_pose"],
+        json!({"point": [503_000.0, 600_000.0], "heading_deg": 0.0})
+    );
+    assert_eq!(
+        inp["fixed"]["must_follow"],
+        json!([line(500_500.0, 501_000.0)])
+    );
+    assert!(inp.get("reference_line").is_none());
+    assert!(s.validate().is_empty(), "{:?}", s.validate());
+}
+
+/// QA on PR 558, item 8: a second mouth, at the other end, turns the river back, water and all.
+#[test]
+fn a_second_mouth_at_the_other_end_turns_the_river_back() {
+    let mut s = straight_from_upstream();
+    s.set_water_profile(&[[0.0, 12.0], [3000.0, 9.0]]).unwrap();
+    let before = s.document()["inputs"].clone();
+    assert!(s.set_mouth(straight_mouth(), None).unwrap().turned);
+    assert_eq!(
+        s.document()["inputs"]["water_level"]["points"][0],
+        json!([0.0, 9.0])
+    );
+    let other = MouthAt::LonLat(lon_lat([503_000.0, 600_000.0]));
+    assert!(s.set_mouth(other, None).unwrap().turned);
+    let after = &s.document()["inputs"];
+    assert_eq!(after["centreline"], before["centreline"]);
+    assert_eq!(after["water_level"], before["water_level"]);
+    assert_eq!(after["mouth"]["point"], json!([503_000.0, 600_000.0]));
+}

@@ -200,3 +200,21 @@ fn volumes_with_no_row_for_the_kept_line_are_removed_and_the_notes_say_so() {
         "{notes}"
     );
 }
+
+/// QA on PR 558, item 8: a 0.4 file whose only option is the pool lattice opens with that line as
+/// the design line (stale), so its volumes keep their row.
+#[test]
+fn a_file_with_only_a_lattice_line_opens_with_it_as_the_design_line() {
+    let mut doc = old();
+    doc["format_version"] = json!("0.4");
+    let lattice = option(&doc, "lattice").clone();
+    doc["options"] = json!([lattice]);
+    let s = Session::open(&doc.to_string()).unwrap();
+    let lines = s.design_lines();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0]["id"], "lattice");
+    assert_eq!(lines[0]["line"], lattice["line"]);
+    assert_eq!(volume_rows_of(s.document())[0]["id"], "lattice");
+    assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Stale);
+    assert!(s.validate().is_empty(), "{:?}", s.validate());
+}
