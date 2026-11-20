@@ -100,7 +100,8 @@
           "amount": 6500.0,
           "currency": "USD"
         }
-      }
+      },
+      "cut_volumes": "plain"
     }
   }
 }
