@@ -1452,6 +1452,8 @@ pub fn heading_at(line: &[Pt], s: f64, arm_m: f64) -> f64 {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PoolAlignment {
+    /// Where the search starts and ends on the baseline. These are the pool's (or piece's) own
+    /// ends unless a search end was moved (`start_moved_from_m`, `end_moved_from_m`).
     pub start_m: f64,
     pub end_m: f64,
     pub water_level_m: f64,
@@ -1468,6 +1470,14 @@ pub struct PoolAlignment {
     /// Set when this record is one piece of a pool longer than `max_pool_piece_m` (issue #559);
     /// `start_m` and `end_m` are then the piece's.
     pub piece: Option<PoolPiece>,
+    /// Set when the search could not close on the pool's own end pose and closed on a pose moved
+    /// along the baseline instead (issue #565): the pool's own end, `end_m` then being the moved
+    /// search end. Only the search boundary moves; the water level does not change, and neither
+    /// does where the weir is.
+    pub end_moved_from_m: Option<f64>,
+    /// Set when the previous pool's search end moved downstream into this pool, so this search
+    /// starts there (`start_m`) instead of at the pool's own start, given here.
+    pub start_moved_from_m: Option<f64>,
 }
 
 /// Where a piece sits in the pool it was cut from.
@@ -1482,6 +1492,20 @@ pub struct PoolPiece {
 
 /// Why a pool keeps its baseline when its search hit `max_expand`.
 pub const HIT_CAP_REASON: &str = "the search hit its expansion limit";
+
+/// Why a pool keeps its baseline when its search could not close on its end pose at any search end
+/// tried, and its line would join the next piece with a step that breaks R_min or crosses itself
+/// (issue #565).
+pub const UNCLOSED_REASON: &str = "the search could not end on the pool's end pose, even with the \
+    end moved, and its line would join the next piece with a step that breaks R_min or crosses itself";
+
+/// A pool whose search cannot close on its end pose is searched again with its end moved along the
+/// baseline in steps of this fraction of R_min ...
+pub const BOUNDARY_STEP_FRACTION: f64 = 0.25;
+
+/// ... up to this many steps (so up to one R_min) downstream first, then upstream. A moved end stays
+/// at least one step inside the stretch it moves into (the next pool, or the pool itself).
+pub const BOUNDARY_STEPS: usize = 4;
 
 /// The piece boundaries of the pool `start_m..end_m` on `baseline`, both ends included: just
 /// `[start_m, end_m]` when the pool is no longer than `max_piece_m`.
@@ -1658,6 +1682,8 @@ pub fn optimise_pool(
         used: false,
         kept_baseline_because: None,
         piece: None,
+        end_moved_from_m: None,
+        start_moved_from_m: None,
     })
 }
 
@@ -1688,6 +1714,10 @@ pub struct PoolsResult {
     pub measured_min_radius_m: f64,
     pub radius_check_chord_m: f64,
     pub radius_ok: bool,
+    /// The chainage along the joined line where it first crosses itself
+    /// ([`crate::alignment::loops::first_self_crossing_m`]); `None` when it does not (issue #565).
+    /// A design line must never contain a loop: this is reported, never silent.
+    pub self_crossing_m: Option<f64>,
 }
 
 impl PoolsResult {
@@ -1698,6 +1728,19 @@ impl PoolsResult {
     /// The joins that do not hold R_min.
     pub fn failed_joins(&self) -> impl Iterator<Item = &PoolJoin> {
         self.joins.iter().filter(|j| !j.radius_ok)
+    }
+
+    /// The pools (or pieces) that keep their baseline because their search could not close and
+    /// their line would have broken the join ([`UNCLOSED_REASON`]).
+    pub fn unclosed_pools(&self) -> impl Iterator<Item = &PoolAlignment> {
+        self.pools
+            .iter()
+            .filter(|p| p.kept_baseline_because == Some(UNCLOSED_REASON))
+    }
+
+    /// The pools whose search end was moved so that the search closes.
+    pub fn moved_boundaries(&self) -> impl Iterator<Item = &PoolAlignment> {
+        self.pools.iter().filter(|p| p.end_moved_from_m.is_some())
     }
 
     /// The pools (or pieces) whose search hit `max_expand` before it found a line, so they keep
@@ -1718,9 +1761,21 @@ impl PoolsResult {
 /// baseline holds R_min (or the lattice line does not).
 ///
 /// Each pool's line starts on the baseline's pose at its start and, when its goal is closed, ends
-/// on the baseline's pose at its end, so it meets the next piece tangentially. A pool whose search
-/// fell back to the goal tolerance joins with a straight step of at most `cfg.goal_pos_tol_m`.
-/// Every join is read for R_min on the joined line and reported (`joins`).
+/// on the baseline's pose at its end, so it meets the next piece tangentially. Every join is read
+/// for R_min on the joined line and reported (`joins`).
+///
+/// A pool whose search cannot close on its end pose (with `cfg.close_goal`; issue #565) is searched
+/// again with its end moved along the baseline: in steps of [`BOUNDARY_STEP_FRACTION`] x R_min, up
+/// to [`BOUNDARY_STEPS`] steps downstream first, then upstream, each moved end staying at least one
+/// step inside the stretch it moves into. The first moved end that closes is kept and recorded
+/// (`end_moved_from_m`). Moved downstream, the next pool's search starts there (`start_moved_from_m`);
+/// moved upstream, the baseline keeps the stretch between. Only the search boundary moves: the water
+/// levels do not change. When no end closes, the pool's fallback line (within `cfg.goal_pos_tol_m`
+/// and one heading bin of its end pose) is spliced only if its join holds R_min and the joined line
+/// does not cross itself there; otherwise the pool keeps its baseline ([`UNCLOSED_REASON`]). With
+/// `close_goal` false (the older search) fallback lines are spliced as they are, and joins that
+/// break R_min are reported. In every case a joined line that crosses itself says where
+/// (`self_crossing_m`).
 #[allow(clippy::too_many_arguments)]
 pub fn optimise_pools(
     baseline: &[Pt],
@@ -1743,11 +1798,6 @@ pub fn optimise_pools(
     });
     let blen = linear::length(baseline);
     let mut out_pools = Vec::new();
-    // Each piece, with the baseline chainage it starts at and whether it is a pool's line.
-    let mut pieces: Vec<(Vec<Pt>, f64, bool)> = Vec::new();
-    // The miss (position, heading) of each used pool at its far end, by its end chainage.
-    let mut misses: Vec<(f64, f64, f64)> = Vec::new();
-    let mut cursor = 0.0;
     let mut split: Vec<(f64, f64, f64, Option<PoolPiece>)> = Vec::new();
     for (a, b, wl) in sorted {
         let bounds = pool_pieces(baseline, a, b, cfg.max_pool_piece_m, cfg.r_min_m);
@@ -1762,23 +1812,64 @@ pub fn optimise_pools(
             split.push((w[0], w[1], wl, piece));
         }
     }
-    for (a, b, wl, piece) in split {
-        let pa = optimise_pool(
-            baseline,
-            terrain,
-            river_polygon,
-            a,
-            b,
-            wl,
-            depth_m,
-            section,
-            cfg,
-            corridor_line,
-            opts,
-        )?;
+    let step = BOUNDARY_STEP_FRACTION * cfg.r_min_m;
+    // `(search start, the pool's own start)` when the previous pool's search end moved into this one.
+    let mut start_override: Option<(f64, f64)> = None;
+    for (idx, &(a0, b0, wl, piece)) in split.iter().enumerate() {
+        let (a, start_moved_from) = match start_override.take() {
+            Some((s, own)) if (own - a0).abs() <= 1e-9 => (s, Some(own)),
+            _ => (a0, None),
+        };
+        let search = |b: f64| {
+            optimise_pool(
+                baseline,
+                terrain,
+                river_polygon,
+                a,
+                b,
+                wl,
+                depth_m,
+                section,
+                cfg,
+                corridor_line,
+                opts,
+            )
+        };
+        let mut pa = search(b0)?;
+        if cfg.close_goal && pa.result.converged && !pa.result.goal_closed {
+            // The next pool, when it starts where this one ends.
+            let next = split
+                .get(idx + 1)
+                .filter(|n| (n.0 - b0).abs() <= 1e-9)
+                .copied();
+            let far = match (next, split.get(idx + 1)) {
+                (Some(n), _) => n.1,
+                (None, Some(n)) => n.0,
+                (None, None) => blen,
+            };
+            let ends: Vec<f64> = (1..=BOUNDARY_STEPS)
+                .map(|k| b0 + step * k as f64)
+                .take_while(|&e| e <= far - step)
+                .chain(
+                    (1..=BOUNDARY_STEPS)
+                        .map(|k| b0 - step * k as f64)
+                        .take_while(|&e| e >= a + step),
+                )
+                .collect();
+            for e in ends {
+                let t = search(e)?;
+                if t.result.converged && t.result.goal_closed {
+                    if e > b0 && next.is_some() {
+                        start_override = Some((e, b0));
+                    }
+                    pa = t;
+                    pa.end_moved_from_m = Some(b0);
+                    break;
+                }
+            }
+        }
         let converged = pa.result.converged;
         let dearer = pa.result.cost > pa.baseline_cost;
-        let line = pa.result.line.clone();
         // The baseline is kept when the search did not converge, or when it is cheaper and either
         // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
         // breaks R_min is never kept in place of a lattice line that holds it.
@@ -1787,7 +1878,7 @@ pub fn optimise_pools(
         } else if !converged {
             (false, Some("the search did not converge"))
         } else if keep_if_dearer && dearer {
-            let base_ok = line_of(linear::substring(baseline, a, b))
+            let base_ok = line_of(linear::substring(baseline, pa.start_m, pa.end_m))
                 .ok()
                 .and_then(|seg| min_radius_on_chord(&seg, default_check_chord(cfg.r_min_m)).ok())
                 .is_some_and(|r| radius_ok(r, cfg.r_min_m));
@@ -1802,26 +1893,84 @@ pub fn optimise_pools(
         } else {
             (true, None)
         };
-        let mut pa = pa;
         pa.used = use_it;
         pa.kept_baseline_because = because;
         pa.piece = piece;
-        if use_it {
-            misses.push((b, pa.result.end_err_m, pa.result.end_heading_err_rad));
-        }
+        pa.start_moved_from_m = start_moved_from;
         out_pools.push(pa);
-        if !use_it {
-            continue;
+    }
+    let chord = default_check_chord(cfg.r_min_m);
+    // A pool that still cannot close keeps its baseline when its line breaks the join; keeping it
+    // changes the line, so join again until nothing more is dropped (at most once per pool).
+    let (coords, joins) = loop {
+        let (coords, joins) = join_line(baseline, blen, &out_pools, chord, cfg.r_min_m)?;
+        if !cfg.close_goal {
+            break (coords, joins);
         }
-        if a > cursor {
+        let mut dropped = false;
+        for p in out_pools
+            .iter_mut()
+            .filter(|p| p.used && !p.result.goal_closed)
+        {
+            let Some((j, s)) = joins.iter().find(|(j, _)| (j.at_m - p.end_m).abs() <= 1e-9) else {
+                continue; // the line ends where this pool ends: nothing joins it there
+            };
+            let total = linear::length(&coords);
+            let window = line_of(linear::substring(
+                &coords,
+                crate::py_max(0.0, s - 2.0 * chord),
+                crate::py_min(total, s + 2.0 * chord),
+            ))?;
+            if !j.radius_ok || crate::alignment::loops::is_self_intersecting(&window) {
+                p.used = false;
+                p.kept_baseline_because = Some(UNCLOSED_REASON);
+                dropped = true;
+            }
+        }
+        if !dropped {
+            break (coords, joins);
+        }
+    };
+    let measured = min_radius_on_chord(&coords, chord).unwrap_or(f64::NAN);
+    Ok(PoolsResult {
+        radius_ok: radius_ok(measured, cfg.r_min_m),
+        measured_min_radius_m: measured,
+        radius_check_chord_m: chord,
+        self_crossing_m: crate::alignment::loops::first_self_crossing_m(&coords),
+        line: coords,
+        pools: out_pools,
+        joins: joins.into_iter().map(|(j, _)| j).collect(),
+    })
+}
+
+/// The joined line, and each join with its chainage along that line.
+type JoinedLine = (Vec<Pt>, Vec<(PoolJoin, f64)>);
+
+/// Splice the used pools' lines into `baseline`, and read every join of a used pool's line: each
+/// with its chainage along the joined line.
+fn join_line(
+    baseline: &[Pt],
+    blen: f64,
+    pools: &[PoolAlignment],
+    chord: f64,
+    r_min_m: f64,
+) -> Result<JoinedLine, Refusal> {
+    // Each piece, with the baseline chainage it starts at and whether it is a pool's line.
+    let mut pieces: Vec<(Vec<Pt>, f64, bool)> = Vec::new();
+    // The miss (position, heading) of each used pool at its far end, by its end chainage.
+    let mut misses: Vec<(f64, f64, f64)> = Vec::new();
+    let mut cursor = 0.0;
+    for p in pools.iter().filter(|p| p.used) {
+        misses.push((p.end_m, p.result.end_err_m, p.result.end_heading_err_rad));
+        if p.start_m > cursor {
             pieces.push((
-                line_of(linear::substring(baseline, cursor, a))?,
+                line_of(linear::substring(baseline, cursor, p.start_m))?,
                 cursor,
                 false,
             ));
         }
-        pieces.push((line.unwrap_or_default(), a, true));
-        cursor = b;
+        pieces.push((p.result.line.clone().unwrap_or_default(), p.start_m, true));
+        cursor = p.end_m;
     }
     if cursor < blen {
         pieces.push((
@@ -1847,8 +1996,6 @@ pub fn optimise_pools(
             }
         }
     }
-    let chord = default_check_chord(cfg.r_min_m);
-    let measured = min_radius_on_chord(&coords, chord).unwrap_or(f64::NAN);
     let mut cum = vec![0.0];
     for w in coords.windows(2) {
         cum.push(cum[cum.len() - 1] + hypot(w[1][0] - w[0][0], w[1][1] - w[0][1]));
@@ -1867,20 +2014,16 @@ pub fn optimise_pools(
             .iter()
             .find(|m| (m.0 - at).abs() <= 1e-9)
             .map_or((0.0, 0.0), |m| (m.1, m.2));
-        joins.push(PoolJoin {
-            at_m: at,
-            position_gap_m: gap,
-            heading_gap_rad: head,
-            measured_min_radius_m: r,
-            radius_ok: radius_ok(r, cfg.r_min_m),
-        });
+        joins.push((
+            PoolJoin {
+                at_m: at,
+                position_gap_m: gap,
+                heading_gap_rad: head,
+                measured_min_radius_m: r,
+                radius_ok: radius_ok(r, r_min_m),
+            },
+            s,
+        ));
     }
-    Ok(PoolsResult {
-        radius_ok: radius_ok(measured, cfg.r_min_m),
-        measured_min_radius_m: measured,
-        radius_check_chord_m: chord,
-        line: coords,
-        pools: out_pools,
-        joins,
-    })
+    Ok((coords, joins))
 }
