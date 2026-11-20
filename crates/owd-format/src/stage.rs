@@ -86,6 +86,7 @@ pub fn file_name(stage: &str, version: u32) -> String {
 pub fn contracts() -> Vec<StageContract> {
     use crate::design::design_line::{self, AlignmentIn, DesignLine};
     use crate::design::envelope::{self, EnvelopeIn, EnvelopeResult};
+    use crate::design::fits::{self, FitsAnswer, FitsIn};
     use crate::design::reference_line::{self, ReferenceLine, ReferenceLineIn};
     use crate::design::river::{self, RiverGeometry, RiverIn};
     use crate::design::sizing::{self, ChannelSize, SizingIn};
@@ -96,6 +97,7 @@ pub fn contracts() -> Vec<StageContract> {
         StageContract::of::<StageRecord<AlignmentIn, DesignLine>>(design_line::STAGE, 1),
         StageContract::of::<StageRecord<ReferenceLineIn, ReferenceLine>>(reference_line::STAGE, 1),
         StageContract::of::<StageRecord<EnvelopeIn, EnvelopeResult>>(envelope::STAGE, 1),
+        StageContract::of::<StageRecord<FitsIn, FitsAnswer>>(fits::STAGE, 1),
     ]
 }
 

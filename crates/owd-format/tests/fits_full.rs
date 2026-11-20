@@ -462,7 +462,10 @@ fn the_answer_is_typed_and_its_hash_is_the_hash_of_its_input() {
             .unwrap_or_else(|e| panic!("the answer reads as its type: {e}"));
         assert_eq!(serde_json::to_value(&typed).unwrap(), rec["results"]);
         let input = s.fits_input().expect("the answer's input");
-        assert_eq!(rec["depends_on"], serde_json::json!(hash_value(&serde_json::json!(input))));
+        assert_eq!(
+            rec["depends_on"],
+            serde_json::json!(hash_value(&serde_json::json!(input)))
+        );
     };
     let mut plain = river();
     plain.run_fits(None).unwrap();
@@ -471,5 +474,9 @@ fn the_answer_is_typed_and_its_hash_is_the_hash_of_its_input() {
     full.run_fits_with(None, Some(&land)).unwrap();
     assert_eq!(full.document()["fits"]["results"]["mode"], "full");
     check(&full);
-    assert!(owd_format::stage::contracts().iter().any(|c| c.stage == "fits"));
+    assert!(
+        owd_format::stage::contracts()
+            .iter()
+            .any(|c| c.stage == "fits")
+    );
 }

@@ -50,11 +50,14 @@ pub(super) fn run_all<J: Sync, T: Send>(
         jobs.iter().map(f).collect()
     }
 }
+use super::envelope::{Num, StretchOut};
 use super::hash::hash_value;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
-use crate::types::SyncTerrainSampler;
+use crate::types::{Polyline, RiverPolygon, SyncTerrainSampler};
 use owd_core::fits::{ClassFit, Fits, PLAN_ONLY_LABEL, plan_only_fits_at};
 use owd_core::rules::engine::old_name_choice;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// The label of a full answer: what it read, and what it assumed.
@@ -115,6 +118,121 @@ impl PlanLine {
             ))),
         }
     }
+}
+
+/// The stage's name (spec 0017 ticket 7). The document keeps the record at the top level, `fits`.
+pub const STAGE: &str = "fits";
+
+/// One vessel class (or the custom vessel) in the answer. A full answer adds what the depth and the
+/// screening found; a plan-only one leaves those out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FitsClass {
+    pub vessel_standard_id: Option<String>,
+    pub class_name: Option<String>,
+    pub family: Option<String>,
+    pub formation: Option<String>,
+    pub loa_m: Num,
+    pub beam_m: Num,
+    pub r_min_m: Num,
+    pub radius_check_chord_m: Num,
+    pub bottom_width_straight_m: Num,
+    pub fits: bool,
+    pub worst_width_deficit_m: Num,
+    pub worst_radius_deficit_m: Num,
+    pub stretch_count: usize,
+    pub stretches: Vec<StretchOut>,
+    pub warnings: Vec<String>,
+    /// What the row read, and what it did not.
+    pub label: String,
+    /// The custom vessel's label (it has no class id).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vessel_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<bool>,
+    /// Full answer: the line the row read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_line: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_line_note: Option<String>,
+    /// Full answer: the screening verdict (spec 0007).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<String>,
+    /// Full answer: the constraint stretches, as the screening writes them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constraint_stretches: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocking_not_evaluated: Option<Value>,
+    /// Full answer: where the depth came from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth_basis: Option<Value>,
+}
+
+/// The answer for one Rule Set choice.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FitsRuleSet {
+    pub rule_set: String,
+    /// The Rule Set and set input the choice stands for (null when it stands for none).
+    pub selection: Value,
+    pub largest_fitting: Option<String>,
+    pub classes: Vec<FitsClass>,
+}
+
+/// What the fits stage returns, as the study keeps it (`fits.results`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FitsAnswer {
+    pub label: String,
+    pub length_m: Num,
+    pub rule_sets: Vec<FitsRuleSet>,
+    /// `full` for a full answer; absent for a plan-only one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    pub plan_line: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_line_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notice: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules_notice: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draught_m: Num,
+}
+
+/// What a full answer reads beyond the plan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FitsFullIn {
+    pub bed_model: Value,
+    pub water_level: Value,
+    /// The DEM, by its hash.
+    pub dem_sha256: Value,
+    /// The sizing's Rule Set selection.
+    pub sizing_rule_sets: Value,
+    /// The reference line the assumed bed is centred on, by its hash, when fresh.
+    #[serde(default)]
+    pub bed_axis: Option<Value>,
+    pub dem_holds_bathymetry: bool,
+}
+
+/// What the fits stage reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FitsIn {
+    /// The line the classes were read on: the fresh reference line, the centreline, or (for the
+    /// fairway) the centreline the fairway is made from.
+    pub plan_line: Polyline,
+    /// `reference`, `centreline` or `fairway`.
+    pub plan_line_kind: String,
+    /// The river as water.
+    pub river_polygon: RiverPolygon,
+    /// The custom vessel, with a row of its own when there is one.
+    #[serde(default)]
+    pub custom_vessel: Value,
+    /// The answer's settings, as stored.
+    pub settings: Value,
+    /// For a full answer, what it read beyond the plan.
+    #[serde(default)]
+    pub full: Option<FitsFullIn>,
 }
 
 /// The Rule Set choice (an old ruleset name) a run uses when none is named.
@@ -184,50 +302,53 @@ fn fits_json(f: &Fits) -> Value {
 }
 
 impl Session {
-    /// What the answer depends on: the water and the line it reads, the project CRS, and the
-    /// settings. Not the sizing, the DEM or any stage.
-    fn fits_dependency_hash(&self) -> String {
+    /// What the stored answer would read now: `None` when it has not run, or the river has no
+    /// polygon or line.
+    pub fn fits_input(&self) -> Option<FitsIn> {
+        let rec = &self.doc["fits"];
+        if rec["results"].is_null() {
+            return None;
+        }
         let inp = &self.doc["inputs"];
-        // A full answer also read the bed, the water and the DEM; a plan-only one did not, and its
-        // hash stays what it was.
-        let full = (self.doc["fits"]["results"]["mode"] == "full").then(|| {
-            let mut f = json!({
-                "bed_model": inp["bed_model"],
-                "water_level": inp["water_level"],
-                "dem": inp["dem"]["sha256"],
-                "sizing": self.doc["stages"]["sizing"]["settings"]["rule_sets"],
-            });
-            // The assumed bed is centred on a fresh reference line (#398).
-            if let Some(a) = self.bed_axis_hash() {
-                f["bed_axis"] = a;
-            }
-            // Only when marked, so an answer made before the mark keeps its hash (#363).
-            if self.dem_holds_bathymetry() {
-                f["dem_holds_bathymetry"] = json!(true);
-            }
-            f
+        let river_polygon = RiverPolygon::from_geometry(&inp["river_polygon"])?;
+        // The line the answer reads: the reference line while fresh, else the centreline.
+        let kind = rec["results"]["plan_line"].as_str().unwrap_or("centreline");
+        let line = match kind {
+            "reference" => self.bed_axis_line(),
+            _ => None,
+        };
+        let (line, kind) = match line {
+            Some(l) => (l, kind.to_string()),
+            None => (
+                self.river_centreline().ok()?,
+                if kind == "reference" {
+                    "centreline".into()
+                } else {
+                    kind.to_string()
+                },
+            ),
+        };
+        let full = (rec["results"]["mode"] == "full").then(|| FitsFullIn {
+            bed_model: inp["bed_model"].clone(),
+            water_level: inp["water_level"].clone(),
+            dem_sha256: inp["dem"]["sha256"].clone(),
+            sizing_rule_sets: self.doc["stages"]["sizing"]["settings"]["rule_sets"].clone(),
+            bed_axis: self.bed_axis_hash(),
+            dem_holds_bathymetry: self.dem_holds_bathymetry(),
         });
-        let mut dep = json!({
-            "full": full,
-            "left_bank": inp["left_bank"],
-            "right_bank": inp["right_bank"],
-            "centreline": inp["centreline"],
-            "river_polygon": inp["river_polygon"],
-            "crs": self.doc["project"]["crs"],
-            "settings": self.doc["fits"]["settings"],
-        });
-        // An answer read on the reference line depends on it (spec 0016); without one the hash
-        // stays what it was.
-        if self.doc["fits"]["results"]["plan_line"] == "reference" {
-            dep["reference_line"] = self.doc["stages"]["reference_line"]["depends_on"].clone();
-        }
-        // The custom vessel's row reads the custom vessel (spec 0015 T1); without one the hash
-        // stays what it was.
-        let custom = &self.doc["stages"]["sizing"]["settings"]["custom_vessel"];
-        if custom.is_object() {
-            dep["custom_vessel"] = custom.clone();
-        }
-        hash_value(&dep)
+        Some(FitsIn {
+            plan_line: Polyline(line),
+            plan_line_kind: kind,
+            river_polygon,
+            custom_vessel: self.doc["stages"]["sizing"]["settings"]["custom_vessel"].clone(),
+            settings: rec["settings"].clone(),
+            full,
+        })
+    }
+
+    /// The hash of what the stored answer would read now (no hash of its own, spec 0017).
+    fn fits_dependency_hash(&self) -> String {
+        hash_value(&json!(self.fits_input()))
     }
 
     /// Where the answer stands: not run, fresh, or stale.
@@ -399,9 +520,13 @@ impl Session {
             settings["draught_m"] = json!(d);
             results["draught_m"] = json!(d);
         }
+        // The typed output: what the study keeps must read as the contract says.
+        let typed: FitsAnswer = serde_json::from_value(results).map_err(|e| {
+            DesignError::Input(format!("the answer does not read as its contract: {e}"))
+        })?;
         self.doc["fits"] = json!({
             "settings": settings,
-            "results": results,
+            "results": typed,
             "depends_on": null,
             "engine_version": ENGINE_VERSION,
         });
