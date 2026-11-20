@@ -237,8 +237,11 @@ fn optimise_follows_the_rule() {
 
 #[test]
 fn volumes_follows_the_rule() {
-    check_failing(
+    // One design line per run (spec 0017): the volumes measure the lattice's line alone, and since
+    // issue #6 it holds R_min on the default chord. Read on a 10 m chord, it fails, as for optimise.
+    check_failing_edited(
         "volumes",
+        &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
         &[
             &["align", "--method", "rolling-circle"],
             &["optimise", "--sites", "1200"],
@@ -250,8 +253,15 @@ fn volumes_follows_the_rule() {
 
 #[test]
 fn run_follows_the_rule() {
-    // After `size`, the options are stale: `run` makes them again, and they fail.
-    check_failing("run", &[], "run", &[]);
+    // After `size`, the stages are stale: `run` makes the design line again, and it fails. Its
+    // lattice line holds R_min on the default chord since issue #6: read on a 10 m chord.
+    check_failing_edited(
+        "run",
+        &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
+        &[],
+        "run",
+        &[],
+    );
 }
 
 #[test]
