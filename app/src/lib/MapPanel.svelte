@@ -5,7 +5,7 @@
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import type * as GeoJSON from "geojson";
   import type { Hillshade, MapGeometry, StretchCollection } from "./api";
-  import { ATTRIBUTION, BASEMAP_TILES } from "./basemap";
+  import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
 
@@ -15,7 +15,8 @@
     stretches = null,
     selectedStretch = null,
     hillshade = null,
-    tiles = BASEMAP_TILES,
+    imagery = layerFor(DEFAULT_IMAGERY),
+    onImageryFail,
     stationPosition = null,
     onPick,
     onReady,
@@ -29,8 +30,10 @@
     selectedStretch?: { option: string; index: number } | null;
     /** The DEM hillshade, shown in place of the imagery while the tiles cannot load. */
     hillshade?: Hillshade | null;
-    /** The tile address. Only a test changes it. */
-    tiles?: string;
+    /** The imagery to draw under the design, and its attribution. */
+    imagery?: ImageryLayer;
+    /** Called when imagery that is not the open default cannot load (a refused key, or tiles that keep failing). */
+    onImageryFail?: (source: ImagerySource) => void;
     /** Where the section station is, as `[lon, lat]`: a marker follows it. */
     stationPosition?: [number, number] | null;
     /** A click on the map: the point under it. */
@@ -164,6 +167,28 @@
     stationMarker.getElement().dataset.position = stationPosition.map((v) => v.toFixed(6)).join(",");
   }
 
+  /** The raster source for a layer. The attribution is drawn by the page (below), never by the map. */
+  function rasterSource(l: ImageryLayer): maplibregl.RasterSourceSpecification {
+    return { type: "raster", tiles: [l.tiles], tileSize: l.tileSize, maxzoom: l.maxzoom };
+  }
+
+  // Counters for the tiles of the imagery now shown; a change of source starts them again.
+  let failed = 0;
+  let loaded = 0;
+  let drawnTiles = "";
+  /** Put another imagery source under everything else. */
+  function swapImagery() {
+    if (!map || !ready || imagery.tiles === drawnTiles) return;
+    drawnTiles = imagery.tiles;
+    failed = 0;
+    loaded = 0;
+    offline = false;
+    map.removeLayer("basemap");
+    map.removeSource("basemap");
+    map.addSource("basemap", rasterSource(imagery));
+    map.addLayer({ id: "basemap", type: "raster", source: "basemap" }, "hillshade");
+  }
+
   let shownShade: string | null = null;
   /** Lay the hillshade under the vector layers, and show it only while the imagery is offline. */
   function shade() {
@@ -203,6 +228,7 @@
   }
 
   onMount(() => {
+    drawnTiles = imagery.tiles;
     try {
       map = new maplibregl.Map({
         container: host,
@@ -210,7 +236,7 @@
         style: {
           version: 8,
           sources: {
-            basemap: { type: "raster", tiles: [tiles], tileSize: 256, maxzoom: 14, attribution: ATTRIBUTION },
+            basemap: rasterSource(imagery),
           },
           layers: [{ id: "basemap", type: "raster", source: "basemap" }],
         },
@@ -248,11 +274,15 @@
       onReady?.(m);
     });
     // Offline: tiles keep failing and none has loaded. One success puts the imagery back.
-    let failed = 0;
-    let loaded = 0;
+    // Imagery of the user's own choosing that fails is handed back to the page, which falls back to the open one.
     map.on("error", (e) => {
       if ((e as { sourceId?: string }).sourceId !== "basemap") return;
       failed += 1;
+      const status = (e as { error?: { status?: number } }).error?.status;
+      if (imagery.source !== "open") {
+        if (loaded === 0 && (failed >= 2 || status === 401 || status === 403)) onImageryFail?.(imagery.source);
+        return;
+      }
       if (failed >= 2 && loaded === 0) offline = true;
     });
     map.on("sourcedata", (e) => {
@@ -279,6 +309,12 @@
     void stationPosition;
     void ready;
     placeStation();
+  });
+
+  $effect(() => {
+    void imagery.tiles;
+    void ready;
+    swapImagery();
   });
 
   $effect(() => {
@@ -313,7 +349,7 @@
       Imagery offline{hillshade ? " — showing the DEM hillshade" : " — no DEM to show a hillshade from"}
     </p>
   {/if}
-  <p class="attribution" data-testid="attribution">{ATTRIBUTION}</p>
+  <p class="attribution" data-testid="attribution" data-source={imagery.source}>{imagery.attribution}</p>
 </div>
 
 <style>
