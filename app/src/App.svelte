@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import * as api from "./lib/api";
   import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection } from "./lib/api";
   import CrossSection from "./lib/CrossSection.svelte";
   import LongSection from "./lib/LongSection.svelte";
-  import BottomPanel from "./lib/BottomPanel.svelte";
+  import FloatPanel from "./lib/FloatPanel.svelte";
+  import StretchesDrawer from "./lib/StretchesDrawer.svelte";
   import { currentTheme, optionVar, setTheme, type ThemeChoice } from "./lib/theme";
   import { BASEMAP_TILES } from "./lib/basemap";
   import MapPanel from "./lib/MapPanel.svelte";
@@ -169,7 +170,28 @@
   }
 
   let leftWidth = $state(340);
-  let bottomHeight = $state(200);
+
+  // The map fills the space beside the left panel. The profile (the long section) and the cross-section
+  // float over it, and the constraint stretches open in a drawer: all closed until asked for.
+  let profileOpen = $state(false);
+  let sectionOpen = $state(false);
+  let stretchesOpen = $state(false);
+  let profileToggle = $state<HTMLButtonElement | undefined>();
+  let sectionToggle = $state<HTMLButtonElement | undefined>();
+  let profilePanel = $state<FloatPanel | undefined>();
+  let sectionPanel = $state<FloatPanel | undefined>();
+  /** A toolbar toggle: show or hide a floating panel. An opened panel takes the focus, so Escape closes it. */
+  async function togglePanel(which: "profile" | "section") {
+    if (which === "profile") profileOpen = !profileOpen;
+    else sectionOpen = !sectionOpen;
+    await tick();
+    (which === "profile" ? profilePanel : sectionPanel)?.focus();
+  }
+  async function toggleStretches() {
+    stretchesOpen = !stretchesOpen;
+    await tick();
+    if (stretchesOpen) document.getElementById("stretches-drawer")?.focus();
+  }
 
   // Sizing recomputes live, after a pause in typing (about 150 ms); nothing else reruns by itself.
   const PAUSE_MS = 150;
@@ -361,7 +383,8 @@
     const id = selectedId;
     const at = station;
     void longSection;
-    if (!id || at == null || !longSection) {
+    // With both panels hidden nothing shows a section: none is asked for.
+    if (!id || at == null || !longSection || !(profileOpen || sectionOpen)) {
       crossBusy = false;
       return;
     }
@@ -394,10 +417,33 @@
   function pickChainage(c: number) {
     if (longSection) station = longSection.chainage_m.reduce((best, x) => (Math.abs(x - c) < Math.abs(best - c) ? x : best));
   }
+  /** How near the design line a map click must be to count as a click on it, in screen pixels. */
+  const LINE_REACH_PX = 10;
+  /** True when a map point is on the design line as the map draws it. */
+  function onDesignLine(lon: number, lat: number): boolean {
+    if (!map) return false;
+    try {
+      const p = map.project([lon, lat]);
+      const layers = ["options", "options-casing", "ticks"].filter((id) => map!.getLayer(id));
+      const box: [maplibregl.PointLike, maplibregl.PointLike] = [[p.x - LINE_REACH_PX, p.y - LINE_REACH_PX], [p.x + LINE_REACH_PX, p.y + LINE_REACH_PX]];
+      return layers.length > 0 && map.queryRenderedFeatures(box, { layers }).length > 0;
+    } catch {
+      return false;
+    }
+  }
+  /** A map click. On the design line: go to the nearest station and show both panels. Elsewhere it
+   * moves the station only while a panel shows it; with both hidden the map is left alone. */
   async function pickPoint(lon: number, lat: number) {
     if (!selectedId || !longSection) return;
+    const onLine = onDesignLine(lon, lat);
+    if (!onLine && !(profileOpen || sectionOpen)) return;
     const c = await guard(() => api.stationNear(selectedId!, lon, lat));
-    if (c != null) station = c;
+    if (c == null) return;
+    station = c;
+    if (onLine) {
+      profileOpen = true;
+      sectionOpen = true;
+    }
   }
 
   /** An option's colour (a CSS reference to its token): its place in the design's list, which is the order the map draws. */
@@ -451,21 +497,17 @@
     return () => undo.forEach((u) => u());
   });
 
-  function drag(axis: "x" | "y") {
-    return (down: PointerEvent) => {
-      const target = down.currentTarget as HTMLElement;
-      target.setPointerCapture(down.pointerId);
-      const move = (e: PointerEvent) => {
-        if (axis === "x") leftWidth = Math.min(Math.max(e.clientX, 220), window.innerWidth - 300);
-        else bottomHeight = Math.min(Math.max(window.innerHeight - e.clientY, 80), window.innerHeight - 200);
-      };
-      const up = () => {
-        target.removeEventListener("pointermove", move);
-        target.removeEventListener("pointerup", up);
-      };
-      target.addEventListener("pointermove", move);
-      target.addEventListener("pointerup", up);
+  /** Drag the rule between the left panel and the map. */
+  function dragLeft(down: PointerEvent) {
+    const target = down.currentTarget as HTMLElement;
+    target.setPointerCapture(down.pointerId);
+    const move = (e: PointerEvent) => (leftWidth = Math.min(Math.max(e.clientX, 220), window.innerWidth - 300));
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
     };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
   }
 
   /** The key of the custom vessel's row in the "what fits" answer, which has no class id. */
@@ -508,6 +550,8 @@
     <button disabled={fileBusy} data-testid="save" title={SAVE_TITLE} onclick={(e) => saveButton(e, api.save)}>Save</button>
     <button disabled={fileBusy} data-testid="save-as" title={SAVE_AS_TITLE} onclick={(e) => saveButton(e, api.saveAs)}>Save as</button>
     <button class:on={sheetsView} data-testid="sheets-toggle" aria-pressed={sheetsView} disabled={!(table?.rows.length)} onclick={() => (sheetsView = !sheetsView)} title="The drawing sheets of the active option, as owd draw makes them">Sheets</button>
+    <button bind:this={profileToggle} class:on={profileOpen} data-testid="profile-toggle" aria-pressed={profileOpen} onclick={() => togglePanel("profile")} title="Show or hide the profile (the long section) over the map">Profile</button>
+    <button bind:this={sectionToggle} class:on={sectionOpen} data-testid="section-toggle" aria-pressed={sectionOpen} onclick={() => togglePanel("section")} title="Show or hide the cross-section at the station over the map">Section</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("geojson")} title="Design line options as GeoJSON (WGS84), with their checks">Export GeoJSON</button>
     <button disabled={!(table?.rows.length)} onclick={() => exportAs("csv")} title="The quantity table as CSV">Export CSV</button>
     <button class="primary" disabled={!anyStale || busy !== null} onclick={runStale} title="Run every stage that is due (stale, or set up and not run yet), in order">Run stale</button>
@@ -568,19 +612,20 @@
     </div>
   {/if}
 
-  <div class="body" style:grid-template-columns="{leftWidth}px 6px 1fr" style:grid-template-rows="1fr 6px {bottomHeight}px">
+  <div class="body" style:grid-template-columns="{leftWidth}px 6px 1fr">
     <section class="left">
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} {lineName} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} />
       {/if}
     </section>
-    <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={drag("x")}></div>
+    <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>
     <section class="main">
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
+      <div class="maparea" data-testid="map-area">
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={crossSection?.position ?? null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">
@@ -588,15 +633,19 @@
           </ul>
         {/if}
       </div>
-      <div class="sections" data-testid="sections">
-        <div class="longbox">
-          {#if longSection}
-            <LongSection data={longSection} {station} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} onPick={pickChainage} />
-          {:else}
-            <p class="slot" data-testid="section-note">{sectionNote ?? "Run volumes to see the long section."}</p>
-          {/if}
-        </div>
-        <div class="crossbox">
+      {#if profileOpen}
+        <FloatPanel bind:this={profilePanel} id="profile" title="Profile" place={(w, h) => ({ x: 12, y: h - 260 - 56, w: Math.min(560, w * 0.5 - 18), h: 260 })} onClose={() => (profileOpen = false)} returnFocus={profileToggle}>
+          <div class="longbox">
+            {#if longSection}
+              <LongSection data={longSection} {station} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} onPick={pickChainage} />
+            {:else}
+              <p class="slot" data-testid="section-note">{sectionNote ?? "Run volumes to see the long section."}</p>
+            {/if}
+          </div>
+        </FloatPanel>
+      {/if}
+      {#if sectionOpen}
+        <FloatPanel bind:this={sectionPanel} id="section" title="Cross-section" place={(w, h) => { const pw = Math.min(520, w * 0.5 - 18); return { x: w - pw - 12, y: h - 300 - 56, w: pw, h: 300 }; }} onClose={() => (sectionOpen = false)} returnFocus={sectionToggle}>
           <label class="slider">
             Station
             <input
@@ -611,13 +660,19 @@
               oninput={(e) => slide(Number(e.currentTarget.value))}
             />
           </label>
-          <div class="csbody"><CrossSection section={crossSection} busy={crossBusy} note={crossNote} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} /></div>
-        </div>
+          <div class="csbody">
+            {#if !longSection && sectionNote}
+              <p class="slot" data-testid="cross-note">{sectionNote}</p>
+            {:else}
+              <CrossSection section={crossSection} busy={crossBusy} note={crossNote} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} />
+            {/if}
+          </div>
+        </FloatPanel>
+      {/if}
       </div>
-    </section>
-    <div class="handle h" role="separator" aria-orientation="horizontal" onpointerdown={drag("y")}></div>
-    <section class="bottom">
-      <BottomPanel {table} {snap} {stretches} {indexOf} {selectedId} {selectedStretch} onSelect={(id) => (selectedId = id)} onSelectStretch={(s) => (selectedStretch = s)} />
+      {#if stretchesOpen}
+        <StretchesDrawer {table} {snap} {stretches} {selectedId} {selectedStretch} onSelectStretch={(s) => (selectedStretch = s)} onClose={() => (stretchesOpen = false)} returnFocus={document.querySelector<HTMLElement>("[data-testid=stretches-toggle]")} />
+      {/if}
     </section>
   </div>
 
@@ -642,21 +697,19 @@
   .banner.info { flex-wrap: wrap; padding: 3px var(--sp-3); background: var(--surface); color: var(--ink-2); font-size: var(--fs-12); }
   .banner.info ul { flex-basis: 100%; margin: 0 0 var(--sp-1); padding-left: var(--sp-4, 16px); }
   .banner button { padding: 1px 8px; font-size: var(--fs-12); }
-  .body { flex: 1; display: grid; min-height: 0; }
+  .body { flex: 1; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
   .body > section { overflow: auto; min-width: 0; min-height: 0; }
-  .left { grid-column: 1; grid-row: 1 / 4; background: var(--surface); }
-  .handle.v { grid-column: 2; grid-row: 1 / 4; cursor: col-resize; background: var(--ink); }
-  .main { grid-column: 3; grid-row: 1; overflow: hidden; position: relative; display: grid; grid-template-rows: minmax(120px, 1fr) minmax(150px, 40%); }
-  .mapbox { min-height: 0; position: relative; }
-  .sections { display: grid; grid-template-columns: 1fr minmax(260px, 42%); min-height: 0; border-top: var(--lw-thin) solid var(--ink); background: var(--surface); }
-  .longbox, .crossbox { min-width: 0; min-height: 0; overflow: hidden; }
-  .crossbox { border-left: var(--lw-thin) solid var(--ink); display: flex; flex-direction: column; }
-  .csbody { flex: 1; min-height: 0; }
+  .left { grid-column: 1; background: var(--surface); }
+  .handle.v { grid-column: 2; cursor: col-resize; background: var(--ink); }
+  /* The map fills the space beside the left panel; the panels float over it. */
+  .body > .main { grid-column: 3; overflow: hidden; position: relative; display: flex; flex-direction: column; }
+  .maparea { flex: 1; min-height: 120px; position: relative; overflow: hidden; }
+  .mapbox { position: absolute; inset: 0; }
+  .longbox { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+  .csbody { flex: 1; min-height: 0; min-width: 0; }
   .slider { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-12); color: var(--ink-3); }
   .slider input { flex: 1; accent-color: var(--ink); }
   .slot { color: var(--ink-3); font-style: italic; margin: var(--sp-2) 10px; font-size: var(--fs-13); }
-  .handle.h { grid-column: 3; grid-row: 2; cursor: row-resize; background: var(--ink); }
-  .bottom { grid-column: 3; grid-row: 3; background: var(--surface); }
   .handle:hover { background: var(--ink-2); }
   .notices { position: absolute; right: var(--sp-2); bottom: 28px; z-index: 2; margin: 0; padding: 2px var(--sp-2); max-width: 60%; list-style: none; background: var(--surface); color: var(--ink-2); border: var(--lw-thin) solid var(--rule); font-size: var(--fs-11); }
   header button.on { background: var(--accent); color: var(--accent-ink); }

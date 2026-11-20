@@ -427,7 +427,7 @@ describe("Open Waterway Designer app smoke test", () => {
       assert.match(words, new RegExp(v.replace(/-/g, " ")));
     }
     // The constraint stretches of the selected option, with the screening notices.
-    const tab = await browser.$("[data-testid=tab-stretches]");
+    const tab = await browser.$("[data-testid=stretches-toggle]");
     await tab.scrollIntoView();
     await browser.execute((el) => el.click(), tab);
     await until("the stretch table", async () => (await browser.$$("[data-testid=stretch-row]")).length > 0, 30000);
@@ -450,10 +450,10 @@ describe("Open Waterway Designer app smoke test", () => {
     await browser.execute((el) => el.click(), remove);
     await until("one set again", async () => !(await text("shape-rule-sets")).includes("gb50139"));
     await until("volumes to go stale", async () => (await text("status-volumes")) === "stale");
-    // Back to the options tab, as the next tests expect: the tab stays as picked across files.
-    const options = await browser.$("[data-testid=tab-options]");
-    await browser.execute((el) => el.click(), options);
-    await until("the options tab", async () => (await options.getAttribute("aria-selected")) === "true");
+    // Close the stretches drawer, as the next tests expect: it stays as left across files.
+    const close = await browser.$("[data-testid=stretches-close]");
+    await browser.execute((el) => el.click(), close);
+    await until("the drawer to close", async () => !(await (await browser.$("[data-testid=stretches-panel]")).isExisting()));
   });
   it("loads a Rule Set file through Load Rule Set file, lists it apart, sizes with it, and shows a bad file's refusal with the list unchanged (#499)", async () => {
     await open(designWithDem("rule-file-"), "with-dem.owd");
@@ -534,7 +534,10 @@ describe("Open Waterway Designer app smoke test", () => {
     await (await browser.$("[data-testid=set-water]")).click();
     await (await browser.$("[data-testid=run-volumes]")).click();
     await until("volumes to be fresh", async () => (await text("status-volumes")) === "fresh", 120000);
-    // The long section of the selected option, and a cross-section at its first station.
+    // The long section of the selected option, and a cross-section at its first station: in the floating panels.
+    for (const id of ["profile", "section"]) {
+      if (!(await (await browser.$(`[data-testid=${id}-panel]`)).isExisting())) await browser.execute((el) => el.click(), await browser.$(`[data-testid=${id}-toggle]`));
+    }
     await until("the long section", async () => Number(await (await browser.$("[data-testid=long-section]")).getAttribute("data-stations")) > 2, 60000);
     const stations = Number(await (await browser.$("[data-testid=long-section]")).getAttribute("data-stations"));
     await until("the cross-section", async () => (await (await browser.$("[data-testid=cross-section]")).getAttribute("data-chainage")) !== "", 60000);
