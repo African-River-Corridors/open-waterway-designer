@@ -38,6 +38,7 @@ pub mod sizing;
 pub mod stage_terrain;
 pub mod table;
 pub mod terrain;
+pub mod terrain_tile;
 pub mod volumes;
 pub mod volumes_stage;
 pub mod water;

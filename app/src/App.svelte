@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import * as api from "./lib/api";
-  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection } from "./lib/api";
+  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
   import CrossSection from "./lib/CrossSection.svelte";
   import LongSection from "./lib/LongSection.svelte";
   import FloatPanel from "./lib/FloatPanel.svelte";
@@ -35,6 +35,7 @@
   let station = $state<number | null>(null);
   let offline = $state(false);
   let hillshade = $state<Hillshade | null>(null);
+  let terrain = $state<TerrainInfo | null>(null);
   let tiles = $state<string | null>(null);
   let imagery = $state<ImageryLayer>(layerFor(DEFAULT_IMAGERY));
   let imageryNote = $state<string | null>(null);
@@ -467,6 +468,21 @@
     }
   });
 
+  // The DEM as terrain for the 3D view (MAP-2). The engine knows which DEM is in memory: it is asked
+  // after every snapshot (the answer is kept there, so asking is cheap), and the map is given a new
+  // answer only when it changes. The desktop app has no tile path yet: it says so on the button.
+  const TERRAIN_NOTE = isWeb ? null : "3D: in the web app only for now";
+  $effect(() => {
+    void snap;
+    if (!isWeb || !snap) return;
+    api.terrainInfo().then(
+      (t) => {
+        if (JSON.stringify(t) !== JSON.stringify(untrack(() => terrain))) terrain = t;
+      },
+      () => {},
+    );
+  });
+
   onMount(() => {
     const undo: (() => void)[] = [];
     // Outside the Tauri window (a browser test of the desktop build) these have nothing to listen to.
@@ -625,7 +641,7 @@
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
       <div class="maparea" data-testid="map-area">
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">

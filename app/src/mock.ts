@@ -188,6 +188,8 @@ const answer: Record<string, () => unknown> = {
   }),
   map_geometry: () => geometry, option_table: () => table, long_section: () => longSection, cross_section: () => crossSection,
   station_near: () => 9000, hillshade: relief,
+  // The mock has no engine to cut terrain tiles: the 3D button says there is no DEM.
+  terrain_info: () => null,
   export_sheets: () => "/tmp/owd-sheets",
   export_report: () => "/tmp/owd-reports",
   sheets: () => [{ number: "OWD-MOCK-PL-001", title: "PLAN OVERVIEW", warnings: [],

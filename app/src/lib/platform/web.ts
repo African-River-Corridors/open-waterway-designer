@@ -295,6 +295,9 @@ export async function createWebPlatform(): Promise<Platform> {
     map_geometry: () => json("map_geometry"),
     option_table: () => json("option_table"),
     hillshade: () => json("hillshade"),
+    // The 3D view (MAP-2): the DEM's terrain tiles are made in the worker, from the DEM in memory.
+    terrain_info: () => json("terrain_info"),
+    terrain_tile: (a) => host.rpc("terrain_tile", a.z, a.x, a.y),
     long_section: (a) => json("long_section", a.option),
     sheets: (a) => json("sheets", a.option),
     export_sheets: async (a) => {

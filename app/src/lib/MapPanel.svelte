@@ -4,11 +4,12 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import type * as GeoJSON from "geojson";
-  import type { Hillshade, MapGeometry, StretchCollection } from "./api";
+  import { terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
   import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
-  import { MAP_LAYERS, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
+  import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
+  import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, tileTemplate, type TerrainPrefs } from "./terrain3d";
 
   let {
     geometry,
@@ -16,6 +17,8 @@
     stretches = null,
     selectedStretch = null,
     hillshade = null,
+    terrain = null,
+    terrainNote = null,
     imagery = layerFor(DEFAULT_IMAGERY),
     onImageryFail,
     stationPosition = null,
@@ -31,6 +34,10 @@
     selectedStretch?: { option: string; index: number } | null;
     /** The DEM hillshade, shown in place of the imagery while the tiles cannot load. */
     hillshade?: Hillshade | null;
+    /** The DEM in memory as terrain tiles, for the 3D view and the terrain shading. Null with no DEM. */
+    terrain?: TerrainInfo | null;
+    /** Why this app cannot show the DEM in 3D at all (the desktop app, for now). Null where it can. */
+    terrainNote?: string | null;
     /** The imagery to draw under the design, and its attribution. */
     imagery?: ImageryLayer;
     /** Called when imagery that is not the open default cannot load (a refused key, or tiles that keep failing). */
@@ -47,6 +54,28 @@
 
   // The worker is served with the app (never from a CDN), so the map starts offline too.
   maplibregl.setWorkerUrl(workerUrl);
+
+  // The terrain tiles (MAP-2) are made by the engine in this browser, from the DEM in memory: the map asks
+  // the page for them under a scheme of its own, and no request leaves the page. The engine may be busy
+  // (a stage is running) or starting again (a run was cancelled): a tile that fails is asked for again.
+  const wait = (ms: number, signal: AbortSignal) =>
+    new Promise<void>((done, stop) => {
+      const t = setTimeout(done, ms);
+      signal.addEventListener("abort", () => (clearTimeout(t), stop(new Error("the tile is no longer wanted"))), { once: true });
+    });
+  maplibregl.addProtocol(TERRAIN_PROTOCOL, async (params, abort) => {
+    const tile = parseTileUrl(params.url);
+    if (!tile) throw new Error(`not a terrain tile address: ${params.url}`);
+    for (let tries = 0; ; tries += 1) {
+      try {
+        const png = await terrainTile(tile.z, tile.x, tile.y);
+        return { data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer };
+      } catch (e) {
+        if (tries >= 4 || abort.signal.aborted) throw new Error(String(e));
+        await wait(1000, abort.signal);
+      }
+    }
+  });
 
   /** A 1 x 1 transparent PNG. */
   const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -74,8 +103,65 @@
     "design-line": !!geometry?.options.length,
     "constraint-stretches": !!stretches?.features.length,
     "station-marks": !!geometry?.options.some((o) => o.ticks.length),
+    "terrain-shading": !!terrain,
     imagery: true,
   });
+
+  /** 3D on or off and the vertical exaggeration: remembered on this machine, never in the design. */
+  let prefs = $state<TerrainPrefs>(loadTerrainPrefs());
+  /** The map is in 3D: the user asked for it and there is a DEM to show. */
+  const terrainOn = $derived(prefs.on && !!terrain);
+  function setPrefs(next: TerrainPrefs) {
+    prefs = next;
+    saveTerrainPrefs(next);
+  }
+  /** The DEM whose tiles the map has now, by its number; "" for none. */
+  let drawnTerrain = "";
+  /** Whether the map is tilted for 3D now, so the camera moves only when 3D goes on or off. */
+  let tilted = false;
+  /** What the map itself has done, for a test to read: "on" once the terrain is set. */
+  let terrainDrawn = $state("off");
+  /** Give the map the DEM's tiles (or take them away), then set 3D, the exaggeration and the shading. */
+  function applyTerrain() {
+    if (!map || !ready) return;
+    const key = terrain ? String(terrain.id) : "";
+    if (key !== drawnTerrain) {
+      // Another DEM, or none: everything drawn from the old tiles goes.
+      if (map.getTerrain()) map.setTerrain(null);
+      for (const id of ["terrain-tint", "terrain-shading"]) if (map.getLayer(id)) map.removeLayer(id);
+      for (const id of ["dem", "dem-shade"]) if (map.getSource(id)) map.removeSource(id);
+      if (terrain) {
+        // Two sources of the same tiles: the map's own advice, so the 3D surface and the shading
+        // each keep their own tiles. The engine makes each tile once and answers both.
+        const source: maplibregl.RasterDEMSourceSpecification = { type: "raster-dem", tiles: [tileTemplate(terrain.id)], tileSize: terrain.tile_size, maxzoom: terrain.max_zoom, encoding: terrain.encoding };
+        map.addSource("dem", source);
+        // The shading is drawn only where the DEM is: outside its box there is no terrain to shade.
+        map.addSource("dem-shade", { ...source, bounds: terrain.bounds });
+        // Over the imagery, under the design. The tint colours the ground by its height, low ground dark
+        // and high ground pale, between the DEM's lowest and highest height: flat river country has little
+        // slope to shade, so without the imagery the tint is what shows the DEM.
+        const [low, mid, high] = [token("plate-ink"), token("hillshade"), token("cream")];
+        const span = Math.max(terrain.max_m - terrain.min_m, 0.01);
+        map.addLayer({ id: "terrain-tint", type: "color-relief", source: "dem-shade", layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, "polygon");
+        map.addLayer({ id: "terrain-shading", type: "hillshade", source: "dem-shade", layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, "polygon");
+      }
+      drawnTerrain = key;
+    }
+    if (terrainOn) {
+      map.setTerrain({ source: "dem", exaggeration: prefs.exaggeration });
+      if (!tilted) map.easeTo({ pitch: PITCH_3D, duration: 600 });
+    } else {
+      if (map.getTerrain()) map.setTerrain(null);
+      // Back to the flat view, north up.
+      if (tilted) map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+    }
+    tilted = terrainOn;
+    terrainDrawn = map.getTerrain() ? "on" : "off";
+    // With the imagery: the shading alone, laid over it. Without: the tint under the shading, the DEM itself.
+    const shaded = ticks["terrain-shading"];
+    if (map.getLayer("terrain-shading")) map.setLayoutProperty("terrain-shading", "visibility", shaded ? "visible" : "none");
+    if (map.getLayer("terrain-tint")) map.setLayoutProperty("terrain-tint", "visibility", shaded && !ticks.imagery ? "visible" : "none");
+  }
   /** A layer the legend may list: the design has it and it is ticked on. */
   const shows = (id: MapLayerId) => present[id] && ticks[id];
   function setTick(id: MapLayerId, on: boolean) {
@@ -86,13 +172,14 @@
   function applyLayers() {
     if (!map || !ready) return;
     for (const l of MAP_LAYERS) {
-      if (l.id === "imagery") continue;
+      if (l.id === "imagery" || l.id === "terrain-shading") continue;
       for (const id of STYLE_LAYERS[l.id]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", ticks[l.id] ? "visible" : "none");
     }
     // The chainage labels and the tight-bend marks are HTML markers, not map layers.
     for (const m of labels) m.getElement().style.display = ticks["station-marks"] ? "" : "none";
     for (const m of bendMarkers) m.getElement().style.display = ticks["design-line"] ? "" : "none";
     shade();
+    applyTerrain();
   }
 
   const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
@@ -299,12 +386,14 @@
         },
         center: [0, 5],
         zoom: 2,
+        maxPitch: 80,
       });
     } catch (e) {
       failure = `The map could not start: ${e instanceof Error ? e.message : e}`;
       return;
     }
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    // The compass shows the bearing and the tilt; a click on it turns the map north up again.
+    map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     map.on("click", (e) => onPick?.(e.lngLat.lng, e.lngLat.lat));
     map.on("load", () => {
@@ -331,6 +420,8 @@
       m.addLayer({ id: "stretches", type: "line", source: "stretches", paint: { "line-color": fail, "line-width": ["case", ["get", "picked"], 7, 4], "line-dasharray": [2, 1] } });
       m.addLayer({ id: "ticks", type: "circle", source: "ticks", paint: { "circle-radius": 3, "circle-color": cream, "circle-stroke-color": ink, "circle-stroke-width": 1 } });
       ready = true;
+      // A test reads the map's own state (terrain, pitch) through this; only a build in test mode has it.
+      if (import.meta.env.MODE === "test") (window as unknown as { __owdMap: maplibregl.Map }).__owdMap = m;
       onReady?.(m);
     });
     // Offline: tiles keep failing and none has loaded. One success puts the imagery back.
@@ -396,11 +487,18 @@
     void ready;
     applyLayers();
   });
+
+  $effect(() => {
+    void terrain;
+    void prefs;
+    void ready;
+    untrack(applyTerrain);
+  });
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && (layersOpen = false)} />
 
-<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id]).map((l) => l.id).join(" ")} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
+<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
   <div class="canvas" bind:this={host}></div>
   {#if failure}
     <p class="failure" role="alert" data-testid="map-failure">{failure}</p>
@@ -434,9 +532,20 @@
     {/if}
   </ul>
   <div class="layers">
-    <button class="layers-button" data-testid="layers-button" aria-label="Layers" title="Layers: show or hide what the map draws" aria-expanded={layersOpen} aria-controls="map-layers-list" onclick={() => (layersOpen = !layersOpen)}>
-      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M10 3 2.5 7 10 11l7.5-4L10 3Z" /><path d="M2.5 10.5 10 14.5l7.5-4" /><path d="M2.5 14 10 18l7.5-4" /></svg>
-    </button>
+    <div class="map-buttons">
+      {#if terrainOn}
+        <label class="exaggeration" title="Vertical exaggeration: how many times taller the ground is drawn">
+          <span>Height</span>
+          <select data-testid="terrain-exaggeration" aria-label="Vertical exaggeration" value={prefs.exaggeration} onchange={(e) => setPrefs({ ...prefs, exaggeration: Number(e.currentTarget.value) })}>
+            {#each EXAGGERATIONS as x}<option value={x}>{x}×</option>{/each}
+          </select>
+        </label>
+      {/if}
+      <button class="layers-button three-d" class:on={terrainOn} data-testid="terrain-3d" aria-pressed={terrainOn} disabled={!terrain} title={terrain ? (terrainOn ? "3D: back to the flat map" : "3D: see the DEM as a surface. Right-drag or Ctrl-drag to turn and tilt") : (terrainNote ?? "3D: load a DEM first")} onclick={() => setPrefs({ ...prefs, on: !terrainOn })}>3D</button>
+      <button class="layers-button" data-testid="layers-button" aria-label="Layers" title="Layers: show or hide what the map draws" aria-expanded={layersOpen} aria-controls="map-layers-list" onclick={() => (layersOpen = !layersOpen)}>
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M10 3 2.5 7 10 11l7.5-4L10 3Z" /><path d="M2.5 10.5 10 14.5l7.5-4" /><path d="M2.5 14 10 18l7.5-4" /></svg>
+      </button>
+    </div>
     {#if layersOpen}
       <fieldset class="layers-list" id="map-layers-list" data-testid="layers-list">
         <legend>Layers</legend>
@@ -477,9 +586,15 @@
   .key .stroke { width: 18px; height: 0; border-top: 2px solid var(--cream); }
   .key .stroke.dashed { border-top-style: dashed; }
   .key .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cream); border: 1px solid var(--plate-ink); box-sizing: border-box; }
-  /* Under the map's zoom buttons, the same size as they are. */
-  .layers { position: absolute; top: 78px; right: 10px; z-index: 4; max-height: calc(100% - 78px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+  /* Under the map's zoom buttons and compass, the same size as they are. */
+  .layers { position: absolute; top: 107px; right: 10px; z-index: 4; max-height: calc(100% - 107px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
   .layers-button { display: grid; place-items: center; width: 31px; height: 31px; padding: 0; background: var(--surface); color: var(--ink); border: var(--lw-thin) solid var(--ink); border-radius: var(--radius); }
+  .map-buttons { display: flex; gap: var(--sp-1); align-items: stretch; }
+  .three-d { font: 600 var(--fs-12) / 1 var(--font-ui); }
+  .three-d.on { background: var(--ink); color: var(--surface); }
+  .three-d:disabled { color: var(--ink-3); border-color: var(--rule-strong); cursor: not-allowed; }
+  .exaggeration { display: flex; gap: var(--sp-1); align-items: center; padding: 0 var(--sp-2); font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); border-radius: var(--radius); }
+  .exaggeration select { font-size: var(--fs-12); }
   .layers-list { margin: 0; padding: var(--sp-2) var(--sp-3); display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); min-width: 190px; min-height: 0; overflow-y: auto; }
   .layers-list legend { padding: 0 var(--sp-1); font-weight: 600; }
   .layers-list label { display: flex; gap: var(--sp-2); align-items: center; white-space: nowrap; }

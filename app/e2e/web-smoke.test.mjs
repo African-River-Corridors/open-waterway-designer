@@ -1053,7 +1053,8 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "layers-list"), false);
     await button.click();
     assert.equal(await button.getAttribute("aria-expanded"), "true");
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length);
+    // The seven layers of MAP-1, and the terrain shading (MAP-2), which has a test of its own below.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 1);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);
@@ -1353,6 +1354,197 @@ describe("OWD web smoke tests", () => {
     assert.deepEqual(await rect(), sized, "the place and size are remembered");
     // The profile was never placed: it has its own default, and no entry.
     assert.equal(JSON.parse(await b.execute(() => localStorage.getItem("owd-panels"))).profile, undefined);
+  });
+
+  it("the 3D view of the DEM (MAP-2): off with no DEM, on it sets the map's terrain and tilt, the exaggeration and the terrain shading work, all is remembered, and the design does not change", async () => {
+    // Terrain needs WebGL: headless Chrome gets it from SwiftShader, in software.
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const mapAttr = async (name) => (await tid(b, "plan-map")).getAttribute(name);
+    const mapState = () => b.execute(() => {
+      const m = window.__owdMap;
+      const t = m.getTerrain();
+      return { terrain: t ? { source: t.source, exaggeration: t.exaggeration } : null, pitch: m.getPitch(), bearing: m.getBearing(), shading: m.getLayer("terrain-shading") ? m.getLayoutProperty("terrain-shading", "visibility") : "absent", sources: ["dem", "dem-shade"].filter((id) => m.getSource(id)) };
+    });
+    /** The saved text of the design, as the page keeps it for a reload: every byte of the file. */
+    const savedText = async () => {
+      await b.execute(() => window.__owdPlatform.call("snapshot"));
+      await new Promise((r) => setTimeout(r, 300));
+      return b.execute(() => JSON.parse(localStorage.getItem("owd.lastDesign")).text);
+    };
+    await until(b, "the map", () => b.execute(() => !!window.__owdMap));
+    // No DEM in memory: a real button, off, that says why. No exaggeration to choose; the shading has nothing to draw.
+    const button = await tid(b, "terrain-3d");
+    assert.equal(await button.getTagName(), "button");
+    assert.equal(await button.getText(), "3D");
+    assert.equal(await button.isEnabled(), false);
+    assert.match(await button.getAttribute("title"), /load a DEM first/);
+    assert.equal(await button.getAttribute("aria-pressed"), "false");
+    assert.equal(await exists(b, "terrain-exaggeration"), false);
+    assert.equal(await b.execute(() => window.__owdPlatform.call("terrain_info")), null);
+    await (await tid(b, "layers-button")).click();
+    const shadeBox = () => b.execute(() => {
+      const c = document.querySelector('[data-testid="layer-terrain-shading"]');
+      return { checked: c.checked, disabled: c.disabled, row: c.closest("label").textContent.replace(/\s+/g, " ").trim() };
+    });
+    assert.deepEqual(await shadeBox(), { checked: false, disabled: true, row: "Terrain shading none loaded" });
+    assert.deepEqual((await mapState()).sources, []);
+
+    // The example brings its DEM: the button comes on, the map has the DEM's tiles, and nothing is in 3D yet.
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the 3D button to come on", () => button.isEnabled());
+    assert.match(await button.getAttribute("title"), /^3D: see the DEM as a surface/);
+    await until(b, "the DEM's tiles on the map", async () => (await mapState()).sources.length === 2);
+    await b.execute(() => {
+      window.__mapErrors = [];
+      window.__owdMap.on("error", (e) => window.__mapErrors.push(`${e.sourceId ?? ""}: ${e.error?.message ?? e.error}`));
+    });
+    const info = await b.execute(() => window.__owdPlatform.call("terrain_info"));
+    assert.equal(info.encoding, "terrarium");
+    assert.equal(info.tile_size, 256);
+    assert.ok(info.min_m < info.max_m && info.base_m >= info.min_m && info.base_m <= info.max_m, JSON.stringify(info));
+    const g = await b.execute(async () => (await window.__owdPlatform.call("map_geometry")).bbox);
+    const [w, s, e, n] = info.bounds;
+    assert.ok(w < g[0] && e > g[2] && s < g[1] && n > g[3], `the DEM ${info.bounds} holds the design ${g}`);
+    // A tile the engine makes here: a PNG whose heights, read back, are the DEM's own.
+    const tile = await b.execute(async (bounds, zoom) => {
+      const [w, s, e, n] = bounds;
+      const lon = (w + e) / 2, lat = (s + n) / 2, k = 2 ** zoom;
+      const x = Math.floor(((lon + 180) / 360) * k);
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = Math.floor((0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k);
+      const t0 = performance.now();
+      const png = await window.__owdPlatform.call("terrain_tile", { z: zoom, x, y });
+      const first = performance.now() - t0;
+      const t1 = performance.now();
+      await window.__owdPlatform.call("terrain_tile", { z: zoom, x, y });
+      const again = performance.now() - t1;
+      const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bitmap, 0, 0);
+      const px = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let lo = Infinity, hi = -Infinity;
+      for (let i = 0; i < px.length; i += 4) {
+        const h = px[i] * 256 + px[i + 1] + px[i + 2] / 256 - 32768;
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+      const far = await window.__owdPlatform.call("terrain_tile", { z: 3, x: 0, y: 0 });
+      return { signature: [...png.slice(0, 8)], width: bitmap.width, height: bitmap.height, lo, hi, first, again, far: far.length };
+    }, info.bounds, info.max_zoom);
+    assert.deepEqual(tile.signature, [137, 80, 78, 71, 13, 10, 26, 10], "a PNG");
+    assert.equal(`${tile.width}x${tile.height}`, "256x256");
+    assert.ok(tile.lo >= info.min_m - 0.01 && tile.hi <= info.max_m + 0.01 && tile.hi > tile.lo, `the tile's heights ${tile.lo} to ${tile.hi} are the DEM's (${info.min_m} to ${info.max_m})`);
+    assert.ok(tile.far > 0, "a tile off the DEM is still a tile (flat), never a hole");
+    console.log(`terrain tile in the browser (wasm, SwiftShader run): first ${tile.first.toFixed(1)} ms, cached ${tile.again.toFixed(1)} ms`);
+    assert.deepEqual((await mapState()).terrain, null);
+    assert.equal(await mapAttr("data-terrain"), "off");
+    const before = await savedText();
+
+    // On: the map takes the DEM as its terrain at twice the height, and tilts.
+    await button.click();
+    await until(b, "the terrain on the map", async () => (await mapAttr("data-terrain")) === "on");
+    assert.deepEqual((await mapState()).terrain, { source: "dem", exaggeration: 2 });
+    await until(b, "the map to tilt", async () => Math.abs((await mapState()).pitch - 60) < 0.5);
+    assert.equal(await button.getAttribute("aria-pressed"), "true");
+    const select = await tid(b, "terrain-exaggeration");
+    assert.equal(await select.getTagName(), "select");
+    assert.equal(await select.getValue(), "2");
+    assert.deepEqual(await b.execute(() => [...document.querySelectorAll('[data-testid="terrain-exaggeration"] option')].map((o) => o.textContent)), ["1×", "2×", "5×", "10×"]);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-3d")), '{"on":true,"exaggeration":2}');
+    // The surface is the DEM: the map can read a height from it once its tiles are in.
+    await until(b, "the terrain tiles", () => b.execute(() => window.__owdMap.isSourceLoaded("dem")), 120000);
+    // The exaggeration.
+    await select.selectByAttribute("value", "5");
+    await until(b, "five times the height", async () => (await mapState()).terrain?.exaggeration === 5);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-3d")), '{"on":true,"exaggeration":5}');
+    assert.ok(Math.abs((await mapState()).pitch - 60) < 0.5, "a change of height does not move the camera");
+    // The compass is there to turn the map back.
+    assert.equal(await (await b.$(".maplibregl-ctrl-compass")).isExisting(), true);
+
+    // Terrain shading: a layer of its own, with the imagery or without it.
+    assert.deepEqual(await shadeBox(), { checked: false, disabled: false, row: "Terrain shading" });
+    assert.equal((await mapState()).shading, "none");
+    await (await tid(b, "layer-terrain-shading")).click();
+    await until(b, "the shading", async () => (await mapState()).shading === "visible");
+    assert.equal(await mapAttr("data-terrain-shading"), "shown");
+    assert.equal(await mapAttr("data-layers-off"), "");
+    await (await tid(b, "layer-imagery")).click();
+    await until(b, "the imagery to go", () => b.execute(() => window.__owdMap.getLayoutProperty("basemap", "visibility") === "none"));
+    assert.equal((await mapState()).shading, "visible", "the shaded DEM stays with the imagery off");
+    assert.equal(await mapAttr("data-layers-off"), "imagery");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["terrain-shading","imagery"]');
+    await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()), 120000);
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await b.saveScreenshot(path.join(SHOTS, "web-terrain-3d.png"));
+    }
+    assert.deepEqual(await b.execute(() => window.__mapErrors.filter((m) => /^dem/.test(m))), [], "no terrain tile failed");
+
+    // In 3D the station pick still answers: a click on the design line sets the station and opens the panels.
+    await (await tid(b, "layer-imagery")).click();
+    const lineAt = await b.execute(async () => {
+      const m = window.__owdMap;
+      const line = (await window.__owdPlatform.call("map_geometry")).options[0].line.coordinates;
+      m.jumpTo({ center: line[Math.floor(line.length / 2)], zoom: 14 });
+      await new Promise((r) => m.once("idle", r));
+      // A point of the line the camera can see: in 3D a bank can hide the bed behind it, and a click
+      // lands on what is in front. Seen means the map reads the same place back from its pixel.
+      const metres = (a, b) => Math.hypot((a[0] - b[0]) * 111320 * Math.cos((a[1] * Math.PI) / 180), (a[1] - b[1]) * 110540);
+      const box = m.getCanvas().getBoundingClientRect();
+      const seen = line.map((at) => ({ at, p: m.project(at) })).filter(({ at, p }) => {
+        const back = m.unproject(p);
+        return p.x > 200 && p.x < box.width - 200 && p.y > 150 && p.y < box.height - 150 && metres([back.lng, back.lat], at) < 2;
+      });
+      const { at, p } = seen[Math.floor(seen.length / 2)];
+      return { x: Math.round(box.left + p.x), y: Math.round(box.top + p.y), lon: at[0], lat: at[1], seen: seen.length, of: line.length };
+    });
+    assert.ok(lineAt.seen > 0, "some of the design line is in sight");
+    await b.action("pointer").move({ x: lineAt.x, y: lineAt.y }).down().up().perform();
+    await until(b, "the station marker", () => exists(b, "station-marker"));
+    const marker = (await (await tid(b, "station-marker")).getAttribute("data-position")).split(",").map(Number);
+    const metres = Math.hypot((marker[0] - lineAt.lon) * 111320 * Math.cos((lineAt.lat * Math.PI) / 180), (marker[1] - lineAt.lat) * 110540);
+    console.log(`station pick on terrain (5x): the marker is ${metres.toFixed(1)} m from the point clicked on the design line; ${lineAt.seen} of ${lineAt.of} line points were in sight`);
+    assert.ok(metres < 60, `the station is where the click was, on the terrain (${metres.toFixed(1)} m off)`);
+    await until(b, "the floating panels", async () => (await exists(b, "profile-panel")) && (await exists(b, "section-panel")));
+
+    // Nothing of this is in the design: the saved text is the same, byte for byte.
+    const after = await savedText();
+    assert.equal(after, before, "the design file is byte-identical after 3D, the exaggeration and the shading");
+    assert.doesNotMatch(after, /owd-map-3d|terrain-shading|exaggeration|owd-dem/);
+
+    // Remembered on this machine. A reload has the design and not the DEM (a browser keeps no file): 3D waits for it.
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the example after a reload", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the map again", () => b.execute(() => !!window.__owdMap));
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-3d")), '{"on":true,"exaggeration":5}');
+    const again = await tid(b, "terrain-3d");
+    assert.equal(await again.isEnabled(), false, "no DEM in memory after a reload");
+    assert.match(await again.getAttribute("title"), /load a DEM first/);
+    assert.equal(await mapAttr("data-terrain"), "off");
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "3D to come back with the DEM", async () => (await mapAttr("data-terrain")) === "on", 60000);
+    assert.deepEqual((await mapState()).terrain, { source: "dem", exaggeration: 5 });
+    await until(b, "the tilt to come back", async () => Math.abs((await mapState()).pitch - 60) < 0.5);
+    assert.equal(await (await tid(b, "terrain-exaggeration")).getValue(), "5");
+    assert.equal((await mapState()).shading, "visible", "the shading tick is remembered too");
+
+    // Off: flat and north up again, and the exaggeration goes.
+    await b.execute(() => void window.__owdMap.jumpTo({ bearing: 40 }));
+    await again.click();
+    await until(b, "the terrain off", async () => (await mapAttr("data-terrain")) === "off");
+    await until(b, "the flat view, north up", async () => {
+      const m = await mapState();
+      return m.terrain === null && Math.abs(m.pitch) < 0.01 && Math.abs(m.bearing) < 0.01;
+    });
+    assert.equal(await again.getAttribute("aria-pressed"), "false");
+    assert.equal(await exists(b, "terrain-exaggeration"), false);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-3d")), '{"on":false,"exaggeration":5}');
+    assert.equal(await exists(b, "error"), false);
   });
 
   it("still loads when browser storage is blocked", async () => {
