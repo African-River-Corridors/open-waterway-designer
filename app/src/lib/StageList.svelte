@@ -9,6 +9,7 @@
     onRun,
     onCancel,
     onUseWater,
+    onOptimiseLength,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -21,8 +22,22 @@
     /** Set the rolling circle's water-aware mode (#494). */
     onUseWater: (choice: UseWater) => void;
     /** What made the design line on the map and in the table (its name in the table), if there is one. */
+    /** Set the cost of one metre of design line for the pool search (a number as typed). */
+    onOptimiseLength: (weight: string) => void;
     lineName?: string | null;
   } = $props();
+  // The stored cost per metre of line; 0 (off) is not written into the design.
+  let storedLength = $derived(
+    (snap?.document.stages.optimise.settings as { length_weight?: number } | null)?.length_weight ?? 0,
+  );
+  let lengthText = $state("");
+  let lengthSeen: number | null = null;
+  $effect(() => {
+    if (lengthSeen !== storedLength) {
+      lengthSeen = storedLength;
+      lengthText = String(storedLength);
+    }
+  });
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
@@ -78,6 +93,17 @@
           <span data-testid="line-next-run">Next run uses: {METHOD_LABEL[method]}</span>
         </li>
       {/if}
+      {#if s.name === "optimise"}
+        <li class="sub length" data-testid="length-weight-row">
+          <label class="name">
+            Cost per metre of line (m³ of cut per m; 0 = off)
+            <input type="text" inputmode="decimal" data-testid="length-weight" bind:value={lengthText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-length-weight" disabled={busy !== null} onclick={() => onOptimiseLength(lengthText)}>Set</button>
+          <span class="dim help" data-testid="length-weight-help">The pool search pays this for every metre of line, so a longer line through deep water is not free. A high value shortens the line and raises the cut.</span>
+          <span class="dim" data-testid="length-weight-stored">Stored: {storedLength}</span>
+        </li>
+      {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}
         <li class="sub" data-testid="use-water-row">
           <label class="name">
@@ -113,6 +139,10 @@
   .sub label { display: flex; gap: var(--sp-2); align-items: center; }
   .lines { flex-direction: column; align-items: flex-start; gap: 0; color: var(--ink-3); }
   .dim { color: var(--ink-3); }
+  .length { flex-wrap: wrap; }
+  .length label { flex-direction: column; align-items: flex-start; }
+  .length input { width: 7em; font-size: var(--fs-12); }
+  .length .help { flex-basis: 100%; }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
   .chip { font-size: var(--fs-11); font-weight: 600; padding: 1px 7px; border-radius: var(--radius); color: var(--ink-3); background: var(--surface-2); }

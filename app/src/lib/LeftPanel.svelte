@@ -23,6 +23,7 @@
     onDownstream,
     onMouth,
     onRunInputs,
+    onOptimiseLength,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -43,12 +44,13 @@
     onDownstream: (point: string) => void;
     onMouth: (mouth: string) => void;
     onRunInputs: (objective: string, limits: string, level: string) => void;
+    onOptimiseLength: (weight: string) => void;
     lineName?: string | null;
   } = $props();
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {lineName} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {lineName} />
   <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { OptionTable, Screening, Snapshot, StretchCollection, StretchKind, Verdict } from "./api";
   import OptionSwatch from "./OptionSwatch.svelte";
+  import { demNotLoaded } from "./words";
 
   let {
     table,
@@ -48,7 +49,9 @@
   const m = (x: number | null, digits = 1) => (x == null ? "—" : x.toFixed(digits));
   const volumesNote = $derived(
     table?.volumes_status === "stale"
-      ? "Volumes are stale: they were not run on the current inputs."
+      ? demNotLoaded(snap?.warnings)
+        ? "Volumes cannot be checked: the elevation model is not loaded. Load the DEM."
+        : "Volumes are stale: they were not run on the current inputs."
       : table?.volumes_status === "not run"
         ? "Volumes have not been run: run the volumes stage to fill the dredge, dry cut and tallest face."
         : null,
