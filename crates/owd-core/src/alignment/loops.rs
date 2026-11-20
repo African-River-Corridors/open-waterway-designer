@@ -44,6 +44,78 @@ pub fn is_self_intersecting(coords: &[Pt]) -> bool {
     !simple::line_is_simple(coords)
 }
 
+/// Where the polyline first crosses itself: the chainage (m along the line) of the earliest point at
+/// which two of its segments meet that [`is_self_intersecting`] counts as a crossing. `None` exactly
+/// when the line does not cross itself. Segments are swept by their x extent, so a long line that
+/// does not cross itself costs about as much as `is_self_intersecting`.
+pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
+    self_crossings_m(coords)
+        .into_iter()
+        .map(|(a, _)| a)
+        .min_by(f64::total_cmp)
+}
+
+/// Every place the polyline crosses itself, as the pair of chainages (m along the line) where it
+/// passes that point: the earlier pass first. Empty exactly when the line does not cross itself
+/// ([`is_self_intersecting`]); a collinear overlap counts once, at its earlier end on each pass.
+pub fn self_crossings_m(coords: &[Pt]) -> Vec<(f64, f64)> {
+    use crate::geom::{SegHit, segment_intersection};
+    let mut pts: Vec<Pt> = Vec::with_capacity(coords.len());
+    for &p in coords {
+        if pts.last() != Some(&p) {
+            pts.push(p);
+        }
+    }
+    let n = pts.len().saturating_sub(1);
+    if n < 2 {
+        return Vec::new();
+    }
+    let mut cum = vec![0.0; n + 1];
+    for i in 0..n {
+        cum[i + 1] = cum[i] + libm::hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    }
+    let minx = |i: usize| pts[i][0].min(pts[i + 1][0]);
+    let maxx = |i: usize| pts[i][0].max(pts[i + 1][0]);
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| minx(a).total_cmp(&minx(b)));
+    let is_line_end =
+        |seg: usize, p: Pt| (seg == 0 && p == pts[0]) || (seg == n - 1 && p == pts[n]);
+    let along = |seg: usize, p: Pt| cum[seg] + libm::hypot(p[0] - pts[seg][0], p[1] - pts[seg][1]);
+    let mut out: Vec<(f64, f64)> = Vec::new();
+    for (k, &i) in order.iter().enumerate() {
+        for &j in &order[k + 1..] {
+            if minx(j) > maxx(i) {
+                break;
+            }
+            let (lo, hi) = (i.min(j), i.max(j));
+            let p = match segment_intersection(pts[lo], pts[lo + 1], pts[hi], pts[hi + 1]) {
+                SegHit::None => continue,
+                SegHit::Overlap { a, b } => {
+                    // A collinear overlap is never simple: each pass's earlier end of it.
+                    out.push((
+                        along(lo, a).min(along(lo, b)),
+                        along(hi, a).min(along(hi, b)),
+                    ));
+                    continue;
+                }
+                SegHit::Point { p, .. } => p,
+            };
+            let ends = |a: Pt, b: Pt| p == a || p == b;
+            let crossing = if !(ends(pts[lo], pts[lo + 1]) && ends(pts[hi], pts[hi + 1])) {
+                true
+            } else if hi - lo <= 1 {
+                false
+            } else {
+                !(is_line_end(lo, p) && is_line_end(hi, p))
+            };
+            if crossing {
+                out.push((along(lo, p), along(hi, p)));
+            }
+        }
+    }
+    out
+}
+
 /// What `loop_verdict` measured.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoopMetrics {
@@ -133,6 +205,32 @@ mod tests {
         let (reject, reason, m) = loop_verdict(&arc(300.0, 361.0, 120), 1000.0);
         assert!(reject && m.self_intersecting);
         assert_eq!(reason.as_deref(), Some("self-intersecting"));
+    }
+
+    #[test]
+    fn the_first_crossing_is_found_where_the_line_crosses_itself() {
+        // East 100 m, north 50 m, then back south-west across the first leg at x = 60.
+        let l: Vec<Pt> = vec![
+            [0.0, 0.0],
+            [100.0, 0.0],
+            [100.0, 50.0],
+            [60.0, 50.0],
+            [60.0, -20.0],
+        ];
+        assert!(is_self_intersecting(&l));
+        let s = first_self_crossing_m(&l).unwrap();
+        assert!((s - 60.0).abs() < 1e-9, "{s}");
+        // A line that steps back along itself overlaps.
+        let back: Vec<Pt> = vec![[0.0, 0.0], [100.0, 0.0], [80.0, 0.0], [80.0, 30.0]];
+        assert!(is_self_intersecting(&back));
+        assert!((first_self_crossing_m(&back).unwrap() - 80.0).abs() < 1e-9);
+        // Simple lines, a closed ring included, give None, as `is_self_intersecting` says.
+        assert_eq!(first_self_crossing_m(&arc(500.0, 180.0, 120)), None);
+        let ring: Vec<Pt> = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 0.0]];
+        assert!(!is_self_intersecting(&ring));
+        assert_eq!(first_self_crossing_m(&ring), None);
+        let full = arc(300.0, 361.0, 120);
+        assert!(first_self_crossing_m(&full).is_some());
     }
 
     #[test]
