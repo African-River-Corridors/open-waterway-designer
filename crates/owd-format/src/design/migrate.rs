@@ -49,11 +49,15 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
         .unwrap_or_default();
     let by_method = |m: &str| options.iter().find(|o| o["method"] == m);
     let lattice = by_method("lattice");
-    let chosen = by_method("rolling_circle").or_else(|| {
-        options
-            .iter()
-            .find(|o| o["method"] != "lattice" && o["line"].is_object())
-    });
+    // With no other line, the lattice's own line is the design line too (stale, as every moved
+    // line is), so the file keeps a design line and its volumes.
+    let chosen = by_method("rolling_circle")
+        .or_else(|| {
+            options
+                .iter()
+                .find(|o| o["method"] != "lattice" && o["line"].is_object())
+        })
+        .or(lattice);
 
     // The alignment: one line, its method a setting.
     let engine = doc["engine_version"].clone();
@@ -64,7 +68,11 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
             if !al["settings"].is_object() {
                 al["settings"] = json!({});
             }
-            al["settings"]["method"] = json!(line.method);
+            // A lattice line kept as the design line has no alignment method: the setting stays
+            // as it was (the rolling circle by default).
+            if super::alignment::AlignMethod::from_name(&line.method).is_some() {
+                al["settings"]["method"] = json!(line.method);
+            }
             if line.method == "given" {
                 al["settings"]["given"] = json!({"name": line.name, "line": o_line(&line)});
             }
