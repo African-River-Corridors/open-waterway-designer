@@ -194,6 +194,10 @@ pub struct Session {
     pub(super) library: Library,
     /// What opening the file changed, in plain words (a move from an older format). Not stored.
     pub(super) notes: Vec<String>,
+    /// The cut-rate multiplier raster the document names (spec 0017 ticket 13), read from the file
+    /// whose hash it recorded, when the host has attached it. Not stored: the document holds only
+    /// its reference, as for the DEM.
+    pub(super) multiplier: Option<std::sync::Arc<crate::geotiff::Dem>>,
 }
 
 fn empty_stage() -> Value {
@@ -214,6 +218,7 @@ impl Session {
             water_sampling: Default::default(),
             library: engine::built_in().clone(),
             notes: Vec::new(),
+            multiplier: None,
             doc: json!({
                 "format_version": FORMAT_VERSION,
                 "engine_version": ENGINE_VERSION,
@@ -278,6 +283,7 @@ impl Session {
             water_sampling: Default::default(),
             library: engine::built_in().clone(),
             notes,
+            multiplier: None,
         };
         // A moved line that was fresh keeps a fresh record: its hash becomes the record's own.
         if moved_fresh && let Some(h) = s.reference_line_record_hash() {
@@ -399,6 +405,10 @@ impl Session {
         if let Err(e) = self.rates() {
             errors.push(format!("/inputs/rates: {e}"));
         }
+        // And the constraints (ticket 13).
+        if let Err(e) = self.constraints() {
+            errors.push(format!("/inputs/constraints: {e}"));
+        }
         // The one design line, and the lattice's, are typed: each must read as a `DesignLine`.
         for (at, v) in [
             (
@@ -464,6 +474,23 @@ impl Session {
             if !reads_dem && let Some(inputs) = dep["inputs"].as_object_mut() {
                 inputs.remove("dem");
                 inputs.remove("water_level");
+                // Nor the cut-rate multiplier (ticket 13): only the re-route weighs by it.
+                if let Some(c) = inputs
+                    .get_mut(super::constraints::INPUT)
+                    .and_then(Value::as_object_mut)
+                {
+                    c.remove("cut_rate_multiplier");
+                }
+            }
+            // The multiplier raster is identified by its hash, as the DEM is, not by where it sits.
+            // (`get_mut`, not indexing: indexing would add the key to a document without it.)
+            if let Some(m) = dep
+                .get_mut("inputs")
+                .and_then(|i| i.get_mut(super::constraints::INPUT))
+                .and_then(|c| c.get_mut("cut_rate_multiplier"))
+                .and_then(Value::as_object_mut)
+            {
+                m.remove("path");
             }
             dep["crs"] = self.doc["project"]["crs"].clone();
             // Only the volumes read the bed model (spec 0012): a new depth leaves the stages

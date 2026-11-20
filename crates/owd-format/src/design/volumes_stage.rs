@@ -24,7 +24,7 @@ use crate::types::{Chainage, Polyline, RiverPolygon, StageError, TerrainSampler}
 use owd_core::cut_model::{WIDEN_RMAX, widened_hb_from_shape};
 use owd_core::geom::{Polygon, Pt};
 use owd_core::volumes::sections::{
-    CrossSection, HalfWidth, Level, SectionVolumes, section_volumes,
+    CrossSection, HalfWidth, Level, SectionVolumes, section_volumes_weighted,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -113,6 +113,13 @@ pub struct VolumeStation {
     /// The section profile, at the stations that keep one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<SectionProfile>,
+    /// The dredge area weighted by the cut-rate multiplier, sample by sample (ticket 13). Absent
+    /// when the run has no multiplier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_dredge_area_m2: Option<f64>,
+    /// The dry cut area weighted the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_excav_area_m2: Option<f64>,
 }
 
 /// The volumes of one reach: a stretch of the water stage's (one source, one pool).
@@ -132,6 +139,15 @@ pub struct ReachVolumes {
     pub dredge_m3: f64,
     pub excav_m3: f64,
     pub total_m3: f64,
+    /// The dredge weighted by the cut-rate multiplier (ticket 13); absent with no multiplier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_dredge_m3: Option<f64>,
+    /// The dry cut weighted by the multiplier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_excav_m3: Option<f64>,
+    /// The two weighted volumes added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_total_m3: Option<f64>,
 }
 
 /// The totals over every station.
@@ -145,6 +161,13 @@ pub struct VolumeTotals {
     pub cut_through_m3: f64,
     pub max_face_h_m: f64,
     pub stations: usize,
+    /// The weighted dredge (ticket 13); absent with no multiplier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_dredge_m3: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_excav_m3: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_total_m3: Option<f64>,
 }
 
 /// What the volumes stage returns.
@@ -171,6 +194,9 @@ fn refuse(code: &str, message: &str) -> StageError {
 /// station has a height at any sample: the terrain does not reach the line; at the first station),
 /// `VOLUMES_OUTSIDE_RASTER` (a station with no height at any sample, at its design-line chainage),
 /// and `VOLUMES_WALK` for what is left (a terrain sampler that breaks its contract).
+///
+/// `weight` is the cut-rate multiplier at points (ticket 13): each station then also has its cut
+/// weighted sample by sample. The plain cut does not change.
 pub(super) fn walk(
     line: &[Pt],
     size: &ChannelSize,
@@ -178,6 +204,7 @@ pub(super) fn walk(
     level: &dyn Fn(f64) -> f64,
     settings: &VolumesSettings,
     terrain: TerrainSampler,
+    weight: Option<TerrainSampler>,
 ) -> Result<SectionVolumes, StageError> {
     let model = owd_core::cut_model::normalise_model(&settings.cut_model);
     if model != owd_core::cut_model::CUT_MODEL && model != owd_core::cut_model::CUT_MODEL_B {
@@ -200,7 +227,7 @@ pub(super) fn walk(
             HalfWidth::FromStations(&from_shape)
         }
     };
-    let v = section_volumes(
+    let v = section_volumes_weighted(
         line,
         terrain,
         river,
@@ -215,6 +242,7 @@ pub(super) fn walk(
         None,
         None,
         owd_core::volumes::sections::DEFAULT_CHUNK,
+        weight,
     )
     .map_err(|e| refuse("VOLUMES_WALK", &e.to_string()))?;
     let blind = |s: &CrossSection| s.terrain.iter().all(|z| !z.is_finite());
@@ -344,8 +372,17 @@ pub(super) fn summarise(v: &SectionVolumes, water: &DesignWater, profile_at: &[f
             top_of_cut_left_m: top_of_cut(s).0,
             top_of_cut_right_m: top_of_cut(s).1,
             profile: keep.contains(&i).then(|| profile(s)),
+            weighted_dredge_area_m2: s.weighted_dredge_area_m2,
+            weighted_excav_area_m2: s.weighted_excav_area_m2,
         })
         .collect();
+    // Weighted volumes only when every station has them (a walk with a multiplier).
+    let weighted = !v.stations.is_empty()
+        && v.stations
+            .iter()
+            .all(|s| s.weighted_dredge_area_m2.is_some() && s.weighted_excav_area_m2.is_some());
+    let sum =
+        |xs: &mut dyn Iterator<Item = f64>| owd_core::alignment::bends::py_sum(xs) * v.station_m;
 
     // Each station in the last stretch that starts at or before it (the upper one at a boundary).
     let stretches = &water.stretches;
@@ -361,15 +398,22 @@ pub(super) fn summarise(v: &SectionVolumes, water: &DesignWater, profile_at: &[f
             dredge_m3: 0.0,
             excav_m3: 0.0,
             total_m3: 0.0,
+            weighted_dredge_m3: None,
+            weighted_excav_m3: None,
+            weighted_total_m3: None,
         })
         .collect();
     if !by_reach.is_empty() {
         let mut dredge: Vec<Vec<f64>> = vec![vec![]; by_reach.len()];
         let mut excav: Vec<Vec<f64>> = vec![vec![]; by_reach.len()];
+        let mut w_dredge: Vec<Vec<f64>> = vec![vec![]; by_reach.len()];
+        let mut w_excav: Vec<Vec<f64>> = vec![vec![]; by_reach.len()];
         for s in &v.stations {
             let k = reach_of(s.chainage_m);
             dredge[k].push(s.dredge_area_m2);
             excav[k].push(s.excav_area_m2);
+            w_dredge[k].push(s.weighted_dredge_area_m2.unwrap_or(f64::NAN));
+            w_excav[k].push(s.weighted_excav_area_m2.unwrap_or(f64::NAN));
         }
         for (k, r) in by_reach.iter_mut().enumerate() {
             r.stations = dredge[k].len();
@@ -377,6 +421,13 @@ pub(super) fn summarise(v: &SectionVolumes, water: &DesignWater, profile_at: &[f
                 owd_core::alignment::bends::py_sum(dredge[k].iter().copied()) * v.station_m;
             r.excav_m3 = owd_core::alignment::bends::py_sum(excav[k].iter().copied()) * v.station_m;
             r.total_m3 = r.dredge_m3 + r.excav_m3;
+            if weighted {
+                let d = sum(&mut w_dredge[k].iter().copied());
+                let x = sum(&mut w_excav[k].iter().copied());
+                r.weighted_dredge_m3 = Some(d);
+                r.weighted_excav_m3 = Some(x);
+                r.weighted_total_m3 = Some(d + x);
+            }
         }
         // A stretch with no station (two points at one chainage) is not a reach.
         by_reach.retain(|r| r.stations > 0);
@@ -392,14 +443,33 @@ pub(super) fn summarise(v: &SectionVolumes, water: &DesignWater, profile_at: &[f
             cut_through_m3: v.cut_through_m3(),
             max_face_h_m: v.max_face_h_m(),
             stations: v.stations.len(),
+            weighted_dredge_m3: weighted
+                .then(|| sum(&mut v.stations.iter().filter_map(|s| s.weighted_dredge_area_m2))),
+            weighted_excav_m3: weighted
+                .then(|| sum(&mut v.stations.iter().filter_map(|s| s.weighted_excav_area_m2))),
+            weighted_total_m3: weighted.then(|| {
+                sum(&mut v.stations.iter().filter_map(|s| s.weighted_dredge_area_m2))
+                    + sum(&mut v.stations.iter().filter_map(|s| s.weighted_excav_area_m2))
+            }),
         },
         stations,
         by_reach,
     }
 }
 
-/// The volumes stage: the walk along the design line, kept as stations, by reach and in total.
+/// The volumes stage with no cut-rate multiplier: see [`volumes_stage_with`].
 pub fn volumes_stage(input: &VolumesIn, terrain: TerrainSampler) -> Result<Volumes, StageError> {
+    volumes_stage_with(input, terrain, None)
+}
+
+/// The volumes stage: the walk along the design line, kept as stations, by reach and in total.
+/// With `multiplier` (the cut-rate multiplier at points, ticket 13) each station, reach and the
+/// totals also hold the cut weighted by it, beside the plain cut, which does not change.
+pub fn volumes_stage_with(
+    input: &VolumesIn,
+    terrain: TerrainSampler,
+    multiplier: Option<TerrainSampler>,
+) -> Result<Volumes, StageError> {
     if input.design_line.len() < 2 {
         return Err(refuse(
             "VOLUMES_NO_LINE",
@@ -421,6 +491,7 @@ pub fn volumes_stage(input: &VolumesIn, terrain: TerrainSampler) -> Result<Volum
         &level,
         &input.settings,
         terrain,
+        multiplier,
     )?;
     Ok(summarise(&v, &w, &input.profile_at))
 }

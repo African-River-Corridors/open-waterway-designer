@@ -10,7 +10,7 @@
 //! used and then carries the `fits_in_water` check. Optional `seed_legs` in the inputs are joined
 //! first (`join_legs`, with the `fixed` pieces held), and the line carries the `join_guard` check.
 
-use super::design_line::{AlignmentIn, DesignLine, GivenLine, PoseIn, SeedLegs, alignment};
+use super::design_line::{AlignmentIn, DesignLine, GivenLine, PoseIn, SeedLegs};
 use super::geojson::all_positions;
 use super::rule_sets::stage_error;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
@@ -478,6 +478,7 @@ impl Session {
             size: self.channel_size()?,
             settings,
             seed: self.seed_legs(),
+            constraints: self.constraints()?,
         })
     }
 
@@ -494,7 +495,22 @@ impl Session {
         let mut settings = self.method_settings(method, overrides)?;
         settings.method = method;
         let input = self.alignment_input(settings.clone())?;
-        let line = alignment(&input, terrain).map_err(stage_error)?;
+        // The multiplier raster, when the design names one and it is attached; a named raster that
+        // is not attached reaches the stage as none, and the re-route refuses by name.
+        let raster = self.stage_multiplier().ok().flatten();
+        let weight = match &raster {
+            Some(r) => Some(
+                super::constraints::multiplier_sampler(r, self.multiplier_epsg())
+                    .map_err(stage_error)?,
+            ),
+            None => None,
+        };
+        let line = super::design_line::alignment_with(
+            &input,
+            terrain,
+            weight.as_ref().map(|w| w as TerrainSampler),
+        )
+        .map_err(stage_error)?;
         self.store_design_line(&settings, method, &line);
         Ok(())
     }

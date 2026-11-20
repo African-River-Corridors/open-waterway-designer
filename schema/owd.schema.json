@@ -284,6 +284,48 @@
             }
           }
         },
+        "constraints": {
+          "description": "Spec 0017 ticket 13: the run's constraints (`schema/stages/inputs.constraints.1.schema.json`). `no_go`: polygons in the project CRS (an outer ring and holes, each a list of [x, y] points), each with a unique name and a kind; the re-route treats them as impassable and every design line reports those it touches. `cut_rate_multiplier`: a raster referenced like the DEM (path relative to the document, SHA-256, CRS, nodata), whose cell value multiplies the cut rate in that cell; no data means 1. Absent: no constraints.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "no_go": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "kind", "polygon"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "kind": { "type": "string", "minLength": 1 },
+                  "polygon": {
+                    "type": "object",
+                    "required": ["shell"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "shell": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/position" } },
+                      "holes": {
+                        "type": "array",
+                        "items": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/position" } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "cut_rate_multiplier": {
+              "type": "object",
+              "required": ["path", "sha256", "crs", "nodata"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+                "crs": { "type": "string" },
+                "nodata": { "type": ["number", "null"] }
+              }
+            }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",

@@ -5,6 +5,7 @@ pub mod bank_edit;
 pub mod bank_pair;
 pub mod banks;
 pub mod bed;
+pub mod constraints;
 pub mod cost;
 pub mod crs;
 pub mod dem_source;

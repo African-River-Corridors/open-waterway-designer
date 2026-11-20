@@ -65,6 +65,17 @@
             }
           ],
           "default": null
+        },
+        "constraints": {
+          "description": "The run's constraints (ticket 13): the re-route avoids the no-go areas and weighs its cut by\nthe multiplier; every method's line reports the no-go areas it touches.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Constraints"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -792,6 +803,108 @@
         "heading_deg"
       ]
     },
+    "Constraints": {
+      "description": "The run's constraints: `inputs.constraints`. Absent from a document that has none.",
+      "type": "object",
+      "properties": {
+        "no_go": {
+          "description": "The no-go areas.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NoGoArea"
+          }
+        },
+        "cut_rate_multiplier": {
+          "description": "The cut-rate multiplier raster.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MultiplierRaster"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoGoArea": {
+      "description": "One no-go area.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name, unique among the run's no-go areas.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What it is, in the engineer's words (free text).",
+          "type": "string"
+        },
+        "polygon": {
+          "description": "The area, in the project CRS.",
+          "$ref": "#/$defs/Area"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "polygon"
+      ]
+    },
+    "Area": {
+      "description": "A polygon in the project CRS: an outer ring and holes. A ring is closed by implication.",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Holes: ground inside the shell that is not part of the area.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "shell"
+      ]
+    },
+    "MultiplierRaster": {
+      "description": "The cut-rate multiplier raster, by reference, as the DEM is: it is never embedded.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path relative to the document.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of the file, in hex.",
+          "type": "string"
+        },
+        "crs": {
+          "description": "The raster's CRS: `EPSG:nnnn`, or `unknown`.",
+          "type": "string"
+        },
+        "nodata": {
+          "description": "The value that marks no data, if the file has one. No data multiplies by 1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "crs"
+      ]
+    },
     "DesignLine": {
       "description": "What the alignment stage returns: the one design line, how it was made and what it does.",
       "type": "object",
@@ -851,10 +964,10 @@
           }
         },
         "constraints_touched": {
-          "description": "The names of the constraints the line touches. Empty until constraints exist (ticket 13).",
+          "description": "The no-go areas the line or its channel footprint enters (ticket 13), each with the chainage\nfrom and to and the area touched. Empty when it enters none, or the run has none.",
           "type": "array",
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/ConstraintTouched"
           }
         }
       },
@@ -935,6 +1048,40 @@
         "to",
         "river_from",
         "river_to"
+      ]
+    },
+    "ConstraintTouched": {
+      "description": "One no-go area a design line touches: where along the line, and how much of the footprint is in\nit. A line that enters one area twice touches it twice.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The no-go area's name.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Its kind.",
+          "type": "string"
+        },
+        "from": {
+          "description": "Design-line chainage where the footprint enters it.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where the footprint leaves it.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "area_m2": {
+          "description": "The area of the footprint inside it, m², sampled every [`TOUCH_STEP_M`] along the line and\n[`TOUCH_ACROSS_M`] across it.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "from",
+        "to",
+        "area_m2"
       ]
     }
   }

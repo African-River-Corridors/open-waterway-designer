@@ -259,7 +259,26 @@ impl Session {
 
         let plan = self.section_plan(overrides)?;
         let id = o["id"].as_str().unwrap_or("?");
-        let v = self.option_sections(&plan, &o, terrain)?;
+        // The cut-rate multiplier (ticket 13): a named raster is read, never taken as 1 in silence.
+        let raster = self.stage_multiplier().map_err(|path| {
+            DesignError::Input(format!(
+                "VOLUMES_NO_MULTIPLIER: the cut-rate multiplier raster `{path}` is not there to \
+                 read: put it beside the design, or set it again (`owd constraints --multiplier`)"
+            ))
+        })?;
+        let weight = match &raster {
+            Some(r) => Some(
+                super::constraints::multiplier_sampler(r, self.multiplier_epsg())
+                    .map_err(super::rule_sets::stage_error)?,
+            ),
+            None => None,
+        };
+        let v = self.option_sections_weighted(
+            &plan,
+            &o,
+            terrain,
+            weight.as_ref().map(|w| w as TerrainSampler),
+        )?;
         let screening = self.screening_value(&o, &v, &plan.river, &plan.centre)?;
         let mut row = json!({
             "id": id,
@@ -436,6 +455,18 @@ impl Session {
         o: &Value,
         terrain: TerrainSampler,
     ) -> Result<owd_core::volumes::sections::SectionVolumes, DesignError> {
+        self.option_sections_weighted(plan, o, terrain, None)
+    }
+
+    /// [`Session::option_sections`] with the cut-rate multiplier at points (ticket 13), for the
+    /// volumes stage's own walk.
+    pub(super) fn option_sections_weighted(
+        &self,
+        plan: &SectionPlan,
+        o: &Value,
+        terrain: TerrainSampler,
+        weight: Option<TerrainSampler>,
+    ) -> Result<owd_core::volumes::sections::SectionVolumes, DesignError> {
         let id = o["id"].as_str().unwrap_or("?");
         let line: Vec<Pt> = all_positions(&o["line"]);
         // Where the document has a bed model, it is the bed inside the water; the DEM is the rest.
@@ -469,14 +500,21 @@ impl Session {
         let mut settings = plan.typed.clone();
         settings.cut_model = plan.model.clone();
         settings.half_width_m = plan.fixed_hb;
-        super::volumes_stage::walk(&line, &plan.shape, &plan.river, wl, &settings, terrain).map_err(
-            |e| {
-                if e.code == "VOLUMES_WALK" {
-                    DesignError::Input(format!("option `{id}`: {}", e.message))
-                } else {
-                    super::rule_sets::stage_error(e)
-                }
-            },
+        super::volumes_stage::walk(
+            &line,
+            &plan.shape,
+            &plan.river,
+            wl,
+            &settings,
+            terrain,
+            weight,
         )
+        .map_err(|e| {
+            if e.code == "VOLUMES_WALK" {
+                DesignError::Input(format!("option `{id}`: {}", e.message))
+            } else {
+                super::rule_sets::stage_error(e)
+            }
+        })
     }
 }

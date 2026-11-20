@@ -437,6 +437,15 @@ impl Session {
             details,
             &river_geometry,
         );
+        // The lattice does not steer by the constraints yet (spec 0017 ticket 16, line refinement):
+        // its line reports the no-go areas it touches, as every design line does (ticket 13).
+        if let Some(c) = self.constraints()?.filter(|c| !c.no_go.is_empty()) {
+            refined.constraints_touched = super::constraints::constraints_touched(
+                &refined.line.0,
+                super::design_line::footprint_half_m(&self.channel_size()?),
+                &c.no_go,
+            );
+        }
         // One warning for each pool join that does not hold R_min (issue #6).
         if let Some(w) = refined.sanity["warnings"].as_array_mut() {
             for j in out.failed_joins() {

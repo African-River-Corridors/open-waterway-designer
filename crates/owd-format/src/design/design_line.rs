@@ -15,6 +15,7 @@
 //! line stays stored as what the lattice started from.
 
 use super::alignment::{AlignMethod, AlignmentSettings, NO_FEASIBLE_LINE, WIDTH_ONLY};
+use super::constraints::{ConstraintTouched, Constraints, constraints_touched};
 use super::river::RiverGeometry;
 use super::sizing::ChannelSize;
 use crate::types::{Chainage, Polyline, StageError, TerrainSampler};
@@ -97,6 +98,10 @@ pub struct AlignmentIn {
     /// Seed legs to join first, for the rolling circle.
     #[serde(default)]
     pub seed: Option<SeedLegs>,
+    /// The run's constraints (ticket 13): the re-route avoids the no-go areas and weighs its cut by
+    /// the multiplier; every method's line reports the no-go areas it touches.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constraints: Option<Constraints>,
 }
 
 /// One bend of a design line.
@@ -162,8 +167,9 @@ pub struct DesignLine {
     /// polygon to tell water from land, or a line moved from a 0.4 file), so "none" and "not known"
     /// never read the same.
     pub cut_offs: Option<Vec<CutOff>>,
-    /// The names of the constraints the line touches. Empty until constraints exist (ticket 13).
-    pub constraints_touched: Vec<String>,
+    /// The no-go areas the line or its channel footprint enters (ticket 13), each with the chainage
+    /// from and to and the area touched. Empty when it enters none, or the run has none.
+    pub constraints_touched: Vec<ConstraintTouched>,
 }
 
 /// A [`Polyline`] written as a GeoJSON `LineString`, as the document writes every line.
@@ -501,13 +507,58 @@ fn pose(p: &Option<PoseIn>) -> Option<Pose> {
     })
 }
 
-/// The alignment stage: the one design line of the method the settings name.
-///
-/// The re-route needs `terrain` and a water level profile in the river geometry. A line under R_min
-/// is not refused: its checks and its bends say so (issue #367).
+/// The alignment stage with no cut-rate multiplier raster to read: see [`alignment_with`].
 pub fn alignment(
     input: &AlignmentIn,
     terrain: Option<TerrainSampler>,
+) -> Result<DesignLine, StageError> {
+    alignment_with(input, terrain, None)
+}
+
+/// Half the width of the channel footprint a no-go area is tested against: half the straight bottom
+/// width (see [`super::constraints`]).
+pub fn footprint_half_m(size: &ChannelSize) -> f64 {
+    size.bottom_width_straight_m / 2.0
+}
+
+/// The alignment stage: the one design line of the method the settings name.
+///
+/// The re-route needs `terrain` and a water level profile in the river geometry; with constraints
+/// it needs `multiplier` (the cut-rate multiplier at points) when they name a raster
+/// (`ALIGN_NO_MULTIPLIER`), treats each no-go area and each hard-exclusion cell as impassable, and
+/// refuses a line that still enters a no-go area (`ALIGN_NO_GO_CROSSED`, at its chainage). The other
+/// methods do not search, so they do not steer: their line reports what it touches. A line under
+/// R_min is not refused: its checks and its bends say so (issue #367).
+pub fn alignment_with(
+    input: &AlignmentIn,
+    terrain: Option<TerrainSampler>,
+    multiplier: Option<TerrainSampler>,
+) -> Result<DesignLine, StageError> {
+    let mut line = method_line(input, terrain, multiplier)?;
+    if let Some(c) = input.constraints.as_ref().filter(|c| !c.no_go.is_empty()) {
+        line.constraints_touched =
+            constraints_touched(&line.line.0, footprint_half_m(&input.size), &c.no_go);
+        if input.settings.method == AlignMethod::Reroute
+            && let Some(t) = line.constraints_touched.first()
+        {
+            return Err(refuse(
+                "ALIGN_NO_GO_CROSSED",
+                format!(
+                    "the re-route's line enters the no-go area `{}` from {:.1} m to {:.1} m: widen \
+                     the corridor sweep or move the area",
+                    t.name, t.from.0, t.to.0
+                ),
+            )
+            .at(t.from));
+        }
+    }
+    Ok(line)
+}
+
+fn method_line(
+    input: &AlignmentIn,
+    terrain: Option<TerrainSampler>,
+    multiplier: Option<TerrainSampler>,
 ) -> Result<DesignLine, StageError> {
     let r_min = input.size.min_bend_radius_m;
     let method = input.settings.method;
@@ -532,7 +583,7 @@ pub fn alignment(
             Ok(d)
         }
         AlignMethod::RollingCircle => rolling_circle(input, r_min),
-        AlignMethod::Reroute => reroute(input, r_min, terrain),
+        AlignMethod::Reroute => reroute(input, r_min, terrain, multiplier),
     }
 }
 
@@ -715,6 +766,7 @@ fn reroute(
     input: &AlignmentIn,
     r_min: f64,
     terrain: Option<TerrainSampler>,
+    multiplier: Option<TerrainSampler>,
 ) -> Result<DesignLine, StageError> {
     let s = &input.settings.reroute;
     let terrain = terrain.ok_or_else(|| {
@@ -723,6 +775,31 @@ fn reroute(
             "the re-route needs terrain: give it a DEM",
         )
     })?;
+    // A named multiplier is read, never taken as 1 in silence.
+    let named = input
+        .constraints
+        .as_ref()
+        .and_then(|c| c.cut_rate_multiplier.as_ref());
+    let weight = match (named, multiplier) {
+        (Some(m), None) => {
+            return Err(refuse(
+                "ALIGN_NO_MULTIPLIER",
+                format!(
+                    "the cut-rate multiplier raster `{}` is not there to read: put it beside the \
+                     design, or set it again",
+                    m.path
+                ),
+            ));
+        }
+        (Some(_), Some(w)) => Some(w),
+        (None, _) => None,
+    };
+    let no_go: Vec<Polygon> = input
+        .constraints
+        .iter()
+        .flat_map(|c| &c.no_go)
+        .map(|a| a.polygon.to_polygon())
+        .collect();
     let river = input
         .river
         .polygon
@@ -780,8 +857,23 @@ fn reroute(
         profile.level_at(Chainage(linear::project(centre, at)))
     };
     let grade = move |c: f64| level(c) - depth;
-    let grid = route::build_cost_grid(&start, terrain, &river, &grade, &params)
-        .map_err(|e| refuse("ALIGN_NO_ROUTE", e.message))?;
+    let grid = if weight.is_none() && no_go.is_empty() {
+        route::build_cost_grid(&start, terrain, &river, &grade, &params)
+    } else {
+        route::build_cost_grid_constrained(
+            &start,
+            terrain,
+            &river,
+            &grade,
+            &params,
+            &route::GridConstraints {
+                weight,
+                no_go: &no_go,
+                footprint_half_m: footprint_half_m(&input.size),
+            },
+        )
+    }
+    .map_err(|e| refuse("ALIGN_NO_ROUTE", e.message))?;
     let r = route::optimise_route(
         &grid,
         &RouteParams {

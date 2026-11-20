@@ -127,6 +127,30 @@
         "total_m3": {
           "type": "number",
           "format": "double"
+        },
+        "weighted_dredge_m3": {
+          "description": "The dredge weighted by the cut-rate multiplier (ticket 13); absent with no multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_excav_m3": {
+          "description": "The dry cut weighted by the multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_total_m3": {
+          "description": "The two weighted volumes added.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "required": [
@@ -184,6 +208,21 @@
         },
         "excav_area_m2": {
           "type": "number",
+          "format": "double"
+        },
+        "weighted_dredge_area_m2": {
+          "description": "The weighted areas, when the volumes have them (ticket 13).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_excav_area_m2": {
+          "type": [
+            "number",
+            "null"
+          ],
           "format": "double"
         }
       },
@@ -346,6 +385,11 @@
               "type": "null"
             }
           ]
+        },
+        "cut_volumes": {
+          "description": "Which volumes dredge and dry cut were priced on: `weighted` when the volumes hold the cut\nweighted by the cut-rate multiplier, else `plain`.",
+          "$ref": "#/$defs/CutVolumes",
+          "default": "plain"
         }
       },
       "required": [
@@ -439,6 +483,21 @@
           "description": "Plus bathymetry and a ground survey covering the reach.",
           "type": "string",
           "const": "feasibility"
+        }
+      ]
+    },
+    "CutVolumes": {
+      "description": "Which volumes dredge and dry cut were priced on.",
+      "oneOf": [
+        {
+          "description": "The plain volumes: the run has no cut-rate multiplier.",
+          "type": "string",
+          "const": "plain"
+        },
+        {
+          "description": "The volumes weighted by the cut-rate multiplier.",
+          "type": "string",
+          "const": "weighted"
         }
       ]
     }

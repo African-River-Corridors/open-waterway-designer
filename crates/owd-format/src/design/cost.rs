@@ -20,8 +20,12 @@
 //! checks them by adding a column. Each reach figure and the totals have room for the output level
 //! they reached (`level`), which the design measures stage sets (ticket 17).
 //!
-//! Not yet: structures (ticket 14 adds them), and the cut-rate multiplier's weighted volumes (ticket
-//! 13): dredge and dry cut use the plain volumes until then.
+//! **The cut-rate multiplier** (ticket 13). When the volumes hold the cut weighted by the multiplier,
+//! dredge and dry cut are priced on the weighted volumes: the multiplier multiplies the cut rate where
+//! it applies. Disposal and haul are priced on the plain volumes: the multiplier is a rate of
+//! cutting, not of moving the spoil. The cost says which it used ([`Cost::cut_volumes`]).
+//!
+//! Not yet: structures (ticket 14 adds them).
 
 use super::run_inputs::OutputLevel;
 use super::session::{DesignError, Session};
@@ -191,6 +195,22 @@ pub struct CostStation {
     pub chainage_m: f64,
     pub dredge_area_m2: f64,
     pub excav_area_m2: f64,
+    /// The weighted areas, when the volumes have them (ticket 13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_dredge_area_m2: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weighted_excav_area_m2: Option<f64>,
+}
+
+/// Which volumes dredge and dry cut were priced on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CutVolumes {
+    /// The plain volumes: the run has no cut-rate multiplier.
+    #[default]
+    Plain,
+    /// The volumes weighted by the cut-rate multiplier.
+    Weighted,
 }
 
 /// What the cost stage reads.
@@ -247,6 +267,10 @@ pub struct Cost {
     /// The output level the totals reached (the lowest reach's); set by ticket 17.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<OutputLevel>,
+    /// Which volumes dredge and dry cut were priced on: `weighted` when the volumes hold the cut
+    /// weighted by the cut-rate multiplier, else `plain`.
+    #[serde(default)]
+    pub cut_volumes: CutVolumes,
 }
 
 fn money(amount: f64, currency: &str) -> Money {
@@ -307,6 +331,23 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
     let dry = rate("dry_cut_per_m3", &rates.dry_cut_per_m3)?;
     let disposal = rate("disposal_per_m3", &rates.disposal_per_m3)?;
     let haul = rate("haul_per_m3_km", &rates.haul_per_m3_km)?;
+    let inconsistent = |m: String| refuse("COST_VOLUMES_INCONSISTENT", m);
+    // Weighted volumes are priced only when every reach and every station has them.
+    let reach_weighted =
+        |r: &ReachVolumes| r.weighted_dredge_m3.is_some() && r.weighted_excav_m3.is_some();
+    let station_weighted =
+        |s: &CostStation| s.weighted_dredge_area_m2.is_some() && s.weighted_excav_area_m2.is_some();
+    let weighted = input.by_reach.iter().any(reach_weighted);
+    if weighted
+        && !(input.by_reach.iter().all(reach_weighted)
+            && input.stations.iter().all(station_weighted))
+    {
+        return Err(inconsistent(
+            "some reaches or stations have weighted volumes and others do not: run the volumes \
+             stage again"
+                .into(),
+        ));
+    }
     let counted: usize = input.by_reach.iter().map(|r| r.stations).sum();
     if counted != input.stations.len() {
         return Err(refuse(
@@ -325,11 +366,24 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
         let stations = &input.stations[next..next + r.stations];
         next += r.stations;
         let mut cut_m3 = 0.0;
+        let mut weighted_m3 = 0.0;
         let mut haul_m3_km = 0.0;
         for st in stations {
             let v = (st.dredge_area_m2 + st.excav_area_m2) * input.station_m;
             cut_m3 += v;
+            weighted_m3 += (st.weighted_dredge_area_m2.unwrap_or(0.0)
+                + st.weighted_excav_area_m2.unwrap_or(0.0))
+                * input.station_m;
             haul_m3_km += v * rates.haul_km_at(Chainage(st.chainage_m))?;
+        }
+        let r_weighted = r.weighted_dredge_m3.unwrap_or(0.0) + r.weighted_excav_m3.unwrap_or(0.0);
+        if weighted && (weighted_m3 - r_weighted).abs() > 1e-9 * r_weighted.abs().max(1.0) {
+            return Err(inconsistent(format!(
+                "the stations of the reach from {} m to {} m hold {weighted_m3} weighted m³ but \
+                 the reach holds {r_weighted}: run the volumes stage again",
+                r.from.0, r.to.0
+            ))
+            .at(r.from));
         }
         if (cut_m3 - r.total_m3).abs() > 1e-9 * r.total_m3.abs().max(1.0) {
             return Err(refuse(
@@ -342,9 +396,17 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
             )
             .at(r.from));
         }
+        let (dredge_m3, dry_m3) = if weighted {
+            (
+                r.weighted_dredge_m3.unwrap_or(0.0),
+                r.weighted_excav_m3.unwrap_or(0.0),
+            )
+        } else {
+            (r.dredge_m3, r.excav_m3)
+        };
         let figures = [
-            dredge * r.dredge_m3,
-            dry * r.excav_m3,
+            dredge * dredge_m3,
+            dry * dry_m3,
             disposal * r.total_m3,
             haul * haul_m3_km,
         ];
@@ -366,6 +428,11 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
         currency,
         by_reach,
         level: None,
+        cut_volumes: if weighted {
+            CutVolumes::Weighted
+        } else {
+            CutVolumes::Plain
+        },
     })
 }
 

@@ -389,6 +389,8 @@ mod tests {
                     bench_right: false,
                     tag: String::new(),
                     has_water: true,
+                    weighted_dredge_area_m2: None,
+                    weighted_excav_area_m2: None,
                 }
             })
             .collect();

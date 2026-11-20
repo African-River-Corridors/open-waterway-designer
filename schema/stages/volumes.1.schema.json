@@ -647,6 +647,22 @@
               "type": "null"
             }
           ]
+        },
+        "weighted_dredge_area_m2": {
+          "description": "The dredge area weighted by the cut-rate multiplier, sample by sample (ticket 13). Absent\nwhen the run has no multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_excav_area_m2": {
+          "description": "The dry cut area weighted the same way.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "required": [
@@ -761,6 +777,30 @@
         "total_m3": {
           "type": "number",
           "format": "double"
+        },
+        "weighted_dredge_m3": {
+          "description": "The dredge weighted by the cut-rate multiplier (ticket 13); absent with no multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_excav_m3": {
+          "description": "The dry cut weighted by the multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_total_m3": {
+          "description": "The two weighted volumes added.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "required": [
@@ -834,6 +874,28 @@
           "type": "integer",
           "format": "uint",
           "minimum": 0
+        },
+        "weighted_dredge_m3": {
+          "description": "The weighted dredge (ticket 13); absent with no multiplier.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_excav_m3": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "weighted_total_m3": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "required": [

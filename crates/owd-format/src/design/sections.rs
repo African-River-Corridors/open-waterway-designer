@@ -127,6 +127,8 @@ impl Stations {
                     bench_right: st.bench_right,
                     tag: st.tag.clone(),
                     has_water: st.has_water,
+                    weighted_dredge_area_m2: None,
+                    weighted_excav_area_m2: None,
                 }
             })
             .collect();

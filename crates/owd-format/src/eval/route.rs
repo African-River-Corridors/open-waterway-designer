@@ -105,6 +105,7 @@ fn grid_from(v: &Value) -> Result<rt::CostGrid, EvalError> {
             None | Some(Value::Null) => Vec::new(),
             Some(_) => m("protected")?,
         },
+        no_go: Vec::new(),
         station_step: f64_arg(v, "station_step")?,
         offset_step: f64_arg(v, "offset_step")?,
     })
