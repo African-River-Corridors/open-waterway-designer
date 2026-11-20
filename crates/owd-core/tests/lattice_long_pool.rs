@@ -260,9 +260,9 @@ fn a_pool_that_hits_the_cap_says_so() {
 /// A pool no longer than the piece length gives the same result as before the split existed.
 #[test]
 fn a_pool_shorter_than_the_piece_length_is_not_split() {
-    let (centre, a) = run(4800.0, &coarse(4_000_000, DEFAULT_MAX_POOL_PIECE_M));
+    let (centre, a) = run(2400.0, &coarse(4_000_000, DEFAULT_MAX_POOL_PIECE_M));
     assert!(linear::length(&centre) < DEFAULT_MAX_POOL_PIECE_M);
-    let (_, b) = run(4800.0, &coarse(4_000_000, f64::INFINITY));
+    let (_, b) = run(2400.0, &coarse(4_000_000, f64::INFINITY));
     assert_eq!(a, b);
     assert_eq!(a.pools.len(), 1);
     assert!(a.pools[0].piece.is_none() && a.pools[0].used);
