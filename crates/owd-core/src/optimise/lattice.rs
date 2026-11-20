@@ -1343,13 +1343,14 @@ pub struct PoolsResult {
 
 impl PoolsResult {
     pub fn n_replaced(&self) -> usize {
-        self.pools.iter().filter(|p| p.result.converged).count()
+        self.pools.iter().filter(|p| p.used).count()
     }
 }
 
 /// Run [`optimise_pool`] on each `(start_m, end_m, water_level_m)` and splice the results into
 /// `baseline`. A pool keeps its baseline segment when the search does not converge, or
-/// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer.
+/// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer and the
+/// baseline holds R_min (or the lattice line does not).
 ///
 /// Each spliced segment joins the baseline within `cfg.goal_pos_tol_m` at its far end; the join
 /// is a straight step of at most that length.
@@ -1394,9 +1395,30 @@ pub fn optimise_pools(
         let converged = pa.result.converged;
         let dearer = pa.result.cost > pa.baseline_cost;
         let line = pa.result.line.clone();
-        let use_it = converged && !(keep_if_dearer && dearer);
+        // The baseline is kept when the search did not converge, or when it is cheaper and either
+        // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
+        // breaks R_min is never kept in place of a lattice line that holds it.
+        let (use_it, because) = if !converged {
+            (false, Some("the search did not converge"))
+        } else if keep_if_dearer && dearer {
+            let base_ok = line_of(linear::substring(baseline, a, b))
+                .ok()
+                .and_then(|seg| min_radius_on_chord(&seg, default_check_chord(cfg.r_min_m)).ok())
+                .is_some_and(|r| radius_ok(r, cfg.r_min_m));
+            if base_ok || !pa.result.radius_ok {
+                (
+                    false,
+                    Some("the baseline is cheaper and holds R_min (or the lattice line does not)"),
+                )
+            } else {
+                (true, None)
+            }
+        } else {
+            (true, None)
+        };
         let mut pa = pa;
         pa.used = use_it;
+        pa.kept_baseline_because = because;
         out_pools.push(pa);
         if !use_it {
             continue;
