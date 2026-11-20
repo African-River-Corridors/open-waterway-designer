@@ -378,6 +378,7 @@ fn every_chainage_input_turns_and_the_reference_line_is_removed() {
         json!([line(500_500.0, 501_000.0)])
     );
     assert!(inp.get("reference_line").is_none());
+    assert!(d["stages"].get("reference_line").is_none());
     assert!(s.validate().is_empty(), "{:?}", s.validate());
 }
 

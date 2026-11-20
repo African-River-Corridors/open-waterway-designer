@@ -209,7 +209,7 @@ impl Session {
             }
         }
         // The reference line is made from the banks with its own chainage: it is made again.
-        if let Some(o) = doc["inputs"].as_object_mut()
+        if let Some(o) = doc["stages"].as_object_mut()
             && o.remove("reference_line").is_some()
         {
             notes.push(

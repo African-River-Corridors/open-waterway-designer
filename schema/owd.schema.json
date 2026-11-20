@@ -172,28 +172,6 @@
           "type": "array",
           "items": { "$ref": "#/$defs/line" }
         },
-        "reference_line": {
-          "description": "Spec 0016: the reference line, one smooth line in the water that belongs to no vessel: the smoothed mid-line of the banks, refitted in the water. Made from the banks and the river polygon, and stale when they change (`depends_on`). Chainage is along `line`, in metres from its start. Optional.",
-          "type": "object",
-          "required": ["line", "parameters", "depends_on"],
-          "additionalProperties": false,
-          "properties": {
-            "line": { "$ref": "#/$defs/line" },
-            "parameters": { "type": "object" },
-            "depends_on": { "type": "string" },
-            "low_confidence": {
-              "description": "The banks' low-confidence stretches (`low_confidence_width`), carried onto the line by position.",
-              "type": "array",
-              "items": { "$ref": "#/$defs/line_stretch" }
-            },
-            "outside_water": {
-              "description": "Stretches where the water is too narrow to hold the line.",
-              "type": "array",
-              "items": { "$ref": "#/$defs/line_stretch" }
-            },
-            "notes": { "type": "array", "items": { "type": "string" } }
-          }
-        },
         "banks": {
           "description": "What the bank source says about the banks (draft ADR 0016, banks are a dataset): who made them, how accurate they are, and where the source is unsure. The bank lines stay in left_bank and right_bank. Optional; no member is required.",
           "type": "object",
@@ -267,6 +245,10 @@
         "alignment": { "$ref": "#/$defs/alignment_stage" },
         "optimise": { "$ref": "#/$defs/stage" },
         "volumes": { "$ref": "#/$defs/stage" },
+        "reference_line": {
+          "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of the input it read. Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, stale. Optional.",
+          "$ref": "#/$defs/stage"
+        },
         "plan_cut": {
           "description": "Ticket C2b: the plan cut of the design line, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, the design line or the settings change. Optional.",
           "type": "object",

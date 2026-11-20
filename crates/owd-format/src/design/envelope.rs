@@ -86,7 +86,7 @@ impl Session {
             "river_polygon": inp["river_polygon"],
             "centreline": inp["centreline"],
             "crs": self.doc["project"]["crs"],
-            "reference_line": inp["reference_line"]["depends_on"],
+            "reference_line": self.doc["stages"]["reference_line"]["depends_on"],
             "custom_vessel": self.doc["stages"]["sizing"]["settings"]["custom_vessel"],
             "settings": self.doc["stages"]["envelope"]["settings"],
         }))

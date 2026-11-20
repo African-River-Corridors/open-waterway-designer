@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/ReferenceLineIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReferenceLine"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "ReferenceLineIn": {
+      "description": "What the reference line stage reads.",
+      "type": "object",
+      "properties": {
+        "left_bank": {
+          "description": "The left bank.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "right_bank": {
+          "description": "The right bank.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "river_polygon": {
+          "description": "The river as water, with its islands.",
+          "$ref": "#/$defs/RiverPolygon"
+        },
+        "centreline": {
+          "description": "The river centreline the low-confidence stretches are counted on, when there is one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "low_confidence": {
+          "description": "The banks' low-confidence stretches (`low_confidence_width`), on the centreline.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LineStretch"
+          },
+          "default": []
+        },
+        "parameters": {
+          "description": "The parameters the line is made with (the engine's own; recorded so a change shows).",
+          "default": null
+        }
+      },
+      "required": [
+        "left_bank",
+        "right_bank",
+        "river_polygon"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "RiverPolygon": {
+      "description": "The river as water: an outer ring and the islands cut out of it. A ring is a [`Polyline`] that is\nclosed by implication (the last point joins the first).",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Islands: each is dry land inside the shell.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "required": [
+        "shell"
+      ]
+    },
+    "LineStretch": {
+      "description": "A stretch of a line by chainage, in metres, with its kind when it has one.",
+      "type": "object",
+      "properties": {
+        "from_m": {
+          "description": "Where it starts.",
+          "type": "number",
+          "format": "double"
+        },
+        "to_m": {
+          "description": "Where it ends.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "description": "What it is (`narrow`, `no-water`, ...), when it says.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "from_m",
+        "to_m"
+      ]
+    },
+    "ReferenceLine": {
+      "description": "What the reference line stage returns.",
+      "type": "object",
+      "properties": {
+        "line": {
+          "description": "The line: a GeoJSON `LineString` in the project CRS. Chainage is along it from its start.",
+          "$ref": "#/$defs/LineString"
+        },
+        "low_confidence": {
+          "description": "The banks' low-confidence stretches, carried onto the line by position.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LineStretch"
+          }
+        },
+        "outside_water": {
+          "description": "Stretches where the water is too narrow to hold the line.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LineStretch"
+          }
+        },
+        "notes": {
+          "description": "What the engine says about the line.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "line",
+        "low_confidence",
+        "outside_water",
+        "notes"
+      ]
+    },
+    "LineString": {
+      "description": "A GeoJSON `LineString`.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "Always `LineString`.",
+          "type": "string"
+        },
+        "coordinates": {
+          "description": "The points.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "type",
+        "coordinates"
+      ]
+    }
+  }
+}

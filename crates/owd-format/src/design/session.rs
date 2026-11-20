@@ -244,6 +244,11 @@ impl Session {
             Value::String(v) if v == FORMAT_0_4 => {
                 notes = super::migrate::from_0_4(&mut doc);
             }
+            _ => {}
+        }
+        // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
+        super::reference_line::move_from_inputs(&mut doc);
+        match &doc["format_version"] {
             Value::Number(n) => {
                 return Err(DesignError::Input(format!(
                     "the file is document format version {n}; this OWD opens format \

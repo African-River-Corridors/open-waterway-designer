@@ -167,7 +167,7 @@ pub struct DesignLine {
 }
 
 /// A [`Polyline`] written as a GeoJSON `LineString`, as the document writes every line.
-mod line_string {
+pub(crate) mod line_string {
     use crate::types::Polyline;
     use schemars::JsonSchema;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

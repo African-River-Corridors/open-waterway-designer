@@ -219,7 +219,7 @@ impl Session {
         // An answer read on the reference line depends on it (spec 0016); without one the hash
         // stays what it was.
         if self.doc["fits"]["results"]["plan_line"] == "reference" {
-            dep["reference_line"] = inp["reference_line"]["depends_on"].clone();
+            dep["reference_line"] = self.doc["stages"]["reference_line"]["depends_on"].clone();
         }
         // The custom vessel's row reads the custom vessel (spec 0015 T1); without one the hash
         // stays what it was.
