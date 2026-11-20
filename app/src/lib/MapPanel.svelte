@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import * as maplibregl from "maplibre-gl";
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -8,6 +8,7 @@
   import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
+  import { MAP_LAYERS, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
 
   let {
     geometry,
@@ -61,6 +62,38 @@
   let drawn = $state<string | null>(null);
   /** The stretch the map has drawn as picked, as `option:index`, for the same reason. */
   let drawnStretch = $state("");
+
+  /** The layers ticked on in the Layers list: remembered on this machine, never in the design. */
+  let ticks = $state<LayerTicks>(loadLayerTicks());
+  let layersOpen = $state(false);
+  /** The layers this design has something to draw for. Imagery is always there. */
+  const present = $derived<Record<MapLayerId, boolean>>({
+    "river-polygon": !!geometry?.river_polygon,
+    centreline: !!geometry?.centreline,
+    "bank-lines": !!geometry?.banks.length,
+    "design-line": !!geometry?.options.length,
+    "constraint-stretches": !!stretches?.features.length,
+    "station-marks": !!geometry?.options.some((o) => o.ticks.length),
+    imagery: true,
+  });
+  /** A layer the legend may list: the design has it and it is ticked on. */
+  const shows = (id: MapLayerId) => present[id] && ticks[id];
+  function setTick(id: MapLayerId, on: boolean) {
+    ticks = { ...ticks, [id]: on };
+    saveLayerTicks(ticks);
+  }
+  /** Show or hide each map layer by its tick. The imagery layers are set in `shade`. */
+  function applyLayers() {
+    if (!map || !ready) return;
+    for (const l of MAP_LAYERS) {
+      if (l.id === "imagery") continue;
+      for (const id of STYLE_LAYERS[l.id]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", ticks[l.id] ? "visible" : "none");
+    }
+    // The chainage labels and the tight-bend marks are HTML markers, not map layers.
+    for (const m of labels) m.getElement().style.display = ticks["station-marks"] ? "" : "none";
+    for (const m of bendMarkers) m.getElement().style.display = ticks["design-line"] ? "" : "none";
+    shade();
+  }
 
   const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
   const feature = (geometry: GeoJSON.Geometry, properties: GeoJSON.GeoJsonProperties = {}): GeoJSON.Feature => ({
@@ -146,6 +179,8 @@
       el.textContent = t.label;
       labels.push(new maplibregl.Marker({ element: el, offset: [0, -10] }).setLngLat(t.position).addTo(map));
     }
+    // The ticks are applied to the new markers; a tick alone never redraws the geometry.
+    untrack(applyLayers);
   }
 
   /** Move the station marker, or take it off the map. */
@@ -204,6 +239,7 @@
     }
     map.addSource("basemap", rasterSource(imagery));
     map.addLayer(rasterLayer(imagery), "hillshade");
+    shade();
   }
 
   let shownShade: string | null = null;
@@ -215,8 +251,11 @@
       shownShade = hillshade.url;
       src.updateImage({ url: hillshade.url, coordinates: hillshade.corners });
     }
-    map.setLayoutProperty("hillshade", "visibility", offline && hillshade ? "visible" : "none");
-    map.setLayoutProperty("basemap", "visibility", offline ? "none" : "visible");
+    // With Imagery unticked nothing is drawn under the design: no tiles, no hillshade.
+    const on = ticks.imagery;
+    map.setLayoutProperty("hillshade", "visibility", on && offline && hillshade ? "visible" : "none");
+    map.setLayoutProperty("basemap", "visibility", on && !offline ? "visible" : "none");
+    if (map.getLayer("under")) map.setLayoutProperty("under", "visibility", on ? "visible" : "none");
   }
 
   /** Move the map to the picked stretch: the box around its line, with room around it. */
@@ -278,6 +317,9 @@
       const cream = token("cream");
       const ink = token("plate-ink");
       m.addLayer({ id: "polygon", type: "fill", source: "polygon", paint: { "fill-color": token("river"), "fill-opacity": 0.18 } });
+      // The polygon's edge: a pale line over a dark casing, so it reads on bright and on dark imagery alike.
+      m.addLayer({ id: "polygon-casing", type: "line", source: "polygon", paint: { "line-color": ink, "line-width": 3, "line-opacity": 0.65 } });
+      m.addLayer({ id: "polygon-outline", type: "line", source: "polygon", paint: { "line-color": token("river"), "line-width": 1.25 } });
       m.addLayer({ id: "banks", type: "line", source: "banks", paint: { "line-color": cream, "line-width": 1.5 } });
       m.addLayer({ id: "centre", type: "line", source: "centre", paint: { "line-color": cream, "line-width": 1, "line-dasharray": [3, 3] } });
       // The deep line over a cream casing keeps each option readable on any imagery. The design line is the heaviest line.
@@ -348,27 +390,66 @@
     void ready;
     shade();
   });
+
+  $effect(() => {
+    void ticks;
+    void ready;
+    applyLayers();
+  });
 </script>
 
-<div class="map" data-testid="plan-map" data-hillshade={offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
+<svelte:window onkeydown={(e) => e.key === "Escape" && (layersOpen = false)} />
+
+<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id]).map((l) => l.id).join(" ")} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
   <div class="canvas" bind:this={host}></div>
   {#if failure}
     <p class="failure" role="alert" data-testid="map-failure">{failure}</p>
   {/if}
   <ul class="legend" data-testid="map-legend">
-    {#each geometry?.options ?? [] as o, i}
-      <li>
-        <OptionSwatch index={i} />
-        {o.name}{#if !o.radius_ok}<span class="fail">radius fails</span>{/if}
-      </li>
-    {/each}
-    {#if geometry?.options.some((o) => o.tight_bends.length)}
-      <li><span class="bend-key">✕</span>tight bend</li>
+    {#if shows("design-line")}
+      {#each geometry?.options ?? [] as o, i}
+        <li data-testid="legend-option">
+          <OptionSwatch index={i} />
+          {o.name}{#if !o.radius_ok}<span class="fail">radius fails</span>{/if}
+        </li>
+      {/each}
+      {#if geometry?.options.some((o) => o.tight_bends.length)}
+        <li><span class="bend-key">✕</span>tight bend</li>
+      {/if}
     {/if}
-    {#if stretches?.features.some((f) => f.properties.option_id === selectedId)}
+    {#if ticks["constraint-stretches"] && stretches?.features.some((f) => f.properties.option_id === selectedId)}
       <li data-testid="legend-stretch"><span class="stretch-key" aria-hidden="true"></span>constraint stretch</li>
     {/if}
+    {#if shows("station-marks")}
+      <li data-testid="legend-station-marks"><span class="key" aria-hidden="true"><span class="dot"></span></span>station mark</li>
+    {/if}
+    {#if shows("river-polygon")}
+      <li data-testid="legend-river-polygon"><span class="key polygon" aria-hidden="true"></span>river polygon</li>
+    {/if}
+    {#if shows("bank-lines")}
+      <li data-testid="legend-bank-lines"><span class="key" aria-hidden="true"><span class="stroke"></span></span>bank line</li>
+    {/if}
+    {#if shows("centreline")}
+      <li data-testid="legend-centreline"><span class="key" aria-hidden="true"><span class="stroke dashed"></span></span>centreline</li>
+    {/if}
   </ul>
+  <div class="layers">
+    <button class="layers-button" data-testid="layers-button" aria-label="Layers" title="Layers: show or hide what the map draws" aria-expanded={layersOpen} aria-controls="map-layers-list" onclick={() => (layersOpen = !layersOpen)}>
+      <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M10 3 2.5 7 10 11l7.5-4L10 3Z" /><path d="M2.5 10.5 10 14.5l7.5-4" /><path d="M2.5 14 10 18l7.5-4" /></svg>
+    </button>
+    {#if layersOpen}
+      <fieldset class="layers-list" id="map-layers-list" data-testid="layers-list">
+        <legend>Layers</legend>
+        {#each MAP_LAYERS as l}
+          <label class:none={!present[l.id]} data-testid="layer-row-{l.id}">
+            <input type="checkbox" data-testid="layer-{l.id}" checked={ticks[l.id]} disabled={!present[l.id]} onchange={(e) => setTick(l.id, e.currentTarget.checked)} />
+            <span>{l.label}</span>
+            {#if !present[l.id]}<span class="none-note">none loaded</span>{/if}
+          </label>
+        {/each}
+      </fieldset>
+    {/if}
+  </div>
   {#if offline}
     <p class="offline" role="status" data-testid="offline-note">
       Imagery offline{hillshade ? " — showing the DEM hillshade" : " — no DEM to show a hillshade from"}
@@ -390,6 +471,20 @@
   .legend li { display: flex; gap: var(--sp-2); align-items: center; margin: 3px 0; }
   .legend:not(:has(li)) { display: none; }
   .stretch-key { display: inline-block; width: 22px; height: 0; border-top: 4px dashed var(--fail); }
+  /* The keys of lines drawn pale on the imagery: shown on a small dark chip, as they look on the map. */
+  .key { display: inline-grid; place-items: center; width: 22px; height: 12px; background: var(--hillshade); box-sizing: border-box; }
+  .key.polygon { background: color-mix(in srgb, var(--river) 35%, var(--hillshade)); border: 1.5px solid var(--river); outline: 1px solid var(--plate-ink); }
+  .key .stroke { width: 18px; height: 0; border-top: 2px solid var(--cream); }
+  .key .stroke.dashed { border-top-style: dashed; }
+  .key .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cream); border: 1px solid var(--plate-ink); box-sizing: border-box; }
+  /* Under the map's zoom buttons, the same size as they are. */
+  .layers { position: absolute; top: 78px; right: 10px; z-index: 4; max-height: calc(100% - 78px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+  .layers-button { display: grid; place-items: center; width: 31px; height: 31px; padding: 0; background: var(--surface); color: var(--ink); border: var(--lw-thin) solid var(--ink); border-radius: var(--radius); }
+  .layers-list { margin: 0; padding: var(--sp-2) var(--sp-3); display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); min-width: 190px; min-height: 0; overflow-y: auto; }
+  .layers-list legend { padding: 0 var(--sp-1); font-weight: 600; }
+  .layers-list label { display: flex; gap: var(--sp-2); align-items: center; white-space: nowrap; }
+  .layers-list label.none { color: var(--ink-3); }
+  .none-note { margin-left: auto; padding-left: var(--sp-3); font-style: italic; }
   .bend-key { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: var(--lw-thin) solid var(--ink); font-size: var(--fs-11); font-weight: 700; color: var(--fail); }
   .imagery-state { position: absolute; left: var(--sp-2); bottom: 28px; margin: 0; padding: 3px var(--sp-2); font-size: var(--fs-12); background: var(--surface, #fff); color: var(--ink, #222); border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); z-index: 2; }
   .offline { position: absolute; left: var(--sp-2); bottom: 28px; margin: 0; padding: 3px var(--sp-2); font-size: var(--fs-12); background: var(--warn-soft); color: var(--warn); border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); z-index: 2; }

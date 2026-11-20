@@ -1035,6 +1035,92 @@ describe("OWD web smoke tests", () => {
     }
   });
 
+  it("the Layers list (MAP-1): seven ticks, a layer the design lacks is greyed, a tick is remembered after a reload and stays out of the design, and the legend follows", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const IDS = ["river-polygon", "centreline", "bank-lines", "design-line", "constraint-stretches", "station-marks", "imagery"];
+    const box = (id) => b.execute((i) => {
+      const c = document.querySelector(`[data-testid="layer-${i}"]`);
+      return { type: c.type, checked: c.checked, disabled: c.disabled, row: c.closest("label").textContent.replace(/\s+/g, " ").trim() };
+    }, id);
+    const off = async () => (await tid(b, "plan-map")).getAttribute("data-layers-off");
+    // A real button opens the list; it says whether it is open.
+    const button = await tid(b, "layers-button");
+    assert.equal(await button.getTagName(), "button");
+    assert.equal(await button.getAttribute("aria-label"), "Layers");
+    assert.equal(await button.getAttribute("aria-expanded"), "false");
+    assert.equal(await exists(b, "layers-list"), false);
+    await button.click();
+    assert.equal(await button.getAttribute("aria-expanded"), "true");
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length);
+    // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
+    for (const id of IDS) {
+      const c = await box(id);
+      assert.equal(c.type, "checkbox");
+      assert.equal(c.checked, true, `${id} is on by default`);
+      assert.equal(c.disabled, id !== "imagery", id);
+      assert.equal(/none loaded/.test(c.row), id !== "imagery", c.row);
+    }
+    assert.equal((await box("river-polygon")).row, "River polygon none loaded");
+    assert.equal(await exists(b, "legend-river-polygon"), false, "the legend lists nothing the design lacks");
+    // The example has a river polygon and a centreline and no bank lines.
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the river polygon in the list", async () => !(await box("river-polygon")).disabled);
+    const g = await b.execute(async () => {
+      const m = await window.__owdPlatform.call("map_geometry");
+      return { polygon: m.river_polygon.coordinates[0], centre: !!m.centreline, banks: m.banks.length, options: m.options.length };
+    });
+    const stored = (await pageDoc(b)).inputs.river_polygon.coordinates[0];
+    assert.ok(stored.length > 100, "the example's polygon has many positions");
+    assert.equal(g.polygon.length, stored.length, "every position of the polygon reaches the map");
+    for (const p of g.polygon) assert.ok(Math.abs(p[0]) <= 180 && Math.abs(p[1]) <= 90, `the polygon reaches the page in lon/lat: ${p}`);
+    assert.equal((await box("river-polygon")).row, "River polygon");
+    assert.equal((await box("centreline")).disabled, !g.centre);
+    assert.equal(g.banks, 0, "the example has no bank lines");
+    assert.equal((await box("bank-lines")).disabled, true);
+    assert.equal((await box("bank-lines")).row, "Bank lines none loaded");
+    assert.ok(g.options > 0, "the example has a design line");
+    assert.equal((await box("design-line")).disabled, false);
+    // The legend: what is there and ticked on, and nothing else.
+    await until(b, "the polygon in the legend", () => exists(b, "legend-river-polygon"));
+    assert.equal(await exists(b, "legend-centreline"), true);
+    assert.equal(await exists(b, "legend-bank-lines"), false);
+    assert.equal((await b.$$("[data-testid=legend-option]")).length, g.options);
+    assert.equal(await off(), "");
+    // Untick the river polygon and the design line: gone from the map and the legend at once.
+    await (await tid(b, "layer-river-polygon")).click();
+    await (await tid(b, "layer-design-line")).click();
+    await until(b, "the legend without the polygon", async () => !(await exists(b, "legend-river-polygon")));
+    assert.equal((await b.$$("[data-testid=legend-option]")).length, 0);
+    assert.equal(await exists(b, "legend-centreline"), true, "the other layers stay");
+    assert.equal(await off(), "river-polygon design-line");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["river-polygon","design-line"]');
+    // Never in the design file.
+    assert.doesNotMatch(JSON.stringify(await pageDoc(b)), /owd-map-layers|"design-line"/);
+    // Remembered on this machine: a reload shows the same ticks.
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the example after a reload", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    assert.equal(await off(), "river-polygon design-line");
+    await (await tid(b, "layers-button")).click();
+    assert.equal((await box("river-polygon")).checked, false);
+    assert.equal((await box("design-line")).checked, false);
+    assert.equal((await box("centreline")).checked, true);
+    await until(b, "the centreline in the legend", () => exists(b, "legend-centreline"));
+    assert.equal(await exists(b, "legend-river-polygon"), false);
+    // Tick them again: back in the legend, and nothing is left in the store when all are on.
+    await (await tid(b, "layer-river-polygon")).click();
+    await until(b, "the polygon in the legend again", () => exists(b, "legend-river-polygon"));
+    await (await tid(b, "layer-design-line")).click();
+    assert.equal(await off(), "");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), null);
+    // Escape closes the list.
+    await b.keys("Escape");
+    await until(b, "the list to close", async () => !(await exists(b, "layers-list")));
+  });
+
   it("moves the cross section with the station slider: asked once it settles, working meanwhile, a refusal said", async () => {
     const b = await start();
     await b.url(`${origin}/owd/app`);
