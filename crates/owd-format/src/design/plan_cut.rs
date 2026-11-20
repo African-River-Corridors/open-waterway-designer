@@ -205,7 +205,8 @@ impl Session {
         }
         let size = self.channel_size()?;
         let centreline = self.river_centreline()?;
-        let widen = |xy: &[Pt]| widened_hb_from_shape(xy, size.shape(), WIDEN_RMAX);
+        let engine_shape = size.shape().map_err(super::rule_sets::stage_error)?;
+        let widen = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
         let mut rows = Vec::new();
         for o in &options {
             let line = all_positions(&o["line"]);

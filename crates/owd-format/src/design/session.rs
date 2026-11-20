@@ -795,16 +795,34 @@ impl Session {
     /// The bank checks on the document's two banks, as one line per failed check (none when the
     /// document lacks a bank). They are the river stage's checks ([`super::river::river`]): the
     /// import keeps no copy. With `report_crossing`, banks that cross (the unchecked import keeps
-    /// them) are reported too, with the first crossing point.
+    /// them) are reported too, with the first crossing point. When the checks cannot run on two
+    /// banks, that is a warning too, with the reason: it never reads as "no warnings".
     fn bank_check_warnings(&self, report_crossing: bool) -> Vec<String> {
-        // The polygon is not under test here, and a bad one must not hide a bank warning.
-        let input = RiverIn {
+        let input = self.bank_check_input();
+        let two_banks = [&input.left_bank, &input.right_bank]
+            .iter()
+            .all(|b| b.as_ref().is_some_and(|l| l.len() >= 2));
+        match river(&input) {
+            Ok(g) => g.warnings(report_crossing),
+            // With one bank there is nothing to check yet: the other comes in a later import.
+            Err(_) if !two_banks => Vec::new(),
+            Err(e) => vec![format!("the bank checks could not run: {e}")],
+        }
+    }
+
+    /// What the bank checks read: the river stage's input without the polygon. The polygon is not
+    /// under test, and a bad one must not hide a bank warning. The import's warnings and
+    /// `owd check-banks` both use this, so they cannot differ.
+    pub fn bank_check_input(&self) -> RiverIn {
+        RiverIn {
             river_polygon: None,
             ..self.river_input()
-        };
-        river(&input)
-            .map(|g| g.warnings(report_crossing))
-            .unwrap_or_default()
+        }
+    }
+
+    /// The bank checks of the document: the river stage on [`Session::bank_check_input`].
+    pub fn bank_check_geometry(&self) -> Result<RiverGeometry, StageError> {
+        river(&self.bank_check_input())
     }
 
     /// What the river stage reads, taken from the document.

@@ -32,6 +32,21 @@ fn fixtures() -> Vec<(String, Value)> {
     out
 }
 
+/// The fixture's input, with the content hash of each selected set filled in from the built-in
+/// library where the fixture gives none: a design always records one, and `size` refuses an entry
+/// without. (The fixtures stay free of hashes, which change when the built-in Rules change.)
+fn input_of(f: &Value) -> SizingIn {
+    let mut input: SizingIn = serde_json::from_value(f["input"].clone()).expect("the input reads");
+    for set in &mut input.rule_sets {
+        if set.hash.is_none() {
+            set.hash = engine::built_in()
+                .find(&set.id, &set.version)
+                .map(|s| s.hash.clone());
+        }
+    }
+    input
+}
+
 /// `want` is contained in `got`: every key of an object, every number to 1e-9.
 fn contained(got: &Value, want: &Value, at: &str) -> Result<(), String> {
     match (got, want) {
@@ -67,8 +82,7 @@ fn every_fixture_gives_what_it_says() {
             f["why"].as_str().is_some_and(|w| w.len() > 20),
             "{name}: says why"
         );
-        let input: SizingIn = serde_json::from_value(f["input"].clone())
-            .unwrap_or_else(|e| panic!("{name}: the input reads: {e}"));
+        let input = input_of(&f);
         let got = size(&input, engine::built_in());
         if let Some(code) = f["expect"]["error"].as_str() {
             let e = got.expect_err(&format!("{name}: refused"));
@@ -93,7 +107,9 @@ fn every_fixture_gives_what_it_says() {
             "{name}"
         );
         assert!(
-            (out.bend_widening_m(out.min_bend_radius_m) - out.bend_widening_at_rmin_m).abs() < 1e-9,
+            (out.bend_widening_m(out.min_bend_radius_m).unwrap() - out.bend_widening_at_rmin_m)
+                .abs()
+                < 1e-9,
             "{name}"
         );
         assert!(
@@ -111,7 +127,7 @@ fn a_custom_vessel_has_a_label_and_no_class_id() {
         .find(|(n, _)| n == "custom-motor-vessel")
         .unwrap()
         .1;
-    let input: SizingIn = serde_json::from_value(f["input"].clone()).unwrap();
+    let input = input_of(f);
     let out = size(&input, engine::built_in()).unwrap();
     assert_eq!(out.vessel_standard_id, None);
     assert!(
@@ -121,7 +137,7 @@ fn a_custom_vessel_has_a_label_and_no_class_id() {
     );
     // A class has no label.
     let f = &all.iter().find(|(n, _)| n == "cemt-iv-pianc-c").unwrap().1;
-    let input: SizingIn = serde_json::from_value(f["input"].clone()).unwrap();
+    let input = input_of(f);
     assert_eq!(size(&input, engine::built_in()).unwrap().vessel_label, None);
 }
 
@@ -133,7 +149,7 @@ fn the_same_input_gives_the_same_size() {
         .find(|(n, _)| n == "gb50139-typed-class")
         .unwrap()
         .1;
-    let input: SizingIn = serde_json::from_value(f["input"].clone()).unwrap();
+    let input = input_of(f);
     assert_eq!(
         size(&input, engine::built_in()).unwrap(),
         size(&input, engine::built_in()).unwrap()
@@ -229,20 +245,41 @@ fn a_size_read_from_json_gives_a_typed_error_where_it_has_no_shape_not_a_panic()
     let s = sized_session();
     let typed: ChannelSize =
         serde_json::from_value(s.document()["stages"]["sizing"]["results"].clone()).unwrap();
-    let r = std::panic::catch_unwind(|| typed.bend_widening_m(300.0));
+    for e in [
+        typed.shape().map(|_| ()).unwrap_err(),
+        typed.bend_widening_m(300.0).unwrap_err(),
+        typed.bottom_width_at_m(300.0).unwrap_err(),
+    ] {
+        assert_eq!(
+            (e.code.as_str(), e.stage.as_str()),
+            ("SIZING_NO_SHAPE", "sizing"),
+            "{e}"
+        );
+    }
+    // A size made by the stage, and one read through the session, have it.
+    let made = size(&s.sizing_in(), engine::built_in()).unwrap();
+    assert!(made.shape().is_ok() && made.bend_widening_m(300.0).unwrap() >= 0.0);
+    assert!(s.channel_size().unwrap().shape().is_ok());
+}
+
+#[test]
+fn channel_size_refuses_a_sizing_that_is_not_run_or_is_stale_and_says_to_run_it() {
+    // The reader every later stage uses, tested on its own: not through a stage with a guard of its
+    // own in front of it.
+    let empty = Session::new("x", "2026-11-20");
+    let e = empty.channel_size().unwrap_err().to_string();
+    assert!(e.contains("sizing") && e.contains("not been run"), "{e}");
+
+    let mut s = sized_session();
+    assert!(s.channel_size().is_ok());
+    s.set_vessel("CEMT_Va", None).unwrap();
+    let e = s.channel_size().unwrap_err().to_string();
     assert!(
-        r.is_ok(),
-        "bend_widening_m panicked on a size read from JSON"
+        e.contains("sizing") && e.contains("stale") && e.contains("run it"),
+        "{e}"
     );
-    let r = std::panic::catch_unwind(|| typed.bottom_width_at_m(300.0));
-    assert!(
-        r.is_ok(),
-        "bottom_width_at_m panicked on a size read from JSON"
-    );
-    let r = std::panic::catch_unwind(|| {
-        let _ = typed.shape();
-    });
-    assert!(r.is_ok(), "shape panicked on a size read from JSON");
+    s.run_stage(Stage::Sizing).unwrap();
+    assert!(s.channel_size().is_ok());
 }
 
 #[test]

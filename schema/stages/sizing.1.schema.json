@@ -112,7 +112,7 @@
           "type": "string"
         },
         "hash": {
-          "description": "The content hash the design was sized with. When given, the loaded set must have it.",
+          "description": "The content hash the design was sized with. The loaded set must have it; an entry with none is\nrefused (`SIZING_RULE_SET_NO_HASH`).",
           "type": [
             "string",
             "null"

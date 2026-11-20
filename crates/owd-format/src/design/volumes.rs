@@ -428,8 +428,8 @@ impl Session {
         };
         let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
         let level = Level::AtChainage(&wl);
-        let shape = &plan.shape;
-        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, shape.shape(), WIDEN_RMAX);
+        let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
+        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
         let half_width = match plan.fixed_hb {
             Some(h) => HalfWidth::Fixed(h),
             None => HalfWidth::FromStations(&from_shape),

@@ -649,7 +649,8 @@ impl Session {
                 let shape = size
                     .as_ref()
                     .expect("a channel size when there are seed legs")
-                    .shape();
+                    .shape()
+                    .map_err(super::rule_sets::stage_error)?;
                 // Without water the legs are joined in open space: a box well round them.
                 let open = || {
                     let all: Vec<Pt> = legs.iter().flatten().copied().collect();
@@ -687,7 +688,7 @@ impl Session {
         let wi = match (&water, &size) {
             (Some(w), Some(sh)) => Some(WaterInput {
                 water: w,
-                shape: sh.shape(),
+                shape: sh.shape().map_err(super::rule_sets::stage_error)?,
                 clearance_m: clearance,
                 smooth_m: 0.0,
                 r_pref_m: r_pref,
