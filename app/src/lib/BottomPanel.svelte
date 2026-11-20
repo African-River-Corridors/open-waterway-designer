@@ -58,7 +58,7 @@
 <div class="bottom" data-testid="bottom-panel">
   <section class="table" aria-label="Results">
     <div class="tabs" role="tablist" aria-label="Results">
-      <button role="tab" id="tab-options" aria-selected={tab === "options"} aria-controls="panel-options" data-testid="tab-options" onclick={() => (tab = "options")}>Options</button>
+      <button role="tab" id="tab-options" aria-selected={tab === "options"} aria-controls="panel-options" data-testid="tab-options" onclick={() => (tab = "options")}>Design line</button>
       <button role="tab" id="tab-stretches" aria-selected={tab === "stretches"} aria-controls="panel-stretches" data-testid="tab-stretches" onclick={() => (tab = "stretches")}>
         Constraint stretches{#if screening}{" "}({screening.constraint_stretches.length}){/if}
       </button>
@@ -69,7 +69,7 @@
       <table data-testid="option-table">
         <thead>
           <tr>
-            <th></th><th>Option</th><th>Verdict</th><th>Dredge m³</th><th>Dry cut m³</th><th>Tallest face m</th><th title="The design line's own minimum radius">Min radius m</th><th title="The design line's minimum radius against R_min (the R_min check)">Radius ok</th><th>Checks</th>
+            <th></th><th>Design line</th><th>Verdict</th><th>Dredge m³</th><th>Dry cut m³</th><th>Tallest face m</th><th title="The design line's own minimum radius">Min radius m</th><th title="The design line's minimum radius against R_min (the R_min check)">Radius ok</th><th>Checks</th>
           </tr>
         </thead>
         <tbody>
@@ -109,7 +109,7 @@
       </table>
       {#if volumesNote}<p class="note" data-testid="volumes-note">{volumesNote}</p>{/if}
     {:else}
-      <p class="slot" data-testid="no-options">Load bank lines and a river polygon, then run alignment, to see the design line options here.</p>
+      <p class="slot" data-testid="no-options">Load bank lines and a river polygon, then run alignment, to see the design line here.</p>
     {/if}
     </div>
     {:else}

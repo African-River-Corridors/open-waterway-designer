@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { InputRole, Snapshot } from "./api";
   import { platform } from "./platform";
+  import { bankValue, fileNameOf, FALL_HELP, roundedFall } from "./words";
 
   let {
     snap,
@@ -31,7 +32,6 @@
     onRunInputs: (objective: string, limits: string, level: string) => void;
   } = $props();
 
-  const count = (g: { coordinates: unknown[] } | null | undefined) => (g ? `${g.coordinates.length} positions` : "not loaded");
   let inputs = $derived(snap?.document.inputs);
   let crs = $derived(snap?.document.project.crs);
   // The CRSs the data came in, when they are not the project's own: the zone it was moved to.
@@ -39,7 +39,10 @@
     [...new Set(Object.values(snap?.document.project.source_crs ?? {}))].filter((c) => crs && c !== `EPSG:${crs.epsg}`),
   );
   let level = $state("");
-  let fall = $state("");
+  /** The fall as the document holds it (exact); the field shows it rounded until the user types. */
+  let fallExact = $state("");
+  let fallTyped = $state<string | null>(null);
+  let fallShown = $derived(fallTyped ?? roundedFall(fallExact));
   let limitGib = $state("");
   let downstream = $state("");
   let mouth = $state("");
@@ -58,26 +61,30 @@
     const p = inputs?.water_level?.points;
     if (!p?.length) {
       level = "";
-      fall = "";
+      fallExact = "";
+      fallTyped = null;
       return;
     }
     level = String(p[0][1]);
+    fallTyped = null;
     const last = p[p.length - 1];
-    fall = p.length > 1 && last[0] > p[0][0] ? String((p[0][1] - last[1]) / (last[0] - p[0][0])) : "";
+    fallExact = p.length > 1 && last[0] > p[0][0] ? String((p[0][1] - last[1]) / (last[0] - p[0][0])) : "";
   });
 
-  const ROWS: { role: InputRole; label: string }[] = [
+  const RIVER_ROWS: { role: InputRole; label: string }[] = [
     { role: "left_bank", label: "Left bank" },
     { role: "right_bank", label: "Right bank" },
     { role: "river_polygon", label: "River polygon" },
     { role: "centreline", label: "Centreline" },
-    { role: "dem", label: "DEM" },
   ];
+  const DEM_ROW: { role: InputRole; label: string }[] = [{ role: "dem", label: "DEM" }];
   const value = (role: InputRole) => {
-    if (role === "dem") return inputs?.dem ? inputs.dem.path : "not loaded";
+    if (role === "dem") return inputs?.dem ? fileNameOf(inputs.dem.path) : "not loaded";
     if (role === "river_polygon") return inputs?.river_polygon ? `${inputs.river_polygon.coordinates[0].length} positions` : "not loaded";
-    return count(inputs?.[role]);
+    return bankValue(inputs?.[role], role !== "centreline" && !!inputs?.river_polygon);
   };
+  /** The full path of a loaded DEM, for the tooltip. */
+  const fullPath = (role: InputRole) => (role === "dem" ? (inputs?.dem?.path ?? undefined) : undefined);
 </script>
 
 <section aria-label="Data">
@@ -88,10 +95,30 @@
       {#if moved.length}
         <tr><td colspan="3" class="moved" data-testid="moved-note">Data in {moved.join(", ")} was moved to {crs?.name}.</td></tr>
       {/if}
-      {#each ROWS as r}
+      {#each RIVER_ROWS as r}
         <tr class:drop={dropTarget === r.role} data-drop-role={r.role}>
           <th>{r.label}</th>
-          <td data-testid="data-{r.role}">{value(r.role)}</td>
+          <td data-testid="data-{r.role}" title={fullPath(r.role)}>{value(r.role)}</td>
+          <td class="act"><button disabled={busy} data-testid="load-{r.role}" onclick={() => onLoad(r.role)}>Load…</button></td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
+
+  <div class="water mouth">
+    <label>River mouth: where chainage 0 is
+      <input aria-label="River mouth" bind:value={mouth} disabled={busy} data-testid="river-mouth" />
+    </label>
+    <p class="hint">Type <code>downstream</code> for the lower end of the river, or a point as lon,lat. Now: {inputs?.mouth ? `set at ${inputs.mouth.stated_as === "downstream" ? "the lower end" : "a point"}` : "none, so chainage runs from the start of the centreline"}.</p>
+    <button disabled={busy} data-testid="set-river-mouth" onclick={() => onMouth(mouth)} title="The river is stored running from the mouth, and every chainage counts from it. `downstream` takes the lower end, by the water level or the DEM.">Set mouth</button>
+  </div>
+
+  <table class="dem">
+    <tbody>
+      {#each DEM_ROW as r}
+        <tr class:drop={dropTarget === r.role} data-drop-role={r.role}>
+          <th>{r.label}</th>
+          <td data-testid="data-{r.role}" title={fullPath(r.role)}>{value(r.role)}</td>
           <td class="act"><button disabled={busy} data-testid="load-{r.role}" onclick={() => onLoad(r.role)}>Load…</button></td>
         </tr>
       {/each}
@@ -107,9 +134,10 @@
       <input aria-label="Water level" inputmode="decimal" bind:value={level} disabled={busy} data-testid="water-level" />
     </label>
     <label>Fall per metre of river (optional)
-      <input aria-label="Water fall" inputmode="decimal" bind:value={fall} disabled={busy} data-testid="water-fall" />
+      <input aria-label="Water fall" inputmode="decimal" value={fallShown} oninput={(e) => (fallTyped = e.currentTarget.value)} disabled={busy} data-testid="water-fall" title={fallExact !== "" ? `Stored exactly: ${fallExact}` : undefined} />
     </label>
-    <button disabled={busy || level.trim() === ""} data-testid="set-water" onclick={() => onWater(level, fall)}>Set water level</button>
+    <p class="hint" data-testid="water-fall-help">{FALL_HELP}</p>
+    <button disabled={busy || level.trim() === ""} data-testid="set-water" onclick={() => onWater(level, fallTyped ?? fallExact)}>Set water level</button>
   </div>
 
   <div class="water">
@@ -124,10 +152,6 @@
       <input aria-label="Downstream point" bind:value={downstream} disabled={busy} data-testid="downstream-point" />
     </label>
     <button disabled={busy} data-testid="set-downstream-point" onclick={() => onDownstream(downstream)} title="The banks are run towards this point and named left and right looking downstream, whatever way they were drawn or named.">Set point</button>
-    <label>River mouth, where chainage 0 is (`downstream` or lon,lat; {inputs?.mouth ? `set at ${inputs.mouth.stated_as === "downstream" ? "the lower end" : "a point"}` : "none: chainage runs from the start of the centreline"})
-      <input aria-label="River mouth" bind:value={mouth} disabled={busy} data-testid="river-mouth" />
-    </label>
-    <button disabled={busy} data-testid="set-river-mouth" onclick={() => onMouth(mouth)} title="The river is stored running from the mouth, and every chainage counts from it. `downstream` takes the lower end, by the water level or the DEM.">Set mouth</button>
   </div>
 
   <div class="water">
@@ -158,6 +182,8 @@
   /* A dragged file over a row: a dashed ink outline, so colour is not the only signal. */
   tr.drop { background: var(--accent-soft); outline: var(--lw-thick) dashed var(--ink); outline-offset: -2px; }
   .moved { text-align: left; font-size: var(--fs-12); color: var(--warn); background: var(--warn-soft); padding: var(--sp-1) var(--sp-2); }
+  table.dem { margin-top: var(--sp-2); }
+  .mouth { margin-top: var(--sp-2); }
   .row { margin: var(--sp-2) 0 0; }
   .hint { font-size: var(--fs-11); color: var(--ink-3); margin: var(--sp-1) 0 0; }
   .water { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-1); }

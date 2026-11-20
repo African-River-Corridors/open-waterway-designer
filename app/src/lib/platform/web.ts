@@ -65,6 +65,9 @@ function pickFile(accept: string): Promise<File | null> {
   });
 }
 
+/** The part of a FileSystemFileHandle that saving uses. */
+type SaveHandle = { name: string; createWritable: () => Promise<{ write: (t: string) => Promise<void>; close: () => Promise<void> }> };
+
 const bytesOf = async (file: File) => new Uint8Array(await file.arrayBuffer());
 
 export async function createWebPlatform(): Promise<Platform> {
@@ -106,11 +109,53 @@ export async function createWebPlatform(): Promise<Platform> {
   const fileName = (snap: { file_name: string }) => (/\.owd$/.test(snap.file_name) ? snap.file_name : DEFAULT_NAME);
   const confirmDiscard = () => !dirty || window.confirm(DISCARD);
 
-  async function saveNamed(name: string) {
+  /** The file the browser's save dialog gave us, so Save writes to it again without asking (File System Access). */
+  let handle: SaveHandle | null = null;
+  const canPick = () => typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
+
+  async function writeTo(h: SaveHandle, text: string) {
+    const w = await h.createWritable();
+    await w.write(text);
+    await w.close();
+  }
+
+  /** Save with the browser's save dialog. null when the user cancels it. */
+  async function pickSave(suggested: string): Promise<SaveHandle | null> {
+    try {
+      return await (window as unknown as { showSaveFilePicker: (o: unknown) => Promise<SaveHandle> }).showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "Channel design", accept: { "application/json": [".owd"] } }],
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return null;
+      throw e;
+    }
+  }
+
+  async function saveNamed(name: string, to?: SaveHandle) {
     const text = await host.rpc<string>("save_text", name);
-    download(name, text, "application/json");
+    if (to) {
+      await writeTo(to, text);
+      handle = to;
+    } else {
+      handle = null;
+      download(name, text, "application/json");
+    }
     carriedDirty = false;
     return change("saved", name);
+  }
+
+  /** Save as: the browser's save dialog where there is one (it asks for the name), else a name prompt and a download. */
+  async function saveAsChosen(current: string) {
+    if (canPick()) {
+      const h = await pickSave(current);
+      if (!h) return null;
+      return saveNamed(/\.owd$/.test(h.name) ? h.name : `${h.name}.owd`, h);
+    }
+    const name = window.prompt("File name (the browser will download it)", current);
+    if (name === null || name.trim() === "") return null;
+    const clean = name.trim();
+    return saveNamed(/\.owd$/.test(clean) ? clean : `${clean}.owd`);
   }
 
   /** Bring back the design as it stood before a run, in a new worker. */
@@ -202,6 +247,7 @@ export async function createWebPlatform(): Promise<Platform> {
     const base = import.meta.env.BASE_URL;
     const [text, tif] = await Promise.all([fetch(`${base}examples/${EXAMPLE}`).then((r) => (r.ok ? r.text() : Promise.reject(`cannot load the example (${r.status})`))), fetch(`${base}examples/${EXAMPLE_DEM}`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(`cannot load the example DEM (${r.status})`)))]);
     dem = new Uint8Array(tif);
+    handle = null;
     carriedDirty = false;
     return change("open_text", EXAMPLE, text, dem);
   }
@@ -220,6 +266,7 @@ export async function createWebPlatform(): Promise<Platform> {
     new_file: async () => {
       if (!confirmDiscard()) return null;
       dem = null;
+      handle = null;
       carriedDirty = false;
       return change("new_design");
     },
@@ -229,16 +276,16 @@ export async function createWebPlatform(): Promise<Platform> {
       if (!file) return null;
       const text = await file.text();
       dem = null;
+      handle = null;
       carriedDirty = false;
       return change("open_text", file.name, text, undefined);
     },
-    save: async () => saveNamed(fileName(await json("snapshot"))),
-    save_as: async () => {
-      const name = window.prompt("File name", fileName(await json("snapshot")));
-      if (name === null || name.trim() === "") return null;
-      const clean = name.trim();
-      return saveNamed(/\.owd$/.test(clean) ? clean : `${clean}.owd`);
+    save: async () => {
+      const name = fileName(await json("snapshot"));
+      if (handle) return saveNamed(handle.name, handle);
+      return canPick() ? saveAsChosen(name) : saveNamed(name);
     },
+    save_as: async () => saveAsChosen(fileName(await json("snapshot"))),
     set_rule_sets: (a) => change("set_rule_sets", JSON.stringify(a.ids), JSON.stringify(a.inputs)),
     set_vessel: (a) => change("set_vessel", a.vesselStandardId, a.draught),
     set_custom_vessel: (a) => change("set_custom_vessel", JSON.stringify(a.fields)),
