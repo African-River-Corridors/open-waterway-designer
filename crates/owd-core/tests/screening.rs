@@ -5,7 +5,7 @@
 
 use owd_core::rules::engine::{self, Selection, Vessel};
 use owd_core::rules::screening::{
-    StationIn, StretchKind, constraint_stretches, design_basis, falls_short,
+    StationIn, StretchKind, constraint_stretches, design_basis, falls_short, falls_short_of,
 };
 
 fn cemt_iv() -> Vessel {
@@ -127,7 +127,11 @@ fn every_short_station_is_in_exactly_one_stretch_of_its_kind_and_no_other_is() {
                         st.river_width_m,
                     ),
                     StretchKind::Depth => falls_short(sized.design_depth_m, st.river_depth_m),
-                    StretchKind::Radius => falls_short(sized.min_bend_radius_m, st.river_radius_m),
+                    StretchKind::Radius => falls_short_of(
+                        StretchKind::Radius,
+                        sized.min_bend_radius_m,
+                        st.river_radius_m,
+                    ),
                 };
                 let holding = stretches
                     .iter()
