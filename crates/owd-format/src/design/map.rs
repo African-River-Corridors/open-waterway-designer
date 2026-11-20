@@ -176,10 +176,15 @@ impl Session {
                 .into_iter()
                 .flatten()
                 .map(|ring| {
-                    let pts = all_positions(ring);
-                    c(&pts).map(|p| json!(p))
+                    // `all_positions` reads a geometry, not a bare ring: wrap the ring as one.
+                    // (Read bare, every ring came out empty and the map drew no polygon.)
+                    let pts = all_positions(&json!({"coordinates": ring}));
+                    let pts = c(&pts)?;
+                    // The map opens on the polygon too: a design may hold a polygon and no line yet.
+                    grow(&pts);
+                    Ok(json!(pts))
                 })
-                .collect::<Result<_, _>>()
+                .collect::<Result<_, String>>()
                 .map_err(DesignError::Input)?;
             out["river_polygon"] = json!({"type": "Polygon", "coordinates": rings});
         }

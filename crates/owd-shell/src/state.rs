@@ -1674,6 +1674,94 @@ mod tests {
             .to_string()
     }
 
+    /// Every position of a map geometry value is a longitude and a latitude near the fixture.
+    fn assert_lon_lat(g: &Value, what: &str) {
+        let pts = owd_format::design::geojson::all_positions(g);
+        assert!(pts.len() >= 2, "{what}: {} positions", pts.len());
+        for p in pts {
+            assert!(
+                (-3.01..=-2.98).contains(&p[0]),
+                "{what}: longitude {}",
+                p[0]
+            );
+            assert!((5.39..=5.41).contains(&p[1]), "{what}: latitude {}", p[1]);
+        }
+    }
+
+    #[test]
+    fn the_map_geometry_carries_the_polygon_centreline_and_banks_in_lon_lat() {
+        // MAP-1. The design keeps them in the project CRS (a UTM zone, in metres).
+        let s = two_banks();
+        let doc = s.snapshot()["document"].clone();
+        assert_ne!(doc["project"]["crs"]["epsg"], 4326);
+        let stored = doc["inputs"]["river_polygon"]["coordinates"][0][0][0]
+            .as_f64()
+            .unwrap();
+        assert!(stored.abs() > 1000.0, "stored in metres: {stored}");
+        let g = s.map_geometry().unwrap();
+        assert_eq!(g["crs"], "EPSG:4326");
+        assert_eq!(g["river_polygon"]["type"], "Polygon");
+        assert_lon_lat(&g["river_polygon"], "river polygon");
+        // The polygon goes whole: one position on the map for each one in the design.
+        let ring = |v: &Value| v["coordinates"][0].as_array().unwrap().len();
+        assert_eq!(
+            ring(&g["river_polygon"]),
+            ring(&doc["inputs"]["river_polygon"])
+        );
+        assert_eq!(g["centreline"]["type"], "LineString");
+        assert_lon_lat(&g["centreline"], "centreline");
+        let banks = g["banks"].as_array().unwrap();
+        let sides: Vec<&str> = banks.iter().map(|b| b["side"].as_str().unwrap()).collect();
+        assert_eq!(sides, ["left", "right"]);
+        for b in banks {
+            assert_eq!(b["line"]["type"], "LineString");
+            assert_lon_lat(&b["line"], "bank");
+        }
+        // The box the map opens on holds the polygon.
+        let bbox: Vec<f64> = g["bbox"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        for p in owd_format::design::geojson::all_positions(&g["river_polygon"]) {
+            assert!(bbox[0] <= p[0] && p[0] <= bbox[2] && bbox[1] <= p[1] && p[1] <= bbox[3]);
+        }
+    }
+
+    #[test]
+    fn the_map_geometry_has_no_polygon_and_no_banks_when_the_design_has_none() {
+        let mut s = AppState::new_design("Study", "2026-10-16");
+        s.load_inputs(
+            &[(
+                Role::Centreline,
+                r#"{"type":"LineString","coordinates":[[-3.0,5.40],[-2.995,5.401],[-2.99,5.40]]}"#
+                    .into(),
+            )],
+            "2026-10-21",
+        )
+        .unwrap();
+        let g = s.map_geometry().unwrap();
+        assert!(g["river_polygon"].is_null());
+        assert_eq!(g["banks"].as_array().unwrap().len(), 0);
+        assert_lon_lat(&g["centreline"], "centreline");
+        // A design with only a polygon opens the map on it.
+        let mut p = AppState::new_design("Study", "2026-10-16");
+        p.load_inputs(
+            &[(
+                Role::RiverPolygon,
+                r#"{"type":"Polygon","coordinates":[[[-3.0,5.40],[-2.99,5.40],[-2.99,5.402],[-3.0,5.402],[-3.0,5.40]]]}"#
+                    .into(),
+            )],
+            "2026-10-21",
+        )
+        .unwrap();
+        let g = p.map_geometry().unwrap();
+        assert_lon_lat(&g["river_polygon"], "river polygon");
+        assert!(g["centreline"].is_null());
+        assert!(!g["bbox"].is_null(), "the map opens on the polygon");
+    }
+
     #[test]
     fn loaded_banks_are_marked_user_and_an_edit_marks_them_and_what_is_rebuilt_edited() {
         let mut s = two_banks();
