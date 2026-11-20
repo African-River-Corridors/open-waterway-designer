@@ -20,7 +20,7 @@ fn the_check_banks_command_takes_its_checks_from_the_core() {
     // The checks are the river stage's, in `owd-format`, and that stage takes them from the core. The
     // command keeps no bank check of its own.
     assert!(
-        command.contains("river_geometry"),
+        command.contains("bank_check_geometry"),
         "crates/owd-cli/src/check_banks.rs does not read the river stage"
     );
     for copy in ["assess(", "lines_cross(", "CheckParams"] {

@@ -510,7 +510,7 @@ impl Session {
                         let fit = fairway_fit_in_water(
                             &plan.centre,
                             &plan.river,
-                            size.shape(),
+                            size.shape().map_err(super::rule_sets::stage_error)?,
                             0.0,
                             0.0,
                             &Fixed::default(),

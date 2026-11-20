@@ -195,7 +195,7 @@ pub fn custom_vessel_of(v: &Value) -> Option<CustomVessel> {
 }
 
 /// A stage's refusal as the session reports it: the message, as an input error.
-fn stage_error(e: StageError) -> DesignError {
+pub(super) fn stage_error(e: StageError) -> DesignError {
     DesignError::Input(e.message)
 }
 
@@ -426,7 +426,7 @@ impl Session {
     /// The channel size the sizing stage stored: what every later stage reads. It refuses when sizing
     /// has not been run or is stale, and says to run it. The size carries the engine's shape for the
     /// bend widening at any radius ([`ChannelSize::shape`]).
-    pub(super) fn channel_size(&self) -> Result<ChannelSize, DesignError> {
+    pub fn channel_size(&self) -> Result<ChannelSize, DesignError> {
         match self.stage_status(super::session::Stage::Sizing) {
             super::session::StageStatus::NotRun => {
                 return Err(DesignError::Input(

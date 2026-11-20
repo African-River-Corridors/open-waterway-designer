@@ -304,7 +304,7 @@
           "maxItems": 2
         },
         "water_profile": {
-          "description": "The water profile, with its chainage from the mouth (turned with the line when it is).",
+          "description": "The water profile. Its chainage is from the mouth when one was stated (the profile is turned\nwith the line when the line is); with no mouth, it is from the start of the line as given.",
           "anyOf": [
             {
               "$ref": "#/$defs/WaterProfile"

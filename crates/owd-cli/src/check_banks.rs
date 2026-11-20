@@ -12,9 +12,10 @@ pub fn check_banks(doc: &str, json_mode: bool) -> Result {
     if !has(&input.left_bank) || !has(&input.right_bank) {
         return Err(input_error("the document has no bank lines to check"));
     }
-    // The checks are the river stage's: the import's warnings come from the same report.
+    // The checks are the river stage's, on the same input the import's warnings read (the polygon is
+    // not under test): the two cannot differ.
     let river = session
-        .river_geometry()
+        .bank_check_geometry()
         .map_err(|e| input_error(e.to_string()))?;
     let failed: Vec<(f64, Vec<String>)> = river
         .bank_checks

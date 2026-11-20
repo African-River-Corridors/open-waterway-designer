@@ -36,7 +36,8 @@ pub struct SelectedSet {
     pub id: String,
     /// The set's version, such as `0.3.0`.
     pub version: String,
-    /// The content hash the design was sized with. When given, the loaded set must have it.
+    /// The content hash the design was sized with. The loaded set must have it; an entry with none is
+    /// refused (`SIZING_RULE_SET_NO_HASH`).
     #[serde(default)]
     pub hash: Option<String>,
 }
@@ -368,11 +369,16 @@ impl std::fmt::Debug for ChannelSize {
 
 impl ChannelSize {
     /// The engine's shape of this size. Present on a size made by [`size`] or read through
-    /// `Session::channel_size`; it works out the bend widening at any radius.
-    pub fn shape(&self) -> &ChannelShape {
-        self.shape
-            .as_ref()
-            .expect("a channel size read through the session carries its shape")
+    /// `Session::channel_size`; it works out the bend widening at any radius. A size read from JSON
+    /// holds the data only, so it has no shape and this says so (`SIZING_NO_SHAPE`).
+    pub fn shape(&self) -> Result<&ChannelShape, StageError> {
+        self.shape.as_ref().ok_or_else(|| {
+            refuse(
+                "SIZING_NO_SHAPE",
+                "this channel size was read from stored data and has no engine shape: read it \
+                 through the design session, or make it with `size`",
+            )
+        })
     }
 
     /// This size with the engine's shape attached.
@@ -381,14 +387,14 @@ impl ChannelSize {
         self
     }
 
-    /// The bend widening at `radius_m`, in metres.
-    pub fn bend_widening_m(&self, radius_m: f64) -> f64 {
-        self.shape().bend_widening_m(radius_m)
+    /// The bend widening at `radius_m`, in metres; refused when the size has no shape.
+    pub fn bend_widening_m(&self, radius_m: f64) -> Result<f64, StageError> {
+        Ok(self.shape()?.bend_widening_m(radius_m))
     }
 
-    /// The bottom width at `radius_m`, in metres.
-    pub fn bottom_width_at_m(&self, radius_m: f64) -> f64 {
-        self.shape().bottom_width_at_m(radius_m)
+    /// The bottom width at `radius_m`, in metres; refused when the size has no shape.
+    pub fn bottom_width_at_m(&self, radius_m: f64) -> Result<f64, StageError> {
+        Ok(self.shape()?.bottom_width_at_m(radius_m))
     }
 }
 
@@ -433,6 +439,20 @@ pub fn selection_without_reaches(
                 ),
             )
         })?;
+        // A design that records no content hash cannot say which rules it was sized with: refused,
+        // as the session's own path always did. (`SizingIn::from_document` leaves the hash empty
+        // only when the document holds none.)
+        if s.hash.is_none() {
+            return Err(refuse(
+                "SIZING_RULE_SET_NO_HASH",
+                &format!(
+                    "the design selects Rule Set {}@{} but records no content hash for it, so it \
+                     cannot say which rules it was sized with: choose the set again (owd size \
+                     --rule-set {}) and rerun",
+                    s.id, s.version, s.id
+                ),
+            ));
+        }
         if let Some(stored) = &s.hash
             && stored != &set.hash
         {

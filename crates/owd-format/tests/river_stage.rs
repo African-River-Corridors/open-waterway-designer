@@ -427,3 +427,65 @@ fn a_winding_river_gives_one_design_whichever_end_it_was_digitised_from() {
         assert!(fwd.bank_checks.is_empty(), "{:?}", fwd.bank_checks);
     }
 }
+
+#[test]
+fn a_bank_check_that_cannot_run_is_a_warning_with_its_reason_not_silence() {
+    // Two banks that are one point repeated give the river stage no centreline to build. The import
+    // keeps them (it refuses only banks that cross), and the check cannot run: that shows as a warning.
+    let mut s = Session::new("x", "2026-11-20");
+    let pt = |x: f64, y: f64| -> String {
+        format!(r#"{{"type":"LineString","crs":{UTM30},"coordinates":[[{x},{y}],[{x},{y}]]}}"#)
+    };
+    let report = s
+        .import(&[
+            (Role::LeftBank, &pt(X0, Y0 + 10.0)),
+            (Role::RightBank, &pt(X0, Y0 - 10.0)),
+        ])
+        .unwrap();
+    assert!(
+        report
+            .warnings
+            .iter()
+            .any(|w| w.contains("bank checks could not run")),
+        "{:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn the_bank_checks_and_the_import_warnings_read_one_input_without_the_polygon() {
+    // A study with a river polygon: the bank checks leave it out, in the import's warnings and in
+    // `owd check-banks` alike (both read `Session::bank_check_input`), so a bad polygon cannot hide
+    // a bank warning and the two cannot differ.
+    let mut s = Session::new("x", "2026-11-20");
+    let (left, right): (Vec<Pt>, Vec<Pt>) = (
+        (0..=20)
+            .map(|i| [X0 + 50.0 * f64::from(i), Y0 + 50.0])
+            .collect(),
+        (0..=20)
+            .map(|i| [X0 + 50.0 * f64::from(i), Y0 - 50.0])
+            .collect(),
+    );
+    let ring = vec![
+        [X0 - 10.0, Y0 - 100.0],
+        [X0 + 1100.0, Y0 - 100.0],
+        [X0 + 1100.0, Y0 + 100.0],
+        [X0 - 10.0, Y0 + 100.0],
+        [X0 - 10.0, Y0 - 100.0],
+    ];
+    s.import(&[
+        (Role::LeftBank, &line_json(&left)),
+        (Role::RightBank, &line_json(&right)),
+        (
+            Role::RiverPolygon,
+            &format!(
+                r#"{{"type":"Polygon","crs":{UTM30},"coordinates":{}}}"#,
+                json!([ring])
+            ),
+        ),
+    ])
+    .unwrap();
+    assert!(s.river_input().river_polygon.is_some());
+    assert!(s.bank_check_input().river_polygon.is_none());
+    assert!(s.bank_check_geometry().unwrap().polygon.is_none());
+}

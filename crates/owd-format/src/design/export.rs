@@ -273,7 +273,11 @@ impl Session {
                 })
                 .collect();
             let (_, xy, heading) = station_frame(&line, STATION_M).map_err(DesignError::Input)?;
-            let hb = widened_hb_from_shape(&xy, size.shape(), WIDEN_RMAX);
+            let hb = widened_hb_from_shape(
+                &xy,
+                size.shape().map_err(super::rule_sets::stage_error)?,
+                WIDEN_RMAX,
+            );
             let (mut left, mut right) = (Vec::new(), Vec::new());
             for ((p, th), h) in xy.iter().zip(&heading).zip(&hb) {
                 let (nx, ny) = (-libm::sin(*th), libm::cos(*th));

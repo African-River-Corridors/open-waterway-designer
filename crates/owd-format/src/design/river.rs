@@ -107,7 +107,8 @@ pub struct RiverGeometry {
     pub reversed: bool,
     /// The mouth: the first point of the centreline, when a mouth was stated.
     pub mouth: Option<[f64; 2]>,
-    /// The water profile, with its chainage from the mouth (turned with the line when it is).
+    /// The water profile. Its chainage is from the mouth when one was stated (the profile is turned
+    /// with the line when the line is); with no mouth, it is from the start of the line as given.
     pub water_profile: Option<WaterProfile>,
 }
 
