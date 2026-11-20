@@ -6,7 +6,9 @@
 //! Label: property
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Stage, StageStatus, design_lines_of, volume_rows_of};
+use owd_format::design::{
+    AlignMethod, Session, Stage, StageStatus, design_lines_of, volume_rows_of,
+};
 use owd_format::geotiff;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -136,4 +138,41 @@ fn after_the_move_a_stage_run_makes_the_alignment_fresh_again() {
     // Now worked out: the line's bends, and its cut-offs against the river polygon.
     let line = &s.document()["stages"]["alignment"]["results"];
     assert!(line["cut_offs"].is_array(), "{}", line["cut_offs"]);
+}
+
+/// QA on PR 558, item 1: a 0.4 file with a rolling-circle option and a given line keeps the rolling
+/// circle as the design line, and keeps the given line's points in the alignment settings, so the
+/// advice in the note (make it the design line with `owd align --method given`) works.
+#[test]
+fn a_given_line_beside_the_rolling_circle_is_kept_and_the_advised_run_makes_it_the_design_line() {
+    let mut doc = old();
+    doc["format_version"] = json!("0.4");
+    let rc = option(&doc, "rolling_circle").clone();
+    let mut given = rc.clone();
+    given["id"] = json!("given-old-study");
+    given["name"] = json!("Old study");
+    given["method"] = json!("given");
+    let pts = json!([[500_100.0, 600_000.0], [501_900.0, 600_050.0]]);
+    given["line"] = json!({"type": "LineString", "coordinates": pts});
+    doc["options"] = json!([rc, given]);
+    doc["stages"]["optimise"]["results"] = Value::Null;
+    doc["stages"]["optimise"]["depends_on"] = Value::Null;
+    let mut s = Session::open(&doc.to_string()).unwrap();
+    let al = &s.document()["stages"]["alignment"];
+    assert_eq!(
+        al["settings"]["method"], "rolling_circle",
+        "the rolling circle wins"
+    );
+    assert_eq!(al["results"]["id"], "rolling-circle");
+    assert_eq!(al["settings"]["given"]["name"], "Old study");
+    assert_eq!(al["settings"]["given"]["line"]["coordinates"], pts);
+    let notes = s.open_notes().join("\n");
+    assert!(notes.contains("`given-old-study` (Old study)"), "{notes}");
+    assert!(notes.contains("owd align --method given"), "{notes}");
+    // The advised run, at the session: sizing first (the file's draught changed), then the method.
+    s.run_stage(Stage::Sizing).unwrap();
+    s.align(AlignMethod::Given, &Value::Null, None).unwrap();
+    let line = &s.document()["stages"]["alignment"]["results"];
+    assert_eq!(line["id"], "given-old-study");
+    assert_eq!(line["line"]["coordinates"], pts);
 }
