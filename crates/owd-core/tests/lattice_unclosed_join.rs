@@ -20,8 +20,8 @@ use owd_core::alignment::radius_check::radius_ok;
 use owd_core::geom::offset::{Cap, buffer_line};
 use owd_core::geom::{Geometry, Pt, linear};
 use owd_core::optimise::lattice::{
-    HalfWidthSpec, LatticeConfig, PoolOptions, PoolsResult, SectionSpec, heading_at, optimise_pool,
-    optimise_pools,
+    BOUNDARY_STEP_FRACTION, HalfWidthSpec, LatticeConfig, PoolOptions, PoolsResult, SectionSpec,
+    UNCLOSED_REASON, heading_at, optimise_pool, optimise_pools,
 };
 
 const R_MIN: f64 = 340.0;
@@ -169,6 +169,22 @@ fn assert_every_join_closed(r: &PoolsResult) {
 fn a_pool_that_cannot_close_does_not_leave_a_broken_join() {
     let (_, r) = run(&cfg(None), mid_bend_m());
     describe(&r);
+    // The first pool closes on an end moved three steps downstream, onto the straight leg; the
+    // second pool's search starts there. The pools' water levels are as given.
+    let step = BOUNDARY_STEP_FRACTION * R_MIN;
+    let (p0, p1) = (&r.pools[0], &r.pools[1]);
+    assert_eq!(p0.end_moved_from_m, Some(mid_bend_m()));
+    assert!(
+        (p0.end_m - (mid_bend_m() + 3.0 * step)).abs() < 1e-9,
+        "{}",
+        p0.end_m
+    );
+    assert!(p0.result.goal_closed && p1.result.goal_closed);
+    assert_eq!(p1.start_moved_from_m, Some(mid_bend_m()));
+    assert_eq!(p1.start_m, p0.end_m);
+    assert_eq!(p1.end_moved_from_m, None);
+    assert_eq!(r.moved_boundaries().count(), 1);
+    assert_eq!(r.self_crossing_m, None);
     assert_every_join_closed(&r);
     for j in &r.joins {
         assert!(
@@ -190,11 +206,21 @@ fn a_pool_that_cannot_close_does_not_leave_a_broken_join() {
 }
 
 /// When no boundary closes (closing paths are only tried from 1 m away, so the search never closes),
-/// the pool's line is not spliced in with a stepped join: every join left in the line is closed.
+/// the pool's line is not spliced in with a stepped join: every join left in the line is closed. The
+/// first pool keeps its baseline and says why. The second pool ends where the line ends, so nothing
+/// joins its end and its line is kept.
 #[test]
 fn a_pool_that_closes_nowhere_does_not_splice_a_stepped_join() {
     let (_, r) = run(&cfg(Some(1.0)), mid_bend_m());
     describe(&r);
+    let (p0, p1) = (&r.pools[0], &r.pools[1]);
+    assert!(p0.result.converged && !p0.result.goal_closed);
+    assert!(!p0.used);
+    assert_eq!(p0.kept_baseline_because, Some(UNCLOSED_REASON));
+    assert_eq!(p0.end_moved_from_m, None);
+    assert_eq!(r.unclosed_pools().count(), 1);
+    assert!(p1.used && !p1.result.goal_closed);
+    assert_eq!(r.self_crossing_m, None);
     assert_every_join_closed(&r);
     assert!(
         !is_self_intersecting(&r.line),
@@ -211,6 +237,8 @@ fn pools_that_close_give_the_same_line() {
     let (base, r) = run(&c, at);
     describe(&r);
     assert!(r.pools.iter().all(|p| p.used && p.result.goal_closed));
+    assert_eq!(r.moved_boundaries().count(), 0);
+    assert_eq!(r.self_crossing_m, None);
     let total = linear::length(&base);
     let t = terrain(base.clone());
     let mut want: Vec<Pt> = Vec::new();
