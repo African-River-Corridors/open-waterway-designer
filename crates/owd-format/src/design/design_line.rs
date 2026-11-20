@@ -157,8 +157,10 @@ pub struct DesignLine {
     pub widening_floor: Option<String>,
     /// The bends, in chainage order.
     pub bends: Vec<Bend>,
-    /// Where the line leaves the river's water. `None` when the design has no river polygon to tell
-    /// water from land.
+    /// Where the line leaves the river's water: a list, empty when it never leaves it. Spec 0017
+    /// writes `cut_offs[]`; this is `null` instead of a list when they were not worked out (no river
+    /// polygon to tell water from land, or a line moved from a 0.4 file), so "none" and "not known"
+    /// never read the same.
     pub cut_offs: Option<Vec<CutOff>>,
     /// The names of the constraints the line touches. Empty until constraints exist (ticket 13).
     pub constraints_touched: Vec<String>,

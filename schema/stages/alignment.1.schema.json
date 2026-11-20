@@ -841,7 +841,7 @@
           }
         },
         "cut_offs": {
-          "description": "Where the line leaves the river's water. `None` when the design has no river polygon to tell\nwater from land.",
+          "description": "Where the line leaves the river's water: a list, empty when it never leaves it. Spec 0017\nwrites `cut_offs[]`; this is `null` instead of a list when they were not worked out (no river\npolygon to tell water from land, or a line moved from a 0.4 file), so \"none\" and \"not known\"\nnever read the same.",
           "type": [
             "array",
             "null"
