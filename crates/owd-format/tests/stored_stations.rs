@@ -343,7 +343,7 @@ fn one_section_off_the_stored_profiles_costs_one_section_and_is_the_walks_sectio
     // The station in the tightest bend: the largest turn of heading to its neighbours.
     let turn = |i: usize| {
         let h = |k: usize| st.walk.stations[k].heading_rad;
-        (h(i + 1) - h(i - 1)).sin().abs()
+        libm::sin(h(i + 1) - h(i - 1)).abs()
     };
     let bend = *bare
         .iter()
