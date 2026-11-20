@@ -1619,7 +1619,12 @@ mod tests {
         assert_eq!(first.walk.source, StationSource::Stored);
         // A station with no stored profile is walked for, never drawn from a neighbour.
         let n = first.walk.walk.stations.len();
-        if let Some(bare) = (0..n).find(|&i| !first.walk.has_profile(i)) {
+        // The example's line is long enough that most stations keep no profile: one must exist,
+        // or this check proves nothing (QA on PR 568, finding 3).
+        let bare = (0..n)
+            .find(|&i| !first.walk.has_profile(i))
+            .expect("a station with no stored profile");
+        {
             let at = first.walk.walk.stations[bare].chainage_m;
             assert!(first.session.cross_section(&first.walk, at).is_err());
             let again = s
