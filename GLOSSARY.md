@@ -158,7 +158,9 @@ Each quantity of the channel with the Rule that governs it, its citation and its
 
 **Constraint stretch**:
 A run of stations where the river as found falls short of a governing limit (width, depth or
-radius), with the works that follow (bank cut, dredge, cut-through) and their quantities.
+radius), with the works that follow (bank cut, dredge, cut-through) and the design's own quantities
+inside it. A radius within the R_min reading tolerance is not one. The quantities are part of the
+design total, and stretches of different kinds overlap.
 
 **Verdict**:
 A design line option's screening answer: navigable as it is, navigable with works, or not

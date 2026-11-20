@@ -123,7 +123,7 @@
           <table data-testid="stretch-table" aria-label="Constraint stretches of {selectedName}">
             <thead>
               <tr>
-                <th>Kind</th><th>From m</th><th>To m</th><th>Governing Rule</th><th>Required</th><th>River</th><th>Deficit</th><th>Works</th><th>Dredge m³</th><th>Dry cut m³</th>
+                <th>Kind</th><th>From m</th><th>To m</th><th>Governing Rule</th><th title="The governing limit (width, depth or radius)">Required</th><th title="The river as found, read on the design line">Found</th><th>Deficit</th><th title="What the design does here">Works</th><th title="The design's own dredge inside this stretch: part of the design total, and a station in two kinds of stretch is in both rows">Design dredge here m³</th><th title="The design's own dry cut inside this stretch: part of the design total, and a station in two kinds of stretch is in both rows">Design dry cut here m³</th>
               </tr>
             </thead>
             <tbody>
@@ -153,6 +153,7 @@
               {/each}
             </tbody>
           </table>
+          {#if table?.stretch_note}<p class="note" data-testid="stretch-note">{table.stretch_note}</p>{/if}
           {#if !onMap.has(selectedId ?? "")}<p class="note">The map shows no stretches for this option.</p>{/if}
         {:else}
           <p class="slot" data-testid="no-stretches">No constraint stretches: the river meets every Rule along {selectedName}.</p>

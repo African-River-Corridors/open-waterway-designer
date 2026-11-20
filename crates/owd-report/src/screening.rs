@@ -473,10 +473,12 @@ fn stretches(ctx: &Context) -> Value {
         ));
         return section("stretches", "Constraint stretches", body);
     }
-    body.push(prose(
-        "Where the river as found falls short of a governing limit along the chosen design line \
-         option, by kind.",
-    ));
+    let on_design_line = ctx
+        .volumes_row()
+        .is_none_or(|v| v["screening"]["radius_read_on"] != "the plan line");
+    body.push(prose(owd_core::rules::screening::stretch_table_note(
+        on_design_line,
+    )));
     body.push(table(
         "stretch-summary",
         "Constraint stretches by kind",
@@ -532,13 +534,15 @@ fn stretches(ctx: &Context) -> Value {
             ("Found", "right", None),
             ("Deficit", "right", None),
             ("Works", "left", None),
-            ("Dredge", "right", Some("m³")),
-            ("Dry cut", "right", Some("m³")),
+            ("Design dredge here", "right", Some("m³")),
+            ("Design dry cut here", "right", Some("m³")),
         ],
         rows,
     );
     let mut notes = String::from(
-        "Required, found and deficit are in metres (width and depth) or metres of radius.",
+        "Required, found and deficit are in metres (width and depth) or metres of radius. Design \
+         dredge and dry cut here are part of the design total, and a station in two kinds of \
+         stretch is in both rows.",
     );
     if left_out > 0 {
         notes.push_str(&format!(

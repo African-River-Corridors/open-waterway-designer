@@ -469,6 +469,8 @@ export interface OptionTable {
   volumes_status: "not run" | "fresh" | "stale";
   rows: OptionRow[];
   checks: CheckRow[];
+  /** What a constraint stretch is and what its dredge and dry cut mean: one wording, from the core. */
+  stretch_note?: string;
 }
 export const optionTable = () => invoke<OptionTable>("option_table");
 

@@ -7,13 +7,11 @@ use super::export::{SCREENING_LABEL, failed_checks, no_feasible_line};
 use super::session::Session;
 use serde_json::{Value, json};
 
-/// "1 stretch", "3 stretches".
-fn stretches(n: usize) -> String {
-    format!("{n} stretch{}", if n == 1 { "" } else { "es" })
-}
-
 /// Why an option has its verdict, in words, from its constraint stretches and failed checks
-/// (#312). The radius stretches read the river's own bends; the R_min check reads the design line.
+/// (#312). Width and depth stretches are where the design cuts the river (widenings, deepenings).
+/// A radius stretch reads the line the screening says (`radius_read_on`: the design line itself, or a
+/// plan line); the R_min check always reads the design line. The words come from
+/// `owd_core::rules::screening`, the one place that names the stretches.
 fn verdict_reason(screening: &Value, failed: &[&str]) -> Option<String> {
     let verdict = screening["verdict"].as_str()?;
     let all = screening["constraint_stretches"].as_array();
@@ -39,23 +37,15 @@ fn verdict_reason(screening: &Value, failed: &[&str]) -> Option<String> {
             parts.push("no bend has a feasible line".to_string());
         }
     }
-    let works: Vec<String> = ["width", "depth", "radius"]
-        .into_iter()
-        .filter_map(|k| {
-            let n = count(k);
-            (n > 0).then(|| format!("{n} {k}"))
-        })
-        .collect();
-    if !works.is_empty() {
-        let n: usize = ["width", "depth", "radius"].into_iter().map(count).sum();
-        parts.push(format!(
-            "{} need works ({})",
-            stretches(n),
-            works.join(", ")
-        ));
-    }
-    if count("radius") > 0 {
-        parts.push("the radius stretches read the river's own bends, not the design line".into());
+    let on_design_line = screening["radius_read_on"] != "the plan line";
+    if let Some(w) = owd_core::rules::screening::works_summary(
+        [count("width"), count("depth"), count("radius")],
+        on_design_line,
+    ) {
+        parts.push(w);
+        if !failed.contains(&"R_min") {
+            parts.push("the design line meets R_min".into());
+        }
     }
     if parts.is_empty() {
         parts.push("the river meets every governing limit".into());
@@ -137,8 +127,8 @@ impl Session {
                         "the design line fits in the navigable water".into()
                     } else {
                         format!(
-                            "{} where no line that meets R_min fits in the navigable water",
-                            stretches(n)
+                            "{n} stretch{} where no line that meets R_min fits in the navigable water",
+                            if n == 1 { "" } else { "es" }
                         )
                     },
                 );
@@ -171,6 +161,8 @@ impl Session {
             "volumes_status": self.volumes_status_name(dem),
             "rows": rows,
             "checks": checks,
+            // What a stretch is and what its dredge and dry cut mean, for the stretches tab.
+            "stretch_note": owd_core::rules::screening::stretch_table_note(true),
         }))
     }
 }
@@ -288,6 +280,55 @@ mod tests {
         let why = row["verdict_reason"].as_str().unwrap();
         assert!(why.contains("3 infeasible stretches"), "{why}");
         assert!(why.contains("no bend has a feasible line"), "{why}");
+    }
+
+    fn stretch(kind: &str) -> Value {
+        json!({"kind": kind})
+    }
+
+    /// The verdict names what the stretches are: where the design cuts the river, not "needs works",
+    /// and keeps the design line's own R_min check apart from them.
+    #[test]
+    fn the_reason_says_where_the_design_cuts_the_river_and_that_the_line_meets_r_min() {
+        let screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the design line option",
+            "constraint_stretches": [stretch("width"), stretch("width"), stretch("depth")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 3 stretches: 2 widenings, 1 deepening"),
+            "{why}"
+        );
+        assert!(why.contains("the design line meets R_min"), "{why}");
+        assert!(!why.contains("need works"), "{why}");
+        assert!(!why.contains("river's own bends"), "{why}");
+        // A failing R_min check is said as it is, and no "meets".
+        let why = verdict_reason(&screening, &["R_min"]).unwrap();
+        assert!(!why.contains("meets R_min"), "{why}");
+    }
+
+    /// A radius stretch read on a plan line is a bend cut-through of the design; one read on the
+    /// design line is a line tighter than R_min, and is not counted among the cuts.
+    #[test]
+    fn the_radius_stretches_are_named_for_the_line_they_read() {
+        let mut screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the plan line",
+            "constraint_stretches": [stretch("radius"), stretch("radius")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 2 stretches: 2 bend cut-throughs"),
+            "{why}"
+        );
+        screening["radius_read_on"] = json!("the design line option");
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(!why.contains("the design cuts the river"), "{why}");
+        assert!(
+            why.contains("tighter than R_min at 2 bends tighter than R_min on the design line"),
+            "{why}"
+        );
     }
 
     #[test]
