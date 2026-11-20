@@ -306,21 +306,25 @@ impl Session {
         if let Some(note) = self.depth_note() {
             row["depth_basis"] = json!(note);
         }
-        let settings = plan.settings;
-        let st = &mut self.doc["stages"]["volumes"];
-        st["settings"] = settings;
+        // Build the whole record on a copy and keep it only when every part is made: a failure in
+        // the water stage or the sections leaves the design as it was, not fresh volumes with no
+        // stations.
+        let mut next = self.clone();
+        let st = &mut next.doc["stages"]["volumes"];
+        st["settings"] = plan.settings;
         st["results"] = row;
         st["engine_version"] = json!(ENGINE_VERSION);
-        let h = self.dependency_hash(Stage::Volumes);
-        self.doc["stages"]["volumes"]["depends_on"] = json!(h);
+        let h = next.dependency_hash(Stage::Volumes);
+        next.doc["stages"]["volumes"]["depends_on"] = json!(h);
         // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
         // after the settings, so its step is the stations' step. The walk read the same levels.
-        self.run_water()?;
-        let water = self.design_water().ok_or_else(|| {
+        next.run_water()?;
+        let water = next.design_water().ok_or_else(|| {
             DesignError::Input("the water stage did not store the water level".into())
         })?;
-        self.doc["stages"]["volumes"]["results"]["sections"] =
+        next.doc["stages"]["volumes"]["results"]["sections"] =
             json!(super::volumes_stage::summarise(&v, &water, &profile_at));
+        *self = next;
         Ok(())
     }
 }
