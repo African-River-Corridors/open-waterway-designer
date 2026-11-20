@@ -752,7 +752,7 @@ impl Session {
 
 /// The design sanity check of an option's line (`owd_core::sanity`): `{"checked": true, "warnings":
 /// [...]}`. Warnings never fail a check.
-fn sanity_of(option: &Value) -> Value {
+pub(super) fn sanity_of(option: &Value) -> Value {
     let line = pts_of(&option["line"]).unwrap_or_default();
     let chord = option["checks"]["radius_check_chord_m"]
         .as_f64()

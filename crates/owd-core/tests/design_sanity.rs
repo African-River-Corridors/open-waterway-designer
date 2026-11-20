@@ -1,11 +1,15 @@
 //! The design sanity check on synthetic shapes: a self-crossing line, a bend under R_min and a
 //! station whose cut is far above its neighbours' are each found; a clean line and an even cut
-//! raise nothing.
+//! raise nothing. A long cut that is huge against the channel's own section is found by the extreme
+//! check, which the spike check misses by design.
 //!
 //! Label: property
 
 use owd_core::geom::Pt;
-use owd_core::sanity::{Finding, cut_spikes, line_findings};
+use owd_core::sanity::{
+    CutStation, EXTREME_AREA_RATIO, EXTREME_FACE_RATIO, Finding, cut_spikes, extreme_cuts,
+    line_findings,
+};
 
 const CHORD: f64 = 85.0;
 const R_MIN: f64 = 255.0;
@@ -150,4 +154,110 @@ fn a_small_cut_beside_none_is_not_a_spike() {
     let mut cuts = even_cut(100, 0.0);
     cuts[40].1 = 60.0;
     assert!(cut_spikes(&cuts).is_empty());
+}
+
+/// A channel section of 100 m2 and a design depth of 3 m, `n` stations 25 m apart, each with the
+/// given cut area and face height.
+fn stations(n: usize, cut_m2: f64, face_h_m: f64) -> Vec<CutStation> {
+    (0..n)
+        .map(|i| CutStation {
+            chainage_m: i as f64 * 25.0,
+            cut_m2,
+            face_h_m,
+            channel_area_m2: 100.0,
+            depth_m: 3.0,
+        })
+        .collect()
+}
+
+#[test]
+fn a_cut_of_the_size_of_the_channel_raises_nothing() {
+    // Twice the channel's section and a face of 2 m: a bank shaping.
+    assert!(extreme_cuts(&stations(100, 200.0, 2.0)).is_empty());
+    // Exactly at the bounds is not beyond them.
+    let at = stations(20, EXTREME_AREA_RATIO * 100.0, EXTREME_FACE_RATIO * 3.0);
+    assert!(extreme_cuts(&at).is_empty());
+}
+
+#[test]
+fn a_long_extreme_cut_through_a_hill_is_found_though_it_is_no_spike() {
+    // 40 stations of 5000 m2 (50 times the section): the neighbours are high too.
+    let mut st = stations(100, 200.0, 2.0);
+    for s in &mut st[30..70] {
+        s.cut_m2 = 5000.0;
+    }
+    let cuts: Vec<(f64, f64)> = st.iter().map(|s| (s.chainage_m, s.cut_m2)).collect();
+    assert!(
+        cut_spikes(&cuts).is_empty(),
+        "the spike check misses it by design"
+    );
+    let f = extreme_cuts(&st);
+    assert_eq!(f.len(), 1, "{f:?}");
+    match &f[0] {
+        Finding::CutExtreme {
+            from_m,
+            to_m,
+            max_cut_m2,
+            max_area_ratio,
+            ..
+        } => {
+            assert_eq!((*from_m, *to_m), (750.0, 1725.0));
+            assert_eq!(*max_cut_m2, 5000.0);
+            assert_eq!(*max_area_ratio, 50.0);
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(f[0].message().contains("very large for the channel"));
+}
+
+#[test]
+fn a_tall_face_alone_is_found() {
+    // A small area but a face of 40 m (more than 10 times the 3 m depth), at one station.
+    let mut st = stations(50, 200.0, 2.0);
+    st[10].face_h_m = 40.0;
+    let f = extreme_cuts(&st);
+    assert_eq!(f.len(), 1, "{f:?}");
+    match &f[0] {
+        Finding::CutExtreme {
+            from_m,
+            to_m,
+            max_face_h_m,
+            max_face_ratio,
+            ..
+        } => {
+            assert_eq!((*from_m, *to_m), (250.0, 250.0));
+            assert_eq!(*max_face_h_m, 40.0);
+            assert!((*max_face_ratio - 40.0 / 3.0).abs() < 1e-12);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn two_extreme_stretches_are_two_findings() {
+    let mut st = stations(100, 200.0, 2.0);
+    for i in (10..13).chain(60..62) {
+        st[i].cut_m2 = 3000.0;
+    }
+    assert_eq!(extreme_cuts(&st).len(), 2);
+}
+
+#[test]
+fn the_bound_goes_with_the_channels_own_section() {
+    // The same 3000 m2 cut is extreme beside a 100 m2 channel and not beside a 400 m2 one.
+    let mut small = stations(10, 3000.0, 2.0);
+    assert_eq!(extreme_cuts(&small).len(), 1);
+    for s in &mut small {
+        s.channel_area_m2 = 400.0;
+    }
+    assert!(extreme_cuts(&small).is_empty());
+}
+
+#[test]
+fn a_station_with_no_reading_is_skipped_not_flagged() {
+    let mut st = stations(10, f64::NAN, f64::NAN);
+    assert!(extreme_cuts(&st).is_empty());
+    st[3].channel_area_m2 = 0.0; // no channel section: the area ratio is not read
+    st[3].cut_m2 = 1e6;
+    assert!(extreme_cuts(&st).is_empty());
 }

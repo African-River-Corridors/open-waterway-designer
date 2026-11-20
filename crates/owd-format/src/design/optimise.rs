@@ -396,7 +396,7 @@ impl Session {
         };
         let measured =
             min_radius_on_chord(&out.line, chord).map_err(|e| DesignError::Input(e.message))?;
-        let option = json!({
+        let mut option = json!({
             "id": OPTION_ID, "name": "Pool lattice",
             "method": "lattice", "settings": settings,
             "line": {"type": "LineString", "coordinates": out.line},
@@ -420,6 +420,8 @@ impl Session {
                 })).collect::<Vec<_>>(),
             },
         });
+        // The design sanity check of the line, as every other option has it.
+        option["sanity"] = super::alignment::sanity_of(&option);
         let options = self.doc["options"]
             .as_array_mut()
             .expect("options is a list");
