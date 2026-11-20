@@ -195,7 +195,22 @@ pub struct LatticeConfig {
     pub prune_bound: f64,
     pub max_expand: i64,
     pub bounds_margin_m: f64,
+    /// [`optimise_pools`] searches a pool longer than this (m of baseline) as consecutive pieces
+    /// at the same water level ([`pool_pieces`]), so one search never has to cover tens of km and
+    /// hit `max_expand` (issue #559). Default [`DEFAULT_MAX_POOL_PIECE_M`]; infinity never splits.
+    pub max_pool_piece_m: f64,
 }
+
+/// The default `LatticeConfig::max_pool_piece_m`: 6 km. A pool of 6 to 7 km converges in seconds
+/// under the default `max_expand` on a long, uneven river where a pool of tens of km hits it
+/// (issue #559). On the synthetic sine river of the tests (amplitude 250 m, wavelength 1,600 m,
+/// R_min 340 m, pitch 12 m, cell 5 m) a 6 km pool takes about a sixth of the default cap; see
+/// `changelog.d/559.fixed.md` for the measured times.
+pub const DEFAULT_MAX_POOL_PIECE_M: f64 = 6000.0;
+
+/// How far a piece boundary may move from the even split, as a fraction of the even piece
+/// length: an eighth, so no piece is longer than 1.25 x `max_pool_piece_m`.
+pub const PIECE_BOUNDARY_SLACK: f64 = 0.125;
 
 impl LatticeConfig {
     /// The Python defaults for everything but `r_min_m`.
@@ -216,6 +231,7 @@ impl LatticeConfig {
             prune_bound: f64::INFINITY,
             max_expand: 4_000_000,
             bounds_margin_m: 20.0,
+            max_pool_piece_m: DEFAULT_MAX_POOL_PIECE_M,
         }
     }
 
@@ -237,6 +253,9 @@ impl LatticeConfig {
             "c_min" | "reverse_dijkstra" | "none"
         ) {
             return Err("heuristic must be 'c_min', 'reverse_dijkstra' or 'none'".into());
+        }
+        if self.max_pool_piece_m.is_nan() || self.max_pool_piece_m <= 0.0 {
+            return Err("max_pool_piece_m must be > 0".into());
         }
         if self.straight_len_m.is_none() {
             self.straight_len_m = Some(2.0 * self.pitch_m);
@@ -1426,9 +1445,81 @@ pub struct PoolAlignment {
     /// Whether the lattice line is in the joined line (set by [`optimise_pools`]; a pool that
     /// converged but kept its baseline is not used).
     pub used: bool,
-    /// Why the baseline was kept, when it was: the search did not converge, or the baseline is
-    /// cheaper and holds R_min.
+    /// Why the baseline was kept, when it was: the search hit its expansion limit, the search did
+    /// not converge, or the baseline is cheaper and holds R_min.
     pub kept_baseline_because: Option<&'static str>,
+    /// Set when this record is one piece of a pool longer than `max_pool_piece_m` (issue #559);
+    /// `start_m` and `end_m` are then the piece's.
+    pub piece: Option<PoolPiece>,
+}
+
+/// Where a piece sits in the pool it was cut from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PoolPiece {
+    /// 0-based, in chainage order.
+    pub index: usize,
+    pub count: usize,
+    pub pool_start_m: f64,
+    pub pool_end_m: f64,
+}
+
+/// Why a pool keeps its baseline when its search hit `max_expand`.
+pub const HIT_CAP_REASON: &str = "the search hit its expansion limit";
+
+/// The piece boundaries of the pool `start_m..end_m` on `baseline`, both ends included: just
+/// `[start_m, end_m]` when the pool is no longer than `max_piece_m`.
+///
+/// The rule: `n = ceil(length / max_piece_m)` pieces, as even as they can be; each inner boundary
+/// then moves up to [`PIECE_BOUNDARY_SLACK`] of the even piece length (in 10 m steps) to where the
+/// baseline turns least over `r_min_m` either side (the sum of the absolute heading changes over four
+/// steps of `r_min_m / 2`), the nearer to the even split on a tie. A boundary pins the line to the
+/// baseline's pose there, and a pose on a tight bend can force a turn tighter than R_min next to it;
+/// where the baseline is straight or gently curved, the pinned pose costs the line nothing.
+pub fn pool_pieces(
+    baseline: &[Pt],
+    start_m: f64,
+    end_m: f64,
+    max_piece_m: f64,
+    r_min_m: f64,
+) -> Vec<f64> {
+    let len = end_m - start_m;
+    if len.is_nan() || len <= max_piece_m {
+        return vec![start_m, end_m];
+    }
+    let n = (len / max_piece_m).ceil() as usize;
+    let nominal = len / n as f64;
+    let slack = PIECE_BOUNDARY_SLACK * nominal;
+    let blen = linear::length(baseline);
+    let turn = |s: f64| -> f64 {
+        let h = |c: f64| heading_at(baseline, c.clamp(0.0, blen), 20.0);
+        let mut total = 0.0;
+        let mut prev = h(s - r_min_m);
+        for j in -1..=2 {
+            let next = h(s + f64::from(j) * r_min_m / 2.0);
+            total +=
+                (py_mod(next - prev + core::f64::consts::PI, TAU) - core::f64::consts::PI).abs();
+            prev = next;
+        }
+        total
+    };
+    let steps = (slack / 10.0).floor() as i64;
+    let mut out = vec![start_m];
+    for k in 1..n {
+        let even = start_m + nominal * k as f64;
+        let mut best = (turn(even), even);
+        // Outward from the even split, so the nearer point wins a tie.
+        for i in 1..=steps {
+            for s in [even - 10.0 * i as f64, even + 10.0 * i as f64] {
+                let t = turn(s);
+                if t < best.0 - 1e-9 {
+                    best = (t, s);
+                }
+            }
+        }
+        out.push(best.1);
+    }
+    out.push(end_m);
+    out
 }
 
 fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpec) -> f64 {
@@ -1549,6 +1640,7 @@ pub fn optimise_pool(
         baseline_cost: segment_cost(&seg, &grid, grade, section),
         used: false,
         kept_baseline_because: None,
+        piece: None,
     })
 }
 
@@ -1590,10 +1682,21 @@ impl PoolsResult {
     pub fn failed_joins(&self) -> impl Iterator<Item = &PoolJoin> {
         self.joins.iter().filter(|j| !j.radius_ok)
     }
+
+    /// The pools (or pieces) whose search hit `max_expand` before it found a line, so they keep
+    /// their baseline unsearched.
+    pub fn capped_pools(&self) -> impl Iterator<Item = &PoolAlignment> {
+        self.pools
+            .iter()
+            .filter(|p| p.result.hit_cap && !p.result.converged)
+    }
 }
 
 /// Run [`optimise_pool`] on each `(start_m, end_m, water_level_m)` and splice the results into
-/// `baseline`. A pool keeps its baseline segment when the search does not converge, or
+/// `baseline`. A pool longer than `cfg.max_pool_piece_m` is searched as the consecutive pieces of
+/// [`pool_pieces`] at its water level, one record each (`piece`); a piece is a pool in all that
+/// follows. A pool keeps its baseline segment when the search does not converge (or hits
+/// `max_expand`: [`HIT_CAP_REASON`]), or
 /// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer and the
 /// baseline holds R_min (or the lattice line does not).
 ///
@@ -1628,7 +1731,21 @@ pub fn optimise_pools(
     // The miss (position, heading) of each used pool at its far end, by its end chainage.
     let mut misses: Vec<(f64, f64, f64)> = Vec::new();
     let mut cursor = 0.0;
+    let mut split: Vec<(f64, f64, f64, Option<PoolPiece>)> = Vec::new();
     for (a, b, wl) in sorted {
+        let bounds = pool_pieces(baseline, a, b, cfg.max_pool_piece_m, cfg.r_min_m);
+        let count = bounds.len() - 1;
+        for (index, w) in bounds.windows(2).enumerate() {
+            let piece = (count > 1).then_some(PoolPiece {
+                index,
+                count,
+                pool_start_m: a,
+                pool_end_m: b,
+            });
+            split.push((w[0], w[1], wl, piece));
+        }
+    }
+    for (a, b, wl, piece) in split {
         let pa = optimise_pool(
             baseline,
             terrain,
@@ -1648,7 +1765,9 @@ pub fn optimise_pools(
         // The baseline is kept when the search did not converge, or when it is cheaper and either
         // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
         // breaks R_min is never kept in place of a lattice line that holds it.
-        let (use_it, because) = if !converged {
+        let (use_it, because) = if !converged && pa.result.hit_cap {
+            (false, Some(HIT_CAP_REASON))
+        } else if !converged {
             (false, Some("the search did not converge"))
         } else if keep_if_dearer && dearer {
             let base_ok = line_of(linear::substring(baseline, a, b))
@@ -1669,6 +1788,7 @@ pub fn optimise_pools(
         let mut pa = pa;
         pa.used = use_it;
         pa.kept_baseline_because = because;
+        pa.piece = piece;
         if use_it {
             misses.push((b, pa.result.end_err_m, pa.result.end_heading_err_rad));
         }

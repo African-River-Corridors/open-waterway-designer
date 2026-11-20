@@ -24,6 +24,7 @@ const R_MIN: f64 = 340.0;
 const AMP: f64 = 250.0;
 const WAVE: f64 = 1600.0;
 const CORRIDOR_HALF_M: f64 = 300.0;
+const RIVER_HALF_M: f64 = 15.0;
 
 /// The sine, offset `off` metres to its left, every 10 m of x.
 fn sine(len: f64, off: f64) -> Vec<Pt> {
@@ -58,8 +59,8 @@ fn coarse(max_expand: i64, max_piece_m: f64) -> LatticeConfig {
 
 /// The lattice over the whole centreline of a river `len` m long in x, as one pool at one level.
 fn run(len: f64, lat: &LatticeConfig) -> (Vec<Pt>, PoolsResult) {
-    let mut ring = sine(len, 40.0);
-    let mut right = sine(len, -40.0);
+    let mut ring = sine(len, RIVER_HALF_M);
+    let mut right = sine(len, -RIVER_HALF_M);
     right.reverse();
     ring.extend(right);
     ring.push(ring[0]);
@@ -74,10 +75,10 @@ fn run(len: f64, lat: &LatticeConfig) -> (Vec<Pt>, PoolsResult) {
         xs.iter()
             .zip(ys)
             .map(|(&x, &y)| {
-                if dist_to_centre([x, y], &c2) <= 45.0 {
+                if dist_to_centre([x, y], &c2) <= RIVER_HALF_M + 5.0 {
                     -12.0
                 } else {
-                    3.0
+                    3.0 + 1.5 * libm::sin(x / 130.0) * libm::sin(y / 170.0)
                 }
             })
             .collect()
@@ -131,11 +132,13 @@ fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
     assert_eq!(whole.pools.len(), 1);
     let p = &whole.pools[0];
     println!(
-        "whole pool {:.0} m: converged {}, hit_cap {}, expansions {}",
+        "whole pool {:.0} m: converged {}, hit_cap {}, expansions {}, c_min {:?}, cost {}",
         p.end_m - p.start_m,
         p.result.converged,
         p.result.hit_cap,
-        p.result.expansions
+        p.result.expansions,
+        p.result.c_min_per_m,
+        p.result.cost
     );
     assert!(p.result.hit_cap && !p.result.converged && p.result.line.is_none());
     assert!(!p.used && p.piece.is_none());
@@ -151,7 +154,10 @@ fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
     let n = r.pools.len();
     assert!(n >= 2, "the pool is split ({n} pieces)");
     for (i, p) in r.pools.iter().enumerate() {
-        let piece = p.piece.as_ref().expect("each record is a piece of the pool");
+        let piece = p
+            .piece
+            .as_ref()
+            .expect("each record is a piece of the pool");
         assert_eq!((piece.index, piece.count), (i, n));
         assert!(piece.pool_start_m.abs() < 1e-9 && (piece.pool_end_m - total).abs() < 1e-9);
         assert!(
@@ -163,23 +169,42 @@ fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
             "piece {i}: {:.0}-{:.0} m, expansions {}, converged {}",
             p.start_m, p.end_m, p.result.expansions, p.result.converged
         );
-        assert!(!p.result.hit_cap && p.result.converged, "piece {i} converges");
-        assert!(p.used && p.result.goal_closed, "piece {i} is used and closed");
+        assert!(
+            !p.result.hit_cap && p.result.converged,
+            "piece {i} converges"
+        );
+        assert!(
+            p.used && p.result.goal_closed,
+            "piece {i} is used and closed"
+        );
         assert_eq!(p.water_level_m, 0.0);
     }
     for w in r.pools.windows(2) {
-        assert!((w[0].end_m - w[1].start_m).abs() < 1e-9, "pieces are consecutive");
+        assert!(
+            (w[0].end_m - w[1].start_m).abs() < 1e-9,
+            "pieces are consecutive"
+        );
     }
     assert_eq!(r.capped_pools().count(), 0);
     // Every piece join is reported and holds R_min, read on the result and on the line.
     assert_eq!(r.joins.len(), n - 1);
     for (j, (rec, w)) in r.joins.iter().zip(r.pools.windows(2)).enumerate() {
-        assert!((rec.at_m - w[0].end_m).abs() < 1e-9, "join {j} is at the piece boundary");
+        assert!(
+            (rec.at_m - w[0].end_m).abs() < 1e-9,
+            "join {j} is at the piece boundary"
+        );
         assert!(rec.position_gap_m < 1e-6 && rec.heading_gap_rad < 1e-9);
-        assert!(rec.radius_ok, "join {j} reads {}", rec.measured_min_radius_m);
+        assert!(
+            rec.radius_ok,
+            "join {j} reads {}",
+            rec.measured_min_radius_m
+        );
         let at = linear::interpolate(&centre, rec.at_m).unwrap();
         let rj = radius_near(&r.line, linear::project(&r.line, at));
-        assert!(radius_ok(rj, R_MIN), "join {j}: {rj:.1} m against {R_MIN} m");
+        assert!(
+            radius_ok(rj, R_MIN),
+            "join {j}: {rj:.1} m against {R_MIN} m"
+        );
     }
     assert!(
         r.radius_ok,
@@ -214,7 +239,7 @@ fn a_long_pool_is_searched_in_pieces_that_join_at_r_min() {
 /// default length.
 #[test]
 fn a_31_km_pool_is_searched_in_pieces_of_the_default_length() {
-    long_pool_case(25_600.0, 150_000, DEFAULT_MAX_POOL_PIECE_M);
+    long_pool_case(25_600.0, 300_000, DEFAULT_MAX_POOL_PIECE_M);
 }
 
 /// A pool that hits the cap is reported: the record says so, and it is not used.
@@ -279,5 +304,8 @@ fn a_piece_boundary_moves_off_a_tight_bend() {
         b[1]
     );
     // A pool no longer than the piece length is one piece.
-    assert_eq!(pool_pieces(&line, 100.0, 4100.0, 4000.0, R_MIN), vec![100.0, 4100.0]);
+    assert_eq!(
+        pool_pieces(&line, 100.0, 4100.0, 4000.0, R_MIN),
+        vec![100.0, 4100.0]
+    );
 }
