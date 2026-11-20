@@ -45,10 +45,11 @@ fn with_fresh_lattice() -> Session {
     for p in lattice["line"]["coordinates"].as_array_mut().unwrap() {
         p[1] = json!(p[1].as_f64().unwrap() + 5.0);
     }
+    let engine = doc["engine_version"].clone();
     let op = &mut doc["stages"]["optimise"];
     op["settings"] = json!({});
     op["results"] = json!({"design_line": lattice});
-    op["engine_version"] = doc["engine_version"].clone();
+    op["engine_version"] = engine;
     op["depends_on"] = json!("0".repeat(64));
     let s = Session::open(&doc.to_string()).unwrap();
     doc["stages"]["optimise"]["depends_on"] = json!(s.stage_hash(Stage::Optimise));

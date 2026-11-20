@@ -64,7 +64,9 @@ pub struct Played {
 /// The failed checks of the option of `method` in `doc`, as an entry for the report, if any.
 fn failed_entry(doc: &Value, step: usize, method: &str) -> Option<Value> {
     let name = AlignMethod::from_name(method)?.name();
-    let lines = owd_format::design::design_lines_of(doc);
+    let lines = owd_format::design::Session::open(&doc.to_string())
+        .ok()?
+        .design_lines();
     let option = lines.iter().find(|o| o["method"] == name)?;
     let checks = owd_format::design::export::failed_checks(option);
     (!checks.is_empty()).then(|| json!({"step": step, "method": name, "checks": checks}))

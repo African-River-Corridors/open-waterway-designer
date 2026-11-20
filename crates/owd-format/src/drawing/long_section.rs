@@ -502,7 +502,7 @@ pub(super) fn build(
 ) -> Result<Vec<Sheet>, DrawError> {
     let p = &options.style.long_section();
     let doc = session.document();
-    let lines = crate::design::design_lines_of(doc);
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == option_id)

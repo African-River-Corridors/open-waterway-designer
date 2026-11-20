@@ -6,9 +6,7 @@
 //! Label: property
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{
-    AlignMethod, Session, Stage, StageStatus, design_lines_of, volume_rows_of,
-};
+use owd_format::design::{AlignMethod, Session, Stage, StageStatus, volume_rows_of};
 use owd_format::geotiff;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -51,17 +49,18 @@ fn an_older_file_opens_with_one_design_line_and_its_later_stages_stale() {
     );
     let refined = &d["stages"]["optimise"]["results"]["design_line"];
     assert_eq!(refined["line"], option(&before, "lattice")["line"]);
-    // The later stages read the refined line, and the volumes keep its row.
-    assert_eq!(design_lines_of(d).len(), 1);
-    assert_eq!(design_lines_of(d)[0]["id"], "lattice");
+    // The optimise stage is stale after the move, so the later stages read the alignment's line
+    // (QA item 2), and the volumes keep that line's row.
+    assert_eq!(s.design_lines().len(), 1);
+    assert_eq!(s.design_lines()[0]["id"], "rolling-circle");
     let rows = volume_rows_of(d);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0]["id"], "lattice");
+    assert_eq!(rows[0]["id"], "rolling-circle");
     let old_row = before["stages"]["volumes"]["results"]["options"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|r| r["id"] == "lattice")
+        .find(|r| r["id"] == "rolling-circle")
         .unwrap();
     assert_eq!(
         &rows[0], old_row,

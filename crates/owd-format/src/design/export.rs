@@ -96,7 +96,7 @@ impl Session {
     }
 
     pub(super) fn options_list(&self) -> Vec<Value> {
-        super::design_line::design_lines_of(&self.doc)
+        self.design_lines()
     }
 
     /// The quantity table: one comment line with the screening label, a header, then one row per

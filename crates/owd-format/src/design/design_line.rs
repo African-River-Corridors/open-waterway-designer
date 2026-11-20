@@ -240,9 +240,10 @@ impl DesignLine {
     }
 }
 
-/// The design line the later stages read, in the shape the readers of an option use (see
-/// [`DesignLine::to_view`]): the pool lattice's line when the optimise stage has made one, else the
-/// alignment's. At most one; empty when the alignment has not run.
+/// The design line a document holds, read from the document alone (see [`DesignLine::to_view`]):
+/// the pool lattice's line when the optimise stage has made one, else the alignment's. It cannot
+/// tell whether the optimise stage is stale: the stages, the outputs and the surfaces read
+/// [`Session::design_lines`](super::session::Session::design_lines), which can.
 pub fn design_lines_of(doc: &Value) -> Vec<Value> {
     final_line_of(doc)
         .map(|l| l.to_view())
@@ -269,6 +270,38 @@ pub fn alignment_line_of(doc: &Value) -> Option<DesignLine> {
     line.is_object()
         .then(|| serde_json::from_value(line.clone()).ok())
         .flatten()
+}
+
+impl super::session::Session {
+    /// The design line the later stages read: the pool lattice's refined line while the optimise
+    /// stage is fresh, else the alignment's own (QA on PR 558: a stale lattice line is never read).
+    /// `None` before the alignment has run.
+    pub fn final_line(&self) -> Option<DesignLine> {
+        use super::session::{Stage, StageStatus};
+        let refined = &self.doc["stages"]["optimise"]["results"]["design_line"];
+        if refined.is_object() && self.stage_status(Stage::Optimise) == StageStatus::Fresh {
+            return serde_json::from_value(refined.clone()).ok();
+        }
+        alignment_line_of(&self.doc)
+    }
+
+    /// [`Session::final_line`] in the shape the readers of an option use: at most one.
+    pub fn design_lines(&self) -> Vec<Value> {
+        self.final_line().map(|l| l.to_view()).into_iter().collect()
+    }
+
+    /// Why the pool lattice's line is not the design line now, when the optimise stage holds one
+    /// but is stale. `owd status` prints it.
+    pub fn stale_refined_line_note(&self) -> Option<String> {
+        use super::session::{Stage, StageStatus};
+        let refined = &self.doc["stages"]["optimise"]["results"]["design_line"];
+        (refined.is_object() && self.stage_status(Stage::Optimise) == StageStatus::Stale).then(|| {
+            "the pool lattice's line is stale (the alignment, the inputs or the settings changed \
+             since `owd optimise` ran): the later stages read the alignment's line until \
+             `owd optimise` (or `owd run`) runs again"
+                .to_string()
+        })
+    }
 }
 
 /// The volumes of the design line, as rows the readers of the volumes results use: at most one.

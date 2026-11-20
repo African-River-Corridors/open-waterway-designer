@@ -77,7 +77,7 @@ pub fn schedule(ctx: &Context) -> (Vec<Value>, Vec<Value>) {
 }
 
 fn options(ctx: &Context) -> Vec<Value> {
-    let options = owd_format::design::design_lines_of(ctx.doc);
+    let options = ctx.session.design_lines();
     if options.is_empty() {
         return vec![
             json!({"type": "section", "id": "no-options", "title": "Quantities", "body": [

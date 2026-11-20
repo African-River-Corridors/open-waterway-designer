@@ -1207,7 +1207,7 @@ pub fn optimise(
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
     let res = session.document()["stages"]["optimise"]["results"].clone();
-    let lines = owd_format::design::design_lines_of(session.document());
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["method"] == "lattice")
@@ -1914,7 +1914,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
         }
     }
     if remade {
-        for o in owd_format::design::design_lines_of(session.document()).iter() {
+        for o in session.design_lines().iter() {
             let failed = failed_checks(o);
             let name = o["name"].as_str().unwrap_or("?");
             print_sanity(name, o);
@@ -1984,8 +1984,14 @@ pub fn status(doc: &str, json_mode: bool) -> Result {
     if !stale.is_empty() {
         human.push(format!("stale: {}", stale.join(", ")));
     }
+    // A stale pool lattice's line is not the design line (QA on PR 558): say which line is read.
+    let line_note = session.stale_refined_line_note();
+    if let Some(n) = &line_note {
+        human.push(format!("note: {n}"));
+    }
     // The design line's failed checks (spec 0002, spec 0005), and the water-aware note.
-    let options: Vec<Value> = owd_format::design::design_lines_of(session.document())
+    let options: Vec<Value> = session
+        .design_lines()
         .iter()
         .map(|o| {
             let failed = failed_checks(o);
@@ -2020,6 +2026,7 @@ pub fn status(doc: &str, json_mode: bool) -> Result {
         "stages": Value::Object(stages),
         "stale": stale,
         "design_line": options.first(),
+        "notes": line_note.into_iter().collect::<Vec<_>>(),
         "warnings": session.dem_warning(bytes.as_deref()).into_iter().collect::<Vec<_>>(),
     });
     if fits != StageStatus::NotRun {

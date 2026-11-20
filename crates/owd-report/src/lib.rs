@@ -312,7 +312,7 @@ impl<'a> Context<'a> {
         asked: Option<&str>,
     ) -> Result<Context<'a>, ReportError> {
         let doc = session.document();
-        let list = owd_format::design::design_lines_of(doc);
+        let list = session.design_lines();
         let option = match asked {
             None => list.first().cloned(),
             Some(a) => Some(

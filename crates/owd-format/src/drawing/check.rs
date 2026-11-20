@@ -514,7 +514,7 @@ pub fn plan(
     use crate::design::geojson::all_positions;
     use owd_core::geom::linear;
     let mut out = Vec::new();
-    let lines = crate::design::design_lines_of(session.document());
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == option_id)

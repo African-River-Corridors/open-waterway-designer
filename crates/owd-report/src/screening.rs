@@ -615,7 +615,9 @@ fn design_basis(ctx: &Context) -> Value {
 
 fn quantities(ctx: &Context) -> Value {
     let d = ctx.doc;
-    let rows: Vec<Vec<String>> = owd_format::design::design_lines_of(d)
+    let rows: Vec<Vec<String>> = ctx
+        .session
+        .design_lines()
         .iter()
         .map(|o| {
             let v = owd_format::design::volume_rows_of(d)

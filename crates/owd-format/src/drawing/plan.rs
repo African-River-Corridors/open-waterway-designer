@@ -900,7 +900,7 @@ pub(super) fn build(
     let p = options.style.plan();
     let gp: GalleryParams = options.style.gallery();
     let doc = session.document();
-    let lines = crate::design::design_lines_of(doc);
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == option_id)

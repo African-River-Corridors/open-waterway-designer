@@ -17,7 +17,7 @@ pub fn design_line(
         .map_err(from_design)?;
     let dest = destination(doc, output);
     write(&dest, &session.to_text())?;
-    let lines = owd_format::design::design_lines_of(session.document());
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == id.as_str())

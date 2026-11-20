@@ -83,7 +83,7 @@ fn bearing_at(line: &[Pt], chain: &[f64], s: f64) -> f64 {
 /// Read the table's rows from a design line option.
 pub fn table(session: &Session, option_id: &str, spacing_m: f64) -> Result<Table, DrawError> {
     let doc = session.document();
-    let lines = crate::design::design_lines_of(doc);
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == option_id)
@@ -450,7 +450,7 @@ pub(super) fn build(
         .max(bend_rows.len().div_ceil(cap))
         .max(1);
     let title = doc["project"]["title"].as_str().unwrap_or("DESIGN");
-    let lines = crate::design::design_lines_of(doc);
+    let lines = session.design_lines();
     let option_name = lines
         .iter()
         .find(|o| o["id"] == option_id)

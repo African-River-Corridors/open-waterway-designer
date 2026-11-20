@@ -251,10 +251,7 @@ impl Session {
                 "the DEM `{dem_path}` is missing: the volumes stage cannot run without it"
             ))
         })?;
-        let Some(o) = super::design_line::design_lines_of(&self.doc)
-            .into_iter()
-            .next()
-        else {
+        let Some(o) = self.design_lines().into_iter().next() else {
             return Err(DesignError::Input(
                 "there is no design line: run the alignment stage first".into(),
             ));

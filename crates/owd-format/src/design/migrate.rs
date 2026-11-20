@@ -97,12 +97,9 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
         mark_stale(&mut doc["stages"]["optimise"]);
     }
 
-    // The volumes: the row of the line the later stages now read.
-    let reads = if doc["stages"]["optimise"]["results"]["design_line"].is_object() {
-        lattice
-    } else {
-        chosen
-    };
+    // The volumes: the row of the alignment's line. The optimise stage is stale after the move, so
+    // its lattice line is not the line the later stages read until it runs again.
+    let reads = chosen;
     let vo = &mut doc["stages"]["volumes"];
     if vo["results"].is_object() {
         let row = vo["results"]["options"].as_array().and_then(|rows| {
@@ -131,7 +128,8 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
     }
     if let Some(l) = lattice {
         notes.push(format!(
-            "the pool lattice's line `{}` is the line the volumes read",
+            "the pool lattice's line `{}` is kept in the optimise stage; it is the design line again \
+             once `owd optimise` (or `owd run`) has run",
             l["id"].as_str().unwrap_or("lattice")
         ));
     }

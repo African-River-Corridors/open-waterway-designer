@@ -292,7 +292,7 @@ pub(super) fn worst_chainages(session: &Session, option_id: &str) -> Vec<f64> {
 
 /// The id of the option asked for: by id or by name, or the first option.
 fn resolve_option(session: &Session, asked: Option<&str>) -> Result<String, DrawError> {
-    let list = crate::design::design_lines_of(session.document());
+    let list = session.design_lines();
     let found = match asked {
         None => list.first(),
         Some(a) => list.iter().find(|o| o["id"] == a || o["name"] == a),

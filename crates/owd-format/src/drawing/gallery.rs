@@ -609,7 +609,7 @@ pub(super) fn build(
     let params = options.style.gallery();
     let p = &params;
     let doc = session.document();
-    let lines = crate::design::design_lines_of(doc);
+    let lines = session.design_lines();
     let option = lines
         .iter()
         .find(|o| o["id"] == option_id)

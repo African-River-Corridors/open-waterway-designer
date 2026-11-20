@@ -242,7 +242,7 @@ impl Session {
         let trace = match option {
             None => selection.check(&vessel, &sized),
             Some(id) => {
-                let lines = crate::design::design_lines_of(&self.doc);
+                let lines = self.design_lines();
                 let o = lines
                     .iter()
                     .find(|o| o["id"] == id)

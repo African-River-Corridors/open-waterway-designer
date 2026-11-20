@@ -33,7 +33,7 @@ impl Session {
                 ));
             }
         }
-        let lines = crate::design::design_lines_of(&self.doc);
+        let lines = self.design_lines();
         let option = lines
             .iter()
             .find(|o| o["id"] == option_id)

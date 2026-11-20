@@ -117,7 +117,8 @@ impl Session {
     /// id and line of every option, and the settings.
     fn plan_cut_dependency_hash(&self) -> String {
         let inp = &self.doc["inputs"];
-        let options: Vec<Value> = super::design_line::design_lines_of(&self.doc)
+        let options: Vec<Value> = self
+            .design_lines()
             .iter()
             .map(|o| json!({"id": o["id"], "line": o["line"]}))
             .collect();
@@ -188,7 +189,7 @@ impl Session {
                 )));
             }
         }
-        let options: Vec<Value> = super::design_line::design_lines_of(&self.doc);
+        let options: Vec<Value> = self.design_lines();
         if options.is_empty() {
             return Err(DesignError::Input(
                 "there is no design line: run the alignment stage first".into(),
