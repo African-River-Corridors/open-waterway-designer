@@ -555,3 +555,162 @@ fn the_constraints_input_has_a_schema_and_a_document_without_one_has_none() {
     assert!(c.is_empty());
     assert_eq!(serde_json::to_value(&c).unwrap(), json!({}));
 }
+
+// --- the multiplier read from a real raster file ------------------------------------------------
+
+/// A raster file in the project CRS over x -100..(-100 + 10 width), y -300..300, 10 m cells, each
+/// cell `f(x, y)` at its centre, with `nodata` as its no-data value.
+fn grid_raster(width: usize, f: &dyn Fn(f64, f64) -> f64, nodata: Option<f64>) -> Vec<u8> {
+    let height = 60;
+    let mut data = Vec::with_capacity(width * height);
+    for r in 0..height {
+        for c in 0..width {
+            data.push(f(
+                -100.0 + 10.0 * (c as f64 + 0.5),
+                300.0 - 10.0 * (r as f64 + 0.5),
+            ));
+        }
+    }
+    let d = Dem {
+        width,
+        height,
+        data,
+        geotransform: [10.0, 0.0, -100.0, 0.0, -10.0, 300.0],
+        nodata,
+        epsg: Some(32630),
+    };
+    write_geotiff(&d).unwrap()
+}
+
+/// The weighted dredge area over the plain one at each station, from the multiplier in `bytes`.
+fn station_factors(bytes: &[u8]) -> Vec<(f64, f64)> {
+    let input = volumes_input();
+    let plain = volumes_stage(&input, &flat).unwrap();
+    let raster = constraints::read_multiplier(bytes, Some(32630)).unwrap();
+    let m = constraints::multiplier_sampler(&raster, Some(32630)).unwrap();
+    let w = volumes_stage_with(&input, &flat, Some(&m)).unwrap();
+    plain
+        .stations
+        .iter()
+        .zip(&w.stations)
+        .map(|(p, s)| {
+            assert_eq!(s.dredge_area_m2, p.dredge_area_m2, "plain does not move");
+            (
+                s.chainage_m,
+                s.weighted_dredge_area_m2.unwrap() / p.dredge_area_m2,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_no_data_cell_of_a_real_raster_file_multiplies_by_one() {
+    // ×3 from x 1000 m on; before it, the file's own no-data value.
+    let bytes = grid_raster(
+        230,
+        &|x, _| if x >= 1000.0 { 3.0 } else { -9999.0 },
+        Some(-9999.0),
+    );
+    let f = station_factors(&bytes);
+    assert!(f.iter().any(|&(c, _)| c < 1000.0) && f.iter().any(|&(c, _)| c >= 1000.0));
+    for (c, k) in f {
+        let want = if c >= 1000.0 { 3.0 } else { 1.0 };
+        assert!(close(k, want), "at {c} m: ×{k}, not ×{want}");
+    }
+}
+
+#[test]
+fn a_point_off_the_raster_multiplies_by_one() {
+    // ×2 on a raster that ends at x 1000 m: beyond it, the line is off the raster.
+    let bytes = grid_raster(110, &|_, _| 2.0, None);
+    let f = station_factors(&bytes);
+    for (c, k) in f {
+        let want = if c < 1000.0 { 2.0 } else { 1.0 };
+        assert!(close(k, want), "at {c} m: ×{k}, not ×{want}");
+    }
+}
+
+#[test]
+fn a_patch_that_varies_across_the_section_is_read_sample_by_sample() {
+    let input = volumes_input();
+    let plain = volumes_stage(&input, &flat).unwrap();
+    // ×3 left of the line, ×1 right of it, ×2 on it: the section is symmetric, so the weighted cut
+    // is twice the plain cut, sample by sample.
+    let sides = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
+        xs.iter()
+            .zip(ys)
+            .map(|(_, &y)| 2.0 + y.signum() * f64::from(u8::from(y != 0.0)))
+            .collect()
+    };
+    let w = volumes_stage_with(&input, &flat, Some(&sides)).unwrap();
+    // ×2 on the left only (no data, 1, on the right): more than the plain cut, less than twice it.
+    let left = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
+        xs.iter()
+            .zip(ys)
+            .map(|(_, &y)| if y > 0.0 { 2.0 } else { f64::NAN })
+            .collect()
+    };
+    let l = volumes_stage_with(&input, &flat, Some(&left)).unwrap();
+    for ((p, s), h) in plain.stations.iter().zip(&w.stations).zip(&l.stations) {
+        let a = p.dredge_area_m2;
+        assert!(a > 0.0);
+        assert!(
+            (s.weighted_dredge_area_m2.unwrap() - 2.0 * a).abs() <= 1e-9 * a,
+            "at {}: {} vs {}",
+            p.chainage_m,
+            s.weighted_dredge_area_m2.unwrap(),
+            2.0 * a
+        );
+        let k = h.weighted_dredge_area_m2.unwrap() / a;
+        assert!(k > 1.2 && k < 1.8, "at {}: ×{k}", p.chainage_m);
+    }
+}
+
+#[test]
+fn moving_the_multiplier_raster_file_leaves_the_stages_fresh() {
+    let (_, mut s) = example();
+    let ones = raster(&|_, _| 1.0, 32630);
+    let set = |s: &mut Session, path: &str| {
+        s.set_constraints(ConstraintsEdit {
+            no_go: None,
+            multiplier: Some(Some(MultiplierFile { path, bytes: &ones })),
+        })
+        .unwrap();
+    };
+    set(&mut s, "ones.tif");
+    let d = dem();
+    let t = dem_terrain(&d);
+    s.run_stage_with(Stage::Alignment, None).unwrap();
+    s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Fresh);
+    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh);
+    // The same file, moved to another folder: the record's path changes, its hash does not.
+    set(&mut s, "rasters/ones.tif");
+    assert_eq!(s.multiplier_path(), Some("rasters/ones.tif"));
+    assert_eq!(s.stage_status(Stage::Alignment), StageStatus::Fresh);
+    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh);
+    // Opened again and attached from its new place, the stages are still fresh.
+    let mut back = Session::open(&s.to_text()).unwrap();
+    back.attach_multiplier(&ones).unwrap();
+    assert_eq!(back.stage_status(Stage::Alignment), StageStatus::Fresh);
+    assert_eq!(back.stage_status(Stage::Volumes), StageStatus::Fresh);
+}
+
+#[test]
+fn a_document_with_no_constraints_designs_its_line_again_byte_for_byte() {
+    // The alignment run again on a document with no constraints stores the line it stored: no
+    // `no_go_clear` check is written, and nothing else moves.
+    let (text, mut s) = example();
+    s.run_stage_with(Stage::Alignment, None).unwrap();
+    let before: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        s.document()["stages"]["alignment"],
+        before["stages"]["alignment"]
+    );
+    assert!(
+        s.document()["stages"]["alignment"]["results"]["checks"]
+            .get("no_go_clear")
+            .is_none()
+    );
+}
