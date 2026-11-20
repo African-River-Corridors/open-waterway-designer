@@ -333,20 +333,40 @@
     );
   });
 
-  // The cross-section at the station, latest request wins.
+  // The cross-section at the station. It is asked for when the slider settles, not at every step
+  // of its travel: one section can take a while (a station with no stored profile is cut again on
+  // the DEM). The panel says it is working meanwhile, and a refusal says why. Latest request wins.
+  const CROSS_SETTLE_MS = 200;
   let crossRequest = 0;
+  let crossBusy = $state(false);
+  let crossNote = $state<string | null>(null);
   $effect(() => {
     const id = selectedId;
     const at = station;
     void longSection;
-    if (!id || at == null || !longSection) return;
+    if (!id || at == null || !longSection) {
+      crossBusy = false;
+      return;
+    }
     const mine = ++crossRequest;
-    api.crossSection(id, at).then(
-      (cs) => {
-        if (mine === crossRequest) crossSection = cs;
-      },
-      () => {},
-    );
+    crossBusy = true;
+    const settle = setTimeout(() => {
+      api.crossSection(id, at).then(
+        (cs) => {
+          if (mine !== crossRequest) return;
+          crossSection = cs;
+          crossNote = null;
+          crossBusy = false;
+        },
+        (e) => {
+          if (mine !== crossRequest) return;
+          crossSection = null;
+          crossNote = String(e).replace(/^Error:\s*/, "");
+          crossBusy = false;
+        },
+      );
+    }, CROSS_SETTLE_MS);
+    return () => clearTimeout(settle);
   });
 
   /** The slider moves between the stations the session drew. */
@@ -559,7 +579,7 @@
               oninput={(e) => slide(Number(e.currentTarget.value))}
             />
           </label>
-          <div class="csbody"><CrossSection section={crossSection} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} /></div>
+          <div class="csbody"><CrossSection section={crossSection} busy={crossBusy} note={crossNote} colour={selectedId ? colourOf(selectedId) : "var(--ink)"} /></div>
         </div>
       </div>
     </section>

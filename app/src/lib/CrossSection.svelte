@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { CrossSection } from "./api";
 
-  let { section, colour }: { section: CrossSection | null; colour: string } = $props();
+  // `busy`: a section is being fetched. `note`: why the last one was refused.
+  let { section, colour, busy = false, note = null }: { section: CrossSection | null; colour: string; busy?: boolean; note?: string | null } = $props();
 
   const W = 360;
   const H = 220;
@@ -46,8 +47,13 @@
   const km = (m: number) => `${Math.floor(m / 1000)}+${String(Math.round(m % 1000)).padStart(3, "0")}`;
 </script>
 
-<div class="cross" data-testid="cross-section" data-chainage={section?.chainage_m ?? ""}>
-  {#if section && view}
+<div class="cross" data-testid="cross-section" data-chainage={section?.chainage_m ?? ""} aria-busy={busy}>
+  {#if busy}
+    <p class="status" role="status" data-testid="cross-busy">Working: drawing the section…</p>
+  {/if}
+  {#if note && !busy}
+    <p class="refusal" role="alert" data-testid="cross-refusal">{note}</p>
+  {:else if section && view}
     <svg viewBox="0 0 {W} {H}" role="img" aria-label="Cross-section at chainage {km(section.chainage_m)}" data-testid="cross-section-svg">
       {#each view.yticks as t}
         <line x1={PAD.l} x2={W - PAD.r} y1={view.y(t)} y2={view.y(t)} class="grid" />
@@ -77,13 +83,13 @@
       <dt>Dry cut</dt><dd>{section.excav_area_m2.toFixed(0)} m²</dd>
       <dt>Face</dt><dd>{section.max_face_h_m.toFixed(1)} m</dd>
     </dl>
-  {:else}
+  {:else if !busy}
     <p class="slot" data-testid="no-cross-section">Run volumes to see the cross-section.</p>
   {/if}
 </div>
 
 <style>
-  .cross { display: flex; gap: var(--sp-2); align-items: flex-start; height: 100%; padding: var(--sp-1); overflow: auto; background: var(--surface); }
+  .cross { position: relative; display: flex; gap: var(--sp-2); align-items: flex-start; height: 100%; padding: var(--sp-1); overflow: auto; background: var(--surface); }
   svg { flex: 1 1 auto; min-width: 200px; max-height: 100%; font-family: var(--font-ui); }
   .grid { stroke: var(--rule); stroke-width: 1; }
   .tick { font-size: 9px; fill: var(--ink-3); }
@@ -97,4 +103,6 @@
   dt { color: var(--ink-3); }
   dd { margin: 0; text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .slot { color: var(--ink-3); font-style: italic; margin: var(--sp-2); }
+  .status { position: absolute; top: var(--sp-1); left: var(--sp-1); margin: 0; padding: 2px var(--sp-1); font-size: var(--fs-11); color: var(--ink-3); background: var(--surface); }
+  .refusal { margin: var(--sp-2); color: var(--warn); max-width: 60ch; }
 </style>

@@ -989,6 +989,50 @@ describe("OWD web smoke tests", () => {
     }
   });
 
+  it("moves the cross section with the station slider: asked once it settles, working meanwhile, a refusal said", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the first cross section", async () => (await exists(b, "cs-chainage")), 120000);
+    const first = await text(b, "cs-chainage");
+    // Count the cross sections asked for, and slow each one down so the panel's working state shows.
+    await b.execute(() => {
+      const p = window.__owdPlatform;
+      const call = p.call.bind(p);
+      window.__crossAsked = 0;
+      window.__crossRefuse = null;
+      p.call = (command, args) => {
+        if (command !== "cross_section") return call(command, args);
+        window.__crossAsked += 1;
+        if (window.__crossRefuse) return Promise.reject(window.__crossRefuse);
+        return new Promise((r) => setTimeout(r, 800)).then(() => call(command, args));
+      };
+    });
+    // Drag the slider through several stations in one go: one request, when it settles.
+    const slide = (to) =>
+      b.execute((to) => {
+        const el = document.querySelector("[data-testid=station-slider]");
+        for (let v = Number(el.value) + 1; v <= to; v++) {
+          el.value = String(v);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }, to);
+    await slide(30);
+    await until(b, "the working state", async () => await exists(b, "cross-busy"), 5000);
+    await until(b, "the section to move", async () => !(await exists(b, "cross-busy")) && (await exists(b, "cs-chainage")) && (await text(b, "cs-chainage")) !== first);
+    assert.equal(await b.execute(() => window.__crossAsked), 1, "one request for the whole slide");
+    assert.notEqual(await text(b, "cs-chainage"), first);
+    // The engine refuses: the panel says why, instead of keeping the old section in silence.
+    await b.execute(() => {
+      window.__crossRefuse = "the volumes stage keeps the section profile only at the stations a cross-section sheet draws by default: a section at another station needs the DEM (the elevation model) to cut it: load the DEM";
+    });
+    await slide(35);
+    await until(b, "the refusal", async () => (await exists(b, "cross-refusal")) && /load the DEM/.test(await text(b, "cross-refusal")));
+    assert.equal(await exists(b, "cs-chainage"), false, "no section drawn under a refusal");
+    assert.equal(await exists(b, "cross-busy"), false);
+  });
+
   it("still loads when browser storage is blocked", async () => {
     // Blocking cookies and site data makes `localStorage` throw.
     const b = await start({ prefs: { "profile.default_content_setting_values.cookies": 2 } });

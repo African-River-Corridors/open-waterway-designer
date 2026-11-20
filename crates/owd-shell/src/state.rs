@@ -1740,9 +1740,10 @@ mod tests {
         );
         // The app reads the volumes stage's stored stations, through the drawings' door: nothing
         // is walked again (spec 0017 ticket 10).
-        use owd_format::design::sections::{StationSource, WALKED_FOR_PROFILE};
+        use owd_format::design::sections::{COMPUTED_FOR_PROFILE, StationSource};
         assert_eq!(first.walk.source, StationSource::Stored);
-        // A station with no stored profile is walked for, never drawn from a neighbour.
+        // A station with no stored profile has its one section cut again, never drawn from a
+        // neighbour.
         let n = first.walk.walk.stations.len();
         // The example's line is long enough that most stations keep no profile: one must exist,
         // or this check proves nothing (QA on PR 568, finding 3).
@@ -1759,8 +1760,8 @@ mod tests {
                 .unwrap();
             assert_eq!(
                 again.walk.source,
-                StationSource::Walked {
-                    reason: WALKED_FOR_PROFILE
+                StationSource::Computed {
+                    reason: COMPUTED_FOR_PROFILE
                 }
             );
             assert!(again.session.cross_section(&again.walk, at).is_ok());
