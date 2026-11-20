@@ -255,6 +255,35 @@
             "target_level": { "enum": ["concept", "pre_feasibility", "feasibility"] }
           }
         },
+        "rates": {
+          "description": "Spec 0017 ticket 12: the rates table (`schema/stages/inputs.rates.1.schema.json`): one rate per item, each an amount and a currency, all in one currency: dredge and dry cut per m³, disposal per m³ of all cut, haul per m³ per km. `haul_km` is the run's haul distance; `haul_by_reach` gives stretches of design-line chainage their own. A rate left out is refused when the cost is worked out, never read as zero. Absent: no cost.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dredge_per_m3": { "$ref": "#/$defs/money" },
+            "dry_cut_per_m3": { "$ref": "#/$defs/money" },
+            "disposal_per_m3": { "$ref": "#/$defs/money" },
+            "haul_per_m3_km": { "$ref": "#/$defs/money" },
+            "haul_km": { "type": "number", "minimum": 0 },
+            "haul_by_reach": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["reach", "km"],
+                "additionalProperties": false,
+                "properties": {
+                  "reach": {
+                    "type": "object",
+                    "required": ["from", "to"],
+                    "additionalProperties": false,
+                    "properties": { "from": { "type": "number" }, "to": { "type": "number" } }
+                  },
+                  "km": { "type": "number", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
@@ -391,6 +420,15 @@
     }
   },
   "$defs": {
+    "money": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+      }
+    },
     "design_measure": {
       "description": "Spec 0017: one quantity of the whole design.",
       "enum": ["cost", "total_cut", "dredge", "dry_cut", "land_take", "line_length", "structure_count", "capacity"]

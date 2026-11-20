@@ -801,6 +801,19 @@ enum Command {
         #[command(subcommand)]
         action: WaterwaySub,
     },
+    /// The cost of the design (spec 0017): the rates times the volumes stage's stored volumes, by
+    /// reach and in total, in the rates table's currency. `--rates FILE` stores a rates table first
+    /// (JSON: `dredge_per_m3`, `dry_cut_per_m3`, `disposal_per_m3` and `haul_per_m3_km`, each
+    /// `{"amount", "currency"}`; `haul_km`; and optional `haul_by_reach`). Prints; stores no cost.
+    Cost {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// A rates table to store in the design before the cost is worked out.
+        #[arg(long, value_name = "FILE")]
+        rates: Option<String>,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Set what the run aims at and must stay within, and the output level it aims to reach (spec
     /// 0017). Each flag given replaces that part; a part not named is kept. With no flag, print them
     /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
@@ -1166,6 +1179,9 @@ pub fn main() -> ExitCode {
             &out.output,
             out.json,
         ),
+        Command::Cost { doc, rates, out } => {
+            crate::cost::cost(&doc, rates.as_deref(), &out.output, out.json)
+        }
         Command::RunInputs {
             doc,
             objective,

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RatesTable",
+  "description": "The rates table: one rate per item, in one currency. A rate left out is refused when the cost is\nworked out, never read as zero.",
+  "type": "object",
+  "properties": {
+    "dredge_per_m3": {
+      "description": "Per m³ of dredge (cut in the river).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Money"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dry_cut_per_m3": {
+      "description": "Per m³ of dry cut (cut on land).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Money"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "disposal_per_m3": {
+      "description": "Per m³ of all cut, for its disposal.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Money"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "haul_per_m3_km": {
+      "description": "Per m³ of all cut per km hauled.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Money"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "haul_km": {
+      "description": "The haul distance of the run, km: for every reach without one of its own.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    },
+    "haul_by_reach": {
+      "description": "Haul distances of stretches of design-line chainage, not overlapping.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HaulStretch"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Money": {
+      "description": "An amount of money and its currency.\n\nAn amount is checked when it is made (`Money::new`) and again when it is read from JSON.",
+      "type": "object",
+      "properties": {
+        "amount": {
+          "description": "The amount, in the currency's main unit.",
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "description": "ISO 4217 code: three capital letters.",
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ]
+    },
+    "HaulStretch": {
+      "description": "A haul distance for one stretch of design-line chainage.",
+      "type": "object",
+      "properties": {
+        "reach": {
+          "description": "The stretch of design-line chainage. A reach of the volumes takes this distance when it\nlies wholly inside the stretch.",
+          "$ref": "#/$defs/Reach"
+        },
+        "km": {
+          "description": "The haul distance, km.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reach",
+        "km"
+      ]
+    },
+    "Reach": {
+      "description": "A stretch of river or design line between two chainages.\n\nA reach is checked when it is made (`Reach::new`) and again when it is read from JSON.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "The chainage where the reach starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "The chainage where the reach ends. Not below `from` (JSON Schema cannot state a relation\nbetween two fields, so the reader checks it).",
+          "$ref": "#/$defs/Chainage"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    }
+  }
+}

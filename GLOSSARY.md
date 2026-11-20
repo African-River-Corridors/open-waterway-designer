@@ -46,6 +46,11 @@ cost is money and names its currency.
 How far a run's figures can be trusted, from the inputs it had: concept, pre-feasibility or
 feasibility. The run states a **target level**; a stage reports the level each reach reached.
 
+**Rates table**:
+The engineer's unit rates for one run, in one currency: dredge and dry cut per m³, disposal per m³,
+haul per m³ per km, with a haul distance for the run or for a reach. **Cost** is these rates times
+OWD's volumes, by reach and in total.
+
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,
 optimisation, volumes, drawings. A stage is **stale** when anything it depends on has changed

@@ -85,6 +85,7 @@ pub fn file_name(stage: &str, version: u32) -> String {
 /// input and output. A run input with its own type (`inputs.run`) is listed here too, so its schema
 /// is checked the same way.
 pub fn contracts() -> Vec<StageContract> {
+    use crate::design::cost::{self, Cost, CostIn, RatesTable};
     use crate::design::design_line::{self, AlignmentIn, DesignLine};
     use crate::design::envelope::{self, EnvelopeIn, EnvelopeResult};
     use crate::design::fits::{self, FitsAnswer, FitsIn};
@@ -106,6 +107,8 @@ pub fn contracts() -> Vec<StageContract> {
         StageContract::of::<StageRecord<VolumesIn, Volumes>>(volumes_stage::STAGE, 1),
         // A run input, not a stage: its own type, not a stage record (ticket 11).
         StageContract::of::<RunInputs>(run_inputs::CONTRACT, 1),
+        StageContract::of::<StageRecord<CostIn, Cost>>(cost::STAGE, 1),
+        StageContract::of::<RatesTable>(cost::RATES_CONTRACT, 1),
     ]
 }
 

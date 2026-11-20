@@ -1,0 +1,408 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/CostIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cost"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "CostIn": {
+      "description": "What the cost stage reads.",
+      "type": "object",
+      "properties": {
+        "by_reach": {
+          "description": "The volumes by reach, as the volumes stage stored them.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReachVolumes"
+          }
+        },
+        "volumes_fresh": {
+          "description": "True when the volumes stage is fresh: nothing it read has changed since it ran.",
+          "type": "boolean"
+        },
+        "rates": {
+          "description": "The rates table, if the run has one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RatesTable"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "by_reach",
+        "volumes_fresh"
+      ]
+    },
+    "ReachVolumes": {
+      "description": "The volumes of one reach: a stretch of the water stage's (one source, one pool).",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where the reach starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where it ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "source": {
+          "description": "Where its water level comes from.",
+          "$ref": "#/$defs/WaterSource"
+        },
+        "pool": {
+          "description": "The pool, by its index in the water stage's input, when it is one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "stations": {
+          "description": "The number of stations in it. A station at the boundary of two reaches is in the upper one.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "dredge_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "excav_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "total_m3": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "source",
+        "stations",
+        "dredge_m3",
+        "excav_m3",
+        "total_m3"
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    },
+    "WaterSource": {
+      "description": "Where a level comes from.",
+      "oneOf": [
+        {
+          "description": "The water profile of the inputs.",
+          "type": "string",
+          "const": "given"
+        },
+        {
+          "description": "A pool held by a structure.",
+          "type": "string",
+          "const": "pool"
+        },
+        {
+          "description": "The river's own level, outside every pool.",
+          "type": "string",
+          "const": "open_river"
+        },
+        {
+          "description": "Between two pools that do not touch: read straight from the lower pool's level to the upper\none's (how the optimise stage's pools have always been read).",
+          "type": "string",
+          "const": "between_pools"
+        }
+      ]
+    },
+    "RatesTable": {
+      "description": "The rates table: one rate per item, in one currency. A rate left out is refused when the cost is\nworked out, never read as zero.",
+      "type": "object",
+      "properties": {
+        "dredge_per_m3": {
+          "description": "Per m³ of dredge (cut in the river).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dry_cut_per_m3": {
+          "description": "Per m³ of dry cut (cut on land).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "disposal_per_m3": {
+          "description": "Per m³ of all cut, for its disposal.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "haul_per_m3_km": {
+          "description": "Per m³ of all cut per km hauled.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "haul_km": {
+          "description": "The haul distance of the run, km: for every reach without one of its own.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "haul_by_reach": {
+          "description": "Haul distances of stretches of design-line chainage, not overlapping.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HaulStretch"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Money": {
+      "description": "An amount of money and its currency.\n\nAn amount is checked when it is made (`Money::new`) and again when it is read from JSON.",
+      "type": "object",
+      "properties": {
+        "amount": {
+          "description": "The amount, in the currency's main unit.",
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "description": "ISO 4217 code: three capital letters.",
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ]
+    },
+    "HaulStretch": {
+      "description": "A haul distance for one stretch of design-line chainage.",
+      "type": "object",
+      "properties": {
+        "reach": {
+          "description": "The stretch of design-line chainage. A reach of the volumes takes this distance when it\nlies wholly inside the stretch.",
+          "$ref": "#/$defs/Reach"
+        },
+        "km": {
+          "description": "The haul distance, km.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "reach",
+        "km"
+      ]
+    },
+    "Reach": {
+      "description": "A stretch of river or design line between two chainages.\n\nA reach is checked when it is made (`Reach::new`) and again when it is read from JSON.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "The chainage where the reach starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "The chainage where the reach ends. Not below `from` (JSON Schema cannot state a relation\nbetween two fields, so the reader checks it).",
+          "$ref": "#/$defs/Chainage"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "Cost": {
+      "description": "What the cost stage returns.",
+      "type": "object",
+      "properties": {
+        "currency": {
+          "description": "The rates table's currency: every figure is in it.",
+          "type": "string"
+        },
+        "by_reach": {
+          "description": "The cost of each reach, in the volumes' order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReachCost"
+          }
+        },
+        "totals": {
+          "description": "Each item added over the reaches.",
+          "$ref": "#/$defs/CostItems"
+        },
+        "level": {
+          "description": "The output level the totals reached (the lowest reach's); set by ticket 17.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "by_reach",
+        "totals"
+      ]
+    },
+    "ReachCost": {
+      "description": "The cost of one reach of the volumes stage.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where the reach starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where it ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "haul_km": {
+          "description": "The haul distance used, km.",
+          "type": "number",
+          "format": "double"
+        },
+        "items": {
+          "$ref": "#/$defs/CostItems"
+        },
+        "level": {
+          "description": "The output level this figure reached; set by the design measures stage (ticket 17).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OutputLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "haul_km",
+        "items"
+      ]
+    },
+    "CostItems": {
+      "description": "The cost of each item, and their sum.",
+      "type": "object",
+      "properties": {
+        "dredge": {
+          "$ref": "#/$defs/Money"
+        },
+        "dry_cut": {
+          "$ref": "#/$defs/Money"
+        },
+        "disposal": {
+          "$ref": "#/$defs/Money"
+        },
+        "haul": {
+          "$ref": "#/$defs/Money"
+        },
+        "total": {
+          "description": "The sum of the four.",
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "dredge",
+        "dry_cut",
+        "disposal",
+        "haul",
+        "total"
+      ]
+    },
+    "OutputLevel": {
+      "description": "How far a run's figures can be trusted (spec 0017): the inputs each reach has decide the level it\nreaches. Ordered from the lowest.",
+      "oneOf": [
+        {
+          "description": "Banks (or a river polygon) and an open elevation model.",
+          "type": "string",
+          "const": "concept"
+        },
+        {
+          "description": "Plus spot levels or a partial survey, and a rates table.",
+          "type": "string",
+          "const": "pre_feasibility"
+        },
+        {
+          "description": "Plus bathymetry and a ground survey covering the reach.",
+          "type": "string",
+          "const": "feasibility"
+        }
+      ]
+    }
+  }
+}

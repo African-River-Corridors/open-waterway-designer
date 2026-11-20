@@ -395,6 +395,10 @@ impl Session {
         if let Err(e) = self.run_inputs() {
             errors.push(format!("/inputs/run: {e}"));
         }
+        // The rates table too (ticket 12).
+        if let Err(e) = self.rates() {
+            errors.push(format!("/inputs/rates: {e}"));
+        }
         // The one design line, and the lattice's, are typed: each must read as a `DesignLine`.
         for (at, v) in [
             (
@@ -477,6 +481,8 @@ impl Session {
                 // them leaves every stage fresh, and a file saved before them keeps its hashes. The
                 // stage that first reads them adds them to its own hash.
                 inputs.remove(super::run_inputs::INPUT);
+                // Nor the rates table (ticket 12): only the cost reads it, and cost is not stored.
+                inputs.remove(super::cost::INPUT);
             }
             if stage == Stage::Volumes
                 && self.bed_model_value().is_some()

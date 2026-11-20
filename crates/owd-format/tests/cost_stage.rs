@@ -137,15 +137,20 @@ fn a_rates_table_reads_from_json_and_refuses_a_misspelt_key() {
     .unwrap();
     assert_eq!(t.currency().unwrap(), "USD");
     assert!(
-        serde_json::from_value::<RatesTable>(json!({"dredge_per_m3": {"amount": 10.0, "currency": "USD"}, "dredge_rate": 1}))
-            .is_err()
+        serde_json::from_value::<RatesTable>(
+            json!({"dredge_per_m3": {"amount": 10.0, "currency": "USD"}, "dredge_rate": 1})
+        )
+        .is_err()
     );
 }
 
 #[test]
 fn the_cost_stage_and_the_rates_table_have_schema_files() {
     let names: Vec<String> = contracts().iter().map(|c| c.file_name()).collect();
-    assert!(names.contains(&"cost.1.schema.json".to_string()), "{names:?}");
+    assert!(
+        names.contains(&"cost.1.schema.json".to_string()),
+        "{names:?}"
+    );
     assert!(
         names.contains(&"inputs.rates.1.schema.json".to_string()),
         "{names:?}"
