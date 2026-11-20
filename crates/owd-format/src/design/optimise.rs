@@ -418,6 +418,12 @@ impl Session {
                     "radius_check_chord_m": p.result.radius_check_chord_m,
                     "radius_ok": p.result.radius_ok,
                     "goal_closed": p.result.goal_closed,
+                    "expansions": p.result.expansions,
+                    "hit_cap": p.result.hit_cap,
+                    "piece": p.piece.map(|c| json!({
+                        "index": c.index, "count": c.count,
+                        "pool_start_m": c.pool_start_m, "pool_end_m": c.pool_end_m,
+                    })),
                 })).collect::<Vec<_>>(),
                 "joins": out.joins.iter().map(|j| json!({
                     "at_m": j.at_m,
@@ -429,10 +435,14 @@ impl Session {
                 })).collect::<Vec<_>>(),
             },
         });
-        // The design sanity check of the line, as every other option has it, and one warning for
-        // each pool join that does not hold R_min (issue #6).
+        // The design sanity check of the line, as every other option has it, one warning for each
+        // pool (or piece) whose search hit its limit (issue #559), and one for each pool join that
+        // does not hold R_min (issue #6).
         option["sanity"] = super::alignment::sanity_of(&option);
         if let Some(w) = option["sanity"]["warnings"].as_array_mut() {
+            for p in out.capped_pools() {
+                w.push(json!(capped_warning(p, lattice.max_expand)));
+            }
             for j in out.failed_joins() {
                 w.push(json!(join_warning(j, r_min, out.radius_check_chord_m)));
             }
@@ -488,6 +498,27 @@ fn join_warning(j: &owd_core::optimise::lattice::PoolJoin, r_min: f64, chord: f6
     w
 }
 
+/// The sanity warning for a pool (or a piece of one) whose search hit its expansion limit, so it
+/// keeps the baseline unsearched.
+fn capped_warning(p: &owd_core::optimise::lattice::PoolAlignment, max_expand: i64) -> String {
+    let what = match p.piece {
+        Some(c) => format!(
+            "piece {} of {} of the pool from {:.0} m to {:.0} m ({:.0} m to {:.0} m)",
+            c.index + 1,
+            c.count,
+            c.pool_start_m,
+            c.pool_end_m,
+            p.start_m,
+            p.end_m
+        ),
+        None => format!("the pool from {:.0} m to {:.0} m", p.start_m, p.end_m),
+    };
+    format!(
+        "{what} was not searched: the search hit its limit of {max_expand} expansions, so it keeps \
+         the baseline"
+    )
+}
+
 /// A finite number, or null (JSON has no NaN).
 fn num_or_null(v: f64) -> Value {
     if v.is_finite() { json!(v) } else { Value::Null }
@@ -516,5 +547,60 @@ mod tests {
         j.position_gap_m = 0.0;
         j.heading_gap_rad = 0.0;
         assert!(join_warning(&j, 340.0, 113.0).ends_with("against R_min 340 m"));
+    }
+
+    /// Label: property (a capped pool's warning names the pool, or the piece and its pool).
+    #[test]
+    fn a_capped_warning_names_the_pool_or_the_piece() {
+        use owd_core::optimise::lattice::{
+            HalfWidthSpec, LatticeConfig, PoolAlignment, PoolPiece, SectionSpec,
+        };
+        let flat = |xs: &[f64], _: &[f64]| vec![0.0; xs.len()];
+        let line = [[0.0, 0.0], [100.0, 0.0]];
+        let poly = owd_core::geom::Polygon {
+            exterior: vec![
+                [0.0, -5.0],
+                [100.0, -5.0],
+                [100.0, 5.0],
+                [0.0, 5.0],
+                [0.0, -5.0],
+            ],
+            holes: vec![],
+        };
+        let mut cfg = LatticeConfig::new(50.0);
+        cfg.max_expand = 1;
+        let cfg = cfg.validated().unwrap();
+        let mut p: PoolAlignment = owd_core::optimise::lattice::optimise_pool(
+            &line,
+            &flat,
+            core::slice::from_ref(&poly),
+            0.0,
+            100.0,
+            0.0,
+            1.0,
+            &SectionSpec::new(HalfWidthSpec::Fixed(2.0)),
+            &cfg,
+            None,
+            owd_core::optimise::lattice::PoolOptions {
+                corridor_half_m: 20.0,
+                cell_m: 5.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            capped_warning(&p, 4_000_000),
+            "the pool from 0 m to 100 m was not searched: the search hit its limit of 4000000 \
+             expansions, so it keeps the baseline"
+        );
+        p.piece = Some(PoolPiece {
+            index: 1,
+            count: 3,
+            pool_start_m: 0.0,
+            pool_end_m: 300.0,
+        });
+        assert!(
+            capped_warning(&p, 9)
+                .starts_with("piece 2 of 3 of the pool from 0 m to 300 m (0 m to 100 m) was not")
+        );
     }
 }

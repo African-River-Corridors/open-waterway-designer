@@ -44,6 +44,7 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 | owd-format::alignment: `two_methods_give_two_options_and_a_rerun_replaces_only_its_own` | 20 s | Long run on the full river or DEM in a debug build. |
 | owd-reach::bankcheck: `the_recorded_whole_river_gives_a_centreline_about_as_long_as_its_seed` | 30 s | The bank checks on 144 km of recorded banks (issue #373); the gap rule's fast guard is `midline::tests::a_gap_in_a_bank_does_not_tangle_the_mid_line`. |
 | owd-reach::bankcheck: `one_more_round_with_only_the_side_repairs_moves_nothing_at_the_ends` | 106 s | Runs the bank checks twice on 144 km of recorded banks (issue #411). |
+| owd-core::lattice_long_pool: `a_31_km_pool_is_searched_in_pieces_of_the_default_length` | 20 s release, longer in debug | Searches a 31 km pool whole (to the cap) and then in six pieces (issue #559); its short twin `a_long_pool_is_searched_in_pieces_that_join_at_r_min` stays in the pull-request job. |
 
 Times are from one local nextest run (10 cores, tests in parallel, so inflated); CI times are in the pull request.
 Python tests (about 33 s in total) all still run in the pull-request job.
