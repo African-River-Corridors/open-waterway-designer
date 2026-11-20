@@ -62,7 +62,11 @@ fn the_flags_set_the_run_inputs_and_no_flag_prints_them() {
     let out: Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(out["run"], d["inputs"]["run"]);
     assert_eq!(out["target_level"], "concept");
-    assert_eq!(std::fs::read_to_string(&p).unwrap(), saved, "a read changed the file");
+    assert_eq!(
+        std::fs::read_to_string(&p).unwrap(),
+        saved,
+        "a read changed the file"
+    );
 }
 
 #[test]

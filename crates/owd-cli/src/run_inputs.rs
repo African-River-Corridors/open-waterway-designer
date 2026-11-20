@@ -52,7 +52,11 @@ pub fn run_inputs(doc: &str, flags: &RunFlags, output: &Option<String>, json_mod
             let limits = if r.limits.is_empty() {
                 "none".to_string()
             } else {
-                r.limits.iter().map(|l| l.to_text()).collect::<Vec<_>>().join(", ")
+                r.limits
+                    .iter()
+                    .map(|l| l.to_text())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             };
             format!(
                 "run inputs: objective {objective}; limits {limits}; target {}",

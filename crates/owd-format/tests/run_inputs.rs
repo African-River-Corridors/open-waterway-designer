@@ -78,8 +78,14 @@ fn the_objective_reads_from_text_one_way() {
         measure: DesignMeasure::Cost,
         sense: Sense::Minimise,
     };
-    assert_eq!(parse_objective("minimise:cost").unwrap(), Some(cost.clone()));
-    assert_eq!(parse_objective(" minimise cost ").unwrap(), Some(cost.clone()));
+    assert_eq!(
+        parse_objective("minimise:cost").unwrap(),
+        Some(cost.clone())
+    );
+    assert_eq!(
+        parse_objective(" minimise cost ").unwrap(),
+        Some(cost.clone())
+    );
     assert_eq!(parse_objective("minimize:cost").unwrap(), Some(cost));
     assert_eq!(
         parse_objective("maximise:capacity").unwrap(),
@@ -124,9 +130,18 @@ fn a_limit_reads_from_text_one_way_and_writes_back_the_same() {
     for l in [&cut, &cost, &len] {
         assert_eq!(&parse_limit(&l.to_text()).unwrap(), l, "{}", l.to_text());
     }
-    assert_eq!(parse_limit("total_cut=5").unwrap_err().code, "RUN_LIMIT_SYNTAX");
-    assert_eq!(parse_limit("total_cut<=lots").unwrap_err().code, "RUN_LIMIT_SYNTAX");
-    assert_eq!(parse_limit("depth<=3").unwrap_err().code, "RUN_MEASURE_UNKNOWN");
+    assert_eq!(
+        parse_limit("total_cut=5").unwrap_err().code,
+        "RUN_LIMIT_SYNTAX"
+    );
+    assert_eq!(
+        parse_limit("total_cut<=lots").unwrap_err().code,
+        "RUN_LIMIT_SYNTAX"
+    );
+    assert_eq!(
+        parse_limit("depth<=3").unwrap_err().code,
+        "RUN_MEASURE_UNKNOWN"
+    );
 }
 
 #[test]
@@ -145,7 +160,10 @@ fn the_target_level_reads_from_text_one_way_and_levels_are_ordered() {
         Some(OutputLevel::Feasibility)
     );
     assert_eq!(parse_level("").unwrap(), None);
-    assert_eq!(parse_level("detailed").unwrap_err().code, "RUN_LEVEL_UNKNOWN");
+    assert_eq!(
+        parse_level("detailed").unwrap_err().code,
+        "RUN_LEVEL_UNKNOWN"
+    );
     assert!(OutputLevel::Concept < OutputLevel::PreFeasibility);
     assert!(OutputLevel::PreFeasibility < OutputLevel::Feasibility);
     // With no target stated, a run aims at concept, the lowest level.
