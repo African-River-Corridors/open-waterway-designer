@@ -422,6 +422,9 @@ export interface TerrainInfo {
 export const terrainInfo = () => invoke<TerrainInfo | null>("terrain_info");
 /** One terrain tile of the DEM, a PNG, made in this browser from the DEM in memory. */
 export const terrainTile = (z: number, x: number, y: number) => invoke<Uint8Array>("terrain_tile", { z, x, y });
+/** The contour lines of one map tile of the DEM, every `interval` metres (MAP-3): a vector tile, made in
+ * this browser from the DEM in memory. No bytes when the tile has no line. */
+export const contourTile = (z: number, x: number, y: number, interval: number) => invoke<Uint8Array>("contour_tile", { z, x, y, interval });
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 

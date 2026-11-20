@@ -298,6 +298,8 @@ export async function createWebPlatform(): Promise<Platform> {
     // The 3D view (MAP-2): the DEM's terrain tiles are made in the worker, from the DEM in memory.
     terrain_info: () => json("terrain_info"),
     terrain_tile: (a) => host.rpc("terrain_tile", a.z, a.x, a.y),
+    // Contours (MAP-3): traced in the worker from the same DEM, a vector tile for each map tile.
+    contour_tile: (a) => host.rpc("contour_tile", a.z, a.x, a.y, a.interval),
     long_section: (a) => json("long_section", a.option),
     sheets: (a) => json("sheets", a.option),
     export_sheets: async (a) => {

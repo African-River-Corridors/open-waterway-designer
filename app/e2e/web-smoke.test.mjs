@@ -1053,8 +1053,8 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "layers-list"), false);
     await button.click();
     assert.equal(await button.getAttribute("aria-expanded"), "true");
-    // The seven layers of MAP-1, and the terrain shading (MAP-2), which has a test of its own below.
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 1);
+    // The seven layers of MAP-1, and the terrain shading (MAP-2) and the contours (MAP-3), which have tests of their own below.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 2);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);
@@ -1544,6 +1544,214 @@ describe("OWD web smoke tests", () => {
     assert.equal(await again.getAttribute("aria-pressed"), "false");
     assert.equal(await exists(b, "terrain-exaggeration"), false);
     assert.equal(await b.execute(() => localStorage.getItem("owd-map-3d")), '{"on":false,"exaggeration":5}');
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("contours of the DEM (MAP-3): off with no DEM, on they are a map layer with lines at the interval, in 2D and in 3D, the interval and the tick are remembered, and the design does not change", async () => {
+    // The map needs WebGL to load tiles: headless Chrome gets it from SwiftShader, in software.
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const mapAttr = async (name) => (await tid(b, "plan-map")).getAttribute(name);
+    const box = () => b.execute(() => {
+      const c = document.querySelector('[data-testid="layer-contours"]');
+      return { type: c.type, checked: c.checked, disabled: c.disabled, row: c.closest("label").textContent.replace(/\s+/g, " ").trim() };
+    });
+    /** What the map itself holds of the contours: its layers in drawing order, the tile address, and the lines of the tiles in memory. */
+    const mapState = () => b.execute(() => {
+      const m = window.__owdMap;
+      const layers = m.getStyle().layers.map((l) => l.id);
+      const source = m.getSource("contours");
+      const features = source ? m.querySourceFeatures("contours", { sourceLayer: "contours" }) : [];
+      return {
+        layers: layers.filter((id) => /^contours/.test(id)),
+        order: ["terrain-shading", "contours-casing", "contours", "contours-labels", "polygon"].map((id) => layers.indexOf(id)),
+        tiles: source ? m.getStyle().sources.contours.tiles : null,
+        loaded: source ? m.isSourceLoaded("contours") : false,
+        features: features.length,
+        levels: [...new Set(features.map((f) => f.properties.level))].sort((a, c) => a - c),
+        index: [...new Set(features.filter((f) => f.properties.index).map((f) => f.properties.level))].sort((a, c) => a - c),
+        types: [...new Set(features.map((f) => f.geometry.type))].sort(),
+        zoom: m.getZoom(),
+      };
+    });
+    const savedText = async () => {
+      await b.execute(() => window.__owdPlatform.call("snapshot"));
+      await new Promise((r) => setTimeout(r, 300));
+      return b.execute(() => JSON.parse(localStorage.getItem("owd.lastDesign")).text);
+    };
+    await until(b, "the map", () => b.execute(() => !!window.__owdMap));
+    // No DEM in memory: a tick box, off, greyed, that says why. No interval to choose, nothing on the map or in the legend.
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box(), { type: "checkbox", checked: false, disabled: true, row: "Contours none loaded" });
+    assert.equal(await exists(b, "contour-interval"), false);
+    assert.equal(await mapAttr("data-contours"), "off");
+    assert.equal(await exists(b, "legend-contours"), false);
+    assert.deepEqual((await mapState()).layers, []);
+
+    // The example brings its DEM: the tick can be set. It is off at first, and the map has asked for no contour.
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the contours tick to come on", async () => !(await box()).disabled);
+    assert.deepEqual(await box(), { type: "checkbox", checked: false, disabled: false, row: "Contours" });
+    assert.equal((await mapState()).tiles, null, "no contour source while the tick is off");
+    assert.equal(await exists(b, "contour-interval"), false);
+    await b.execute(() => {
+      window.__mapErrors = [];
+      window.__owdMap.on("error", (e) => window.__mapErrors.push(`${e.sourceId ?? ""}: ${e.error?.message ?? e.error}`));
+    });
+    const info = await b.execute(() => window.__owdPlatform.call("terrain_info"));
+    const before = await savedText();
+
+    // On: the map has the contour layers, over the terrain shading and under the design, from tiles the page makes.
+    await (await tid(b, "layer-contours")).click();
+    await until(b, "the contours on the map", async () => (await mapAttr("data-contours")) === "on");
+    let state = await mapState();
+    assert.deepEqual(state.layers, ["contours-casing", "contours", "contours-labels"]);
+    assert.ok(state.order.every((at, i) => at >= 0 && (i === 0 || at > state.order[i - 1])), `over the shading, under the design: ${state.order}`);
+    assert.deepEqual(state.tiles, [`owd-contour://${info.id}/auto/{z}/{x}/{y}`]);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["contours"]');
+    assert.equal(await mapAttr("data-layers-off"), "", "a layer that starts off is not listed as turned off");
+    // The interval choice sits beside the tick: Auto first.
+    const select = await tid(b, "contour-interval");
+    assert.equal(await select.getTagName(), "select");
+    assert.equal(await select.getValue(), "auto");
+    assert.deepEqual(await b.execute(() => [...document.querySelectorAll('[data-testid="contour-interval"] option')].map((o) => o.textContent)), ["Auto", "1 m", "2 m", "5 m", "10 m", "20 m"]);
+    assert.equal(await b.execute(() => document.querySelector('[data-testid="contour-interval"]').closest("label")), null, "the choice is beside the tick's label, not inside it");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), null, "Auto leaves nothing behind");
+    // The lines: the map has features, every level a whole multiple of the interval Auto picks at this zoom level.
+    const auto = (z) => (z >= 15 ? 1 : z >= 14 ? 2 : z >= 13 ? 5 : z >= 12 ? 10 : 20);
+    await until(b, "the contour tiles", async () => (await mapState()).loaded, 120000);
+    await until(b, "contour lines on the map", async () => (await mapState()).features > 0, 120000);
+    state = await mapState();
+    const interval = auto(Math.floor(state.zoom));
+    assert.equal(await mapAttr("data-contour-interval"), String(interval));
+    assert.ok(state.levels.length >= 2, `more than one level at ${interval} m: ${state.levels}`);
+    for (const level of state.levels) {
+      assert.ok(Number.isInteger(level / interval), `${level} m is a multiple of ${interval} m`);
+      assert.ok(level > info.min_m && level <= info.max_m, `${level} m is a height of the DEM (${info.min_m} to ${info.max_m})`);
+    }
+    for (const level of state.index) assert.ok(Number.isInteger(level / (interval * 5)), `${level} m is an index contour at ${interval} m`);
+    assert.ok(state.types.every((t) => t === "LineString" || t === "MultiLineString"), state.types.join(" "));
+    // The legend lists them, with the interval drawn.
+    assert.equal((await text(b, "legend-contours")).trim(), `contour, every ${interval} m`);
+    assert.equal((await text(b, "legend-contours-index")).trim(), `index contour, every ${interval * 5} m, level in metres`);
+
+    // A tile the engine makes here: a vector tile for a place on the DEM, nothing for a place off it.
+    const tile = await b.execute(async (bounds) => {
+      const [w, s, e, n] = bounds;
+      const lon = (w + e) / 2, lat = (s + n) / 2, k = 2 ** 14;
+      const x = Math.floor(((lon + 180) / 360) * k);
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = Math.floor((0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k);
+      const t0 = performance.now();
+      const one = await window.__owdPlatform.call("contour_tile", { z: 14, x, y, interval: 0.5 });
+      const first = performance.now() - t0;
+      const t1 = performance.now();
+      await window.__owdPlatform.call("contour_tile", { z: 14, x, y, interval: 0.5 });
+      const again = performance.now() - t1;
+      const five = await window.__owdPlatform.call("contour_tile", { z: 14, x, y, interval: 5 });
+      const far = await window.__owdPlatform.call("contour_tile", { z: 3, x: 0, y: 0, interval: 5 });
+      const refused = await window.__owdPlatform.call("contour_tile", { z: 14, x, y, interval: 0 }).then(() => "", (e) => String(e));
+      return { one: one.length, five: five.length, far: far.length, first, again, refused, name: new TextDecoder().decode(one.slice(0, 16)) };
+    }, info.bounds);
+    assert.ok(tile.five > 0 && tile.one > tile.five, `a finer interval has more lines (${tile.one} and ${tile.five} bytes)`);
+    assert.match(tile.name, /contours/, "the vector tile's layer is named");
+    assert.equal(tile.far, 0, "no lines off the DEM");
+    assert.match(tile.refused, /interval/);
+    console.log(`contour tile in the browser (wasm, SwiftShader run): first ${tile.first.toFixed(1)} ms, cached ${tile.again.toFixed(1)} ms, ${tile.one} bytes at 0.5 m`);
+
+    // The interval: 5 m, zoomed in. The map asks for other tiles, and every level is a multiple of 5 m.
+    await select.selectByAttribute("value", "5");
+    await until(b, "the 5 m tiles", async () => (await mapState()).tiles?.[0] === `owd-contour://${info.id}/5/{z}/{x}/{y}`);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), "5");
+    await b.execute((bounds) => void window.__owdMap.jumpTo({ center: [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2], zoom: 14.2 }), info.bounds);
+    await until(b, "the 5 m lines", async () => {
+      const s = await mapState();
+      return s.loaded && s.features > 0;
+    }, 120000);
+    state = await mapState();
+    assert.equal(await mapAttr("data-contour-interval"), "5");
+    for (const level of state.levels) assert.ok(Number.isInteger(level / 5), `${level} m at 5 m`);
+    for (const level of state.index) assert.ok(Number.isInteger(level / 25), `${level} m is an index contour at 5 m`);
+    assert.equal((await text(b, "legend-contours")).trim(), "contour, every 5 m");
+    // Zoomed far out the chosen interval is drawn coarser, and the legend says which; further out, no contour.
+    await b.execute(() => void window.__owdMap.jumpTo({ zoom: 11.4 }));
+    await until(b, "10 m at zoom 11", async () => (await mapAttr("data-contour-interval")) === "10");
+    assert.equal((await text(b, "legend-contours")).trim(), "contour, every 10 m");
+    await b.execute(() => void window.__owdMap.jumpTo({ zoom: 7 }));
+    await until(b, "no contour far out", async () => (await mapAttr("data-contour-interval")) === "");
+    assert.match(await text(b, "legend-contours"), /zoom in/);
+    assert.equal(await exists(b, "legend-contours-index"), false);
+
+    // Auto again, close in: 1 m lines, the index contours every 5 m, and the page has drawn their levels.
+    await select.selectByAttribute("value", "auto");
+    await b.execute((bounds) => void window.__owdMap.jumpTo({ center: [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2], zoom: 15.3 }), info.bounds);
+    await until(b, "1 m at zoom 15", async () => (await mapAttr("data-contour-interval")) === "1");
+    await until(b, "the 1 m lines", async () => {
+      const s = await mapState();
+      return s.loaded && s.index.length > 0;
+    }, 120000);
+    state = await mapState();
+    for (const level of state.index) assert.ok(Number.isInteger(level / 5), `${level} m is an index contour at 1 m`);
+    assert.ok(state.levels.some((l) => l % 5 !== 0), `plain contours between the index contours: ${state.levels}`);
+    await until(b, "the levels along the index contours", () => b.execute(() => window.__owdMap.listImages().some((id) => /^owd-contour-level:-?\d+$/.test(id))), 120000);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), null);
+
+    // In 3D the lines are still drawn, on the surface; over the terrain shading and without the imagery too.
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the terrain on the map", async () => (await mapAttr("data-terrain")) === "on");
+    await (await tid(b, "layer-terrain-shading")).click();
+    await (await tid(b, "layer-imagery")).click();
+    await until(b, "the map to settle in 3D", () => b.execute(() => window.__owdMap.loaded() && !window.__owdMap.isMoving()), 120000);
+    await until(b, "contour lines drawn in 3D", () => b.execute(() => window.__owdMap.queryRenderedFeatures({ layers: ["contours"] }).length > 0), 120000);
+    state = await mapState();
+    assert.ok(state.order.every((at, i) => at >= 0 && (i === 0 || at > state.order[i - 1])), `over the shading, under the design: ${state.order}`);
+    assert.equal(await mapAttr("data-contours"), "on");
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await b.saveScreenshot(path.join(SHOTS, "web-contours-3d.png"));
+    }
+    assert.deepEqual(await b.execute(() => window.__mapErrors.filter((m) => /^(contours|dem)/.test(m))), [], "no contour or terrain tile failed");
+    await (await tid(b, "terrain-3d")).click();
+    await (await tid(b, "layer-terrain-shading")).click();
+    await (await tid(b, "layer-imagery")).click();
+    await until(b, "the terrain off", async () => (await mapAttr("data-terrain")) === "off");
+
+    // Nothing of this is in the design: the saved text is the same, byte for byte.
+    await select.selectByAttribute("value", "5");
+    const after = await savedText();
+    assert.equal(after, before, "the design file is byte-identical after the contours and the interval");
+    assert.doesNotMatch(after, /contour/i);
+
+    // Remembered on this machine. A reload has the design and not the DEM (a browser keeps no file): the tick waits for it.
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the example after a reload", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the map again", () => b.execute(() => !!window.__owdMap));
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["contours"]');
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), "5");
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box(), { type: "checkbox", checked: true, disabled: true, row: "Contours none loaded" });
+    assert.equal(await mapAttr("data-contours"), "off");
+    assert.equal(await exists(b, "contour-interval"), false);
+    assert.equal(await exists(b, "legend-contours"), false);
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the contours to come back with the DEM", async () => (await mapAttr("data-contours")) === "on", 60000);
+    assert.equal(await (await tid(b, "contour-interval")).getValue(), "5");
+    assert.match((await mapState()).tiles[0], /^owd-contour:\/\/\d+\/5\//);
+    assert.equal(await exists(b, "legend-contours"), true);
+
+    // Off: the layers and their source go, and the interval choice with them.
+    await (await tid(b, "layer-contours")).click();
+    await until(b, "the contours off", async () => (await mapAttr("data-contours")) === "off");
+    state = await mapState();
+    assert.deepEqual(state.layers, []);
+    assert.equal(state.tiles, null);
+    assert.equal(await exists(b, "contour-interval"), false);
+    assert.equal(await exists(b, "legend-contours"), false);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), null);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), "5", "the interval is kept for the next time");
     assert.equal(await exists(b, "error"), false);
   });
 

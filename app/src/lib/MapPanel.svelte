@@ -4,11 +4,12 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import type * as GeoJSON from "geojson";
-  import { terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
+  import { contourTile, terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
   import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
   import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
+  import { CONTOUR_DEEP_ZOOM, CONTOUR_MIN_ZOOM, CONTOUR_PROTOCOL, INTERVALS, LABEL_PREFIX, contourTemplate, intervalAt, loadContourChoice, parseContourUrl, saveContourChoice, type ContourChoice } from "./contours";
   import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, tileTemplate, type TerrainPrefs } from "./terrain3d";
 
   let {
@@ -63,18 +64,29 @@
       const t = setTimeout(done, ms);
       signal.addEventListener("abort", () => (clearTimeout(t), stop(new Error("the tile is no longer wanted"))), { once: true });
     });
-  maplibregl.addProtocol(TERRAIN_PROTOCOL, async (params, abort) => {
-    const tile = parseTileUrl(params.url);
-    if (!tile) throw new Error(`not a terrain tile address: ${params.url}`);
+  /** A tile from the engine, as the map wants it. A tile that fails is asked for again, five times in all. */
+  async function engineTile(make: () => Promise<Uint8Array>, abort: AbortController): Promise<{ data: ArrayBuffer }> {
     for (let tries = 0; ; tries += 1) {
       try {
-        const png = await terrainTile(tile.z, tile.x, tile.y);
-        return { data: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer };
+        const bytes = await make();
+        return { data: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer };
       } catch (e) {
         if (tries >= 4 || abort.signal.aborted) throw new Error(String(e));
         await wait(1000, abort.signal);
       }
     }
+  }
+  maplibregl.addProtocol(TERRAIN_PROTOCOL, (params, abort) => {
+    const tile = parseTileUrl(params.url);
+    if (!tile) throw new Error(`not a terrain tile address: ${params.url}`);
+    return engineTile(() => terrainTile(tile.z, tile.x, tile.y), abort);
+  });
+  // The contour tiles (MAP-3) come the same way: the engine traces the lines of one map tile from the
+  // DEM, off this thread, and answers with a vector tile. The interval is the one for the tile's zoom level.
+  maplibregl.addProtocol(CONTOUR_PROTOCOL, (params, abort) => {
+    const tile = parseContourUrl(params.url);
+    if (!tile) throw new Error(`not a contour tile address: ${params.url}`);
+    return engineTile(() => contourTile(tile.z, tile.x, tile.y, intervalAt(tile.choice, tile.z)), abort);
   });
 
   /** A 1 x 1 transparent PNG. */
@@ -104,6 +116,7 @@
     "constraint-stretches": !!stretches?.features.length,
     "station-marks": !!geometry?.options.some((o) => o.ticks.length),
     "terrain-shading": !!terrain,
+    contours: !!terrain,
     imagery: true,
   });
 
@@ -142,8 +155,10 @@
         // slope to shade, so without the imagery the tint is what shows the DEM.
         const [low, mid, high] = [token("plate-ink"), token("hillshade"), token("cream")];
         const span = Math.max(terrain.max_m - terrain.min_m, 0.01);
-        map.addLayer({ id: "terrain-tint", type: "color-relief", source: "dem-shade", layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, "polygon");
-        map.addLayer({ id: "terrain-shading", type: "hillshade", source: "dem-shade", layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, "polygon");
+        // Under the contours when they are on the map.
+        const over = map.getLayer("contours-casing") ? "contours-casing" : "polygon";
+        map.addLayer({ id: "terrain-tint", type: "color-relief", source: "dem-shade", layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, over);
+        map.addLayer({ id: "terrain-shading", type: "hillshade", source: "dem-shade", layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, over);
       }
       drawnTerrain = key;
     }
@@ -161,6 +176,68 @@
     const shaded = ticks["terrain-shading"];
     if (map.getLayer("terrain-shading")) map.setLayoutProperty("terrain-shading", "visibility", shaded ? "visible" : "none");
     if (map.getLayer("terrain-tint")) map.setLayoutProperty("terrain-tint", "visibility", shaded && !ticks.imagery ? "visible" : "none");
+    applyContours();
+  }
+
+  /** The contour interval the user chose: remembered on this machine, never in the design. */
+  let contourChoice = $state<ContourChoice>(loadContourChoice());
+  function setContourChoice(next: ContourChoice) {
+    contourChoice = next;
+    saveContourChoice(next);
+  }
+  /** The contours the map has now, as the DEM's number and the interval choice; "" for none. */
+  let drawnContours = "";
+  /** What the map itself has done, for a test to read: "on" once the contour layers are there. */
+  let contoursDrawn = $state("off");
+  /** Put the contours of the DEM on the map, or take them off. They are made only while the tick is on:
+   * with the tick off the map has no contour source, and asks the engine for nothing. */
+  function applyContours() {
+    if (!map || !ready) return;
+    const key = terrain && ticks.contours ? `${terrain.id}/${contourChoice}` : "";
+    if (key === drawnContours) return;
+    for (const id of ["contours-labels", "contours", "contours-casing"]) if (map.getLayer(id)) map.removeLayer(id);
+    if (map.getSource("contours")) map.removeSource("contours");
+    if (terrain && key) {
+      // The lines are made only inside the DEM's box. Tiles go deeper than the DEM's own cells when it
+      // is coarse, so a 1 m interval can still be drawn when zoomed in.
+      map.addSource("contours", { type: "vector", tiles: [contourTemplate(terrain.id, contourChoice)], minzoom: CONTOUR_MIN_ZOOM, maxzoom: Math.max(terrain.max_zoom, CONTOUR_DEEP_ZOOM), bounds: terrain.bounds });
+      // A thin pale line on a soft dark casing: it reads on bright imagery, on dark imagery, on the
+      // shaded DEM and on the bare page in either theme. Over the imagery and the shading, under the design.
+      const index: maplibregl.ExpressionSpecification = ["==", ["get", "index"], true];
+      const line = { type: "line", source: "contours", "source-layer": "contours", layout: { "line-join": "round", "line-cap": "round" } } as const;
+      map.addLayer({ ...line, id: "contours-casing", paint: { "line-color": token("plate-ink"), "line-opacity": 0.5, "line-width": ["case", index, 3.2, 2] } }, "polygon");
+      map.addLayer({ ...line, id: "contours", paint: { "line-color": token("cream"), "line-opacity": ["case", index, 1, 0.85], "line-width": ["case", index, 1.6, 0.7] } }, "polygon");
+      // The level along each index contour is a small picture the page draws (see `levelPicture`): the map
+      // has no glyph server, so it has no text of its own, and this works offline too.
+      map.addLayer({ id: "contours-labels", type: "symbol", source: "contours", "source-layer": "contours", filter: index, layout: { "symbol-placement": "line", "symbol-spacing": 320, "icon-image": ["concat", LABEL_PREFIX, ["to-string", ["get", "level"]]], "icon-rotation-alignment": "map", "icon-keep-upright": true, "icon-padding": 6 } }, "polygon");
+    }
+    drawnContours = key;
+    contoursDrawn = key ? "on" : "off";
+  }
+  /** Draw the picture of a level the map asks for: the number in metres, pale on a dark edge like the lines. */
+  function levelPicture(id: string) {
+    if (!map || !id.startsWith(LABEL_PREFIX) || map.hasImage(id)) return;
+    const text = id.slice(LABEL_PREFIX.length);
+    const scale = 2;
+    const font = `600 ${11 * scale}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    const canvas = document.createElement("canvas");
+    const measure = canvas.getContext("2d");
+    if (!measure) return;
+    measure.font = font;
+    canvas.width = Math.ceil(measure.measureText(text).width) + 8 * scale;
+    canvas.height = 16 * scale;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return;
+    ctx.font = font;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3.5 * scale;
+    ctx.strokeStyle = token("plate-ink");
+    ctx.fillStyle = token("cream");
+    ctx.strokeText(text, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+    map.addImage(id, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: scale });
   }
   /** A layer the legend may list: the design has it and it is ticked on. */
   const shows = (id: MapLayerId) => present[id] && ticks[id];
@@ -172,7 +249,7 @@
   function applyLayers() {
     if (!map || !ready) return;
     for (const l of MAP_LAYERS) {
-      if (l.id === "imagery" || l.id === "terrain-shading") continue;
+      if (l.id === "imagery" || l.id === "terrain-shading" || l.id === "contours") continue;
       for (const id of STYLE_LAYERS[l.id]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", ticks[l.id] ? "visible" : "none");
     }
     // The chainage labels and the tight-bend marks are HTML markers, not map layers.
@@ -396,6 +473,7 @@
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     map.on("click", (e) => onPick?.(e.lngLat.lng, e.lngLat.lat));
+    map.on("styleimagemissing", (e) => levelPicture(e.id));
     map.on("load", () => {
       const m = map!;
       // A placeholder picture until the hillshade arrives; `setCoordinates` and `updateImage` replace it.
@@ -494,11 +572,20 @@
     void ready;
     untrack(applyTerrain);
   });
+
+  $effect(() => {
+    void contourChoice;
+    void ready;
+    untrack(applyContours);
+  });
+
+  /** The contour interval the map draws at this zoom level, in metres; null further out than any contour. */
+  const contourNow = $derived(zoomNow < CONTOUR_MIN_ZOOM ? null : intervalAt(contourChoice, Math.floor(zoomNow)));
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && (layersOpen = false)} />
 
-<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
+<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-contours={contoursDrawn} data-contour-interval={shows("contours") ? (contourNow ?? "") : ""} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
   <div class="canvas" bind:this={host}></div>
   {#if failure}
     <p class="failure" role="alert" data-testid="map-failure">{failure}</p>
@@ -530,6 +617,12 @@
     {#if shows("centreline")}
       <li data-testid="legend-centreline"><span class="key" aria-hidden="true"><span class="stroke dashed"></span></span>centreline</li>
     {/if}
+    {#if shows("contours")}
+      <li data-testid="legend-contours"><span class="key" aria-hidden="true"><span class="stroke thin"></span></span>{contourNow ? `contour, every ${contourNow} m` : "contours: zoom in to see them"}</li>
+      {#if contourNow}
+        <li data-testid="legend-contours-index"><span class="key" aria-hidden="true"><span class="stroke"></span></span>index contour, every {contourNow * 5} m, level in metres</li>
+      {/if}
+    {/if}
   </ul>
   <div class="layers">
     <div class="map-buttons">
@@ -550,11 +643,19 @@
       <fieldset class="layers-list" id="map-layers-list" data-testid="layers-list">
         <legend>Layers</legend>
         {#each MAP_LAYERS as l}
-          <label class:none={!present[l.id]} data-testid="layer-row-{l.id}">
-            <input type="checkbox" data-testid="layer-{l.id}" checked={ticks[l.id]} disabled={!present[l.id]} onchange={(e) => setTick(l.id, e.currentTarget.checked)} />
-            <span>{l.label}</span>
-            {#if !present[l.id]}<span class="none-note">none loaded</span>{/if}
-          </label>
+          <div class="layer-row">
+            <label class:none={!present[l.id]} data-testid="layer-row-{l.id}">
+              <input type="checkbox" data-testid="layer-{l.id}" checked={ticks[l.id]} disabled={!present[l.id]} onchange={(e) => setTick(l.id, e.currentTarget.checked)} />
+              <span>{l.label}</span>
+              {#if !present[l.id]}<span class="none-note">{l.id === "contours" && terrainNote ? "web app only for now" : "none loaded"}</span>{/if}
+            </label>
+            {#if l.id === "contours" && shows("contours")}
+              <select data-testid="contour-interval" aria-label="Contour interval" title="Contour interval. Auto picks it from the zoom level; zoomed far out, a chosen interval is drawn coarser so the map does not fill with lines" value={String(contourChoice)} onchange={(e) => setContourChoice(e.currentTarget.value === "auto" ? "auto" : (Number(e.currentTarget.value) as ContourChoice))}>
+                <option value="auto">Auto</option>
+                {#each INTERVALS as i}<option value={String(i)}>{i} m</option>{/each}
+              </select>
+            {/if}
+          </div>
         {/each}
       </fieldset>
     {/if}
@@ -585,6 +686,7 @@
   .key.polygon { background: color-mix(in srgb, var(--river) 35%, var(--hillshade)); border: 1.5px solid var(--river); outline: 1px solid var(--plate-ink); }
   .key .stroke { width: 18px; height: 0; border-top: 2px solid var(--cream); }
   .key .stroke.dashed { border-top-style: dashed; }
+  .key .stroke.thin { border-top-width: 1px; }
   .key .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cream); border: 1px solid var(--plate-ink); box-sizing: border-box; }
   /* Under the map's zoom buttons and compass, the same size as they are. */
   .layers { position: absolute; top: 107px; right: 10px; z-index: 4; max-height: calc(100% - 107px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
@@ -597,7 +699,9 @@
   .exaggeration select { font-size: var(--fs-12); }
   .layers-list { margin: 0; padding: var(--sp-2) var(--sp-3); display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); min-width: 190px; min-height: 0; overflow-y: auto; }
   .layers-list legend { padding: 0 var(--sp-1); font-weight: 600; }
-  .layers-list label { display: flex; gap: var(--sp-2); align-items: center; white-space: nowrap; }
+  .layer-row { display: flex; gap: var(--sp-2); align-items: center; }
+  .layer-row select { font-size: var(--fs-12); }
+  .layers-list label { flex: 1; display: flex; gap: var(--sp-2); align-items: center; white-space: nowrap; }
   .layers-list label.none { color: var(--ink-3); }
   .none-note { margin-left: auto; padding-left: var(--sp-3); font-style: italic; }
   .bend-key { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: var(--lw-thin) solid var(--ink); font-size: var(--fs-11); font-weight: 700; color: var(--fail); }
