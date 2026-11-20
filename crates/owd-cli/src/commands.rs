@@ -21,7 +21,7 @@ pub fn set_strict(on: bool) {
 /// The one exit rule for an option's failed checks (ticket A13), after the document is saved.
 /// `failed` names them (empty: none). Without `--strict` they are a warning on stderr and the
 /// command succeeds; with it, the same words and exit code 1.
-fn option_checks_outcome(failed: &str) -> Result {
+pub(crate) fn option_checks_outcome(failed: &str) -> Result {
     if failed.is_empty() {
         return Ok(());
     }
@@ -32,6 +32,48 @@ fn option_checks_outcome(failed: &str) -> Result {
         eprintln!("owd: {message}");
         Ok(())
     }
+}
+
+/// What a design line's channel footprint enters (spec 0017 ticket 13), one line each: the no-go
+/// area or the hard-exclusion ground, with the chainage from and to and the area, and the footprint
+/// tested. Empty when the line has no `no_go_clear` check.
+pub(crate) fn touched_text(option: &Value) -> String {
+    let check = &option["checks"]["no_go_clear"];
+    if !check.is_object() {
+        return String::new();
+    }
+    let width = check["footprint_width_m"].as_f64().unwrap_or(f64::NAN);
+    let mut out = String::new();
+    for t in option["constraints_touched"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let what = if t["kind"] == owd_format::design::constraints::HARD_EXCLUSION_KIND {
+            format!(
+                "hard-exclusion ground in `{}`",
+                t["name"].as_str().unwrap_or("?")
+            )
+        } else {
+            format!(
+                "the no-go area `{}` ({})",
+                t["name"].as_str().unwrap_or("?"),
+                t["kind"].as_str().unwrap_or("?")
+            )
+        };
+        out.push_str(&format!(
+            "\nthe line enters {what} from {:.0} m to {:.0} m, {:.0} m2 of its footprint: FAILS no_go_clear",
+            t["from"].as_f64().unwrap_or(f64::NAN),
+            t["to"].as_f64().unwrap_or(f64::NAN),
+            t["area_m2"].as_f64().unwrap_or(f64::NAN),
+        ));
+    }
+    out.push_str(&format!(
+        "\nno-go areas and hard exclusions ({width:.1} m footprint, the straight bottom width only; \
+         cut slopes and bend widening not tested): {}",
+        if check["ok"] == true { "clear" } else { "FAILS no_go_clear" }
+    ));
+    out
 }
 
 /// The design sanity warnings of an option or a volumes row (`owd_core::sanity`), one line each on
@@ -1125,6 +1167,7 @@ pub fn align(
     if no_feasible_line(&option) {
         human.push_str("\nNO FEASIBLE LINE: every bend is infeasible; the line is not a design");
     }
+    human.push_str(&touched_text(&option));
     // Issue #367: a failed design line is saved, marked failed, and the summary says so.
     if !ok {
         human.push_str(&format!(
@@ -1289,6 +1332,7 @@ pub fn optimise(
             "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
         ));
     }
+    human.push_str(&touched_text(&option));
     if !ok {
         human.push_str(&format!(
             "\nthe design line is saved, marked failed: {}",
@@ -1965,6 +2009,7 @@ pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
             let failed = failed_checks(o);
             let name = o["name"].as_str().unwrap_or("?");
             print_sanity(name, o);
+            human.push_str(&touched_text(o));
             if !failed.is_empty() {
                 fails.push(format!("{name} ({})", failed.join(", ")));
                 human.push_str(&format!(

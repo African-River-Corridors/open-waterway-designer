@@ -19,7 +19,8 @@ pub fn no_feasible_line(option: &Value) -> bool {
 /// `fits_in_water` when a water-aware option has an infeasible stretch, and `join_guard` when a
 /// join that held R_min failed after a later fit (spec 0005); `no_feasible_line` when every bend
 /// of a water-aware option is infeasible (issue #366); `no_self_crossing` when the pool lattice's
-/// line crosses itself (issue #569).
+/// line crosses itself (issue #569); `no_go_clear` when the line's footprint enters a no-go area or
+/// hard-exclusion ground (spec 0017 ticket 13).
 pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     let mut failed = Vec::new();
     if no_feasible_line(option) {
@@ -37,6 +38,9 @@ pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     }
     if c["no_self_crossing"]["ok"].as_bool() == Some(false) {
         failed.push("no_self_crossing");
+    }
+    if c["no_go_clear"]["ok"].as_bool() == Some(false) {
+        failed.push("no_go_clear");
     }
     failed
 }
@@ -529,5 +533,13 @@ mod crossing_tests {
         assert_eq!(failed_checks(&o), vec!["R_min"]);
         // An option with no such check (every other method) is not failed by it.
         assert!(failed_checks(&json!({"checks": {"radius_ok": true}})).is_empty());
+    }
+    #[test]
+    fn a_line_that_enters_a_no_go_area_fails_no_go_clear() {
+        let mut o = json!({"checks": {"radius_ok": true,
+            "no_go_clear": {"ok": false, "footprint_width_m": 40.0}}});
+        assert_eq!(failed_checks(&o), vec!["no_go_clear"]);
+        o["checks"]["no_go_clear"]["ok"] = json!(true);
+        assert!(failed_checks(&o).is_empty());
     }
 }

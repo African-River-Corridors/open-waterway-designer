@@ -5,9 +5,8 @@
 
 use super::alignment::{AlignMethod, pts_of};
 use super::crs::Crs;
-use super::design_line::{GivenLine, alignment, given_id};
+use super::design_line::{GivenLine, given_id};
 use super::geojson::{self, Role};
-use super::rule_sets::stage_error;
 use super::session::{DesignError, Session, Stage, StageStatus};
 use crate::types::Polyline;
 
@@ -64,7 +63,7 @@ impl Session {
             line: Polyline(line),
         });
         let input = self.alignment_input(settings.clone())?;
-        let design = alignment(&input, None).map_err(stage_error)?;
+        let design = self.run_alignment(&input, None)?;
         self.store_design_line(&settings, AlignMethod::Given, &design);
         Ok(id)
     }

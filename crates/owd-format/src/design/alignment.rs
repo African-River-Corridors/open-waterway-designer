@@ -495,24 +495,39 @@ impl Session {
         let mut settings = self.method_settings(method, overrides)?;
         settings.method = method;
         let input = self.alignment_input(settings.clone())?;
-        // The multiplier raster, when the design names one and it is attached; a named raster that
-        // is not attached reaches the stage as none, and the re-route refuses by name.
-        let raster = self.stage_multiplier().ok().flatten();
-        let weight = match &raster {
-            Some(r) => Some(
-                super::constraints::multiplier_sampler(r, self.multiplier_epsg())
-                    .map_err(stage_error)?,
-            ),
-            None => None,
-        };
-        let line = super::design_line::alignment_with(
-            &input,
-            terrain,
-            weight.as_ref().map(|w| w as TerrainSampler),
-        )
-        .map_err(stage_error)?;
+        let line = self.run_alignment(&input, terrain)?;
         self.store_design_line(&settings, method, &line);
         Ok(())
+    }
+
+    /// Run the pure alignment stage on `input` with the multiplier raster, when the design names one
+    /// and it is attached. A named raster that is not attached reaches the stage as none, and the
+    /// stage refuses by name (`ALIGN_NO_MULTIPLIER`).
+    pub(super) fn run_alignment(
+        &self,
+        input: &AlignmentIn,
+        terrain: Option<TerrainSampler>,
+    ) -> Result<DesignLine, DesignError> {
+        let raster = self.stage_multiplier().ok().flatten();
+        let epsg = self.multiplier_epsg();
+        let weight = match &raster {
+            Some(r) => Some((
+                super::constraints::multiplier_sampler(r, epsg).map_err(stage_error)?,
+                super::constraints::multiplier_cell_m(r, epsg).map_err(stage_error)?,
+            )),
+            None => None,
+        };
+        super::design_line::alignment_with(
+            input,
+            terrain,
+            weight
+                .as_ref()
+                .map(|(w, cell_m)| super::constraints::Multiplier {
+                    at: w as TerrainSampler,
+                    cell_m: *cell_m,
+                }),
+        )
+        .map_err(stage_error)
     }
 
     /// Store the alignment's settings and its design line, with the hash of what it read.

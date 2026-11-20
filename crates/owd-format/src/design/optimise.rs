@@ -452,12 +452,39 @@ impl Session {
             &river_geometry,
         );
         // The lattice does not steer by the constraints yet (spec 0017 ticket 16, line refinement):
-        // its line reports the no-go areas it touches, as every design line does (ticket 13).
-        if let Some(c) = self.constraints()?.filter(|c| !c.no_go.is_empty()) {
-            refined.constraints_touched = super::constraints::constraints_touched(
-                &refined.line.0,
-                super::design_line::footprint_half_m(&self.channel_size()?),
-                &c.no_go,
+        // its line reports what its footprint enters and fails `no_go_clear` when it enters a no-go
+        // area or hard-exclusion ground, as every design line does (ticket 13).
+        if let Some(c) = self.constraints()?.filter(|c| !c.is_empty()) {
+            let raster = match self.stage_multiplier() {
+                Ok(r) => r,
+                Err(path) => {
+                    return Err(refuse(format!(
+                        "OPTIMISE_NO_MULTIPLIER: the cut-rate multiplier raster `{path}` is not \
+                         there to read: put it beside the design, or set it again"
+                    )));
+                }
+            };
+            let epsg = self.multiplier_epsg();
+            let weight = match &raster {
+                Some(r) => Some((
+                    super::constraints::multiplier_sampler(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                    super::constraints::multiplier_cell_m(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                )),
+                None => None,
+            };
+            let m = weight
+                .as_ref()
+                .map(|(w, cell_m)| super::constraints::Multiplier {
+                    at: w as TerrainSampler,
+                    cell_m: *cell_m,
+                });
+            super::design_line::mark_constraints(
+                &mut refined,
+                &self.channel_size()?,
+                &c,
+                m.as_ref(),
             );
         }
         // The design line's own sanity check, one warning for each pool (or piece) whose search

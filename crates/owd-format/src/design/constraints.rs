@@ -11,13 +11,17 @@
 //!
 //! **The channel footprint** is the strip of the channel's straight bottom width centred on the
 //! line (half of `bottom_width_straight_m` each side). It is the channel's bed, not its cut slopes:
-//! how far the slopes reach depends on the ground, which only the volumes stage reads.
+//! how far the slopes reach depends on the ground, which only the volumes stage reads. Bend widening
+//! is not in it either ([`FOOTPRINT_NOTE`]).
+//!
+//! A design line of any method whose footprint enters a no-go area or a hard-exclusion cell fails
+//! the check `no_go_clear`; the re-route refuses such a line.
 //!
 //! [`Session::set_constraints`] is the one function the CLI and the web app set them through.
 
 use super::session::{DesignError, Session};
 use crate::geotiff::Dem;
-use crate::types::{Chainage, Polyline, StageError};
+use crate::types::{Chainage, Polyline, StageError, TerrainSampler};
 use owd_core::geom::overlay::contains_xy;
 use owd_core::geom::{Polygon, Pt, linear};
 use schemars::JsonSchema;
@@ -40,6 +44,28 @@ pub const TOUCH_STEP_M: f64 = 5.0;
 
 /// The step across the footprint, metres. OWD's own choice.
 pub const TOUCH_ACROSS_M: f64 = 1.0;
+
+/// The `kind` of the ground a line touches where the multiplier is at or above [`HARD_EXCLUSION`].
+pub const HARD_EXCLUSION_KIND: &str = "hard_exclusion";
+
+/// What the footprint tested against the constraints covers, as every `no_go_clear` check says.
+pub const FOOTPRINT_NOTE: &str = "the footprint tested is the channel's straight bottom width only: \
+                                  the cut slopes and bend widening are not tested";
+
+/// The finest step, metres, at which the footprint is walked over the multiplier raster: a bound on
+/// the work for a very fine raster. OWD's own choice.
+pub const MIN_WALK_STEP_M: f64 = 0.25;
+
+/// The cut-rate multiplier as a stage reads it: the value at points in the project CRS (NaN where
+/// there is no data), and the raster's cell size in metres, so a line can be walked over it cell by
+/// cell.
+#[derive(Clone, Copy)]
+pub struct Multiplier<'a> {
+    /// The multiplier at points, `at(xs, ys)`.
+    pub at: TerrainSampler<'a>,
+    /// The raster's cell size, metres (the shorter side).
+    pub cell_m: f64,
+}
 
 /// A polygon in the project CRS: an outer ring and holes. A ring is closed by implication.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -100,21 +126,27 @@ pub struct Constraints {
     pub cut_rate_multiplier: Option<MultiplierRaster>,
 }
 
-/// One no-go area a design line touches: where along the line, and how much of the footprint is in
-/// it. A line that enters one area twice touches it twice.
+/// One no-go area, or one stretch of hard-exclusion ground, a design line's footprint enters: where
+/// along the line, and how much of the footprint is in it. A line that enters one area twice touches
+/// it twice. The footprint is the channel's straight bottom width only, `footprint_width_m` wide,
+/// centred on the line: the cut slopes and bend widening are not tested.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ConstraintTouched {
-    /// The no-go area's name.
+    /// The no-go area's name; for hard-exclusion ground, the multiplier raster's path.
     pub name: String,
-    /// Its kind.
+    /// The no-go area's kind; `hard_exclusion` for multiplier cells at or above 1e6.
     pub kind: String,
     /// Design-line chainage where the footprint enters it.
     pub from: Chainage,
     /// Design-line chainage where the footprint leaves it.
     pub to: Chainage,
-    /// The area of the footprint inside it, m², sampled every [`TOUCH_STEP_M`] along the line and
-    /// [`TOUCH_ACROSS_M`] across it.
+    /// The area of the footprint inside it, m². A no-go area is sampled every [`TOUCH_STEP_M`]
+    /// along the line and [`TOUCH_ACROSS_M`] across it; hard-exclusion ground every half cell of
+    /// the raster both ways.
     pub area_m2: f64,
+    /// The width of the footprint tested, metres: the channel's straight bottom width only. The cut
+    /// slopes and bend widening are not tested.
+    pub footprint_width_m: f64,
 }
 
 fn refuse(code: &str, message: impl AsRef<str>) -> StageError {
@@ -281,70 +313,90 @@ pub fn no_go_from_geojson(v: &Value) -> Result<Vec<NoGoArea>, StageError> {
     Ok(c.no_go)
 }
 
-/// The no-go areas a line's footprint enters: for each area, each run of the line where the strip of
-/// `half_width_m` each side of it has a sample in the area, with its chainage from and to and the
-/// area of the strip inside. The strip is sampled in cells [`TOUCH_STEP_M`] long and up to
-/// [`TOUCH_ACROSS_M`] wide, each counted by its centre. In order of chainage, then of name.
-pub fn constraints_touched(
-    line: &[Pt],
-    half_width_m: f64,
-    no_go: &[NoGoArea],
-) -> Vec<ConstraintTouched> {
-    if line.len() < 2 || no_go.is_empty() {
-        return Vec::new();
-    }
-    let total = linear::length(line);
-    if total.is_nan() || total <= 0.0 {
-        return Vec::new();
-    }
-    let n = (total / TOUCH_STEP_M).ceil().max(1.0) as usize;
-    let ds = total / n as f64;
-    let half = if half_width_m.is_finite() {
-        half_width_m.max(0.0)
-    } else {
-        0.0
-    };
-    let m = (half / TOUCH_ACROSS_M).ceil() as usize;
-    let dt = if m > 0 { half / m as f64 } else { 0.0 };
-    let at = |c: f64| linear::interpolate(line, c.clamp(0.0, total)).unwrap_or([f64::NAN; 2]);
-    // The sample points of each cell along the line: its centre, moved across by each offset.
-    let cells: Vec<Vec<Pt>> = (0..n)
-        .map(|i| {
-            let c = (i as f64 + 0.5) * ds;
-            let (p, a, b) = (at(c), at(c - ds / 2.0), at(c + ds / 2.0));
-            let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
-            let len = libm::hypot(dx, dy);
-            let (nx, ny) = if len > 0.0 {
-                (-dy / len, dx / len)
-            } else {
-                (0.0, 0.0)
-            };
-            if m == 0 {
-                return vec![p];
-            }
-            (0..2 * m)
-                .map(|j| {
-                    let t = (j as f64 - m as f64 + 0.5) * dt;
-                    [p[0] + t * nx, p[1] + t * ny]
-                })
-                .collect()
+/// The footprint of a line, cut in cells along it: each cell's sample points (its centre, moved
+/// across the line by each offset), the cell length `ds`, the step across `dt` and the line's length.
+struct Footprint {
+    cells: Vec<Vec<Pt>>,
+    ds: f64,
+    dt: f64,
+    total: f64,
+    width: f64,
+}
+
+impl Footprint {
+    /// The strip of `half_width_m` each side of `line`, in cells about `along` long, sampled about
+    /// `across` apart. `None` for a line with no length.
+    fn new(line: &[Pt], half_width_m: f64, along: f64, across: f64) -> Option<Footprint> {
+        if line.len() < 2 {
+            return None;
+        }
+        let total = linear::length(line);
+        if total.is_nan() || total <= 0.0 {
+            return None;
+        }
+        let n = (total / along).ceil().max(1.0) as usize;
+        let ds = total / n as f64;
+        let half = if half_width_m.is_finite() {
+            half_width_m.max(0.0)
+        } else {
+            0.0
+        };
+        let m = (half / across).ceil() as usize;
+        let dt = if m > 0 { half / m as f64 } else { 0.0 };
+        let at = |c: f64| linear::interpolate(line, c.clamp(0.0, total)).unwrap_or([f64::NAN; 2]);
+        let cells = (0..n)
+            .map(|i| {
+                let c = (i as f64 + 0.5) * ds;
+                let (p, a, b) = (at(c), at(c - ds / 2.0), at(c + ds / 2.0));
+                let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                let len = libm::hypot(dx, dy);
+                let (nx, ny) = if len > 0.0 {
+                    (-dy / len, dx / len)
+                } else {
+                    (0.0, 0.0)
+                };
+                if m == 0 {
+                    return vec![p];
+                }
+                (0..2 * m)
+                    .map(|j| {
+                        let t = (j as f64 - m as f64 + 0.5) * dt;
+                        [p[0] + t * nx, p[1] + t * ny]
+                    })
+                    .collect()
+            })
+            .collect();
+        Some(Footprint {
+            cells,
+            ds,
+            dt,
+            total,
+            width: 2.0 * half,
         })
-        .collect();
-    let mut out = Vec::new();
-    for a in no_go {
-        let poly = [a.polygon.to_polygon()];
+    }
+
+    /// Each run of cells with a sample in the ground, `inside(cell, samples) -> how many`: its
+    /// chainage from and to and the area inside.
+    fn runs(
+        &self,
+        name: &str,
+        kind: &str,
+        inside: impl Fn(usize, &[Pt]) -> usize,
+    ) -> Vec<ConstraintTouched> {
+        let mut out = Vec::new();
         let mut run: Option<(usize, usize, usize)> = None; // first cell, last cell, samples in
         let close = |run: (usize, usize, usize), out: &mut Vec<ConstraintTouched>| {
             out.push(ConstraintTouched {
-                name: a.name.clone(),
-                kind: a.kind.clone(),
-                from: Chainage(run.0 as f64 * ds),
-                to: Chainage(((run.1 + 1) as f64 * ds).min(total)),
-                area_m2: run.2 as f64 * ds * dt,
+                name: name.to_string(),
+                kind: kind.to_string(),
+                from: Chainage(run.0 as f64 * self.ds),
+                to: Chainage(((run.1 + 1) as f64 * self.ds).min(self.total)),
+                area_m2: run.2 as f64 * self.ds * self.dt,
+                footprint_width_m: self.width,
             });
         };
-        for (i, pts) in cells.iter().enumerate() {
-            let k = pts.iter().filter(|p| contains_xy(&poly, **p)).count();
+        for (i, pts) in self.cells.iter().enumerate() {
+            let k = inside(i, pts);
             match (k > 0, run) {
                 (true, None) => run = Some((i, i, k)),
                 (true, Some((f, _, s))) => run = Some((f, i, s + k)),
@@ -358,14 +410,100 @@ pub fn constraints_touched(
         if let Some(r) = run {
             close(r, &mut out);
         }
+        out
     }
+}
+
+fn by_chainage(out: &mut [ConstraintTouched]) {
     out.sort_by(|x, y| {
         x.from
             .0
             .total_cmp(&y.from.0)
             .then_with(|| x.name.cmp(&y.name))
     });
+}
+
+/// The no-go areas a line's footprint enters: for each area, each run of the line where the strip of
+/// `half_width_m` each side of it has a sample in the area, with its chainage from and to and the
+/// area of the strip inside. The strip is sampled in cells [`TOUCH_STEP_M`] long and up to
+/// [`TOUCH_ACROSS_M`] wide, each counted by its centre. In order of chainage, then of name.
+pub fn constraints_touched(
+    line: &[Pt],
+    half_width_m: f64,
+    no_go: &[NoGoArea],
+) -> Vec<ConstraintTouched> {
+    if no_go.is_empty() {
+        return Vec::new();
+    }
+    let Some(f) = Footprint::new(line, half_width_m, TOUCH_STEP_M, TOUCH_ACROSS_M) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for a in no_go {
+        let poly = [a.polygon.to_polygon()];
+        out.extend(f.runs(&a.name, &a.kind, |_, pts| {
+            pts.iter().filter(|p| contains_xy(&poly, **p)).count()
+        }));
+    }
+    by_chainage(&mut out);
     out
+}
+
+/// The hard-exclusion ground a line's footprint enters: each run of the line where the strip of
+/// `half_width_m` each side of it has a point whose multiplier is at or above [`HARD_EXCLUSION`].
+/// The strip is walked over the raster at half its cell size both ways (never finer than
+/// [`MIN_WALK_STEP_M`]), so a strip of hard exclusion one cell wide cannot fall between two samples,
+/// whatever the re-route's station step. Each run is named `name` (the raster's path), of kind
+/// [`HARD_EXCLUSION_KIND`].
+pub fn hard_exclusion_touched(
+    line: &[Pt],
+    half_width_m: f64,
+    multiplier: &Multiplier,
+    name: &str,
+) -> Vec<ConstraintTouched> {
+    let step = if multiplier.cell_m.is_finite() && multiplier.cell_m > 0.0 {
+        (multiplier.cell_m / 2.0).max(MIN_WALK_STEP_M)
+    } else {
+        TOUCH_ACROSS_M
+    };
+    let Some(f) = Footprint::new(line, half_width_m, step, step) else {
+        return Vec::new();
+    };
+    let (xs, ys): (Vec<f64>, Vec<f64>) = f.cells.iter().flatten().map(|p| (p[0], p[1])).unzip();
+    let values = (multiplier.at)(&xs, &ys);
+    let mut first = Vec::with_capacity(f.cells.len());
+    let mut k = 0;
+    for c in &f.cells {
+        first.push(k);
+        k += c.len();
+    }
+    let mut out = f.runs(name, HARD_EXCLUSION_KIND, |i, pts| {
+        (first[i]..first[i] + pts.len())
+            .filter(|&j| values.get(j).is_some_and(|&v| v >= HARD_EXCLUSION))
+            .count()
+    });
+    by_chainage(&mut out);
+    out
+}
+
+/// The multiplier raster's cell size in metres in the project CRS, the shorter side: for a raster in
+/// WGS84, measured at its centre once projected.
+pub fn multiplier_cell_m(raster: &Dem, project_epsg: Option<u32>) -> Result<f64, StageError> {
+    let [a, _, c, _, e, f] = raster.geotransform;
+    let cell = match raster_zone(raster, project_epsg)? {
+        None => a.abs().min(e.abs()),
+        Some(u) => {
+            let lon = c + a * raster.width as f64 / 2.0;
+            let lat = f + e * raster.height as f64 / 2.0;
+            let p = |lon: f64, lat: f64| {
+                u.forward(lon, lat)
+                    .map_err(|m| refuse("CONSTRAINTS_RASTER_CRS", m))
+            };
+            let (o, x, y) = (p(lon, lat)?, p(lon + a, lat)?, p(lon, lat + e)?);
+            libm::hypot(x[0] - o[0], x[1] - o[1]).min(libm::hypot(y[0] - o[0], y[1] - o[1]))
+        }
+    };
+    Ok(cell)
 }
 
 /// The multiplier at a point: the value of the cell that holds it, NaN (no data, so 1) outside the

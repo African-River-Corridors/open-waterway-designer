@@ -929,7 +929,7 @@
           "$ref": "#/$defs/LineString"
         },
         "checks": {
-          "description": "The checks of the line: `r_min_m`, `radius_ok`, `measured_min_radius_m`,\n`radius_check_chord_m`, and `fits_in_water`, `feasible` and `join_guard` where they apply."
+          "description": "The checks of the line: `r_min_m`, `radius_ok`, `measured_min_radius_m`,\n`radius_check_chord_m`, and `fits_in_water`, `feasible` and `join_guard` where they apply.\n`no_go_clear` (`{ok, footprint_width_m, note}`) when the run has constraints: `ok` is false when\nthe footprint enters a no-go area or hard-exclusion ground."
         },
         "details": {
           "description": "What the method reports about its own work.",
@@ -964,7 +964,7 @@
           }
         },
         "constraints_touched": {
-          "description": "The no-go areas the line or its channel footprint enters (ticket 13), each with the chainage\nfrom and to and the area touched. Empty when it enters none, or the run has none.",
+          "description": "The no-go areas and the hard-exclusion ground (multiplier at or above 1e6) the line's channel\nfootprint enters (ticket 13), each with the chainage from and to, the area touched and the\nfootprint width tested. The footprint is the straight bottom width only: the cut slopes and\nbend widening are not tested. Empty when it enters none, or the run has none.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/ConstraintTouched"
@@ -1051,15 +1051,15 @@
       ]
     },
     "ConstraintTouched": {
-      "description": "One no-go area a design line touches: where along the line, and how much of the footprint is in\nit. A line that enters one area twice touches it twice.",
+      "description": "One no-go area, or one stretch of hard-exclusion ground, a design line's footprint enters: where\nalong the line, and how much of the footprint is in it. A line that enters one area twice touches\nit twice. The footprint is the channel's straight bottom width only, `footprint_width_m` wide,\ncentred on the line: the cut slopes and bend widening are not tested.",
       "type": "object",
       "properties": {
         "name": {
-          "description": "The no-go area's name.",
+          "description": "The no-go area's name; for hard-exclusion ground, the multiplier raster's path.",
           "type": "string"
         },
         "kind": {
-          "description": "Its kind.",
+          "description": "The no-go area's kind; `hard_exclusion` for multiplier cells at or above 1e6.",
           "type": "string"
         },
         "from": {
@@ -1071,7 +1071,12 @@
           "$ref": "#/$defs/Chainage"
         },
         "area_m2": {
-          "description": "The area of the footprint inside it, m², sampled every [`TOUCH_STEP_M`] along the line and\n[`TOUCH_ACROSS_M`] across it.",
+          "description": "The area of the footprint inside it, m². A no-go area is sampled every [`TOUCH_STEP_M`]\nalong the line and [`TOUCH_ACROSS_M`] across it; hard-exclusion ground every half cell of\nthe raster both ways.",
+          "type": "number",
+          "format": "double"
+        },
+        "footprint_width_m": {
+          "description": "The width of the footprint tested, metres: the channel's straight bottom width only. The cut\nslopes and bend widening are not tested.",
           "type": "number",
           "format": "double"
         }
@@ -1081,7 +1086,8 @@
         "kind",
         "from",
         "to",
-        "area_m2"
+        "area_m2",
+        "footprint_width_m"
       ]
     }
   }

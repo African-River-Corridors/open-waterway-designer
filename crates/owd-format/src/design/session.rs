@@ -474,13 +474,8 @@ impl Session {
             if !reads_dem && let Some(inputs) = dep["inputs"].as_object_mut() {
                 inputs.remove("dem");
                 inputs.remove("water_level");
-                // Nor the cut-rate multiplier (ticket 13): only the re-route weighs by it.
-                if let Some(c) = inputs
-                    .get_mut(super::constraints::INPUT)
-                    .and_then(Value::as_object_mut)
-                {
-                    c.remove("cut_rate_multiplier");
-                }
+                // The cut-rate multiplier stays (ticket 13): every method's line is walked over it
+                // for hard-exclusion ground.
             }
             // The multiplier raster is identified by its hash, as the DEM is, not by where it sits.
             // (`get_mut`, not indexing: indexing would add the key to a document without it.)

@@ -15,7 +15,10 @@
 //! line stays stored as what the lattice started from.
 
 use super::alignment::{AlignMethod, AlignmentSettings, NO_FEASIBLE_LINE, WIDTH_ONLY};
-use super::constraints::{ConstraintTouched, Constraints, constraints_touched};
+use super::constraints::{
+    ConstraintTouched, Constraints, FOOTPRINT_NOTE, Multiplier, constraints_touched,
+    hard_exclusion_touched,
+};
 use super::river::RiverGeometry;
 use super::sizing::ChannelSize;
 use crate::types::{Chainage, Polyline, StageError, TerrainSampler};
@@ -150,6 +153,8 @@ pub struct DesignLine {
     pub line: Polyline,
     /// The checks of the line: `r_min_m`, `radius_ok`, `measured_min_radius_m`,
     /// `radius_check_chord_m`, and `fits_in_water`, `feasible` and `join_guard` where they apply.
+    /// `no_go_clear` (`{ok, footprint_width_m, note}`) when the run has constraints: `ok` is false when
+    /// the footprint enters a no-go area or hard-exclusion ground.
     pub checks: Value,
     /// What the method reports about its own work.
     #[serde(default)]
@@ -167,8 +172,10 @@ pub struct DesignLine {
     /// polygon to tell water from land, or a line moved from a 0.4 file), so "none" and "not known"
     /// never read the same.
     pub cut_offs: Option<Vec<CutOff>>,
-    /// The no-go areas the line or its channel footprint enters (ticket 13), each with the chainage
-    /// from and to and the area touched. Empty when it enters none, or the run has none.
+    /// The no-go areas and the hard-exclusion ground (multiplier at or above 1e6) the line's channel
+    /// footprint enters (ticket 13), each with the chainage from and to, the area touched and the
+    /// footprint width tested. The footprint is the straight bottom width only: the cut slopes and
+    /// bend widening are not tested. Empty when it enters none, or the run has none.
     pub constraints_touched: Vec<ConstraintTouched>,
 }
 
@@ -523,24 +530,54 @@ pub fn footprint_half_m(size: &ChannelSize) -> f64 {
 
 /// The alignment stage: the one design line of the method the settings name.
 ///
-/// The re-route needs `terrain` and a water level profile in the river geometry; with constraints
-/// it needs `multiplier` (the cut-rate multiplier at points) when they name a raster
-/// (`ALIGN_NO_MULTIPLIER`), treats each no-go area and each hard-exclusion cell as impassable, and
-/// refuses a line that still enters a no-go area (`ALIGN_NO_GO_CROSSED`, at its chainage). The other
-/// methods do not search, so they do not steer: their line reports what it touches. A line under
-/// R_min is not refused: its checks and its bends say so (issue #367).
+/// The re-route needs `terrain` and a water level profile in the river geometry. When the
+/// constraints name a multiplier raster every method needs `multiplier` (`ALIGN_NO_MULTIPLIER`): the
+/// re-route weighs its cut by it and treats each no-go area and each hard-exclusion cell as
+/// impassable, and every method's line is walked over it for hard-exclusion ground
+/// ([`check_constraints`]). A line under R_min is not refused: its checks and its bends say so
+/// (issue #367).
 pub fn alignment_with(
     input: &AlignmentIn,
     terrain: Option<TerrainSampler>,
-    multiplier: Option<TerrainSampler>,
+    multiplier: Option<Multiplier>,
 ) -> Result<DesignLine, StageError> {
-    let mut line = method_line(input, terrain, multiplier)?;
-    if let Some(c) = input.constraints.as_ref().filter(|c| !c.no_go.is_empty()) {
-        line.constraints_touched =
-            constraints_touched(&line.line.0, footprint_half_m(&input.size), &c.no_go);
-        if input.settings.method == AlignMethod::Reroute
-            && let Some(t) = line.constraints_touched.first()
-        {
+    // A named multiplier is read, never taken as 1 (or as free of hard exclusions) in silence.
+    let named = input
+        .constraints
+        .as_ref()
+        .and_then(|c| c.cut_rate_multiplier.as_ref());
+    if let (Some(m), None) = (named, &multiplier) {
+        return Err(refuse(
+            "ALIGN_NO_MULTIPLIER",
+            format!(
+                "the cut-rate multiplier raster `{}` is not there to read: put it beside the \
+                 design, or set it again",
+                m.path
+            ),
+        ));
+    }
+    let multiplier = multiplier.filter(|_| named.is_some());
+    let mut line = method_line(input, terrain, multiplier.map(|m| m.at))?;
+    check_constraints(&mut line, input, multiplier.as_ref())?;
+    Ok(line)
+}
+
+/// The stage's last step: what the line's footprint enters, and the check `no_go_clear`
+/// ([`mark_constraints`]). The re-route searched round the constraints, so a line of its that still
+/// enters a no-go area is refused (`ALIGN_NO_GO_CROSSED`), as is one that enters hard-exclusion
+/// ground (`ALIGN_HARD_EXCLUSION_CROSSED`), each at its chainage. A line of another method is kept,
+/// and fails the check. Nothing is written when the run has no constraints.
+pub fn check_constraints(
+    line: &mut DesignLine,
+    input: &AlignmentIn,
+    multiplier: Option<&Multiplier>,
+) -> Result<(), StageError> {
+    let Some(c) = input.constraints.as_ref().filter(|c| !c.is_empty()) else {
+        return Ok(());
+    };
+    let (no_go, hard) = mark_constraints(line, &input.size, c, multiplier);
+    if input.settings.method == AlignMethod::Reroute {
+        if let Some(t) = no_go.first() {
             return Err(refuse(
                 "ALIGN_NO_GO_CROSSED",
                 format!(
@@ -551,8 +588,59 @@ pub fn alignment_with(
             )
             .at(t.from));
         }
+        if let Some(t) = hard.first() {
+            return Err(refuse(
+                "ALIGN_HARD_EXCLUSION_CROSSED",
+                format!(
+                    "the re-route's line enters hard-exclusion ground (a cut-rate multiplier of 1e6 \
+                     or more in `{}`) from {:.1} m to {:.1} m: the search's stations did not see \
+                     it. Make the station step finer, widen the corridor sweep or change the raster",
+                    t.name, t.from.0, t.to.0
+                ),
+            )
+            .at(t.from));
+        }
     }
-    Ok(line)
+    Ok(())
+}
+
+/// Write what `line`'s footprint enters into `constraints_touched` (the no-go areas, and the
+/// hard-exclusion ground when `multiplier` is given), and the check `no_go_clear`: `ok` when it
+/// enters nothing, with the footprint width tested and [`FOOTPRINT_NOTE`]. Returns the no-go areas
+/// and the hard-exclusion ground entered, apart. Every method's line and the pool lattice's go
+/// through it.
+pub fn mark_constraints(
+    line: &mut DesignLine,
+    size: &ChannelSize,
+    c: &Constraints,
+    multiplier: Option<&Multiplier>,
+) -> (Vec<ConstraintTouched>, Vec<ConstraintTouched>) {
+    let half = footprint_half_m(size);
+    let no_go = constraints_touched(&line.line.0, half, &c.no_go);
+    let raster = c
+        .cut_rate_multiplier
+        .as_ref()
+        .map_or("cut-rate multiplier", |m| m.path.as_str());
+    let hard = multiplier
+        .map(|m| hard_exclusion_touched(&line.line.0, half, m, raster))
+        .unwrap_or_default();
+    let mut all: Vec<ConstraintTouched> = no_go.iter().chain(&hard).cloned().collect();
+    all.sort_by(|x, y| {
+        x.from
+            .0
+            .total_cmp(&y.from.0)
+            .then_with(|| x.name.cmp(&y.name))
+    });
+    if !line.checks.is_object() {
+        line.checks = json!({});
+    }
+    line.checks["no_go_clear"] = json!({
+        "ok": all.is_empty(),
+        "footprint_width_m": 2.0 * half,
+        "note": FOOTPRINT_NOTE,
+    });
+    line.constraints_touched = all;
+    (no_go, hard)
 }
 
 fn method_line(
@@ -775,25 +863,8 @@ fn reroute(
             "the re-route needs terrain: give it a DEM",
         )
     })?;
-    // A named multiplier is read, never taken as 1 in silence.
-    let named = input
-        .constraints
-        .as_ref()
-        .and_then(|c| c.cut_rate_multiplier.as_ref());
-    let weight = match (named, multiplier) {
-        (Some(m), None) => {
-            return Err(refuse(
-                "ALIGN_NO_MULTIPLIER",
-                format!(
-                    "the cut-rate multiplier raster `{}` is not there to read: put it beside the \
-                     design, or set it again",
-                    m.path
-                ),
-            ));
-        }
-        (Some(_), Some(w)) => Some(w),
-        (None, _) => None,
-    };
+    // `alignment_with` refused a named multiplier that is not there.
+    let weight = multiplier;
     let no_go: Vec<Polygon> = input
         .constraints
         .iter()
