@@ -961,6 +961,17 @@ fn arc_points(x0: f64, y0: f64, th0: f64, r: f64, sgn: i8, arc_len: f64, n: usiz
     out
 }
 
+/// The longest step of the returned line along an arc (m), lattice primitive or closing path.
+/// A line read for its radius is a polyline: points resampled along its chords sit inside the
+/// circle, so a coarse arc reads tighter than it is (an R 150 m arc in 10 m steps reads 144.5 m on
+/// 25 m vertices). At 2 m the reading is within about 0.1 % of the arc's radius.
+pub const LINE_ARC_STEP_M: f64 = 2.0;
+
+/// Steps of the returned line along an arc of `len` metres (at least 10, as before).
+fn line_steps(len: f64) -> usize {
+    std::cmp::max(10, (len / LINE_ARC_STEP_M - 1e-9).ceil() as i64) as usize
+}
+
 /// One piece of a closing path: `(radius, sign, length)`; a straight has an infinite radius and
 /// sign 0.
 type Piece = (f64, i8, f64);
@@ -1050,15 +1061,16 @@ fn piece_prim(piece: Piece, step_m: f64) -> Prim {
     }
 }
 
-/// The poses `n` steps along each piece of `path` from `from` (pieces of no length are passed).
-fn path_poses(from: Pose, path: &[Piece], step_m: f64) -> Vec<Vec<Pose>> {
+/// The poses along each piece of `path` from `from` (pieces of no length are passed): an arc in
+/// steps of at most [`LINE_ARC_STEP_M`], as the lattice's own arcs; a straight in 10 steps.
+fn path_poses(from: Pose, path: &[Piece]) -> Vec<Vec<Pose>> {
     let mut cur = from;
     let mut out = Vec::new();
     for &(r, sgn, len) in path {
         if len <= 1e-9 {
             continue;
         }
-        let n = std::cmp::max(2, (len / step_m).ceil() as i64) as usize;
+        let n = if sgn == 0 { 10 } else { line_steps(len) };
         let pts = arc_points(cur.0, cur.1, cur.2, r, sgn, len, n);
         cur = pts[pts.len() - 1];
         out.push(pts);
@@ -1360,7 +1372,12 @@ pub fn solve_lattice_until(
     let mut dense: Vec<Pt> = vec![[cx, cy]];
     for &pi in &seq {
         let p = &prims[pi];
-        let pts = arc_points(cx, cy, cth, p.r, p.sign, p.arc_len, 10);
+        let n = if p.sign == 0 {
+            10
+        } else {
+            line_steps(p.arc_len)
+        };
+        let pts = arc_points(cx, cy, cth, p.r, p.sign, p.arc_len, n);
         dense.extend(pts.iter().map(|q| [q.0, q.1]));
         (cx, cy, cth) = pts[pts.len() - 1];
     }
@@ -1368,7 +1385,7 @@ pub fn solve_lattice_until(
         (true, Some(path)) => path.into_iter().filter(|p| p.2 > 1e-9).collect(),
         _ => Vec::new(),
     };
-    for pts in path_poses((cx, cy, cth), &close_pieces, cfg.arc_step_m) {
+    for pts in path_poses((cx, cy, cth), &close_pieces) {
         dense.extend(pts.iter().map(|q| [q.0, q.1]));
         (cx, cy, cth) = pts[pts.len() - 1];
     }
