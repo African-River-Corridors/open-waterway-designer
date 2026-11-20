@@ -486,6 +486,14 @@ impl Session {
         self.edit(|s| s.set_alignment_settings(method, &settings))
     }
 
+    /// Set optimise settings (`length_weight`, the weights, ...), as JSON text, as `owd optimise
+    /// --length-weight` does. Nothing runs.
+    pub fn set_optimise_settings(&mut self, settings: &str) -> Js<String> {
+        let settings: Value =
+            ok(serde_json::from_str(settings).map_err(|e| format!("not optimise settings: {e}")))?;
+        self.edit(|s| s.set_optimise_settings(&settings))
+    }
+
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
         self.edit(|s| s.set_water_text(level, fall))
     }

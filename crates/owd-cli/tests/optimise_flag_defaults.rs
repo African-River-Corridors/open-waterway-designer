@@ -99,3 +99,41 @@ fn the_help_of_owd_optimise_shows_the_default_the_stage_uses() {
         );
     }
 }
+
+/// `--length-weight` (a cost per metre of design line) shows the stage's own default, 0 (off), read
+/// from the shared settings: the setting is not written into a design while it is 0, so the example
+/// above does not hold it.
+#[test]
+fn the_help_of_length_weight_shows_the_default_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default().length_weight;
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--length-weight");
+    assert!(
+        text.contains(&format!("(default {d}: off)")),
+        "the help of `--length-weight` does not show the default {d}: {text}"
+    );
+}
+
+/// `owd optimise --length-weight` goes through the stage's own reading of its settings: a negative
+/// weight is refused by name (exit 2) and the design is not written.
+#[test]
+fn a_negative_length_weight_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-length-weight");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Length weight", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", path.to_str().unwrap(), "--length-weight=-1"])
+        .output()
+        .expect("owd runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(err.contains("length_weight"), "{err}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}

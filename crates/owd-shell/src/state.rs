@@ -684,6 +684,18 @@ impl AppState {
         Ok(())
     }
 
+    /// Set optimise settings in the design (`length_weight`, the weights, ...), through the same
+    /// reading as `owd optimise` and its flags (`--length-weight`). Nothing runs; a fresh optimise
+    /// stage whose settings change goes stale. A refusal changes nothing.
+    pub fn set_optimise_settings(&mut self, settings: &Value) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session
+            .set_optimise_settings(settings)
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the run inputs from the app's fields (spec 0017, ticket 11): the objective
     /// (`SENSE:MEASURE`, empty for none), the limits (one `MEASURE<=VALUE` a line, empty for none)
     /// and the target level (empty for none), through `Session::edit_run_inputs`, as `owd

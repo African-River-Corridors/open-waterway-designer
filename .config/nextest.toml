@@ -44,7 +44,10 @@ not (
     (binary_id(owd-reach::bankcheck) & test(=the_recorded_whole_river_gives_a_centreline_about_as_long_as_its_seed)) |
     (binary_id(owd-reach::bankcheck) & test(=one_more_round_with_only_the_side_repairs_moves_nothing_at_the_ends)) |
     (binary_id(owd-core::lattice_long_pool) & test(=a_31_km_pool_is_searched_in_pieces_of_the_default_length)) |
-    (binary_id(owd-format::lattice_self_crossing) & test(=a_self_crossing_lattice_line_never_passes))
+    (binary_id(owd-format::lattice_self_crossing) & test(=a_self_crossing_lattice_line_never_passes)) |
+    (binary_id(owd-core::lattice_length_weight) & test(=a_length_weight_makes_the_searchs_own_line_simple)) |
+    (binary_id(owd-core::lattice_length_weight) & test(=at_weight_zero_the_search_is_unchanged)) |
+    (binary_id(owd-format::optimise) & test(=a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown))
 )
 '''
 

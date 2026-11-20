@@ -42,6 +42,11 @@ pub struct OptimiseSettings {
     pub wet_weight: f64,
     /// The weight of dry cut in the cost.
     pub dry_weight: f64,
+    /// The cost of one metre of design line (sailing distance), in the units of the cut cost (one
+    /// m3 of cut at weight 1 costs 1). The pool lattice pays it for every metre of its line and of
+    /// the baseline it compares with. 0 (the default) is off; then it is not written into the
+    /// document, so a design run without it reads, hashes and saves as before.
+    pub length_weight: f64,
     pub structure_fixed: f64,
     pub structure_per_lift: f64,
     pub structure_power: f64,
@@ -73,6 +78,7 @@ impl Default for OptimiseSettings {
             k_best: 5,
             wet_weight: 1.0,
             dry_weight: 1.0,
+            length_weight: 0.0,
             structure_fixed: 1.0e5,
             structure_per_lift: 2.0e5,
             structure_power: 1.0,
@@ -97,7 +103,7 @@ impl Default for OptimiseSettings {
 impl OptimiseSettings {
     /// The settings as the stage writes them into the document.
     pub fn to_value(&self) -> Value {
-        json!({
+        let mut v = json!({
             "site_step_m": self.site_step_m,
             "candidate_sites_m": self.candidate_sites_m,
             "lifts_m": self.lifts_m,
@@ -124,7 +130,14 @@ impl OptimiseSettings {
             "corridor_half_m": self.corridor_half_m,
             "cell_m": self.cell_m,
             "check_chord_m": self.check_chord_m,
-        })
+        });
+        // Written only when it is on: a design that never set it keeps the same settings, and so
+        // the same dependency hash, as before the setting existed. On, it is part of the hash, so a
+        // change makes the optimise stage stale.
+        if self.length_weight != 0.0 {
+            v["length_weight"] = json!(self.length_weight);
+        }
+        v
     }
 
     /// Lay the settings of `source` (an object, or null for none) over these. A key the stage does
@@ -163,6 +176,17 @@ impl OptimiseSettings {
                 "k_best" => out.k_best = whole(k)?,
                 "wet_weight" => out.wet_weight = f(k)?,
                 "dry_weight" => out.dry_weight = f(k)?,
+                "length_weight" => {
+                    let w = f(k)?;
+                    if !(w.is_finite() && w >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `length_weight` must be a number >= 0 (a cost per metre \
+                             of design line; 0 is off)"
+                                .into(),
+                        ));
+                    }
+                    out.length_weight = w;
+                }
                 "structure_fixed" => out.structure_fixed = f(k)?,
                 "structure_per_lift" => out.structure_per_lift = f(k)?,
                 "structure_power" => out.structure_power = f(k)?,
@@ -222,6 +246,17 @@ impl Session {
         OptimiseSettings::default()
             .apply(&self.doc["stages"]["optimise"]["settings"])?
             .apply(overrides)
+    }
+
+    /// Set optimise settings in the document: the defaults, then what the document holds, then
+    /// `settings`, through the same reading as `owd optimise` (its flags, such as `--length-weight`,
+    /// are overrides of the run). Nothing runs; a fresh optimise stage whose settings change shows as
+    /// stale. The app shell and the web session call this. A key the stage does not know, or a bad
+    /// value, is refused by name and changes nothing.
+    pub fn set_optimise_settings(&mut self, settings: &Value) -> Result<(), DesignError> {
+        let merged = self.optimise_settings(settings)?;
+        self.doc["stages"]["optimise"]["settings"] = merged.to_value();
+        Ok(())
     }
 
     /// Run the optimise stage: choose weir sites and pool levels, then refine the design line in
@@ -366,6 +401,11 @@ impl Session {
         spec.rake_half_m = num(&settings, "rake_half_m")?;
         spec.rake_step_m = num(&settings, "rake_step_m")?;
         spec.ds_step_m = num(&settings, "ds_step_m")?;
+        // The length cost is the lattice's only. The cascade prices reaches by their cut along the
+        // baseline: every cascade covers the whole baseline, so a cost per metre would add the same
+        // weight x length to each and change no choice of weirs. It stays out of the cascade, whose
+        // numbers are then the same with the weight on or off.
+        spec.length_weight = typed.length_weight;
         let mut lattice = LatticeConfig::new(r_min);
         lattice.pitch_m = num(&settings, "pitch_m")?;
         lattice.n_heading = typed.n_heading;
@@ -407,7 +447,7 @@ impl Session {
                 "first_crossing_m": out.self_crossing_m,
             },
         });
-        let details = json!({
+        let mut details = json!({
             "n_replaced": out.n_replaced(),
             "pools": out.pools.iter().map(|p| json!({
                 "start_m": p.start_m, "end_m": p.end_m, "water_level_m": p.water_level_m,
@@ -438,6 +478,21 @@ impl Session {
             })).collect::<Vec<_>>(),
             "self_crossing_m": out.self_crossing_m,
         });
+        // With a length weight on, the details say so, and give each pool's line length and its
+        // part of the cost, so the cut part (cost - length_cost) can be read apart. Off, nothing is
+        // added: the details are the same as before the setting existed.
+        if typed.length_weight != 0.0 {
+            details["length_weight"] = json!(typed.length_weight);
+            if let Some(ps) = details["pools"].as_array_mut() {
+                for (d, p) in ps.iter_mut().zip(&out.pools) {
+                    let len: f64 = p.result.prim_seq.iter().map(|q| q.2).sum();
+                    if p.result.converged {
+                        d["line_length_m"] = json!(len);
+                        d["length_cost"] = json!(typed.length_weight * len);
+                    }
+                }
+            }
+        }
         let river_geometry = self
             .river_geometry()
             .map_err(super::rule_sets::stage_error)?;
