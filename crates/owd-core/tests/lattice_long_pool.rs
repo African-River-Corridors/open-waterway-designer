@@ -48,17 +48,50 @@ fn dist_to_centre(p: Pt, centre: &[Pt]) -> f64 {
     linear::point_line_distance(p, &centre[a..=b])
 }
 
-/// A coarse lattice, so a long case runs in seconds: pitch 24 m, cell 8 m.
-fn coarse(max_expand: i64, max_piece_m: f64) -> LatticeConfig {
+/// How finely the lattice is built and the cut is sampled.
+#[derive(Clone, Copy)]
+struct Grain {
+    pitch_m: f64,
+    cell_m: f64,
+    rake_step_m: f64,
+    ds_step_m: f64,
+}
+
+/// A coarse lattice, so a case of a few km runs in seconds: pitch 24 m, cell 8 m.
+const COARSE: Grain = Grain {
+    pitch_m: 24.0,
+    cell_m: 8.0,
+    rake_step_m: 8.0,
+    ds_step_m: 16.0,
+};
+
+/// Coarser still, for the 31 km case: a third of the states and a quarter of the samples per
+/// edge of `COARSE`, so it runs well inside the nightly limit on a CI runner.
+const COARSER: Grain = Grain {
+    pitch_m: 36.0,
+    cell_m: 12.0,
+    rake_step_m: 16.0,
+    ds_step_m: 32.0,
+};
+
+fn lattice(grain: Grain, max_expand: i64, max_piece_m: f64) -> LatticeConfig {
     let mut lat = LatticeConfig::new(R_MIN);
-    lat.pitch_m = 24.0;
+    lat.pitch_m = grain.pitch_m;
     lat.max_expand = max_expand;
     lat.max_pool_piece_m = max_piece_m;
     lat.validated().unwrap()
 }
 
+fn coarse(max_expand: i64, max_piece_m: f64) -> LatticeConfig {
+    lattice(COARSE, max_expand, max_piece_m)
+}
+
 /// The lattice over the whole centreline of a river `len` m long in x, as one pool at one level.
 fn run(len: f64, lat: &LatticeConfig) -> (Vec<Pt>, PoolsResult) {
+    run_at(len, lat, COARSE)
+}
+
+fn run_at(len: f64, lat: &LatticeConfig, grain: Grain) -> (Vec<Pt>, PoolsResult) {
     let mut ring = sine(len, RIVER_HALF_M);
     let mut right = sine(len, -RIVER_HALF_M);
     right.reverse();
@@ -86,8 +119,8 @@ fn run(len: f64, lat: &LatticeConfig) -> (Vec<Pt>, PoolsResult) {
     let mut spec = SectionSpec::new(HalfWidthSpec::Fixed(25.0));
     spec.side_slope_h_per_v = 3.0;
     spec.rake_half_m = 100.0;
-    spec.rake_step_m = 8.0;
-    spec.ds_step_m = 16.0;
+    spec.rake_step_m = grain.rake_step_m;
+    spec.ds_step_m = grain.ds_step_m;
     let r = optimise_pools(
         &centre,
         &terrain,
@@ -99,7 +132,7 @@ fn run(len: f64, lat: &LatticeConfig) -> (Vec<Pt>, PoolsResult) {
         None,
         PoolOptions {
             corridor_half_m: CORRIDOR_HALF_M,
-            cell_m: 8.0,
+            cell_m: grain.cell_m,
         },
         true,
     )
@@ -123,12 +156,19 @@ fn seg_cross(p: Pt, q: Pt, r: Pt, s: Pt) -> bool {
     d1 * d2 < 0.0 && d3 * d4 < 0.0
 }
 
-/// Without the split the whole pool hits the cap and keeps its baseline, and the record says so;
-/// with it, every piece converges and the joined line holds R_min at every piece join, does not
-/// cross itself, and stays in the corridor.
-fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
-    // Before: one search over the whole pool.
-    let (_, whole) = run(len, &coarse(max_expand, f64::INFINITY));
+/// Without the split the whole pool hits the cap and keeps its baseline, and the record says so
+/// (`whole`); with it, every piece converges and the joined line holds R_min at every piece join,
+/// does not cross itself, and stays in the corridor.
+fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64, grain: Grain, whole: bool) {
+    if whole {
+        whole_pool_hits_the_cap(len, max_expand, grain);
+    }
+    pieces_converge_and_join_at_r_min(len, max_expand, max_piece_m, grain);
+}
+
+/// One search over the whole pool hits the cap and keeps its baseline, and says so.
+fn whole_pool_hits_the_cap(len: f64, max_expand: i64, grain: Grain) {
+    let (_, whole) = run_at(len, &lattice(grain, max_expand, f64::INFINITY), grain);
     assert_eq!(whole.pools.len(), 1);
     let p = &whole.pools[0];
     println!(
@@ -147,9 +187,11 @@ fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
         Some("the search hit its expansion limit")
     );
     assert_eq!(whole.capped_pools().count(), 1);
+}
 
-    // After: the same pool, the same cap, searched as pieces.
-    let (centre, r) = run(len, &coarse(max_expand, max_piece_m));
+/// The same pool, the same cap, searched as pieces.
+fn pieces_converge_and_join_at_r_min(len: f64, max_expand: i64, max_piece_m: f64, grain: Grain) {
+    let (centre, r) = run_at(len, &lattice(grain, max_expand, max_piece_m), grain);
     let total = linear::length(&centre);
     let n = r.pools.len();
     assert!(n >= 2, "the pool is split ({n} pieces)");
@@ -230,16 +272,18 @@ fn long_pool_case(len: f64, max_expand: i64, max_piece_m: f64) {
 }
 
 /// The short twin, in the pull-request gate: a pool of about 9.7 km in pieces of 2.5 km at most.
+/// Searched whole it hits the cap; in pieces it converges.
 #[test]
 fn a_long_pool_is_searched_in_pieces_that_join_at_r_min() {
-    long_pool_case(8000.0, 60_000, 2500.0);
+    long_pool_case(8000.0, 60_000, 2500.0, COARSE, true);
 }
 
 /// The long case (nightly, `docs/agents/slow-tests.md`): a pool of about 31 km in pieces of the
-/// default length.
+/// default length, on the coarser grain. The whole-pool search to the cap is left to the short
+/// twin above: here it cost as much as all six pieces and proved nothing more.
 #[test]
 fn a_31_km_pool_is_searched_in_pieces_of_the_default_length() {
-    long_pool_case(25_600.0, 300_000, DEFAULT_MAX_POOL_PIECE_M);
+    long_pool_case(25_600.0, 300_000, DEFAULT_MAX_POOL_PIECE_M, COARSER, false);
 }
 
 /// A pool that hits the cap is reported: the record says so, and it is not used.
