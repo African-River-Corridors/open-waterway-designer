@@ -135,9 +135,33 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
             l["id"].as_str().unwrap_or("lattice")
         ));
     }
+    // A given line that is not the design line keeps its points in the alignment settings, so the
+    // user can make it the design line again (`owd align --method given`). One can be kept there.
+    let mut given_kept = None;
+    if doc["stages"]["alignment"]["settings"]["given"].is_null()
+        && let Some(g) = options
+            .iter()
+            .filter(|o| o["method"] == "given")
+            .find(|o| chosen.is_none_or(|c| c["id"] != o["id"]))
+        && let Some(line) = DesignLine::from_old_option(g)
+    {
+        let st = &mut doc["stages"]["alignment"]["settings"];
+        if !st.is_object() {
+            *st = json!({});
+        }
+        st["given"] = json!({"name": line.name, "line": o_line(&line)});
+        given_kept = Some(g["id"].clone());
+        notes.push(format!(
+            "the given line `{}` ({}) is kept in the alignment settings, not as the design line: run \
+             `owd align --method given` to make it the design line",
+            g["id"].as_str().unwrap_or("?"),
+            g["name"].as_str().unwrap_or("?"),
+        ));
+    }
     for o in &options {
         let kept = chosen.is_some_and(|c| c["id"] == o["id"])
-            || lattice.is_some_and(|l| l["id"] == o["id"]);
+            || lattice.is_some_and(|l| l["id"] == o["id"])
+            || given_kept.as_ref().is_some_and(|g| *g == o["id"]);
         if !kept {
             notes.push(format!(
                 "the option `{}` ({}) is not kept: one design line per run; run `owd align --method {}` to make it the design line",

@@ -114,9 +114,14 @@ fn an_option_that_is_not_kept_is_named_in_the_notes() {
     assert_eq!(d["stages"]["alignment"]["settings"]["method"], "reroute");
     assert_eq!(d["stages"]["alignment"]["results"]["id"], "reroute");
     let notes = s.open_notes().join("\n");
+    // The given line is not the design line, but its points are kept (QA item 1).
     assert!(
-        notes.contains("`given-old-study` (Old study) is not kept"),
+        notes.contains("`given-old-study` (Old study) is kept in the alignment settings"),
         "{notes}"
+    );
+    assert_eq!(
+        d["stages"]["alignment"]["settings"]["given"]["name"],
+        "Old study"
     );
     assert!(notes.contains("owd align --method given"), "{notes}");
 }

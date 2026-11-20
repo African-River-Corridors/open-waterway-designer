@@ -946,14 +946,13 @@ pub fn align(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
-    let method = AlignMethod::from_name(method)
-        .filter(|m| *m != AlignMethod::Given)
-        .ok_or_else(|| {
-            input_error(format!(
-                "unknown method `{method}`: use rolling-circle, reroute or centreline (a line you \
-                 already have: `owd design-line`)"
-            ))
-        })?;
+    // `given` runs the line the design keeps in its settings (`owd design-line` gives one).
+    let method = AlignMethod::from_name(method).ok_or_else(|| {
+        input_error(format!(
+            "unknown method `{method}`: use rolling-circle, reroute, centreline, or given (the \
+             line `owd design-line` gave)"
+        ))
+    })?;
     let use_water = match flags.use_water.as_deref().map(str::trim) {
         None => None,
         Some("true") => Some(true),
@@ -999,8 +998,7 @@ pub fn align(
                 put("fairness_weight", json!(v));
             }
         }
-        // The river centreline as it is: no flag but `--chord` applies. A given line is refused
-        // above.
+        // The river centreline as it is, and a given line: no flag but `--chord` applies.
         AlignMethod::Centreline | AlignMethod::Given => {}
     }
     if let Some(v) = flags.chord {
