@@ -13,10 +13,14 @@
 //! - **Edge cost**: the earthwork field of a trapezoidal channel swept along the primitive
 //!   ([`FieldScorer`]): fairway cut to grade everywhere; side-slope cut only in sections where
 //!   the fairway bites dry ground, and only on dry cells; wet and dry weighted separately; an
-//!   optional deep-cut multiplier on dry cut. Weights, not prices.
+//!   optional deep-cut multiplier on dry cut. Weights, not prices. Plus, when
+//!   `SectionSpec::length_weight` is above 0, that weight per metre of the primitive's length:
+//!   water deeper than the bed costs nothing to cut, so without it length in deep water is free
+//!   and a looped line can be the cheapest.
 //! - **Heuristic**: `"c_min"`: straight-line distance x the cheapest per-metre cost anywhere in
-//!   the corridor; `"reverse_dijkstra"`: a relaxed 2-D cost-to-go from the goal (tighter, but an
-//!   8-connected grid can slightly over-estimate); `"none"`: plain Dijkstra.
+//!   the corridor (the length weight included: see [`min_cost_per_metre`]);
+//!   `"reverse_dijkstra"`: a relaxed 2-D cost-to-go from the goal (tighter, but an 8-connected
+//!   grid can slightly over-estimate); `"none"`: plain Dijkstra.
 //! - **Endpoints**: pinned to the baseline's position and heading at both pool ends, so each
 //!   result splices back into the baseline. The search ends on the goal pose EXACTLY (position and
 //!   heading): from each state it expands within `close_reach_m` of the goal it tries a closing
@@ -140,6 +144,11 @@ pub struct SectionSpec {
     pub ds_step_m: f64,
     /// Fairway samples that must be on known terrain.
     pub min_valid_fraction: f64,
+    /// The cost of one metre of design line (sailing distance), in the units of the cut cost: one
+    /// m3 of cut at weight 1 costs 1. Every lattice edge, closing path and baseline segment pays it
+    /// for its length, so length through deep water, where cut is free, is no longer free. 0 (the
+    /// default) is off and gives exactly the search without it. Must be finite and >= 0.
+    pub length_weight: f64,
 }
 
 impl SectionSpec {
@@ -157,6 +166,7 @@ impl SectionSpec {
             rake_step_m: 4.0,
             ds_step_m: 8.0,
             min_valid_fraction: 0.6,
+            length_weight: 0.0,
         }
     }
 
@@ -668,10 +678,14 @@ impl<'a> FieldScorer<'a> {
             .iter()
             .map(|&e| if e > sp.deep_threshold_m { e } else { 0.0 })
             .collect();
-        let total = (np_sum(&dredge) * sp.wet_weight
+        let mut total = (np_sum(&dredge) * sp.wet_weight
             + np_sum(&shallow) * sp.dry_weight
             + np_sum(&deep) * sp.dry_weight * sp.deep_multiplier)
             * cell;
+        // Off at 0, and then not even added, so the cost is the same number as without it.
+        if sp.length_weight != 0.0 {
+            total += sp.length_weight * prim.arc_len;
+        }
         (total, true)
     }
 }
@@ -720,8 +734,15 @@ fn valid_points(grid: &TerrainGrid, stride_m: f64, max_samples: Option<usize>) -
     }
 }
 
-/// The cheapest per-metre straight cost anywhere in the corridor (0 if none is valid). Straight
-/// cost is symmetric under a half turn, so half the heading bins are swept.
+/// The cheapest per-metre straight cost anywhere in the corridor (the length weight if none is
+/// valid). Straight cost is symmetric under a half turn, so half the heading bins are swept.
+///
+/// The scorer's cost of a straight includes `length_weight` x its length, so this is the cheapest
+/// cut per metre plus `length_weight`. The `c_min` heuristic, this times the straight-line distance
+/// to the goal, stays admissible with the weight on: every edge pays `length_weight` x its length,
+/// and any path to the goal is at least the straight-line distance long, so the added term
+/// (weight x distance) is a lower bound of the length cost still to pay and never over-estimates.
+/// The cut part is the cheapest cut per metre, as before.
 pub fn min_cost_per_metre(
     grid: &TerrainGrid,
     scorer: &FieldScorer,
@@ -742,7 +763,11 @@ pub fn min_cost_per_metre(
             }
         }
     }
-    if best.is_finite() { best } else { 0.0 }
+    if best.is_finite() {
+        best
+    } else {
+        scorer.spec.length_weight
+    }
 }
 
 /// Defaults of `min_cost_per_metre`.
@@ -1597,7 +1622,14 @@ fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpe
             arc_len: l,
         };
         let (c, ok) = sc.score(&prim, (x0, y0, libm::atan2(y1 - y0, x1 - x0)));
-        total += if ok { c } else { 0.0 };
+        // A segment on unknown ground still pays for its length, as every lattice edge does.
+        total += if ok {
+            c
+        } else if section.length_weight != 0.0 {
+            section.length_weight * l
+        } else {
+            0.0
+        };
     }
     total
 }
@@ -1658,6 +1690,9 @@ pub fn optimise_pool(
     let blen = linear::length(baseline);
     if !(0.0 <= start_m && start_m < end_m && end_m <= blen) {
         return Err("need 0 <= start_m < end_m <= baseline.length".into());
+    }
+    if !(section.length_weight.is_finite() && section.length_weight >= 0.0) {
+        return Err("length_weight must be a finite number >= 0".into());
     }
     let seg = line_of(linear::substring(baseline, start_m, end_m))?;
     let geo = |e: crate::geom::GeomError| e.to_string();

@@ -216,6 +216,18 @@ weirs: 1000 m -> pool 0.5 m
  optimised: dredge   141,201 m3   dry cut   423,598 m3
 ```
 
+**Paying for length (`length_weight`).** Water deeper than the channel bed costs nothing to cut,
+so without a length cost the lattice treats extra length through deep water as free. The setting
+`length_weight` (`owd optimise --length-weight X`, or the optimise settings in the app) adds a cost
+for each metre of design line, the sailing distance. Its unit is the unit of the cut cost: one m3
+of cut at weight 1 costs 1. A weight of 10 means one metre of line costs as much as 10 m3 of cut.
+
+To choose it, compare it with the cut of one metre of typical channel through dry ground. A 40 m
+channel 5.5 m below the ground with 1:3 side slopes cuts about 310 m3 per metre. A weight well below
+that (a few, up to a few tens) only stops the line wandering through free water. A weight near it
+or above makes the search cut corners and meander necks to save length. That is a trade of cut for
+length, and it can drive large cuts. The default is 0 (off). The weir cascade does not read it.
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

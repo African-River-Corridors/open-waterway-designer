@@ -644,6 +644,19 @@ fn set_alignment_settings(
     finish(&window, &guard)
 }
 
+/// Set optimise settings (`length_weight`, the weights, ...), as `owd optimise --length-weight`
+/// does. Nothing runs; a fresh optimise stage whose settings change goes stale.
+#[tauri::command]
+fn set_optimise_settings(
+    window: Window,
+    state: State<Shared>,
+    settings: serde_json::Value,
+) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_optimise_settings(&settings)?;
+    finish(&window, &guard)
+}
+
 /// Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not
 /// written to the design.
 #[tauri::command]
@@ -1252,6 +1265,7 @@ pub fn run() {
             load_input,
             set_water,
             set_alignment_settings,
+            set_optimise_settings,
             set_terrain_limit,
             set_downstream_point,
             set_mouth,

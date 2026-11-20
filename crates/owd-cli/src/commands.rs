@@ -1225,6 +1225,7 @@ pub struct OptimiseFlags {
     pub lifts: Option<String>,
     pub wet_weight: Option<f64>,
     pub dry_weight: Option<f64>,
+    pub length_weight: Option<f64>,
     pub model: Option<String>,
 }
 
@@ -1247,6 +1248,7 @@ pub fn optimise(
         ("base_level_m", flags.base_level),
         ("wet_weight", flags.wet_weight),
         ("dry_weight", flags.dry_weight),
+        ("length_weight", flags.length_weight),
     ] {
         if let Some(v) = v {
             overrides.insert(k.into(), json!(v));

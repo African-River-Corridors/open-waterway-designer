@@ -333,6 +333,8 @@ enum Command {
         wet_weight: Option<f64>,
         #[arg(long, help = optimise_help("dry_weight", "The weight of dry cut in the cost"))]
         dry_weight: Option<f64>,
+        #[arg(long, value_name = "COST_PER_M", help = optimise_length_weight_help())]
+        length_weight: Option<f64>,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
@@ -1309,6 +1311,7 @@ pub fn main() -> ExitCode {
             lifts,
             wet_weight,
             dry_weight,
+            length_weight,
             model,
             out,
         } => commands::optimise(
@@ -1320,6 +1323,7 @@ pub fn main() -> ExitCode {
                 lifts,
                 wet_weight,
                 dry_weight,
+                length_weight,
                 model,
             },
             &out.output,
@@ -1520,6 +1524,19 @@ fn volumes_help(key: &str, text: &str) -> String {
 fn optimise_help(key: &str, text: &str) -> String {
     let d = owd_format::design::OptimiseSettings::default().to_value();
     format!("{text} (default {}).", shown_default(&d[key]))
+}
+
+/// The help of `owd optimise --length-weight`, with the stage's own default, read from
+/// `OptimiseSettings::default()` (the setting is not written into a design while it is 0).
+fn optimise_length_weight_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().length_weight;
+    format!(
+        "The cost of one metre of design line (sailing distance), in the units of the cut cost: one \
+         m3 of cut at weight 1 costs 1. The pool lattice pays it for every metre of line, so length \
+         through deep water is no longer free; a high value trades cut for a shorter line (default \
+         {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
 }
 
 /// The help of `owd optimise --sites`: with no list, a site every `site_step_m`.
