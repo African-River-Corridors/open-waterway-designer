@@ -52,7 +52,8 @@ pub use geojson::Role;
 pub use mouth::{MouthAt, MouthReport, parse_mouth};
 pub use optimise::OptimiseSettings;
 pub use session::{
-    DesignError, ImportReport, Session, Stage, StageStatus, Status, check_file_name, date_from_unix,
+    DesignError, ImportReport, NoteKind, OpenNote, Session, Stage, StageStatus, Status,
+    check_file_name, date_from_unix,
 };
 pub use stage_terrain::{NoTerrain, stage_terrain};
 pub use volumes::{DemCheck, VolumesSettings};

@@ -12,7 +12,7 @@
   import { layerFor, DEFAULT_IMAGERY, type ImageryLayer } from "./lib/imagery";
   import BankEditor from "./lib/BankEditor.svelte";
   import StartFromRiver from "./lib/StartFromRiver.svelte";
-  import { lineOnScreen, plainWarning, sectionReason } from "./lib/words";
+  import { lineOnScreen, plainNote, plainWarning, sectionReason } from "./lib/words";
   import SheetsView from "./lib/SheetsView.svelte";
   import type * as maplibregl from "maplibre-gl";
   import LeftPanel from "./lib/LeftPanel.svelte";
@@ -249,11 +249,27 @@
     if (saved && isWeb) notice = canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
   }
 
+  /** The warnings the user dismissed, and whether the older-format row is dismissed or open. A
+   * different design starts with all of them shown again. */
+  let dismissedWarnings = $state<string[]>([]);
+  let openInfoDismissed = $state(false);
+  let openInfoDetails = $state(false);
+  let shownWarnings = $derived((snap?.warnings ?? []).filter((w) => !dismissedWarnings.includes(w)));
+  let openInfo = $derived((snap?.open_notes ?? []).filter((n) => n.kind === "info"));
+  /** True when opening also left something to do: then the row does not say "Nothing was lost". */
+  let openHasActions = $derived((snap?.open_notes ?? []).some((n) => n.kind === "action"));
+  function freshNotes() {
+    dismissedWarnings = [];
+    openInfoDismissed = false;
+    openInfoDetails = false;
+  }
+
   /** A snapshot from "Start from a river": a new study keeps no selection from the old one. */
   function openDocDone(next: Snapshot) {
     if (next.document.project.title !== snap?.document.project.title) {
       selectedId = null;
       station = null;
+      freshNotes();
     }
     snap = next;
   }
@@ -269,6 +285,7 @@
       if (!next) return;
       selectedId = null;
       station = null;
+      freshNotes();
       snap = next;
     } finally {
       fileRunning = false;
@@ -532,9 +549,24 @@
       <button onclick={() => (imageryNote = null)}>Dismiss</button>
     </div>
   {/if}
-  {#each snap?.warnings ?? [] as w}
-    <div class="banner warn" role="status" data-testid="warning">{plainWarning(w)}</div>
+  {#each shownWarnings as w (w)}
+    <div class="banner warn" role="status" data-testid="warning">
+      <span>{plainWarning(w)}</span>
+      <button data-testid="warning-dismiss" onclick={() => (dismissedWarnings = [...dismissedWarnings, w])}>Dismiss</button>
+    </div>
   {/each}
+  {#if openInfo.length && !openInfoDismissed}
+    <div class="banner info" role="status" data-testid="open-info">
+      <span>Opened from an older format.{openHasActions ? "" : " Nothing was lost."}</span>
+      <button data-testid="open-info-details" aria-expanded={openInfoDetails} onclick={() => (openInfoDetails = !openInfoDetails)}>{openInfoDetails ? "Hide details" : "Details"}</button>
+      <button data-testid="open-info-dismiss" onclick={() => (openInfoDismissed = true)}>Dismiss</button>
+      {#if openInfoDetails}
+        <ul data-testid="open-info-list">
+          {#each openInfo as n}<li data-testid="open-info-note">{plainNote(n.text)}</li>{/each}
+        </ul>
+      {/if}
+    </div>
+  {/if}
 
   <div class="body" style:grid-template-columns="{leftWidth}px 6px 1fr" style:grid-template-rows="1fr 6px {bottomHeight}px">
     <section class="left">
@@ -607,6 +639,9 @@
   .banner.error::before { content: "✕"; font-weight: 700; }
   .banner.warn { background: var(--warn-soft); color: var(--warn); }
   .banner.warn::before { content: "!"; font-weight: 700; }
+  .banner.info { flex-wrap: wrap; padding: 3px var(--sp-3); background: var(--surface); color: var(--ink-2); font-size: var(--fs-12); }
+  .banner.info ul { flex-basis: 100%; margin: 0 0 var(--sp-1); padding-left: var(--sp-4, 16px); }
+  .banner button { padding: 1px 8px; font-size: var(--fs-12); }
   .body { flex: 1; display: grid; min-height: 0; }
   .body > section { overflow: auto; min-width: 0; min-height: 0; }
   .left { grid-column: 1; grid-row: 1 / 4; background: var(--surface); }

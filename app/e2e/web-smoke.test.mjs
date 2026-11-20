@@ -600,6 +600,48 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "error"), false);
   });
 
+  it("opens an older-format design with one quiet information row and the DEM warning; Details lists the notes, Dismiss removes a row, another design clears them (UI-3)", async () => {
+    // A format 0.4 file whose stages were all up to date (a synthetic river; its DEM is not loaded).
+    const OLD = path.resolve(here, "../../crates/owd-format/tests/data/format-0.4-lattice-only.owd");
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), OLD);
+    await until(b, "the file name", async () => (await text(b, "file-label")).includes("format-0.4-lattice-only.owd"));
+    // One information row, not a warning, and one warning: the DEM, the only thing to act on.
+    await until(b, "the information row", async () => await exists(b, "open-info"));
+    assert.equal((await b.$$('[data-testid="open-info"]')).length, 1);
+    assert.match(await text(b, "open-info"), /Opened from an older format\. Nothing was lost\./);
+    assert.doesNotMatch(await (await tid(b, "open-info")).getAttribute("class"), /warn/);
+    assert.equal((await b.$$('[data-testid="warning"]')).length, 1, "one warning row");
+    assert.match(await text(b, "warning"), /The DEM file river-dem\.tif was not found/);
+    // The notes are folded away until Details is pressed: then the four of them show.
+    assert.equal(await exists(b, "open-info-note"), false);
+    await (await tid(b, "open-info-details")).click();
+    await until(b, "the details", async () => (await b.$$('[data-testid="open-info-note"]')).length === 4);
+    const notes = [];
+    for (const n of await b.$$('[data-testid="open-info-note"]')) notes.push(await n.getText());
+    assert.match(notes[0], /^This design was saved in an older format/);
+    assert.match(notes[1], /^Its design line is lattice/);
+    assert.match(notes[2], /kept fresh/);
+    assert.match(notes[3], /^The mouth is the first end/);
+    await (await tid(b, "open-info-details")).click();
+    await until(b, "the details to fold", async () => !(await exists(b, "open-info-note")));
+    // Dismiss removes the information row and leaves the warning; the warning has its own Dismiss.
+    await (await tid(b, "open-info-dismiss")).click();
+    await until(b, "the information row to go", async () => !(await exists(b, "open-info")));
+    assert.equal(await exists(b, "warning"), true);
+    await (await tid(b, "warning-dismiss")).click();
+    await until(b, "the warning to go", async () => !(await exists(b, "warning")));
+    // Open the same file again: both rows are back. Then New: none is left.
+    await pick(b, async () => (await openButton(b)).click(), OLD);
+    await until(b, "the rows again", async () => (await exists(b, "open-info")) && (await exists(b, "warning")));
+    await (await b.$("button=New")).click();
+    await until(b, "a new design", async () => !(await text(b, "file-label")).includes("format-0.4"));
+    assert.equal(await exists(b, "open-info"), false);
+    assert.equal(await exists(b, "warning"), false);
+  });
+
   it("loads a Rule Set file through Load Rule Set file, sizes with it, and shows a bad file's refusal with the list unchanged (#499)", async () => {
     const b = await start();
     await b.url(`${origin}/owd/app`);

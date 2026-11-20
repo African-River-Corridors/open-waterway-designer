@@ -20,7 +20,7 @@
 //!
 use super::alignment::pts_of;
 use super::hash::hash_value;
-use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
+use super::session::{DesignError, ENGINE_VERSION, OpenNote, Session, StageStatus};
 use crate::types::{Polyline, RiverPolygon, StageError};
 use owd_core::alignment::reference_line::{
     CHAIKIN_PASSES, CLEARANCE_MIN_M, CLEARANCE_SHARE, END_TRIM_M, REFIT_CHORD_M, REFIT_SCALE_M,
@@ -180,7 +180,7 @@ pub(super) fn basis_of(doc: &Value) -> String {
 /// Move a reference line stored the old way (`inputs.reference_line`) to its stage record, keeping
 /// its hash, and say what happened in plain words. For any format: on the raw JSON, before the
 /// schema check. A file that also holds the stage record keeps the record; the old copy goes.
-pub(super) fn move_from_inputs(doc: &mut Value) -> (Vec<String>, bool) {
+pub(super) fn move_from_inputs(doc: &mut Value) -> (Vec<OpenNote>, bool) {
     let Some(old) = doc
         .get_mut("inputs")
         .and_then(Value::as_object_mut)
@@ -193,12 +193,11 @@ pub(super) fn move_from_inputs(doc: &mut Value) -> (Vec<String>, bool) {
     }
     if doc["stages"][STAGE].is_object() {
         return (
-            vec![
+            vec![OpenNote::action(
                 "The file held the reference line in two places: the stage record \
              `stages.reference_line` is kept and the old copy under `inputs.reference_line` is \
-             dropped."
-                    .into(),
-            ],
+             dropped.",
+            )],
             false,
         );
     }
@@ -225,14 +224,16 @@ pub(super) fn move_from_inputs(doc: &mut Value) -> (Vec<String>, bool) {
     });
     (
         vec![if fresh {
-            "The reference line moved from `inputs.reference_line` to its stage record \
-         `stages.reference_line`. It is still fresh: nothing it is made from changed."
-                .into()
+            OpenNote::info(
+                "The reference line moved from `inputs.reference_line` to its stage record \
+         `stages.reference_line`. It is still fresh: nothing it is made from changed.",
+            )
         } else {
-            "The reference line moved from `inputs.reference_line` to its stage record \
+            OpenNote::info(
+                "The reference line moved from `inputs.reference_line` to its stage record \
          `stages.reference_line`. It was stale and stays stale: the next `owd fits` or \
-         `owd envelope` makes it again."
-                .into()
+         `owd envelope` makes it again.",
+            )
         }],
         fresh,
     )

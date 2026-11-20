@@ -7,7 +7,9 @@
 use crate::run::{Outcome, RunControl, RunJob};
 use owd_format::design::bank_edit::BankEdit;
 use owd_format::design::sections::Stations;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::design::{
+    AlignMethod, DesignError, NoteKind, OpenNote, Role, Session, Stage, StageStatus,
+};
 use owd_format::geotiff::{Dem, read_bytes};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
@@ -21,6 +23,9 @@ pub struct AppState {
     dirty: bool,
     /// Warnings from the last open: for example a DEM that is missing or has changed.
     warnings: Vec<String>,
+    /// What opening a file from an older format changed, each note with its kind. The notes that
+    /// ask the user to act are in `warnings` too; the rest are information.
+    open_notes: Vec<OpenNote>,
     /// The DEM the document names, when the shell found it next to the document and it reads.
     dem: Option<Arc<Dem>>,
     /// The DEM file's bytes, for the hash check, and where it was read from.
@@ -203,6 +208,7 @@ impl AppState {
             path: None,
             dirty: false,
             warnings: Vec::new(),
+            open_notes: Vec::new(),
             dem: None,
             dem_bytes: None,
             dem_file: None,
@@ -240,8 +246,14 @@ impl AppState {
                     .map(|s| s as owd_format::types::TerrainSampler),
             );
         }
-        // What opening changed (a file from an older format) shows first, then the DEM's warning.
-        let mut warnings: Vec<String> = session.open_notes().to_vec();
+        // What opening changed (a file from an older format): the notes that ask the user to act
+        // show as warnings, before the DEM's warning. The rest are information, shown apart.
+        let open_notes = session.open_notes_by_kind().to_vec();
+        let mut warnings: Vec<String> = open_notes
+            .iter()
+            .filter(|n| n.kind == NoteKind::Action)
+            .map(|n| n.text.clone())
+            .collect();
         warnings.extend(session.dem_warning(dem_bytes));
         let dem_file = session
             .dem_path()
@@ -251,6 +263,7 @@ impl AppState {
             path: Some(path.to_path_buf()),
             dirty: false,
             warnings,
+            open_notes,
             dem: dem_bytes.and_then(|b| read_bytes(b).ok()).map(Arc::new),
             dem_bytes: dem_bytes.map(|b| Arc::new(b.to_vec())),
             dem_file,
@@ -528,6 +541,8 @@ impl AppState {
         self.dem_bytes = Some(Arc::new(bytes));
         self.dem_file = Some(file.to_path_buf());
         self.warnings.clear();
+        // The warnings went; the information about the older format stays until the design is saved.
+        self.open_notes.retain(|n| n.kind == NoteKind::Info);
         self.dirty = true;
         Ok(())
     }
@@ -1032,6 +1047,7 @@ impl AppState {
         self.point_dem_from(path);
         self.dirty = false;
         self.warnings.clear();
+        self.open_notes.clear();
     }
 
     pub fn file_name(&self) -> String {
@@ -1111,6 +1127,7 @@ impl AppState {
             "dirty": self.dirty,
             "title": self.title(),
             "warnings": self.warnings,
+            "open_notes": self.open_notes,
             "can_undo_bank_edit": !self.bank_undo.is_empty(),
             "terrain_limit_bytes": self.terrain_limit,
             "downstream_lon_lat": self.downstream,
@@ -1367,6 +1384,61 @@ mod tests {
         );
         missing.saved(Path::new("b"));
         assert_eq!(missing.snapshot()["warnings"], json!([]));
+    }
+
+    #[test]
+    fn an_older_format_file_shows_its_information_apart_from_its_warnings() {
+        let old = |name: &str| {
+            std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("../owd-format/tests/data/format-0.4-{name}.owd")),
+            )
+            .unwrap()
+        };
+        let kinds = |s: &AppState| -> Vec<String> {
+            s.snapshot()["open_notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n["kind"].as_str().unwrap().to_string())
+                .collect()
+        };
+        // Every stage was fresh: four information notes, and the one warning is the missing DEM.
+        let mut kept = AppState::open(Path::new("a.owd"), &old("lattice-only"), None).unwrap();
+        assert_eq!(kinds(&kept), ["info"; 4]);
+        let snap = kept.snapshot();
+        let warnings = snap["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].as_str().unwrap().contains("DEM"));
+        assert!(
+            snap["open_notes"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("older format")
+        );
+        // A stale stage is a warning: it is in both lists, as an action note.
+        let stale = AppState::open(Path::new("a.owd"), &old("stale-volumes"), None).unwrap();
+        let snap = stale.snapshot();
+        let action: Vec<&Value> = snap["open_notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| n["kind"] == "action")
+            .collect();
+        assert!(!action.is_empty());
+        for n in action {
+            assert!(
+                snap["warnings"].as_array().unwrap().contains(&n["text"]),
+                "{n}"
+            );
+        }
+        // Saving clears them all; a new design has none.
+        kept.saved(Path::new("b.owd"));
+        assert_eq!(kept.snapshot()["open_notes"], json!([]));
+        assert_eq!(
+            AppState::new_design("t", "2026-01-01").snapshot()["open_notes"],
+            json!([])
+        );
     }
 
     #[test]

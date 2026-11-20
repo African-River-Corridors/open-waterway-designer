@@ -18,7 +18,7 @@
 //! Label: property
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{Session, Stage, StageStatus, volume_rows_of};
+use owd_format::design::{NoteKind, Session, Stage, StageStatus, volume_rows_of};
 use owd_format::geotiff;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -360,4 +360,57 @@ fn with_no_water_level_the_dem_says_which_end_is_the_mouth() {
     let once = s.to_text();
     assert!(s.settle_old_mouth(Some(&t)).is_empty());
     assert_eq!(s.to_text(), once);
+}
+
+/// The texts of the open notes of one kind.
+fn notes_of_kind(s: &Session, kind: NoteKind) -> Vec<String> {
+    s.open_notes_by_kind()
+        .iter()
+        .filter(|n| n.kind == kind)
+        .map(|n| n.text.clone())
+        .collect()
+}
+
+#[test]
+fn a_file_that_kept_all_its_work_opens_with_information_only() {
+    // Every stage was fresh and the mouth is the first end: four notes, none asks for anything.
+    let s = Session::open(&text("lattice-only")).unwrap();
+    let info = notes_of_kind(&s, NoteKind::Info);
+    assert_eq!(info.len(), 4, "{info:?}");
+    assert!(info[0].contains("older format"), "{info:?}");
+    assert!(info[1].contains("design line"), "{info:?}");
+    assert!(info[2].contains("kept fresh"), "{info:?}");
+    assert!(info[3].contains("mouth"), "{info:?}");
+    assert_eq!(notes_of_kind(&s, NoteKind::Action), Vec::<String>::new());
+    // The plain list the command line prints is the same notes, in the same order.
+    assert_eq!(s.open_notes(), info);
+}
+
+#[test]
+fn a_note_that_asks_the_user_to_act_has_the_action_kind() {
+    // A stale stage must be run again.
+    let s = Session::open(&text("stale-volumes")).unwrap();
+    let action = notes_of_kind(&s, NoteKind::Action);
+    assert!(
+        action.iter().any(|n| n.contains("marked stale")),
+        "{action:?}"
+    );
+    let info = notes_of_kind(&s, NoteKind::Info);
+    assert!(info.iter().all(|n| !n.contains("marked stale")), "{info:?}");
+    assert!(info.iter().any(|n| n.contains("kept fresh")), "{info:?}");
+    // A mouth nobody can tell asks for something too.
+    let mut doc = raw("reversed");
+    doc["inputs"]["water_level"] = Value::Null;
+    doc["inputs"]["dem"] = Value::Null;
+    let s = Session::open(&doc.to_string()).unwrap();
+    let action = notes_of_kind(&s, NoteKind::Action);
+    assert!(
+        action.iter().any(|n| n.contains("state the mouth")),
+        "{action:?}"
+    );
+    // Every note has one kind: the two lists make the whole.
+    assert_eq!(
+        action.len() + notes_of_kind(&s, NoteKind::Info).len(),
+        s.open_notes().len()
+    );
 }

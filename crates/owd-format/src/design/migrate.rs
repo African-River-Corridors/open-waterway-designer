@@ -23,7 +23,7 @@
 
 use super::design_line::DesignLine;
 use super::hash::hash_value;
-use super::session::{FORMAT_0_4, FORMAT_VERSION, Session, Stage};
+use super::session::{FORMAT_0_4, FORMAT_VERSION, OpenNote, Session, Stage};
 use serde_json::{Value, json};
 
 /// The line of a design line as the document writes it.
@@ -128,11 +128,11 @@ pub(super) fn fresh_0_4(doc: &Value) -> Vec<Stage> {
 /// Move `doc` (format 0.4) to format 0.5 in place. `fresh` are the stages [`fresh_0_4`] found fresh.
 /// Returns what changed, one plain sentence each, and the stages after sizing that stay fresh; the
 /// caller gives those the hash of this format once the document is a session.
-pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<String>, Vec<Stage>) {
-    let mut notes = vec![format!(
+pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<OpenNote>, Vec<Stage>) {
+    let mut notes = vec![OpenNote::info(format!(
         "this design was saved in an older format ({FORMAT_0_4} or before); it opens as format \
          {FORMAT_VERSION}, which holds one design line"
-    )];
+    ))];
     let options: Vec<Value> = doc
         .as_object_mut()
         .and_then(|o| o.remove("options"))
@@ -251,30 +251,30 @@ pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<String>, Vec<Stage>) {
             None => {
                 vo["results"] = Value::Null;
                 vo["depends_on"] = Value::Null;
-                notes.push(
+                notes.push(OpenNote::action(
                     "its volumes held no row for the design line, so they are removed: run \
                      `owd volumes` (or `owd run`) to work them out again"
                         .to_string(),
-                );
+                ));
             }
         }
     }
 
     if let Some(line) = reads {
-        notes.push(format!(
+        notes.push(OpenNote::info(format!(
             "its design line is `{}` ({})",
             line["id"].as_str().unwrap_or("?"),
             line["name"].as_str().unwrap_or("?")
-        ));
+        )));
     }
     if let Some(l) = lattice
         && !keep.contains(&Stage::Optimise)
     {
-        notes.push(format!(
+        notes.push(OpenNote::action(format!(
             "the pool lattice's line `{}` is kept in the optimise stage; it is the design line again \
              once `owd optimise` (or `owd run`) has run",
             l["id"].as_str().unwrap_or("lattice")
-        ));
+        )));
     }
     // A given line that is not the design line keeps its points in the alignment settings, so the
     // user can make it the design line again (`owd align --method given`). One can be kept there.
@@ -292,24 +292,24 @@ pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<String>, Vec<Stage>) {
         }
         st["given"] = json!({"name": line.name, "line": o_line(&line)});
         given_kept = Some(g["id"].clone());
-        notes.push(format!(
+        notes.push(OpenNote::action(format!(
             "the given line `{}` ({}) is kept in the alignment settings, not as the design line: run \
              `owd align --method given` to make it the design line",
             g["id"].as_str().unwrap_or("?"),
             g["name"].as_str().unwrap_or("?"),
-        ));
+        )));
     }
     for o in &options {
         let kept = chosen.is_some_and(|c| c["id"] == o["id"])
             || lattice.is_some_and(|l| l["id"] == o["id"])
             || given_kept.as_ref().is_some_and(|g| *g == o["id"]);
         if !kept {
-            notes.push(format!(
+            notes.push(OpenNote::action(format!(
                 "the option `{}` ({}) is not kept: one design line per run; run `owd align --method {}` to make it the design line",
                 o["id"].as_str().unwrap_or("?"),
                 o["name"].as_str().unwrap_or("?"),
                 o["method"].as_str().unwrap_or("?").replace('_', "-"),
-            ));
+            )));
         }
     }
     let names = |stages: &[&str]| -> String {
@@ -342,16 +342,16 @@ pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<String>, Vec<Stage>) {
     };
     if !kept.is_empty() {
         let (word, was) = plural(kept.len());
-        notes.push(format!(
+        notes.push(OpenNote::info(format!(
             "its {} {word} {was} up to date when it was saved, so {} kept fresh, with {} numbers",
             names(&kept),
             if kept.len() == 1 { "it is" } else { "they are" },
             if kept.len() == 1 { "its" } else { "their" },
-        ));
+        )));
     }
     if !stale.is_empty() {
         let (word, was) = plural(stale.len());
-        notes.push(format!(
+        notes.push(OpenNote::action(format!(
             "its {} {word} {was} not up to date when it was saved, so {} marked stale: the numbers \
              are kept, but run `owd run` before you use them",
             names(&stale),
@@ -360,7 +360,7 @@ pub fn from_0_4(doc: &mut Value, fresh: &[Stage]) -> (Vec<String>, Vec<Stage>) {
             } else {
                 "they are"
             },
-        ));
+        )));
     }
     doc["format_version"] = json!(FORMAT_VERSION);
     (notes, keep)
