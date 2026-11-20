@@ -264,6 +264,51 @@ fn a_station_off_the_raster_is_refused_with_its_chainage() {
     assert_eq!(e.at, Some(Chainage(1575.0)));
 }
 
+/// Terrain that rises across the section, 0.005 m per metre from the line each way, and that ends
+/// 150 m either side of the line: the outer 50 m of each section is off the raster.
+fn rising_across_and_narrow(xs: &[f64], ys: &[f64]) -> Vec<f64> {
+    xs.iter()
+        .zip(ys)
+        .map(|(_, &y)| {
+            if y.abs() <= 150.0 {
+                TERRAIN_M + 0.005 * y.abs()
+            } else {
+                f64::NAN
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn a_station_with_part_of_its_section_off_the_raster_counts_and_is_not_refused() {
+    // QA on PR 564: only a station with no height at any sample is refused. A station whose section
+    // reaches past the raster on both sides counts the part on the raster, by hand: at offset `o`
+    // the ground is `c + 0.005 |o|` over the invert, and the face rises 1 in 3 beyond the bottom.
+    let size = channel();
+    let out = volumes_stage(&input(vec![], vec![]), &rising_across_and_narrow).unwrap();
+    let c = TERRAIN_M - (WATER_M - size.design_depth_m);
+    let hb = size.bottom_width_straight_m / 2.0;
+    let area: f64 = (-150..=150)
+        .map(|o| {
+            let o = f64::from(o);
+            let r = (o.abs() - hb).max(0.0);
+            (c + 0.005 * o.abs() - r / 3.0).max(0.0)
+        })
+        .sum();
+    assert!(area > 10.0, "a real cut: {area}");
+    // Every station of the 2 km line is there, and each counts the same, worked area.
+    assert_eq!(out.stations.len(), 81);
+    for st in &out.stations {
+        assert!(
+            close(st.dredge_area_m2, area),
+            "{} m: {} against {area}",
+            st.chainage_m,
+            st.dredge_area_m2
+        );
+    }
+    assert!(close(out.totals.dredge_m3, 81.0 * area * out.station_m));
+}
+
 #[test]
 fn an_unknown_cut_model_and_a_broken_sampler_are_refused_by_code() {
     let mut inp = input(vec![], vec![]);
