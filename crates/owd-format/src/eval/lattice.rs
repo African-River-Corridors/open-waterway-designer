@@ -116,6 +116,12 @@ fn config(d: &Value) -> Result<Result<LatticeConfig, String>, EvalError> {
     c.arc_step_m = f64_or(d, "arc_step_m", c.arc_step_m)?;
     c.goal_pos_tol_m = opt_f64(d, "goal_pos_tol_m")?;
     c.goal_head_tol_bins = f64_or(d, "goal_head_tol_bins", c.goal_head_tol_bins)?;
+    if let Some(v) = d.get("close_goal").filter(|v| !v.is_null()) {
+        c.close_goal = v
+            .as_bool()
+            .ok_or_else(|| bad("close_goal must be true or false".into()))?;
+    }
+    c.close_reach_m = opt_f64(d, "close_reach_m")?;
     if let Some(h) = d.get("heuristic").filter(|v| !v.is_null()) {
         c.heuristic = h
             .as_str()
@@ -150,6 +156,8 @@ fn config_json(c: &LatticeConfig) -> Value {
         "arc_step_m": float_json(c.arc_step_m),
         "goal_pos_tol_m": c.goal_pos_tol_m.map_or(Value::Null, float_json),
         "goal_head_tol_bins": float_json(c.goal_head_tol_bins),
+        "close_goal": c.close_goal,
+        "close_reach_m": c.close_reach_m.map_or(Value::Null, float_json),
         "heuristic": c.heuristic,
         "heuristic_weight": float_json(c.heuristic_weight),
         "prune_bound": float_json(c.prune_bound),
@@ -257,7 +265,9 @@ fn result_json(r: &LatticeResult) -> Value {
         "prim_seq": seq,
         "start_pose": pose_json(r.start_pose),
         "goal_pose": pose_json(r.goal_pose),
+        "goal_closed": r.goal_closed,
         "end_err_m": float_json(r.end_err_m),
+        "end_heading_err_rad": float_json(r.end_heading_err_rad),
         "expansions": r.expansions,
         "n_states": r.n_states,
         "hit_cap": r.hit_cap,

@@ -18,8 +18,11 @@ lattice with A*:
   the corridor; ``"reverse_dijkstra"``: a relaxed 2-D cost-to-go from the goal (tighter, but
   an 8-connected grid can slightly over-estimate); ``"none"``: plain Dijkstra.
 - **Endpoints** — pinned to the baseline's position and heading at both pool ends, so each
-  result splices back into the baseline. The goal is reached within ``goal_pos_tol_m``
-  (default half a pitch) and one heading bin; ``end_err_m`` reports the miss.
+  result splices back into the baseline. The search ends on the goal pose exactly, through a
+  closing Dubins path of R_min tried from states within ``close_reach_m`` of the goal, so two
+  adjacent pools meet tangentially (issue #6). Only when none is found does it fall back to a
+  goal within ``goal_pos_tol_m`` (default half a pitch) and one heading bin; ``end_err_m``
+  reports the miss.
 
 The search cost is a SEARCH objective. Re-measure the winner with
 :func:`owd.volumes.sections.section_volumes` (or ``volumes.raster``) before you
@@ -92,6 +95,8 @@ class LatticeConfig:
     arc_step_m: float = 10.0                  # sampling step along each primitive
     goal_pos_tol_m: Optional[float] = None    # default half a pitch
     goal_head_tol_bins: float = 1.0
+    close_goal: bool = True                   # end on the goal pose exactly (issue #6)
+    close_reach_m: Optional[float] = None     # closing paths tried within this; default 3 × R_min
     heuristic: str = "c_min"                  # "c_min" | "reverse_dijkstra" | "none"
     heuristic_weight: float = 1.0             # > 1 is weighted A*: faster, not optimal
     prune_bound: float = math.inf             # drop states with g + h above this
