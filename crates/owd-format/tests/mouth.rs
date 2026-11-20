@@ -270,3 +270,50 @@ fn the_candidate_weir_sites_turn_with_the_river() {
         json!([2000.0, 2500.0])
     );
 }
+
+/// QA on PR 558, item 5: a bank dataset imported after the mouth is stated, with its banks drawn
+/// from upstream, stores its low-confidence stretches counted from the mouth, as the banks are.
+#[test]
+fn a_bank_dataset_imported_after_the_mouth_counts_its_stretches_from_it() {
+    let mut s = straight_from_upstream();
+    assert!(s.set_mouth(straight_mouth(), None).unwrap().turned);
+    // Banks 100 m either side, drawn from upstream like the centreline was; a stretch 200 to 500 m
+    // from where they start (the upstream end).
+    let bank = |dy: f64| -> Vec<Pt> {
+        (0..=30)
+            .map(|i| [503_000.0 - 100.0 * f64::from(i), 600_000.0 + dy])
+            .collect()
+    };
+    let file = json!({
+        "type": "FeatureCollection",
+        "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::32630"}},
+        "bank_dataset": {
+            "version": 1,
+            "source": {"kind": "file", "name": "a test file", "date": "2026-11-20", "licence": null},
+            "accuracy_m": 2.0,
+            "low_confidence": [{"from_m": 200.0, "to_m": 500.0, "reason": "trees"}]
+        },
+        "features": [
+            {"type": "Feature", "properties": {"role": "left_bank"},
+             "geometry": {"type": "LineString", "coordinates": bank(-100.0)}},
+            {"type": "Feature", "properties": {"role": "right_bank"},
+             "geometry": {"type": "LineString", "coordinates": bank(100.0)}}
+        ]
+    });
+    s.import_bank_dataset(&file.to_string()).unwrap();
+    let d = s.document();
+    assert!(
+        (d["inputs"]["left_bank"]["coordinates"][0][0]
+            .as_f64()
+            .unwrap()
+            - 500_000.0)
+            .abs()
+            < 1e-6
+    );
+    let lc = &d["inputs"]["banks"]["low_confidence"][0];
+    assert!(
+        (lc["from_m"].as_f64().unwrap() - 2500.0).abs() < 1e-6,
+        "{lc}"
+    );
+    assert!((lc["to_m"].as_f64().unwrap() - 2800.0).abs() < 1e-6, "{lc}");
+}
