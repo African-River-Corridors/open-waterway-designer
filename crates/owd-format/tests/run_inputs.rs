@@ -373,3 +373,63 @@ fn a_document_whose_run_inputs_break_a_rule_does_not_open() {
     let e = Session::open(&doc.to_string()).err().unwrap();
     assert!(e.to_string().contains("/inputs/run"), "{e}");
 }
+
+fn example(name: &str) -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples")
+            .join(name),
+    )
+    .unwrap()
+}
+
+#[test]
+fn the_saved_examples_open_and_save_byte_for_byte() {
+    // QA on PR 570, finding 2: files saved before run inputs existed.
+    for name in [
+        "synthetic-river.owd",
+        "web/river-example.owd",
+        "web/river-reroute.owd",
+        "web/river-rolling-circle.owd",
+    ] {
+        let text = example(name);
+        let s = Session::open(&text).unwrap();
+        assert_eq!(s.run_inputs().unwrap(), None, "{name}");
+        assert_eq!(s.to_text(), text, "{name}: opening and saving changed it");
+    }
+}
+
+#[test]
+fn every_stage_of_the_chain_stays_fresh_when_run_inputs_are_set() {
+    // QA on PR 570, finding 1: sizing, alignment, optimise and volumes all run, on the web
+    // example's DEM, then the run inputs are set.
+    use owd_format::design::StageStatus;
+    use owd_format::design::terrain::dem_sampler;
+    use owd_format::types::TerrainSampler;
+    let dem = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web/river-dem.tif"),
+    )
+    .unwrap();
+    let grid = owd_format::geotiff::read_bytes(&dem).unwrap();
+    let t = dem_sampler(&grid, Some(32630)).unwrap();
+    let mut s = Session::open(&example("web/river-example.owd")).unwrap();
+    for st in Stage::ALL {
+        s.run_stage_with(st, Some(&t as TerrainSampler)).unwrap();
+    }
+    let fresh = vec![StageStatus::Fresh; Stage::ALL.len()];
+    let status =
+        |s: &Session| -> Vec<_> { Stage::ALL.iter().map(|st| s.stage_status(*st)).collect() };
+    assert_eq!(status(&s), fresh);
+    let stages = s.document()["stages"].clone();
+    let lims = limits(&["total_cut<=500000", "cost<=2000000 USD"]);
+    s.edit_run_inputs(&RunInputsEdit {
+        objective: Some("minimise:cost"),
+        limits: Some(&lims),
+        target_level: Some("feasibility"),
+    })
+    .unwrap();
+    assert_eq!(status(&s), fresh);
+    assert_eq!(s.document()["stages"], stages);
+    // And after a save and an open.
+    assert_eq!(status(&Session::open(&s.to_text()).unwrap()), fresh);
+}
