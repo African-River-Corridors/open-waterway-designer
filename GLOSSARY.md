@@ -51,6 +51,14 @@ The engineer's unit rates for one run, in one currency: dredge and dry cut per m
 haul per m³ per km, with a haul distance for the run or for a reach. **Cost** is these rates times
 OWD's volumes, by reach and in total.
 
+**Constraint**:
+Something on the ground the design line must respect. A **no-go area** is a named polygon the
+line avoids (the re-route treats it as impassable; every design line reports the no-go areas its
+**channel footprint**, the strip of the straight bottom width, enters). The **cut-rate multiplier**
+is a raster whose cell value multiplies the cut rate in that cell: the re-route weighs its cut by
+it, the volumes stage stores the **weighted volumes** beside the plain ones, and the cost prices
+dredge and dry cut on them. A cell at or above 1e6 is a **hard exclusion**, as a no-go area is.
+
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,
 optimisation, volumes, drawings. A stage is **stale** when anything it depends on has changed
