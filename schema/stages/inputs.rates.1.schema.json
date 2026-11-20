@@ -49,7 +49,7 @@
       ]
     },
     "haul_km": {
-      "description": "The haul distance of the run, km: for every reach without one of its own.",
+      "description": "The haul distance of the run, km: for every station no stretch covers.",
       "type": [
         "number",
         "null"
@@ -91,7 +91,7 @@
       "type": "object",
       "properties": {
         "reach": {
-          "description": "The stretch of design-line chainage. A reach of the volumes takes this distance when it\nlies wholly inside the stretch.",
+          "description": "The stretch of design-line chainage, ends included. Each station in it hauls this distance.",
           "$ref": "#/$defs/Reach"
         },
         "km": {
