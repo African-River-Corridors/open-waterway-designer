@@ -23,7 +23,8 @@ use owd_format::types::{Chainage, Polyline, RiverPolygon, WaterProfile};
 use serde_json::{Value, json};
 
 const TERRAIN_M: f64 = 7.5;
-const WATER_M: f64 = 12.0;
+/// Low enough that the design invert is under the terrain: there is a cut to take.
+const WATER_M: f64 = 9.0;
 
 fn flat(xs: &[f64], _ys: &[f64]) -> Vec<f64> {
     vec![TERRAIN_M; xs.len()]
@@ -104,6 +105,7 @@ fn a_prism_in_a_flat_raster_has_the_volume_worked_by_hand() {
     let out = volumes_stage(&input(vec![], vec![]), &flat).unwrap();
     let c = TERRAIN_M - (WATER_M - size.design_depth_m);
     let area = section_m2(c, size.bottom_width_straight_m / 2.0);
+    assert!(c > 0.5 && area > 10.0, "a real cut: c = {c}, area = {area}");
     assert!(!out.stations.is_empty());
     for st in &out.stations {
         assert!(
@@ -130,7 +132,12 @@ fn an_island_is_dry_land_not_dredge() {
         &flat,
     )
     .unwrap();
-    assert!(isl.totals.dredge_m3 < open.totals.dredge_m3);
+    assert!(
+        isl.totals.dredge_m3 < open.totals.dredge_m3,
+        "{:?} {:?}",
+        isl.totals,
+        open.totals
+    );
     assert!(isl.totals.excav_m3 > 0.0, "the island's cut is dry cut");
     assert!(close(
         isl.totals.dredge_m3 + isl.totals.excav_m3,
@@ -157,14 +164,14 @@ fn the_volumes_by_reach_add_up_to_the_totals() {
         Pool {
             from: Chainage(0.0),
             to: Chainage(900.0),
-            level_m: 11.0,
+            level_m: 8.0,
             min_level_m: None,
             max_level_m: None,
         },
         Pool {
             from: Chainage(900.0),
             to: Chainage(2000.0),
-            level_m: 12.5,
+            level_m: 9.0,
             min_level_m: None,
             max_level_m: None,
         },
@@ -181,13 +188,13 @@ fn the_volumes_by_reach_add_up_to_the_totals() {
     assert!(close(excav, out.totals.excav_m3));
     // The upper pool is deeper water over the same ground: less cut per metre.
     let per_m = |i: usize| out.by_reach[i].dredge_m3 / out.by_reach[i].stations as f64;
-    assert!(per_m(1) < per_m(0));
+    assert!(per_m(1) < per_m(0), "{:?}", out.by_reach);
 }
 
 #[test]
 fn a_section_profile_is_kept_every_500_m_and_where_asked() {
     let mut inp = input(vec![], vec![]);
-    inp.profile_at = vec![735.0];
+    inp.profile_at = vec![745.0];
     let out = volumes_stage(&inp, &flat).unwrap();
     assert_eq!(PROFILE_EVERY_M, 500.0);
     let kept: Vec<f64> = out
@@ -196,8 +203,8 @@ fn a_section_profile_is_kept_every_500_m_and_where_asked() {
         .filter(|s| s.profile.is_some())
         .map(|s| s.chainage_m)
         .collect();
-    // The stations nearest 0, 500, 1000, 1500 and 2000 m, and the one nearest 735 m.
-    assert_eq!(kept, vec![0.0, 500.0, 740.0, 1000.0, 1500.0, 2000.0]);
+    // The stations nearest 0, 500, 1000, 1500 and 2000 m, and the one nearest 745 m (stations are 25 m apart).
+    assert_eq!(kept, vec![0.0, 500.0, 750.0, 1000.0, 1500.0, 2000.0]);
     let p = out.stations[0].profile.as_ref().unwrap();
     assert_eq!(p.offsets_m.len(), 401);
     assert_eq!(p.terrain_m.len(), 401);
@@ -210,7 +217,10 @@ fn the_stage_refuses_by_code() {
     let mut inp = input(vec![], vec![]);
     inp.water.given = None;
     let e = volumes_stage(&inp, &flat).err().unwrap();
-    assert_eq!((e.stage.as_str(), e.code.as_str()), ("volumes", "VOLUMES_NO_WATER"));
+    assert_eq!(
+        (e.stage.as_str(), e.code.as_str()),
+        ("volumes", "VOLUMES_NO_WATER")
+    );
     let mut inp = input(vec![], vec![]);
     inp.design_line = Polyline(vec![[0.0, 0.0]]);
     let e = volumes_stage(&inp, &flat).err().unwrap();
@@ -294,16 +304,24 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
     assert_eq!(json!(stored.totals.dredge_m3), res["dredge_m3"]);
     assert_eq!(json!(stored.totals.excav_m3), res["excav_m3"]);
     assert_eq!(json!(stored.stations.len()), res["stations"]);
-    // Three pools: three reaches.
-    assert_eq!(stored.by_reach.len(), 3, "{:?}", stored.by_reach);
+    // The reaches are the water stage's stretches: the given pool table, then beyond its last
+    // point (held flat).
+    let water = s.design_water().unwrap();
+    assert_eq!(
+        stored.by_reach.len(),
+        water.stretches.len(),
+        "{:?}",
+        stored.by_reach
+    );
 
     let id = s.final_line().unwrap().id.clone();
     let walk = s.option_section_walk(&id, &flat).unwrap();
     let long = s.long_section(&id, &walk).unwrap();
     let col = |k: &str| -> Vec<Value> { long[k].as_array().unwrap().clone() };
-    let mine = |f: &dyn Fn(&owd_format::design::volumes_stage::VolumeStation) -> f64| -> Vec<Value> {
-        stored.stations.iter().map(|st| json!(f(st))).collect()
-    };
+    let mine =
+        |f: &dyn Fn(&owd_format::design::volumes_stage::VolumeStation) -> f64| -> Vec<Value> {
+            stored.stations.iter().map(|st| json!(f(st))).collect()
+        };
     assert_eq!(mine(&|st| st.chainage_m), col("chainage_m"));
     assert_eq!(mine(&|st| st.water_level_m), col("water_level_m"));
     assert_eq!(mine(&|st| st.invert_m), col("design_invert_m"));
@@ -319,7 +337,11 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
         col("bed_m")
     );
     // A profiled station's section is the walk's.
-    let st = stored.stations.iter().find(|st| st.profile.is_some()).unwrap();
+    let st = stored
+        .stations
+        .iter()
+        .find(|st| st.profile.is_some())
+        .unwrap();
     let cs = s.cross_section(&walk, st.chainage_m).unwrap();
     let p = st.profile.as_ref().unwrap();
     assert_eq!(json!(p.offsets_m), cs["offsets_m"]);
@@ -329,4 +351,47 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
     // It reopens and validates.
     let back = Session::open(&s.to_text()).unwrap();
     assert!(back.validate().is_empty(), "{:?}", back.validate());
+}
+
+/// The document size on the web example, with the stations stored: before (no `sections`), after,
+/// and what a profile at every station would have weighed. Run by hand:
+/// `cargo test -p owd-format --test volumes_stage document_size -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement for the PR, not a check"]
+fn document_size_on_the_web_example() {
+    use owd_format::design::terrain::dem_sampler;
+    use owd_format::types::TerrainSampler;
+    let web = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/web");
+    let text = std::fs::read_to_string(web.join("river-example.owd")).unwrap();
+    let dem = owd_format::geotiff::read_bytes(&std::fs::read(web.join("river-dem.tif")).unwrap())
+        .unwrap();
+    let mut s = Session::open(&text).unwrap();
+    let t = dem_sampler(&dem, Some(32630)).unwrap();
+    let ter: TerrainSampler = &t;
+    s.run_stale_with(Some(ter)).unwrap();
+    s.run_stage_with(Stage::Volumes, Some(ter)).unwrap();
+    let after = s.to_text();
+    let mut doc = s.document().clone();
+    let sections = doc["stages"]["volumes"]["results"]["sections"].take();
+    doc["stages"]["volumes"]["results"]
+        .as_object_mut()
+        .unwrap()
+        .remove("sections");
+    let before = serde_json::to_string_pretty(&doc).unwrap();
+    let v: Volumes = serde_json::from_value(sections.clone()).unwrap();
+    let profiled = v.stations.iter().filter(|st| st.profile.is_some()).count();
+    let one = v
+        .stations
+        .iter()
+        .find_map(|st| st.profile.as_ref())
+        .map(|p| serde_json::to_string_pretty(p).unwrap().len())
+        .unwrap_or(0);
+    println!(
+        "stations {}, profiled {profiled}; document before {} bytes, after {} bytes; one profile \
+         about {one} bytes, so a profile at every station would add about {} bytes",
+        v.stations.len(),
+        before.len(),
+        after.len(),
+        one * (v.stations.len() - profiled)
+    );
 }

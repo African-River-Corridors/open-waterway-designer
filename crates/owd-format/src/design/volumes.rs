@@ -8,11 +8,10 @@ use super::hash::sha256_hex;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::geotiff::Dem;
 use crate::types::{TerrainSampler, WaterProfile};
-use owd_core::cut_model::{CUT_MODEL, WIDEN_RMAX, widened_hb_from_shape};
+use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Polygon, Pt};
 use owd_core::volumes::sections::{
-    DEFAULT_DX_M, DEFAULT_MAXW_M, DEFAULT_STATION_M, DEFAULT_WET_SLOPE, HalfWidth, Level,
-    section_volumes,
+    DEFAULT_DX_M, DEFAULT_MAXW_M, DEFAULT_STATION_M, DEFAULT_WET_SLOPE,
 };
 use serde_json::{Value, json};
 
@@ -30,7 +29,8 @@ pub enum DemCheck {
 }
 
 /// The settings of the volumes stage, typed. A key the stage does not know is refused by name.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct VolumesSettings {
     /// The cut model (`a` or `b`).
     pub cut_model: String,
@@ -285,6 +285,19 @@ impl Session {
             // A, the verdict, and C, the constraint stretches (spec 0007).
             "screening": screening,
         });
+        // The stations, by reach and in total (spec 0017 ticket 9), for the drawings and the report.
+        // A profile is kept where a cross-section sheet draws by default: see `volumes_stage`.
+        let mut profile_at: Vec<f64> = super::map::option_tight_bends(&o)
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
+        profile_at.extend(
+            row["screening"]["constraint_stretches"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|x| x["worst_chainage_m"].as_f64()),
+        );
         // Issue #366: a line that is not feasible keeps its numbers, flagged: not a design.
         if super::export::no_feasible_line(&o) {
             row["no_feasible_line"] = json!(true);
@@ -303,6 +316,11 @@ impl Session {
         // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
         // after the settings, so its step is the stations' step. The walk read the same levels.
         self.run_water()?;
+        let water = self.design_water().ok_or_else(|| {
+            DesignError::Input("the water stage did not store the water level".into())
+        })?;
+        self.doc["stages"]["volumes"]["results"]["sections"] =
+            json!(super::volumes_stage::summarise(&v, &water, &profile_at));
         Ok(())
     }
 }
@@ -343,7 +361,6 @@ pub(super) struct SectionPlan {
     pub(super) centre: Vec<Pt>,
     model: String,
     shape: super::sizing::ChannelSize,
-    depth: f64,
     pub(super) river: Vec<Polygon>,
     fixed_hb: Option<f64>,
     /// The bed model, when the document has one (spec 0012), with the water level it hangs from.
@@ -375,7 +392,6 @@ impl Session {
         let model = typed.cut_model.clone();
 
         let shape = self.channel_size()?;
-        let depth = shape.design_depth_m;
 
         // A polygon with no outer ring is no river: there is no water to split the cut by.
         let river: Vec<Polygon> = self
@@ -402,7 +418,6 @@ impl Session {
             centre,
             model,
             shape,
-            depth,
             river,
             fixed_hb,
             bed,
@@ -447,29 +462,17 @@ impl Session {
                 &port_level
             }
         };
-        let level = Level::AtChainage(wl);
-        let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
-        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
-        let half_width = match plan.fixed_hb {
-            Some(h) => HalfWidth::Fixed(h),
-            None => HalfWidth::FromStations(&from_shape),
-        };
-        section_volumes(
-            &line,
-            terrain,
-            &plan.river,
-            &level,
-            plan.depth,
-            &half_width,
-            &plan.model,
-            plan.typed.wet_slope,
-            plan.typed.station_m,
-            plan.typed.maxw_m,
-            plan.typed.dx_m,
-            None,
-            None,
-            owd_core::volumes::sections::DEFAULT_CHUNK,
+        let mut settings = plan.typed.clone();
+        settings.cut_model = plan.model.clone();
+        settings.half_width_m = plan.fixed_hb;
+        super::volumes_stage::walk(&line, &plan.shape, &plan.river, wl, &settings, terrain).map_err(
+            |e| {
+                if e.code == "VOLUMES_WALK" {
+                    DesignError::Input(format!("option `{id}`: {}", e.message))
+                } else {
+                    super::rule_sets::stage_error(e)
+                }
+            },
         )
-        .map_err(|e| DesignError::Input(format!("option `{id}`: {e}")))
     }
 }

@@ -90,6 +90,7 @@ pub fn contracts() -> Vec<StageContract> {
     use crate::design::reference_line::{self, ReferenceLine, ReferenceLineIn};
     use crate::design::river::{self, RiverGeometry, RiverIn};
     use crate::design::sizing::{self, ChannelSize, SizingIn};
+    use crate::design::volumes_stage::{self, Volumes, VolumesIn};
     use crate::design::water_stage::{self, DesignWater, WaterIn};
     vec![
         StageContract::of::<StageRecord<Value, Value>>("stage-record", STAGE_CONTRACT_VERSION),
@@ -100,6 +101,7 @@ pub fn contracts() -> Vec<StageContract> {
         StageContract::of::<StageRecord<EnvelopeIn, EnvelopeResult>>(envelope::STAGE, 1),
         StageContract::of::<StageRecord<FitsIn, FitsAnswer>>(fits::STAGE, 1),
         StageContract::of::<StageRecord<WaterIn, DesignWater>>(water_stage::STAGE, 1),
+        StageContract::of::<StageRecord<VolumesIn, Volumes>>(volumes_stage::STAGE, 1),
     ]
 }
 
