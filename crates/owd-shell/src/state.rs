@@ -234,8 +234,8 @@ impl AppState {
             let epsg = session.document()["project"]["crs"]["epsg"]
                 .as_u64()
                 .map(|c| c as u32);
-            let dem = dem_bytes
-                .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
+            let dem = owd_format::design::stage_terrain(&session, dem_bytes)
+                .ok()
                 .and_then(|b| read_bytes(b).ok());
             let sampler = dem
                 .as_ref()
