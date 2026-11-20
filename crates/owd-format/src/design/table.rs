@@ -290,6 +290,55 @@ mod tests {
         assert!(why.contains("no bend has a feasible line"), "{why}");
     }
 
+    fn stretch(kind: &str) -> Value {
+        json!({"kind": kind})
+    }
+
+    /// The verdict names what the stretches are: where the design cuts the river, not "needs works",
+    /// and keeps the design line's own R_min check apart from them.
+    #[test]
+    fn the_reason_says_where_the_design_cuts_the_river_and_that_the_line_meets_r_min() {
+        let screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the design line option",
+            "constraint_stretches": [stretch("width"), stretch("width"), stretch("depth")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 3 stretches: 2 widenings, 1 deepening"),
+            "{why}"
+        );
+        assert!(why.contains("the design line meets R_min"), "{why}");
+        assert!(!why.contains("need works"), "{why}");
+        assert!(!why.contains("river's own bends"), "{why}");
+        // A failing R_min check is said as it is, and no "meets".
+        let why = verdict_reason(&screening, &["R_min"]).unwrap();
+        assert!(!why.contains("meets R_min"), "{why}");
+    }
+
+    /// A radius stretch read on a plan line is a bend cut-through of the design; one read on the
+    /// design line is a line tighter than R_min, and is not counted among the cuts.
+    #[test]
+    fn the_radius_stretches_are_named_for_the_line_they_read() {
+        let mut screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the plan line",
+            "constraint_stretches": [stretch("radius"), stretch("radius")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 2 stretches: 2 bend cut-throughs"),
+            "{why}"
+        );
+        screening["radius_read_on"] = json!("the design line option");
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(!why.contains("the design cuts the river"), "{why}");
+        assert!(
+            why.contains("tighter than R_min at 2 bends tighter than R_min on the design line"),
+            "{why}"
+        );
+    }
+
     #[test]
     fn a_design_with_no_options_has_an_empty_table() {
         let t = session_with(json!([])).option_table(None);
