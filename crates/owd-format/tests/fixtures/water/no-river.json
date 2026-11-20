@@ -1,0 +1,26 @@
+{
+ "label": "Label: property",
+ "why": "The level is read on the river centreline, which is missing.",
+ "input": {
+  "centreline": [],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "given": [
+   [
+    0.0,
+    10.0
+   ]
+  ]
+ },
+ "expect": {
+  "error": "WATER_NO_RIVER"
+ }
+}
