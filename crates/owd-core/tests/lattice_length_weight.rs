@@ -308,9 +308,10 @@ fn raising_the_weight_trades_cut_for_length() {
     }
     // At weight 0 the line follows the water and cuts (almost) nothing.
     assert!(rows[0].2 < 1.0, "{}", rows[0].2);
-    // At the largest weight the line cuts the neck: it is within 2 % of the straight line.
+    // At the largest weight the line cuts the neck: it is within 5 % of the straight line (it must
+    // still leave and meet the river's line on its own heading at both ends, at R_min).
     let (_, l_big, _) = rows[rows.len() - 1];
-    assert!(l_big < 1.02 * chord, "{l_big} vs {chord}");
+    assert!(l_big < 1.05 * chord, "{l_big} vs {chord}");
 }
 
 /// (d) The `c_min` heuristic stays admissible with the weight on: on a small case it gives the same

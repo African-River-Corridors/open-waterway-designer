@@ -1436,7 +1436,6 @@ pub fn solve_lattice_until(
     // really ends, and the line is costed as it is rebuilt; when no closing path leaves from there,
     // the goal is not closed and the result says so (`end_err_m`).
     let mut closed = closed;
-    let mut closing = closing;
     let mut cost = g[&best];
     if closed
         && closing_from.is_some_and(|f| {
