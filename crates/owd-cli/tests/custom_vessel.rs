@@ -78,7 +78,7 @@ fn size_saves_the_custom_vessel_and_says_its_label() {
     let st = &d["stages"]["sizing"]["settings"];
     assert!(st["vessel_standard_id"].is_null());
     assert_eq!(st["custom_vessel"]["name"], "My barge");
-    assert_eq!(d["format_version"], "0.4");
+    assert_eq!(d["format_version"], "0.5");
     // `owd size` with no vessel flag sizes the custom vessel the study has.
     let o = run(&[
         "size",

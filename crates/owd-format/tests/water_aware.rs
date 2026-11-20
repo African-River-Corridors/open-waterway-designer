@@ -74,7 +74,7 @@ fn seed_legs_and_fixed_pieces_give_the_joined_fitted_option() {
     let mut s = tail_design();
     s.align(AlignMethod::RollingCircle, &Value::Null, None)
         .unwrap();
-    let o = &s.document()["options"][0];
+    let o = &s.document()["stages"]["alignment"]["results"];
     let line = pts(&o["line"]);
     let tail: Vec<Pt> = fixed_tail().fixed[0].iter().map(shift).collect();
     // Joined, fitted, and ending on the must-follow tail exactly.

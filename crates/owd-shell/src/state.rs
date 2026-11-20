@@ -5,8 +5,8 @@
 //! validation or default logic: every answer comes from [`Session`].
 
 use crate::run::{Outcome, RunControl, RunJob};
-use owd_core::volumes::sections::SectionVolumes;
 use owd_format::design::bank_edit::BankEdit;
+use owd_format::design::sections::Stations;
 use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
 use owd_format::geotiff::{Dem, read_bytes};
 use serde_json::{Value, json};
@@ -28,8 +28,8 @@ pub struct AppState {
     dem_file: Option<PathBuf>,
     /// The stage now running on a worker, if any.
     running: Option<(Stage, Arc<RunControl>)>,
-    /// The station walk last drawn, with the key it was made under (option and volumes inputs).
-    walk: Option<(String, Arc<SectionVolumes>)>,
+    /// The stations last drawn, with the key they were read under (option and volumes inputs).
+    walk: Option<(String, Arc<Stations>)>,
     /// The design as it stood before each bank edit, newest last, for undo (spec 0012).
     bank_undo: Vec<Session>,
     /// What "Start from a river" keeps between its steps (spec 0012).
@@ -48,30 +48,40 @@ pub struct AppState {
 /// How many bank edits can be undone.
 const UNDO_LIMIT: usize = 50;
 
-/// A station walk to fetch or make off the main thread.
+/// The stations to fetch or make off the main thread.
 pub struct WalkJob {
     session: Session,
     dem: Option<Arc<Dem>>,
     epsg: Option<u32>,
     option: String,
     key: String,
-    cached: Option<Arc<SectionVolumes>>,
+    cached: Option<Arc<Stations>>,
+    /// Chainages whose nearest station must have its section profile.
+    profiles_at: Vec<f64>,
 }
 
-/// A station walk and the design it was made from, to draw from.
+/// The stations and the design they were read from, to draw from.
 #[derive(Debug)]
 pub struct Walked {
     pub session: Session,
-    pub walk: Arc<SectionVolumes>,
+    pub walk: Arc<Stations>,
     key: String,
 }
 
 impl WalkJob {
-    /// The cached walk, or one made now on the DEM. A refusal is the session's reason.
+    /// Ask for the section profile of the station nearest each of `chainages` too.
+    pub fn with_profiles_at(mut self, chainages: &[f64]) -> WalkJob {
+        self.profiles_at = chainages.to_vec();
+        self
+    }
+
+    /// The cached stations, or the volumes stage's stored ones through
+    /// [`Session::section_stations`], the door the drawings use. The line is walked again on the
+    /// DEM only when a station asked for has no stored profile. A refusal is the session's reason.
     pub fn run(self) -> Result<Walked, String> {
         let walk = match self.cached {
-            Some(w) => w,
-            None => {
+            Some(w) if w.profiles_at(&self.profiles_at) => w,
+            _ => {
                 let dem = self
                     .dem
                     .ok_or("the sections need the DEM the volumes were run on: it is missing or has changed")?;
@@ -79,7 +89,7 @@ impl WalkJob {
                     owd_format::design::terrain::dem_sampler(&dem, self.epsg).map_err(message)?;
                 Arc::new(
                     self.session
-                        .option_section_walk(&self.option, &sampler)
+                        .section_stations(&self.option, &self.profiles_at, Some(&sampler))
                         .map_err(message)?,
                 )
             }
@@ -654,6 +664,62 @@ impl AppState {
         Ok(())
     }
 
+    /// Set the run inputs from the app's fields (spec 0017, ticket 11): the objective
+    /// (`SENSE:MEASURE`, empty for none), the limits (one `MEASURE<=VALUE` a line, empty for none)
+    /// and the target level (empty for none), through `Session::edit_run_inputs`, as `owd
+    /// run-inputs` does. The app sends all three, so each replaces what is stored. No stage goes
+    /// stale. A refusal changes nothing.
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let limits: Vec<String> = limits
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        self.session
+            .edit_run_inputs(&owd_format::design::run_inputs::RunInputsEdit {
+                objective: Some(objective),
+                limits: Some(&limits),
+                target_level: Some(target_level),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// State the river mouth from the app's field: `downstream` or `LON,LAT`, as `owd import
+    /// --mouth` reads it, through the same shell call. The river inputs are turned to run from the
+    /// mouth when it is at their far end, and the stages that read them go stale. A refusal (no
+    /// river yet, or `downstream` with neither a water level nor a DEM to say which end is lower)
+    /// changes nothing.
+    pub fn set_mouth(&mut self, text: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => Some(
+                owd_format::design::terrain::dem_sampler(d, self.project_epsg())
+                    .map_err(message)?,
+            ),
+            None => None,
+        };
+        crate::import::set_mouth(
+            &mut self.session,
+            text,
+            sampler
+                .as_ref()
+                .map(|s| s as owd_format::types::TerrainSampler),
+        )
+        .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the water level from a pool table: the text of `owd import --water-pools FILE`, read by
     /// the session's one reader. A refusal changes nothing.
     pub fn set_water_pools(&mut self, table: &str) -> Result<(), String> {
@@ -740,6 +806,7 @@ impl AppState {
             option: option.to_string(),
             key,
             cached,
+            profiles_at: Vec::new(),
         }
     }
 
@@ -1282,9 +1349,7 @@ mod tests {
         // The constraint stretches for the map: the session's export in WGS84, one line each.
         let fc = s.stretches_geojson().unwrap();
         let doc = s.snapshot()["document"].clone();
-        let count: usize = doc["stages"]["volumes"]["results"]["options"]
-            .as_array()
-            .unwrap()
+        let count: usize = owd_format::design::volume_rows_of(&doc)
             .iter()
             .map(|o| {
                 o["screening"]["constraint_stretches"]
@@ -1561,8 +1626,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sections_come_from_the_walk_the_volumes_summed_and_the_walk_is_kept_until_the_design_changes()
-     {
+    fn the_sections_come_from_the_stored_stations_and_are_kept_until_the_design_changes() {
         let (mut s, _dir) = ready();
         run(&mut s, "alignment", Some("rolling_circle")).unwrap();
         // Before volumes have run there is no walk to draw.
@@ -1573,11 +1637,38 @@ mod tests {
             .session
             .long_section("rolling-circle", &first.walk)
             .unwrap();
-        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"]["options"][0];
+        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"];
         assert_eq!(
             ls["chainage_m"].as_array().unwrap().len() as u64,
             row["stations"].as_u64().unwrap()
         );
+        // The app reads the volumes stage's stored stations, through the drawings' door: nothing
+        // is walked again (spec 0017 ticket 10).
+        use owd_format::design::sections::{StationSource, WALKED_FOR_PROFILE};
+        assert_eq!(first.walk.source, StationSource::Stored);
+        // A station with no stored profile is walked for, never drawn from a neighbour.
+        let n = first.walk.walk.stations.len();
+        // The example's line is long enough that most stations keep no profile: one must exist,
+        // or this check proves nothing (QA on PR 568, finding 3).
+        let bare = (0..n)
+            .find(|&i| !first.walk.has_profile(i))
+            .expect("a station with no stored profile");
+        {
+            let at = first.walk.walk.stations[bare].chainage_m;
+            assert!(first.session.cross_section(&first.walk, at).is_err());
+            let again = s
+                .begin_walk("rolling-circle")
+                .with_profiles_at(&[at])
+                .run()
+                .unwrap();
+            assert_eq!(
+                again.walk.source,
+                StationSource::Walked {
+                    reason: WALKED_FOR_PROFILE
+                }
+            );
+            assert!(again.session.cross_section(&again.walk, at).is_ok());
+        }
         s.keep_walk(&first);
         // Kept: the next job already holds it. A new water level changes the volumes' inputs: it is dropped.
         assert!(s.begin_walk("rolling-circle").cached.is_some());

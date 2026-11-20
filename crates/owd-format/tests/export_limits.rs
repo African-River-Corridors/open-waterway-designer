@@ -35,10 +35,10 @@ fn design(line: &[Pt]) -> Session {
     s.run_stage(Stage::Sizing).unwrap();
     s.align(AlignMethod::RollingCircle, &Value::Null, None)
         .unwrap();
-    // A synthetic option: the test puts its own line in the place of the option's line.
+    // A synthetic design line: the test puts its own line in the place of the design line's.
     let mut doc: Value = serde_json::from_str(&s.to_text()).unwrap();
-    assert_eq!(doc["options"].as_array().unwrap().len(), 1);
-    doc["options"][0]["line"] = json!({"type": "LineString", "coordinates": line});
+    doc["stages"]["alignment"]["results"]["line"] =
+        json!({"type": "LineString", "coordinates": line});
     Session::open(&doc.to_string()).unwrap()
 }
 

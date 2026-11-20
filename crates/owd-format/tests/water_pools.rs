@@ -8,6 +8,7 @@
 //!
 //! Label: property
 
+use owd_format::design::sections::Stations;
 use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage};
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
@@ -192,7 +193,9 @@ fn the_volumes_stage_reads_each_station_in_its_own_pool() {
     };
 
     let walk = s.option_section_walk("rolling-circle", &flat).unwrap();
-    let long = s.long_section("rolling-circle", &walk).unwrap();
+    let long = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
     let col = |key: &str| -> Vec<f64> {
         long[key]
             .as_array()

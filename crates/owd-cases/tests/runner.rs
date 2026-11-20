@@ -174,7 +174,7 @@ fn a_known_defect_passes_when_the_rule_is_met_not_when_the_old_value_is_matched(
     let cases = store(&dir, |case| {
         case["expect"].as_array_mut().unwrap().push(json!({
             "name": "required_radius_is_met",
-            "read": {"pointer": "/options/0/checks/r_min_m"},
+            "read": {"pointer": "/stages/alignment/results/checks/r_min_m"},
             "value": 240.0,
             "class": "known_defect",
             "rule": {"at_least": 255.0},
@@ -196,7 +196,7 @@ fn a_known_defect_passes_when_the_rule_is_met_not_when_the_old_value_is_matched(
     let cases = store(&dir, |case| {
         case["expect"].as_array_mut().unwrap().push(json!({
             "name": "required_radius_is_met",
-            "read": {"pointer": "/options/0/checks/r_min_m"},
+            "read": {"pointer": "/stages/alignment/results/checks/r_min_m"},
             "value": 240.0,
             "class": "known_defect",
             "rule": {"at_least": 300.0},

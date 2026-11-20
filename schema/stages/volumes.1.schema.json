@@ -1,0 +1,851 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/VolumesIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Volumes"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "VolumesIn": {
+      "description": "What the volumes stage reads.",
+      "type": "object",
+      "properties": {
+        "design_line": {
+          "description": "The design line the volumes are taken along.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "size": {
+          "description": "The channel's size, from the sizing stage.",
+          "$ref": "#/$defs/ChannelSize"
+        },
+        "water": {
+          "description": "What the water stage reads: the level at each station is read as it reads it.",
+          "$ref": "#/$defs/WaterIn"
+        },
+        "river_polygon": {
+          "description": "The river as water, with its islands.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiverPolygon"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "settings": {
+          "description": "The stage's settings.",
+          "$ref": "#/$defs/VolumesSettings",
+          "default": {
+            "cut_model": "cut_model_a",
+            "station_m": 25.0,
+            "maxw_m": 200.0,
+            "dx_m": 1.0,
+            "wet_slope": 3.0,
+            "half_width_m": null
+          }
+        },
+        "profile_at": {
+          "description": "Chainages (design line) whose nearest station keeps its section profile, beside one every\n[`PROFILE_EVERY_M`].",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "design_line",
+        "size",
+        "water"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "ChannelSize": {
+      "description": "What the sizing stage returns: the channel's size and why. The keys are the ones the document has\nalways stored under `stages.sizing.results`.",
+      "type": "object",
+      "properties": {
+        "rule_sets": {
+          "description": "The selection that sized it, such as `pianc-wg141@0.3.0 (se_quality C)`.",
+          "type": "string"
+        },
+        "vessel_standard_id": {
+          "description": "The class's catalogue id; null for a custom vessel.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loa_m": {
+          "description": "The vessel's length overall in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "beam_m": {
+          "description": "The vessel's beam in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "draught_m": {
+          "description": "The draught in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "formation": {
+          "description": "`motor_vessel` or `pushed_convoy`.",
+          "type": "string"
+        },
+        "bottom_width_straight_m": {
+          "description": "The bottom width of the channel on a straight, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_bend_radius_m": {
+          "description": "The minimum bend radius in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "design_depth_m": {
+          "description": "The design depth in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bend_widening_at_rmin_m": {
+          "description": "The bend widening at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "bottom_width_at_rmin_m": {
+          "description": "The bottom width at the minimum radius, in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "width_basis": {
+          "description": "`table`, `appendix-a` or `rule`.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Where the vessel's figures come from.",
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Warnings of the sizing.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "vessel_label": {
+          "description": "A custom vessel's label (it has no class id); absent for a class.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "design_basis": {
+          "description": "B, the design basis: each quantity with its governing Rule.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BasisRow"
+          }
+        },
+        "rules_notice": {
+          "description": "The notice every output carries while the Rules are unverified.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_sets",
+        "loa_m",
+        "beam_m",
+        "draught_m",
+        "formation",
+        "bottom_width_straight_m",
+        "min_bend_radius_m",
+        "design_depth_m",
+        "bend_widening_at_rmin_m",
+        "bottom_width_at_rmin_m",
+        "width_basis",
+        "source",
+        "warnings",
+        "design_basis",
+        "rules_notice"
+      ]
+    },
+    "BasisRow": {
+      "description": "One row of the design basis: a quantity with the Rule that governs it.",
+      "type": "object",
+      "properties": {
+        "quantity": {
+          "description": "`bottom-width`, `min-bend-radius`, `design-depth` or `widening-at-rmin`.",
+          "type": "string"
+        },
+        "waterway": {
+          "description": "The waterway kind of the reach, for the minimum radius.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "The value.",
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "description": "Its unit.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "The governing Rule.",
+          "type": "string"
+        },
+        "rule_sets": {
+          "description": "The sets that hold the Rule, as `id@version`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "citation": {
+          "description": "The Rule's citation.",
+          "type": "string"
+        },
+        "origin": {
+          "description": "Where the Rule comes from.",
+          "type": "string"
+        },
+        "status": {
+          "description": "`verified` or `unverified`.",
+          "type": "string"
+        },
+        "other_rules": {
+          "description": "The other Rules of the Requirement that have a limit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OtherRule"
+          }
+        }
+      },
+      "required": [
+        "quantity",
+        "value",
+        "unit",
+        "rule",
+        "rule_sets",
+        "citation",
+        "origin",
+        "status",
+        "other_rules"
+      ]
+    },
+    "OtherRule": {
+      "description": "Another Rule of a Requirement, with its limit.",
+      "type": "object",
+      "properties": {
+        "rule": {
+          "description": "The Rule.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Its limit.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "rule",
+        "limit"
+      ]
+    },
+    "WaterIn": {
+      "description": "What the water stage reads.",
+      "type": "object",
+      "properties": {
+        "centreline": {
+          "description": "The river centreline the levels are read on, from the mouth when one is stated.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "design_line": {
+          "description": "The design line the stages after this one read.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "given": {
+          "description": "The water profile of the inputs, on river chainage.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaterProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pools": {
+          "description": "The pools, in order of river chainage. Empty: no pools.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pool"
+          },
+          "default": []
+        },
+        "beyond_pools": {
+          "description": "What the level is outside every pool.",
+          "$ref": "#/$defs/BeyondPools",
+          "default": "hold_pool_level"
+        },
+        "step_m": {
+          "description": "The step between points of the answer, metres of design-line chainage.",
+          "type": "number",
+          "format": "double",
+          "default": 25.0
+        }
+      },
+      "required": [
+        "centreline",
+        "design_line"
+      ]
+    },
+    "WaterProfile": {
+      "description": "The water level along a river: points sorted by chainage, read linearly between points and held\nflat beyond the first and last. Two points at one chainage make a step (a weir): at that chainage\nthe later point holds.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WaterPoint"
+      }
+    },
+    "WaterPoint": {
+      "description": "One point of a water level profile: a river chainage and the level there, in metres. It is\nwritten as the pair `[chainage, level]`.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Pool": {
+      "description": "One pool: a stretch of river held at one level by the structure at its downstream end.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "River chainage where the pool starts (its downstream end).",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "River chainage where the pool ends (its upstream end). Not below `from`.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "level_m": {
+          "description": "The pool's design level, metres above datum.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_level_m": {
+          "description": "The lowest level the pool is held at: navigation depth is checked here (issue 532).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_level_m": {
+          "description": "The highest level the pool reaches: flood risk is checked here (issue 532).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "level_m"
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    },
+    "BeyondPools": {
+      "description": "What the level is outside every pool.",
+      "oneOf": [
+        {
+          "description": "The pools' levels, read as one stepped profile and held flat beyond its ends. How the\noptimise stage's pools have always been read; the default, so no stored number moves.",
+          "type": "string",
+          "const": "hold_pool_level"
+        },
+        {
+          "description": "The river's own level, from the given profile (open river below the lowest weir).",
+          "type": "string",
+          "const": "open_river"
+        }
+      ]
+    },
+    "RiverPolygon": {
+      "description": "The river as water: an outer ring and the islands cut out of it. A ring is a [`Polyline`] that is\nclosed by implication (the last point joins the first).",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Islands: each is dry land inside the shell.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "required": [
+        "shell"
+      ]
+    },
+    "VolumesSettings": {
+      "description": "The settings of the volumes stage, typed. A key the stage does not know is refused by name.",
+      "type": "object",
+      "properties": {
+        "cut_model": {
+          "description": "The cut model (`a` or `b`).",
+          "type": "string"
+        },
+        "station_m": {
+          "description": "The station spacing in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "maxw_m": {
+          "description": "The half-width of each cross-section in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "dx_m": {
+          "description": "The sample spacing across each cross-section in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "wet_slope": {
+          "description": "The slope of the cut below water, horizontal per vertical.",
+          "type": "number",
+          "format": "double"
+        },
+        "half_width_m": {
+          "description": "A fixed bottom half-width in metres; `None`: widened in bends from the sizing.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cut_model",
+        "station_m",
+        "maxw_m",
+        "dx_m",
+        "wet_slope"
+      ]
+    },
+    "Volumes": {
+      "description": "What the volumes stage returns.",
+      "type": "object",
+      "properties": {
+        "station_m": {
+          "description": "The station step, metres: each station stands for this length.",
+          "type": "number",
+          "format": "double"
+        },
+        "stations": {
+          "description": "Every station, in order of chainage.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VolumeStation"
+          }
+        },
+        "by_reach": {
+          "description": "The volumes by reach, in order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReachVolumes"
+          }
+        },
+        "totals": {
+          "description": "The totals.",
+          "$ref": "#/$defs/VolumeTotals"
+        }
+      },
+      "required": [
+        "station_m",
+        "stations",
+        "by_reach",
+        "totals"
+      ]
+    },
+    "VolumeStation": {
+      "description": "One station of the walk.",
+      "type": "object",
+      "properties": {
+        "chainage_m": {
+          "description": "Design-line chainage.",
+          "type": "number",
+          "format": "double"
+        },
+        "x": {
+          "description": "The station's place in the project CRS.",
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        },
+        "heading_rad": {
+          "description": "The line's heading at the station, radians.",
+          "type": "number",
+          "format": "double"
+        },
+        "half_width_m": {
+          "description": "The bottom half-width.",
+          "type": "number",
+          "format": "double"
+        },
+        "water_level_m": {
+          "description": "The design water level.",
+          "type": "number",
+          "format": "double"
+        },
+        "invert_m": {
+          "description": "The design invert.",
+          "type": "number",
+          "format": "double"
+        },
+        "depth_m": {
+          "description": "The design depth.",
+          "type": "number",
+          "format": "double"
+        },
+        "bed_m": {
+          "description": "The ground on the line (the sample nearest offset zero), when known.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "dredge_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "excav_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "in_river_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "widening_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "cut_through_area_m2": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_face_h_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "bench_left": {
+          "type": "boolean"
+        },
+        "bench_right": {
+          "type": "boolean"
+        },
+        "has_water": {
+          "description": "True when the section has water of its own (ticket C23).",
+          "type": "boolean"
+        },
+        "tag": {
+          "description": "The section's tag.",
+          "type": "string"
+        },
+        "top_of_cut_left_m": {
+          "description": "The top of cut on the left (negative offset) and right: the outermost offset each side\nwhere the cut face is at or below the ground. The plan sheet draws it at every station.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "top_of_cut_right_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "profile": {
+          "description": "The section profile, at the stations that keep one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SectionProfile"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "chainage_m",
+        "x",
+        "y",
+        "heading_rad",
+        "half_width_m",
+        "water_level_m",
+        "invert_m",
+        "depth_m",
+        "dredge_area_m2",
+        "excav_area_m2",
+        "in_river_area_m2",
+        "widening_area_m2",
+        "cut_through_area_m2",
+        "max_face_h_m",
+        "bench_left",
+        "bench_right",
+        "has_water",
+        "tag"
+      ]
+    },
+    "SectionProfile": {
+      "description": "A station's cross-section, as the cross-section sheet draws it. Missing terrain or cut face is\n`null`.",
+      "type": "object",
+      "properties": {
+        "offsets_m": {
+          "description": "Offsets across the line, metres (left negative).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "terrain_m": {
+          "description": "The ground (or bed) at each offset.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        },
+        "wet": {
+          "description": "True inside the present river.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "cut_face_m": {
+          "description": "The design face at each offset, where there is a cut face.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "required": [
+        "offsets_m",
+        "terrain_m",
+        "wet",
+        "cut_face_m"
+      ]
+    },
+    "ReachVolumes": {
+      "description": "The volumes of one reach: a stretch of the water stage's (one source, one pool).",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where the reach starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where it ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "source": {
+          "description": "Where its water level comes from.",
+          "$ref": "#/$defs/WaterSource"
+        },
+        "pool": {
+          "description": "The pool, by its index in the water stage's input, when it is one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "stations": {
+          "description": "The number of stations in it. A station at the boundary of two reaches is in the upper one.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "dredge_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "excav_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "total_m3": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "source",
+        "stations",
+        "dredge_m3",
+        "excav_m3",
+        "total_m3"
+      ]
+    },
+    "WaterSource": {
+      "description": "Where a level comes from.",
+      "oneOf": [
+        {
+          "description": "The water profile of the inputs.",
+          "type": "string",
+          "const": "given"
+        },
+        {
+          "description": "A pool held by a structure.",
+          "type": "string",
+          "const": "pool"
+        },
+        {
+          "description": "The river's own level, outside every pool.",
+          "type": "string",
+          "const": "open_river"
+        },
+        {
+          "description": "Between two pools that do not touch: read straight from the lower pool's level to the upper\none's (how the optimise stage's pools have always been read).",
+          "type": "string",
+          "const": "between_pools"
+        }
+      ]
+    },
+    "VolumeTotals": {
+      "description": "The totals over every station.",
+      "type": "object",
+      "properties": {
+        "dredge_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "excav_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "total_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "in_river_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "widening_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "cut_through_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_face_h_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "stations": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "dredge_m3",
+        "excav_m3",
+        "total_m3",
+        "in_river_m3",
+        "widening_m3",
+        "cut_through_m3",
+        "max_face_h_m",
+        "stations"
+      ]
+    }
+  }
+}

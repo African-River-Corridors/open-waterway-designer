@@ -1,0 +1,21 @@
+{
+  "label": "Label: property",
+  "why": "Two at-most bounds on one measure: OWD will not pick one silently.",
+  "input": {
+    "limits": [
+      {
+        "measure": "total_cut",
+        "bound": "at_most",
+        "value": 500000.0
+      },
+      {
+        "measure": "total_cut",
+        "bound": "at_most",
+        "value": 400000.0
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_DUPLICATE"
+  }
+}

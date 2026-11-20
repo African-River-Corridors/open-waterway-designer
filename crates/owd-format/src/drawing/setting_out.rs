@@ -83,10 +83,11 @@ fn bearing_at(line: &[Pt], chain: &[f64], s: f64) -> f64 {
 /// Read the table's rows from a design line option.
 pub fn table(session: &Session, option_id: &str, spacing_m: f64) -> Result<Table, DrawError> {
     let doc = session.document();
-    let option = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-        .ok_or_else(|| DrawError::Input(format!("there is no option `{option_id}`")))?;
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .ok_or_else(|| DrawError::Input(format!("there is no design line `{option_id}`")))?;
     let line = all_positions(&option["line"]);
     if line.len() < 2 {
         return Err(DrawError::Missing(format!(
@@ -449,9 +450,10 @@ pub(super) fn build(
         .max(bend_rows.len().div_ceil(cap))
         .max(1);
     let title = doc["project"]["title"].as_str().unwrap_or("DESIGN");
-    let option_name = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
+    let lines = session.design_lines();
+    let option_name = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
         .and_then(|o| o["name"].as_str())
         .unwrap_or(option_id)
         .to_string();

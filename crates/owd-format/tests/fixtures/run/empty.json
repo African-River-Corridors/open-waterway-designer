@@ -1,0 +1,9 @@
+{
+  "label": "Label: property",
+  "why": "An empty block states nothing: no objective, no limits, and the target reads as concept.",
+  "input": {},
+  "expect": {
+    "ok": true,
+    "target": "concept"
+  }
+}
