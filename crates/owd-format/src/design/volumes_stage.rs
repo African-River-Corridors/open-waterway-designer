@@ -10,8 +10,8 @@
 //! cut, not dredge. The river polygon reaches the walk with its holes (ticket 3).
 //!
 //! **What a station keeps.** Every station keeps its numbers: chainage, place, half-width, water
-//! level, invert, depth, the bed on the line, the areas by kind, the tallest face and the benches.
-//! That is all the long section draws. The section profile (offsets, terrain, wet, cut face: about
+//! level, invert, depth, the bed on the line, the areas by kind, the tallest face, the benches and
+//! the top of cut each side. That is all the long section and the plan sheet draw. The section profile (offsets, terrain, wet, cut face: about
 //! 400 samples) is kept only at the stations a cross-section sheet draws by default: the station
 //! nearest each multiple of [`PROFILE_EVERY_M`] (the default style's section spacing), and the
 //! station nearest each chainage in `profile_at` (the session passes the middles of the tight bends
@@ -104,6 +104,12 @@ pub struct VolumeStation {
     pub has_water: bool,
     /// The section's tag.
     pub tag: String,
+    /// The top of cut on the left (negative offset) and right: the outermost offset each side
+    /// where the cut face is at or below the ground. The plan sheet draws it at every station.
+    #[serde(default)]
+    pub top_of_cut_left_m: Option<f64>,
+    #[serde(default)]
+    pub top_of_cut_right_m: Option<f64>,
     /// The section profile, at the stations that keep one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<SectionProfile>,
@@ -248,6 +254,23 @@ fn bed(s: &CrossSection) -> f64 {
         .map_or(f64::NAN, |(i, _)| s.terrain[i])
 }
 
+/// The outermost offsets on each side where the cut face is at or below the ground: the top of cut.
+pub(crate) fn top_of_cut(s: &CrossSection) -> (Option<f64>, Option<f64>) {
+    let cut = |j: usize| {
+        let (t, c) = (s.terrain[j], s.cutface[j]);
+        t.is_finite() && c.is_finite() && c <= t
+    };
+    let lo = (0..s.offsets.len())
+        .filter(|&j| s.offsets[j] < 0.0 && cut(j))
+        .map(|j| s.offsets[j])
+        .reduce(f64::min);
+    let hi = (0..s.offsets.len())
+        .filter(|&j| s.offsets[j] > 0.0 && cut(j))
+        .map(|j| s.offsets[j])
+        .reduce(f64::max);
+    (lo, hi)
+}
+
 fn profile(s: &CrossSection) -> SectionProfile {
     SectionProfile {
         offsets_m: s.offsets.clone(),
@@ -318,6 +341,8 @@ pub(super) fn summarise(v: &SectionVolumes, water: &DesignWater, profile_at: &[f
             bench_right: s.bench_right,
             has_water: s.has_water,
             tag: s.tag.clone(),
+            top_of_cut_left_m: top_of_cut(s).0,
+            top_of_cut_right_m: top_of_cut(s).1,
             profile: keep.contains(&i).then(|| profile(s)),
         })
         .collect();

@@ -73,7 +73,11 @@ fn assert_same(before: &[Sheet], after: &[Sheet], what: &str) {
             b.number
         );
         let (rb, ra) = (drawing::render(b).unwrap(), drawing::render(a).unwrap());
-        assert!(rb.normalised == ra.normalised, "{what}: {} normalised", b.number);
+        assert!(
+            rb.normalised == ra.normalised,
+            "{what}: {} normalised",
+            b.number
+        );
         assert!(rb.svg == ra.svg, "{what}: {} SVG", b.number);
         assert!(rb.pdf == ra.pdf, "{what}: {} PDF", b.number);
         assert!(rb.dxf == ra.dxf, "{what}: {} DXF", b.number);
@@ -96,14 +100,15 @@ fn every_sheet_drawn_from_the_stored_stations_is_the_sheet_drawn_from_the_walk()
     let before = all_sheets(&old, &dem, &o);
     let after = all_sheets(&new, &dem, &o);
     for kind in SheetKind::ALL {
-        assert!(
-            before.iter().any(|s| s.kind == *kind),
-            "{kind:?} is drawn"
-        );
+        assert!(before.iter().any(|s| s.kind == *kind), "{kind:?} is drawn");
     }
     assert_same(&before, &after, "default style");
     // The old file says it was walked again; the stored one says nothing of the kind.
-    assert!(warned(&before, SheetKind::CrossSections, WALKED_NO_STATIONS));
+    assert!(warned(
+        &before,
+        SheetKind::CrossSections,
+        WALKED_NO_STATIONS
+    ));
     assert!(warned(&before, SheetKind::LongSection, WALKED_NO_STATIONS));
     for s in &after {
         assert!(
@@ -119,7 +124,7 @@ fn every_sheet_drawn_from_the_stored_stations_is_the_sheet_drawn_from_the_walk()
 
 /// A terrain that counts the heights it is asked for.
 fn counting<'a>(
-    inner: &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>,
+    inner: TerrainSampler<'a>,
     asked: &'a Cell<usize>,
 ) -> impl Fn(&[f64], &[f64]) -> Vec<f64> + 'a {
     move |xs, ys| {
@@ -178,7 +183,11 @@ fn a_station_with_no_stored_profile_is_refused_without_terrain_never_a_neighbour
     let st = s.section_stations(ID, &[], None).unwrap();
     let n = st.walk.stations.len();
     let kept: Vec<usize> = (0..n).filter(|&i| st.has_profile(i)).collect();
-    assert!(kept.len() > 1 && kept.len() < n, "{} of {n} kept", kept.len());
+    assert!(
+        kept.len() > 1 && kept.len() < n,
+        "{} of {n} kept",
+        kept.len()
+    );
     let bare = (0..n).find(|i| !st.has_profile(*i)).unwrap();
     let at = st.walk.stations[bare].chainage_m;
 

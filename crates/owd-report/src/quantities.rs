@@ -1,7 +1,8 @@
 //! The quantity schedule (spec 0014, report 2): for each design line option, the dredge and dry cut
 //! inside each constraint stretch, the volumes stage's totals, and the cut face. Stretch quantities
 //! are the ones the volumes stage stored in its screening (spec 0007 C); the tallest face in a
-//! stretch is read from the station walk the volumes stage sums.
+//! stretch is read from the volumes stage's stored stations (spec 0017 ticket 10), through the door
+//! the drawings use.
 
 use crate::Context;
 use crate::fmt::{km, m3, md, num, text, val};
@@ -10,7 +11,9 @@ use owd_format::design::DemCheck;
 use owd_format::design::terrain::dem_sampler;
 use serde_json::{Value, json};
 
-/// The station walk of an option on the design's DEM, or why there is none.
+/// The stations of an option, or why there are none. The DEM must be the one the volumes ran on
+/// (a changed or missing DEM makes the record stale); the stations are the stored ones, and the
+/// line is walked again only when the record holds none.
 fn walk(ctx: &Context, id: &str) -> Result<SectionVolumes, String> {
     let name = ctx.session.dem_path().unwrap_or("DEM").to_string();
     match ctx.session.dem_check(ctx.dem) {
@@ -28,7 +31,8 @@ fn walk(ctx: &Context, id: &str) -> Result<SectionVolumes, String> {
     let epsg = ctx.doc["project"]["crs"]["epsg"].as_u64().map(|c| c as u32);
     let sampler = dem_sampler(&grid, epsg).map_err(|e| e.to_string())?;
     ctx.session
-        .option_section_walk(id, &sampler)
+        .section_stations(id, &[], Some(&sampler))
+        .map(|st| st.walk)
         .map_err(|e| e.to_string())
 }
 

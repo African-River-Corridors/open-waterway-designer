@@ -14,6 +14,7 @@
 //! Label: golden (the prism), property (the rest)
 
 use owd_core::rules::engine;
+use owd_format::design::sections::Stations;
 use owd_format::design::sizing::{ChannelSize, SizingIn, size};
 use owd_format::design::volumes_stage::{PROFILE_EVERY_M, Volumes, VolumesIn, volumes_stage};
 use owd_format::design::water_stage::{Pool, WaterIn};
@@ -384,7 +385,8 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
 
     let id = s.final_line().unwrap().id.clone();
     let walk = s.option_section_walk(&id, &flat).unwrap();
-    let long = s.long_section(&id, &walk).unwrap();
+    let stations = Stations::from(walk.clone());
+    let long = s.long_section(&id, &stations).unwrap();
     let col = |k: &str| -> Vec<Value> { long[k].as_array().unwrap().clone() };
     let mine =
         |f: &dyn Fn(&owd_format::design::volumes_stage::VolumeStation) -> f64| -> Vec<Value> {
@@ -412,7 +414,7 @@ fn the_stored_stations_are_what_the_long_section_and_cross_sections_read() {
         .collect();
     assert!(kept.len() > 1, "{} profiles kept", kept.len());
     for st in kept {
-        let cs = s.cross_section(&walk, st.chainage_m).unwrap();
+        let cs = s.cross_section(&stations, st.chainage_m).unwrap();
         assert_eq!(json!(st.chainage_m), cs["chainage_m"]);
         let p = st.profile.as_ref().unwrap();
         assert_eq!(json!(p.offsets_m), cs["offsets_m"]);

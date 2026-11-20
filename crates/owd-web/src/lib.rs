@@ -138,9 +138,14 @@ impl Session {
         Ok(self.snapshot())
     }
 
-    /// The station walk of an option, made now or taken from the cache.
-    fn walked(&mut self, option: &str) -> Js<owd_shell::state::Walked> {
-        let walked = ok(self.state.begin_walk(option).run())?;
+    /// The stations of an option, read now or taken from the cache, with the section profile of
+    /// the station nearest each of `profiles_at`.
+    fn walked(&mut self, option: &str, profiles_at: &[f64]) -> Js<owd_shell::state::Walked> {
+        let walked = ok(self
+            .state
+            .begin_walk(option)
+            .with_profiles_at(profiles_at)
+            .run())?;
         self.state.keep_walk(&walked);
         Ok(walked)
     }
@@ -573,7 +578,7 @@ impl Session {
     }
 
     pub fn long_section(&mut self, option: &str) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         Ok(ok(w
             .session
             .long_section(option, &w.walk)
@@ -582,7 +587,7 @@ impl Session {
     }
 
     pub fn cross_section(&mut self, option: &str, chainage: f64) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[chainage])?;
         Ok(ok(w
             .session
             .cross_section(&w.walk, chainage)
@@ -591,7 +596,7 @@ impl Session {
     }
 
     pub fn station_near(&mut self, option: &str, lon: f64, lat: f64) -> Js<f64> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         ok(w.session
             .station_near(&w.walk, lon, lat)
             .map_err(|e| e.to_string()))

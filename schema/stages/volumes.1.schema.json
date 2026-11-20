@@ -620,6 +620,23 @@
           "description": "The section's tag.",
           "type": "string"
         },
+        "top_of_cut_left_m": {
+          "description": "The top of cut on the left (negative offset) and right: the outermost offset each side\nwhere the cut face is at or below the ground. The plan sheet draws it at every station.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "top_of_cut_right_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
         "profile": {
           "description": "The section profile, at the stations that keep one.",
           "anyOf": [

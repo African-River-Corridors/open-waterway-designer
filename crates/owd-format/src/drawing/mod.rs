@@ -4,7 +4,8 @@
 //! no hatch and no writer.
 //!
 //! The builder computes no engineering value. Every number it draws is a result the design
-//! already holds (the station walk the volumes stage sums). [`check`] reads the finished drawing
+//! already holds: the volumes stage's stored stations (spec 0017 ticket 10), read through
+//! [`Session::section_stations`]. [`check`] reads the finished drawing
 //! documents back and fails when a drawn value differs from its result.
 
 pub mod check;
@@ -16,6 +17,7 @@ mod setting_out;
 pub mod style;
 mod typical;
 
+use crate::design::sections::{StationSource, Stations};
 use crate::design::terrain::dem_sampler;
 use crate::design::{DemCheck, DesignError, Session};
 use crate::types::TerrainSampler;
@@ -219,13 +221,14 @@ pub fn sheets_with(
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {
     let option_id = resolve_option(session, options.option.as_deref())?;
-    let walk = session.option_section_walk(&option_id, terrain)?;
+    let stations = stations(session, &option_id, terrain, options)?;
+    let walk = &stations.walk;
     let mut out = Vec::new();
     for kind in &options.sheets {
         match kind {
             SheetKind::CrossSections => {
-                let built = gallery::build(session, &option_id, &walk, options)?;
-                let findings = check::gallery(&built, &walk);
+                let built = gallery::build(session, &option_id, walk, options)?;
+                let findings = check::gallery(&built, walk);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
                 }
@@ -242,16 +245,17 @@ pub fn sheets_with(
                 out.extend(built);
             }
             SheetKind::Plan => {
-                let built = plan::build(session, &option_id, &walk, terrain, options, background)?;
-                let findings = check::plan(&built, &walk, session, &option_id, options);
+                let built =
+                    plan::build(session, &option_id, &stations, terrain, options, background)?;
+                let findings = check::plan(&built, walk, session, &option_id, options);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
                 }
                 out.extend(built);
             }
             SheetKind::LongSection => {
-                let built = long_section::build(session, &option_id, &walk, options)?;
-                let series = session.long_section(&option_id, &walk)?;
+                let built = long_section::build(session, &option_id, &stations, options)?;
+                let series = session.long_section(&option_id, &stations)?;
                 let findings = check::long_section(&built, &series);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
@@ -268,7 +272,58 @@ pub fn sheets_with(
             }
         }
     }
+    // A sheet drawn from a new walk says so, and why, with its other warnings.
+    if let StationSource::Walked { reason } = stations.source {
+        for sheet in out.iter_mut().filter(|s| {
+            matches!(
+                s.kind,
+                SheetKind::CrossSections | SheetKind::Plan | SheetKind::LongSection
+            )
+        }) {
+            sheet.warnings.push(reason.to_string());
+        }
+    }
     Ok(out)
+}
+
+/// The stations the sheets read (spec 0017 ticket 10): the volumes stage's stored stations, through
+/// the one door the report and the web app use too. The cross sections and the plan's section
+/// marks need the profile of every station the gallery picks; when one was not kept (a sheet style
+/// with another spacing), the line is walked again on the terrain for these sheets. A neighbour's
+/// profile is never drawn as the station asked for.
+fn stations(
+    session: &Session,
+    option_id: &str,
+    terrain: TerrainSampler,
+    options: &DrawOptions,
+) -> Result<Stations, DrawError> {
+    let stations = session.section_stations(option_id, &[], Some(terrain))?;
+    let sections = options
+        .sheets
+        .iter()
+        .any(|k| matches!(k, SheetKind::CrossSections | SheetKind::Plan));
+    if !sections || stations.source != StationSource::Stored {
+        return Ok(stations);
+    }
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .cloned()
+        .unwrap_or(Value::Null);
+    let picked: Vec<f64> = gallery::pick(
+        &stations.walk,
+        &option,
+        &worst_chainages(session, option_id),
+        &options.style.gallery(),
+    )
+    .iter()
+    .map(|&(i, _)| stations.walk.stations[i].chainage_m)
+    .collect();
+    if stations.profiles_at(&picked) {
+        return Ok(stations);
+    }
+    Ok(session.section_stations(option_id, &picked, Some(terrain))?)
 }
 
 /// The constraint stretches of an option (spec 0007), as the volumes stage stored them in its

@@ -61,7 +61,14 @@ fn otd_accepts_every_document_and_makes_every_output() {
         assert!(out.pdf.starts_with(b"%PDF"));
         assert!(out.svg.contains("<svg"));
         assert!(out.dxf.contains("SECTION"));
-        assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+        // The example was saved before the volumes stage stored its stations, so the sheet says it
+        // walked the line again (spec 0017 ticket 10); nothing else may warn.
+        let others: Vec<&String> = out
+            .warnings
+            .iter()
+            .filter(|w| *w != owd_format::design::sections::WALKED_NO_STATIONS)
+            .collect();
+        assert!(others.is_empty(), "{others:?}");
         let norm: Value = serde_json::from_str(&out.normalised).unwrap();
         assert!(norm["sheet"]["size"] == "A3");
         if let Ok(dir) = std::env::var("OWD_DRAW_DUMP") {

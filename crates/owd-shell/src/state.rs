@@ -5,8 +5,8 @@
 //! validation or default logic: every answer comes from [`Session`].
 
 use crate::run::{Outcome, RunControl, RunJob};
-use owd_core::volumes::sections::SectionVolumes;
 use owd_format::design::bank_edit::BankEdit;
+use owd_format::design::sections::Stations;
 use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
 use owd_format::geotiff::{Dem, read_bytes};
 use serde_json::{Value, json};
@@ -28,8 +28,8 @@ pub struct AppState {
     dem_file: Option<PathBuf>,
     /// The stage now running on a worker, if any.
     running: Option<(Stage, Arc<RunControl>)>,
-    /// The station walk last drawn, with the key it was made under (option and volumes inputs).
-    walk: Option<(String, Arc<SectionVolumes>)>,
+    /// The stations last drawn, with the key they were read under (option and volumes inputs).
+    walk: Option<(String, Arc<Stations>)>,
     /// The design as it stood before each bank edit, newest last, for undo (spec 0012).
     bank_undo: Vec<Session>,
     /// What "Start from a river" keeps between its steps (spec 0012).
@@ -48,30 +48,40 @@ pub struct AppState {
 /// How many bank edits can be undone.
 const UNDO_LIMIT: usize = 50;
 
-/// A station walk to fetch or make off the main thread.
+/// The stations to fetch or make off the main thread.
 pub struct WalkJob {
     session: Session,
     dem: Option<Arc<Dem>>,
     epsg: Option<u32>,
     option: String,
     key: String,
-    cached: Option<Arc<SectionVolumes>>,
+    cached: Option<Arc<Stations>>,
+    /// Chainages whose nearest station must have its section profile.
+    profiles_at: Vec<f64>,
 }
 
-/// A station walk and the design it was made from, to draw from.
+/// The stations and the design they were read from, to draw from.
 #[derive(Debug)]
 pub struct Walked {
     pub session: Session,
-    pub walk: Arc<SectionVolumes>,
+    pub walk: Arc<Stations>,
     key: String,
 }
 
 impl WalkJob {
-    /// The cached walk, or one made now on the DEM. A refusal is the session's reason.
+    /// Ask for the section profile of the station nearest each of `chainages` too.
+    pub fn with_profiles_at(mut self, chainages: &[f64]) -> WalkJob {
+        self.profiles_at = chainages.to_vec();
+        self
+    }
+
+    /// The cached stations, or the volumes stage's stored ones through
+    /// [`Session::section_stations`], the door the drawings use. The line is walked again on the
+    /// DEM only when a station asked for has no stored profile. A refusal is the session's reason.
     pub fn run(self) -> Result<Walked, String> {
         let walk = match self.cached {
-            Some(w) => w,
-            None => {
+            Some(w) if w.profiles_at(&self.profiles_at) => w,
+            _ => {
                 let dem = self
                     .dem
                     .ok_or("the sections need the DEM the volumes were run on: it is missing or has changed")?;
@@ -79,7 +89,7 @@ impl WalkJob {
                     owd_format::design::terrain::dem_sampler(&dem, self.epsg).map_err(message)?;
                 Arc::new(
                     self.session
-                        .option_section_walk(&self.option, &sampler)
+                        .section_stations(&self.option, &self.profiles_at, Some(&sampler))
                         .map_err(message)?,
                 )
             }
@@ -767,6 +777,7 @@ impl AppState {
             option: option.to_string(),
             key,
             cached,
+            profiles_at: Vec::new(),
         }
     }
 
@@ -1586,8 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sections_come_from_the_walk_the_volumes_summed_and_the_walk_is_kept_until_the_design_changes()
-     {
+    fn the_sections_come_from_the_stored_stations_and_are_kept_until_the_design_changes() {
         let (mut s, _dir) = ready();
         run(&mut s, "alignment", Some("rolling_circle")).unwrap();
         // Before volumes have run there is no walk to draw.
@@ -1603,6 +1613,28 @@ mod tests {
             ls["chainage_m"].as_array().unwrap().len() as u64,
             row["stations"].as_u64().unwrap()
         );
+        // The app reads the volumes stage's stored stations, through the drawings' door: nothing
+        // is walked again (spec 0017 ticket 10).
+        use owd_format::design::sections::{StationSource, WALKED_FOR_PROFILE};
+        assert_eq!(first.walk.source, StationSource::Stored);
+        // A station with no stored profile is walked for, never drawn from a neighbour.
+        let n = first.walk.walk.stations.len();
+        if let Some(bare) = (0..n).find(|&i| !first.walk.has_profile(i)) {
+            let at = first.walk.walk.stations[bare].chainage_m;
+            assert!(first.session.cross_section(&first.walk, at).is_err());
+            let again = s
+                .begin_walk("rolling-circle")
+                .with_profiles_at(&[at])
+                .run()
+                .unwrap();
+            assert_eq!(
+                again.walk.source,
+                StationSource::Walked {
+                    reason: WALKED_FOR_PROFILE
+                }
+            );
+            assert!(again.session.cross_section(&again.walk, at).is_ok());
+        }
         s.keep_walk(&first);
         // Kept: the next job already holds it. A new water level changes the volumes' inputs: it is dropped.
         assert!(s.begin_walk("rolling-circle").cached.is_some());
