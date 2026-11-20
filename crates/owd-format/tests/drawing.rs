@@ -278,12 +278,21 @@ fn a_tight_bend_adds_a_section_at_its_middle() {
         .unwrap();
     s.set_vessel("CEMT_Va", None).unwrap();
     s.run_stage(Stage::Sizing).unwrap();
-    s.align(AlignMethod::RollingCircle, &Value::Null, None)
+    // The river centreline as it is, with no repair: its bends are tighter than a larger vessel's
+    // radius. The rolling circle now repairs them (at a bend it cannot fit, the water-aware line
+    // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
+    s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
     s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
         .unwrap();
     let map = s.map_geometry().unwrap();
-    let bends: Vec<f64> = map["options"][0]["tight_bends"]
+    let centreline = map["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["method"] == "centreline")
+        .expect("the centreline option");
+    let bends: Vec<f64> = centreline["tight_bends"]
         .as_array()
         .unwrap()
         .iter()
@@ -293,7 +302,11 @@ fn a_tight_bend_adds_a_section_at_its_middle() {
         !bends.is_empty(),
         "the example needs a tight bend for this test"
     );
-    let sheets = drawing::sheets(&s, &t as TerrainSampler, &DrawOptions::default()).unwrap();
+    let o = DrawOptions {
+        option: Some("centreline".to_string()),
+        ..DrawOptions::default()
+    };
+    let sheets = drawing::sheets(&s, &t as TerrainSampler, &o).unwrap();
     let drawn: Vec<Value> = sheets.iter().flat_map(viewports).collect();
     let tagged = drawn
         .iter()
@@ -438,13 +451,17 @@ fn the_gallery_reads_its_spacing_and_extra_sections_from_the_style() {
         .unwrap();
     s.set_vessel("CEMT_Va", None).unwrap();
     s.run_stage(Stage::Sizing).unwrap();
-    s.align(AlignMethod::RollingCircle, &Value::Null, None)
+    // The river centreline as it is, with no repair: its bends are tighter than a larger vessel's
+    // radius. The rolling circle now repairs them (at a bend it cannot fit, the water-aware line
+    // is the better of the fit and the plain line, #503), so it no longer leaves a tight bend in this example.
+    s.align(AlignMethod::Centreline, &Value::Null, None)
         .unwrap();
     s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
         .unwrap();
     let count_bends = |style: Style| {
         let o = DrawOptions {
             style,
+            option: Some("centreline".to_string()),
             ..DrawOptions::default()
         };
         drawing::sheets(&s, &t as TerrainSampler, &o)
