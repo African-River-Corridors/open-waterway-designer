@@ -405,6 +405,23 @@ export interface Hillshade {
   height: number;
 }
 export const hillshade = () => invoke<Hillshade | null>("hillshade");
+/** The DEM as terrain for the map's 3D view (MAP-2): what the map source needs. Null with no DEM in memory. */
+export interface TerrainInfo {
+  /** A number that changes with the DEM: the tiles of another number are of another DEM. */
+  id: number;
+  /** West, south, east and north of the DEM, in degrees. */
+  bounds: [number, number, number, number];
+  min_m: number;
+  max_m: number;
+  /** The height drawn where the DEM has no data, and outside it: its lowest height. */
+  base_m: number;
+  max_zoom: number;
+  tile_size: number;
+  encoding: "terrarium";
+}
+export const terrainInfo = () => invoke<TerrainInfo | null>("terrain_info");
+/** One terrain tile of the DEM, a PNG, made in this browser from the DEM in memory. */
+export const terrainTile = (z: number, x: number, y: number) => invoke<Uint8Array>("terrain_tile", { z, x, y });
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 

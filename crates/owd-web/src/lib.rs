@@ -14,6 +14,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+pub mod terrain;
+
 type Js<T> = Result<T, JsValue>;
 
 fn err(message: String) -> JsValue {
@@ -129,6 +131,8 @@ pub fn engine_version() -> String {
 #[wasm_bindgen]
 pub struct Session {
     state: AppState,
+    /// The terrain tiles of the DEM, for the map's 3D view: made on demand, never stored.
+    terrain: terrain::TerrainTiles,
 }
 
 impl Session {
@@ -158,6 +162,7 @@ impl Session {
     pub fn new() -> Session {
         Session {
             state: new_design(),
+            terrain: terrain::TerrainTiles::default(),
         }
     }
 
@@ -550,6 +555,18 @@ impl Session {
             "height": shade.height,
         })
         .to_string())
+    }
+
+    /// What the map needs for the 3D view of the DEM (MAP-2), as JSON: `null` with no DEM in
+    /// memory, else the DEM's box in degrees, its lowest and highest height, the deepest zoom
+    /// worth asking for, and a number that changes with the DEM.
+    pub fn terrain_info(&mut self) -> Js<String> {
+        ok(self.terrain.info(self.state.dem())).map(|v| v.to_string())
+    }
+
+    /// Terrain tile `z/x/y` of the DEM: a 256 px Terrarium PNG, made here from the DEM in memory.
+    pub fn terrain_tile(&mut self, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.tile(self.state.dem(), z, x, y)).map(|png| png.to_vec())
     }
 
     /// The drawing sheets of an option (spec 0004, ticket 8) as JSON: `[{number, title, svg,

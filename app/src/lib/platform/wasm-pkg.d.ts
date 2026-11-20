@@ -30,6 +30,8 @@ declare module "*/wasm-pkg/owd_web.js" {
     option_table(): string;
     map_geometry(): string;
     hillshade(): string;
+    terrain_info(): string;
+    terrain_tile(z: number, x: number, y: number): Uint8Array;
     long_section(option: string): string;
     cross_section(option: string, chainage: number): string;
     station_near(option: string, lon: number, lat: number): number;

@@ -9,5 +9,5 @@ target="${CARGO_TARGET_DIR:-$(cd .. && pwd)/target}"
 export OWD_CLI="${OWD_CLI:-$target/release/owd}"
 [ -x "$OWD_CLI" ] || { echo "e2e-web: no CLI at $OWD_CLI (cargo build --release -p owd-cli)" >&2; exit 1; }
 npx vite build --config vite.web.config.ts --mode test --outDir dist-web-test
-node --test e2e/host.test.mjs e2e/words.test.mjs e2e/imagery.test.mjs e2e/layers.test.mjs
+node --test e2e/host.test.mjs e2e/words.test.mjs e2e/imagery.test.mjs e2e/layers.test.mjs e2e/terrain3d.test.mjs
 node --test --test-timeout=300000 e2e/web-smoke.test.mjs
