@@ -115,6 +115,11 @@ pub fn from_0_4(doc: &mut Value) -> Vec<String> {
             None => {
                 vo["results"] = Value::Null;
                 vo["depends_on"] = Value::Null;
+                notes.push(
+                    "its volumes held no row for the design line, so they are removed: run \
+                     `owd volumes` (or `owd run`) to work them out again"
+                        .to_string(),
+                );
             }
         }
     }
