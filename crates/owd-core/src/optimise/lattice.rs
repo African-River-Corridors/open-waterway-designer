@@ -1994,7 +1994,7 @@ fn crosses_itself(r: &LatticeResult) -> bool {
 /// The pool to keep as baseline for the first crossing of the joined line that a pool's line is in:
 /// the pool on the later pass, else the pool on the earlier pass. `None` when the line does not
 /// cross itself, or only baseline crosses baseline.
-fn pool_in_a_crossing(coords: &[Pt], spans: &[(f64, f64, Option<usize>)]) -> Option<usize> {
+fn pool_in_a_crossing(coords: &[Pt], spans: &[Span]) -> Option<usize> {
     let pool_at = |s: f64| -> Option<usize> {
         let last = spans.len().checked_sub(1)?;
         spans
@@ -2010,14 +2010,14 @@ fn pool_in_a_crossing(coords: &[Pt], spans: &[(f64, f64, Option<usize>)]) -> Opt
         .find_map(|(a, b)| pool_at(b).or_else(|| pool_at(a)))
 }
 
+/// One piece of the joined line: where it starts and ends along the line, and the index of the pool
+/// whose line it is (`None` for the baseline).
+type Span = (f64, f64, Option<usize>);
+
 /// The joined line, each join with its chainage along that line, and each piece of the line: where
 /// it starts and ends along the line, and the index of the pool whose line it is (`None` for the
 /// baseline).
-type JoinedLine = (
-    Vec<Pt>,
-    Vec<(PoolJoin, f64)>,
-    Vec<(f64, f64, Option<usize>)>,
-);
+type JoinedLine = (Vec<Pt>, Vec<(PoolJoin, f64)>, Vec<Span>);
 
 /// Splice the used pools' lines into `baseline`, and read every join of a used pool's line: each
 /// with its chainage along the joined line.
@@ -2124,7 +2124,7 @@ mod crossing_tests {
     use super::*;
 
     /// East along y = 0 (baseline, then pool 0), then pool 1 turns back west across the baseline.
-    fn line() -> (Vec<Pt>, Vec<(f64, f64, Option<usize>)>) {
+    fn line() -> (Vec<Pt>, Vec<Span>) {
         let coords = vec![
             [0.0, 0.0],
             [100.0, 0.0],
