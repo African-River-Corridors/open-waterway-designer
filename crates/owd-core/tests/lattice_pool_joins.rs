@@ -42,8 +42,9 @@ fn dist_to_centre(p: Pt, centre: &[Pt]) -> f64 {
     linear::point_line_distance(p, &centre[a..=b])
 }
 
-/// Run the lattice over `n` pools of equal length that cover the whole centreline.
-fn run(len: f64, n: usize) -> (Vec<Pt>, Vec<(f64, f64)>, PoolsResult) {
+/// Run the lattice over `n` pools of equal length that cover the whole centreline; `close_goal`
+/// as in `LatticeConfig`.
+fn run(len: f64, n: usize, close_goal: bool) -> (Vec<Pt>, Vec<(f64, f64)>, PoolsResult) {
     let mut ring = sine(len, 40.0);
     let mut right = sine(len, -40.0);
     right.reverse();
@@ -79,7 +80,9 @@ fn run(len: f64, n: usize) -> (Vec<Pt>, Vec<(f64, f64)>, PoolsResult) {
     let mut spec = SectionSpec::new(HalfWidthSpec::Fixed(25.0));
     spec.side_slope_h_per_v = 3.0;
     spec.rake_half_m = 100.0;
-    let lat = LatticeConfig::new(R_MIN).validated().unwrap();
+    let mut lat = LatticeConfig::new(R_MIN);
+    lat.close_goal = close_goal;
+    let lat = lat.validated().unwrap();
     let levels: Vec<(f64, f64, f64)> = pools.iter().map(|&(a, b)| (a, b, 0.0)).collect();
     let r = optimise_pools(
         &centre,
@@ -120,9 +123,11 @@ fn seg_cross(p: Pt, q: Pt, r: Pt, s: Pt) -> bool {
 
 /// Every check the issue asks for, on one case. Returns the radius at each join.
 fn check(len: f64, n: usize) -> Vec<f64> {
-    let (centre, pools, r) = run(len, n);
+    let (centre, pools, r) = run(len, n, true);
     for (n, p) in r.pools.iter().enumerate() {
         assert!(p.used, "pool {n} is used (its baseline breaks R_min)");
+        assert!(p.result.goal_closed, "pool {n} ends on its goal pose");
+        assert!(p.result.end_err_m < 1e-6 && p.result.end_heading_err_rad < 1e-9);
     }
     // The radius across each pool join (a boundary between two pools, inside the line).
     let mut radii = Vec::new();
@@ -141,6 +146,21 @@ fn check(len: f64, n: usize) -> Vec<f64> {
             "join {j} of {pools:?}: {rj:.1} m against R_min {R_MIN} m"
         );
     }
+    // The result reports the same joins, each closed and holding R_min.
+    assert_eq!(r.joins.len(), n - 1);
+    for (j, (rec, w)) in r.joins.iter().zip(pools.windows(2)).enumerate() {
+        assert!(
+            (rec.at_m - w[0].1).abs() < 1e-9,
+            "join {j} is at the pool boundary"
+        );
+        assert!(rec.position_gap_m < 1e-6 && rec.heading_gap_rad < 1e-9);
+        assert!(
+            rec.radius_ok,
+            "join {j} reads {}",
+            rec.measured_min_radius_m
+        );
+    }
+    assert_eq!(r.failed_joins().count(), 0);
     assert!(
         r.radius_ok,
         "the joined line reads {:.1} m against R_min {R_MIN} m",
@@ -176,4 +196,25 @@ fn two_pools_join_at_r_min() {
 #[test]
 fn three_shorter_pools_join_at_r_min() {
     check(4800.0, 3);
+}
+
+/// With the goal left open (the older search), the joins break R_min, and the result says so per
+/// join: where it is, the gap the pool's line left, and the radius there.
+#[test]
+fn a_join_that_breaks_r_min_is_reported() {
+    let (_, pools, r) = run(4800.0, 3, false);
+    assert!(r.pools.iter().all(|p| p.used && !p.result.goal_closed));
+    assert_eq!(r.joins.len(), 2);
+    let failed: Vec<_> = r.failed_joins().collect();
+    assert!(
+        !failed.is_empty(),
+        "the open joins break R_min: {:?}",
+        r.joins
+    );
+    for j in &failed {
+        assert!(pools.iter().any(|p| (p.1 - j.at_m).abs() < 1e-9));
+        assert!(j.position_gap_m > 0.0 || j.heading_gap_rad > 0.0);
+        assert!(!radius_ok(j.measured_min_radius_m, R_MIN));
+    }
+    assert!(!r.radius_ok);
 }

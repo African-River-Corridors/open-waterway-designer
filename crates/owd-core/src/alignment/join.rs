@@ -644,40 +644,54 @@ mod pool_tests {
         )
         .unwrap();
         assert!(res.n_replaced() >= 1, "no pool was spliced in");
-        // Without the tangent joins, the same reading finds the straight step's kink.
-        let plain = crate::optimise::lattice::optimise_pools(
-            &river.centreline,
-            &terrain,
-            core::slice::from_ref(&river.polygon),
-            &[(500.0, 2500.0, 1.0)],
-            3.25,
-            &spec,
-            &lat,
-            None,
-            PoolOptions {
-                corridor_half_m: 180.0,
-                cell_m: 5.0,
-            },
-            false,
-        )
-        .unwrap();
-        let pl = plain.pools[0].result.line.as_ref().unwrap();
-        let c = Chained::new(&plain.line);
-        let worst = [pl[0], pl[pl.len() - 1]]
-            .iter()
-            .map(|&p| {
-                let s = linear::project(&plain.line, p);
-                crate::alignment::fillet::turn_angle(
-                    c.direction(s - 2.0, 2.0),
-                    c.direction(s + 2.0, 2.0),
-                )
-                .abs()
-            })
-            .fold(0.0, f64::max);
+        // The largest kink where the pool meets the line, read 2 m either side of each end.
+        let kink = |cfg: &LatticeConfig| {
+            let plain = crate::optimise::lattice::optimise_pools(
+                &river.centreline,
+                &terrain,
+                core::slice::from_ref(&river.polygon),
+                &[(500.0, 2500.0, 1.0)],
+                3.25,
+                &spec,
+                cfg,
+                None,
+                PoolOptions {
+                    corridor_half_m: 180.0,
+                    cell_m: 5.0,
+                },
+                false,
+            )
+            .unwrap();
+            let pl = plain.pools[0].result.line.clone().unwrap();
+            let c = Chained::new(&plain.line);
+            [pl[0], pl[pl.len() - 1]]
+                .iter()
+                .map(|&p| {
+                    let s = linear::project(&plain.line, p);
+                    crate::alignment::fillet::turn_angle(
+                        c.direction(s - 2.0, 2.0),
+                        c.direction(s + 2.0, 2.0),
+                    )
+                    .abs()
+                })
+                .fold(0.0, f64::max)
+        };
+        // With the goal left open (the older search), the same reading finds the straight
+        // step's kink, which the tangent joins close.
+        let mut open = lat.clone();
+        open.close_goal = false;
+        let worst = kink(&open);
         assert!(
             worst > 1f64.to_radians(),
-            "plain pools already tangent: {}",
+            "open pools already tangent: {}",
             worst.to_degrees()
+        );
+        // The search that ends on its goal pose (issue #6) is tangent with no joins at all.
+        let closed = kink(&lat);
+        assert!(
+            closed < 1f64.to_radians(),
+            "a closed pool kinks {} deg",
+            closed.to_degrees()
         );
         assert_eq!(errors.len(), 2 * res.n_replaced());
         for e in &errors {

@@ -417,11 +417,26 @@ impl Session {
                     "measured_min_radius_m": num_or_null(p.result.measured_min_radius_m),
                     "radius_check_chord_m": p.result.radius_check_chord_m,
                     "radius_ok": p.result.radius_ok,
+                    "goal_closed": p.result.goal_closed,
+                })).collect::<Vec<_>>(),
+                "joins": out.joins.iter().map(|j| json!({
+                    "at_m": j.at_m,
+                    "position_gap_m": num_or_null(j.position_gap_m),
+                    "heading_gap_deg": num_or_null(j.heading_gap_rad.to_degrees()),
+                    "measured_min_radius_m": num_or_null(j.measured_min_radius_m),
+                    "radius_check_chord_m": out.radius_check_chord_m,
+                    "radius_ok": j.radius_ok,
                 })).collect::<Vec<_>>(),
             },
         });
-        // The design sanity check of the line, as every other option has it.
+        // The design sanity check of the line, as every other option has it, and one warning for
+        // each pool join that does not hold R_min (issue #6).
         option["sanity"] = super::alignment::sanity_of(&option);
+        if let Some(w) = option["sanity"]["warnings"].as_array_mut() {
+            for j in out.failed_joins() {
+                w.push(json!(join_warning(j, r_min, out.radius_check_chord_m)));
+            }
+        }
         let options = self.doc["options"]
             .as_array_mut()
             .expect("options is a list");
@@ -457,7 +472,49 @@ impl Session {
     }
 }
 
+/// The sanity warning for a pool join that does not hold R_min.
+fn join_warning(j: &owd_core::optimise::lattice::PoolJoin, r_min: f64, chord: f64) -> String {
+    let mut w = format!(
+        "the pool lattice's join at {:.0} m reads a radius of {:.0} m on a {:.0} m chord against R_min {:.0} m",
+        j.at_m, j.measured_min_radius_m, chord, r_min
+    );
+    if j.position_gap_m > 1e-6 || j.heading_gap_rad > 1e-6 {
+        w.push_str(&format!(
+            " (the pool's line ends {:.1} m and {:.1}° from where the next piece starts)",
+            j.position_gap_m,
+            j.heading_gap_rad.to_degrees()
+        ));
+    }
+    w
+}
+
 /// A finite number, or null (JSON has no NaN).
 fn num_or_null(v: f64) -> Value {
     if v.is_finite() { json!(v) } else { Value::Null }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Label: property (a join's warning names where it is, what it reads, and the gap).
+    use super::*;
+    use owd_core::optimise::lattice::PoolJoin;
+
+    #[test]
+    fn a_join_warning_names_the_join_its_radius_and_its_gap() {
+        let mut j = PoolJoin {
+            at_m: 3937.4,
+            position_gap_m: 4.04,
+            heading_gap_rad: 27f64.to_radians(),
+            measured_min_radius_m: 158.2,
+            radius_ok: false,
+        };
+        assert_eq!(
+            join_warning(&j, 340.0, 340.0 / 3.0),
+            "the pool lattice's join at 3937 m reads a radius of 158 m on a 113 m chord against \
+             R_min 340 m (the pool's line ends 4.0 m and 27.0° from where the next piece starts)"
+        );
+        j.position_gap_m = 0.0;
+        j.heading_gap_rad = 0.0;
+        assert!(join_warning(&j, 340.0, 113.0).ends_with("against R_min 340 m"));
+    }
 }

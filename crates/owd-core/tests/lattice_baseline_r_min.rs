@@ -35,9 +35,17 @@ fn sine_of(amp: f64, wl: f64, len: f64, off: f64) -> Vec<Pt> {
         .collect()
 }
 
-fn run(len: f64, amp: f64, wl: f64, baseline: &[Pt]) -> owd_core::optimise::lattice::PoolsResult {
-    let mut ring = sine_of(amp, wl, len, 40.0);
-    let mut right = sine_of(amp, wl, len, -40.0);
+/// The lattice over one pool of a sine river `2 * half` metres wide (its bed `half + 5` metres
+/// either side of the centreline).
+fn run(
+    len: f64,
+    amp: f64,
+    wl: f64,
+    half: f64,
+    baseline: &[Pt],
+) -> owd_core::optimise::lattice::PoolsResult {
+    let mut ring = sine_of(amp, wl, len, half);
+    let mut right = sine_of(amp, wl, len, -half);
     right.reverse();
     ring.extend(right);
     ring.push(ring[0]);
@@ -50,7 +58,7 @@ fn run(len: f64, amp: f64, wl: f64, baseline: &[Pt]) -> owd_core::optimise::latt
         xs.iter()
             .zip(ys)
             .map(|(&x, &y)| {
-                if linear::point_line_distance([x, y], &centre) <= 45.0 {
+                if linear::point_line_distance([x, y], &centre) <= half + 5.0 {
                     -12.0
                 } else {
                     3.0
@@ -88,7 +96,7 @@ fn a_baseline_under_r_min_is_not_kept_in_place_of_a_lattice_line_that_holds_it()
         !radius_ok(base_r, R_MIN),
         "the baseline must break R_min for this case ({base_r})"
     );
-    let r = run(3200.0, 250.0, 1600.0, &baseline);
+    let r = run(3200.0, 250.0, 1600.0, 40.0, &baseline);
     let pool = &r.pools[0];
     assert!(
         pool.result.converged && pool.result.radius_ok,
@@ -105,19 +113,23 @@ fn a_baseline_under_r_min_is_not_kept_in_place_of_a_lattice_line_that_holds_it()
 
 #[test]
 fn a_cheaper_baseline_that_holds_r_min_is_kept_and_says_why() {
-    // A gentle river: the baseline holds R_min.
+    // A gentle river: the baseline holds R_min. Its bed is only 2 m wider than the channel
+    // either side, so a lattice line, whose arcs each turn a whole heading bin, cannot follow it
+    // and cuts dry ground: it is dearer than the baseline.
     let baseline = sine_of(60.0, 3000.0, 3000.0, 0.0);
     let chord = owd_core::alignment::radius_check::default_check_chord(R_MIN);
     assert!(radius_ok(
         min_radius_on_chord(&baseline, chord).unwrap(),
         R_MIN
     ));
-    let r = run(3000.0, 60.0, 3000.0, &baseline);
+    let r = run(3000.0, 60.0, 3000.0, 22.0, &baseline);
     let pool = &r.pools[0];
     assert!(r.radius_ok);
     assert!(
         pool.result.cost > pool.baseline_cost,
-        "the case needs a dearer lattice line"
+        "the case needs a dearer lattice line: {} against {}",
+        pool.result.cost,
+        pool.baseline_cost
     );
     assert!(!pool.used && pool.kept_baseline_because.is_some());
     assert_eq!(r.n_replaced(), 0);
