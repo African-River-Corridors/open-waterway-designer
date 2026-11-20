@@ -2,10 +2,10 @@
 //! shaped for drawing. The walk is the one the volumes stage sums, with the same settings, so what
 //! is drawn is what the table counts.
 
-use super::alignment::Terrain;
 use super::crs::{Crs, Utm};
 use super::export::SCREENING_LABEL;
 use super::session::{DesignError, Session, Stage, StageStatus};
+use crate::types::TerrainSampler;
 use owd_core::geom::Pt;
 use owd_core::volumes::sections::{CrossSection, SectionVolumes};
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ impl Session {
     pub fn option_section_walk(
         &self,
         option_id: &str,
-        terrain: Terrain,
+        terrain: TerrainSampler,
     ) -> Result<SectionVolumes, DesignError> {
         match self.stage_status(Stage::Volumes) {
             StageStatus::Fresh => {}

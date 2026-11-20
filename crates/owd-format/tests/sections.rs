@@ -2,8 +2,9 @@
 //! The long section and the cross-section on the worked example (spec 0003, ticket 72): what is
 //! drawn is the station walk the volumes stage sums.
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, Session, Stage, Terrain};
+use owd_format::design::{AlignMethod, Session, Stage};
 use owd_format::geotiff::Dem;
+use owd_format::types::TerrainSampler;
 use serde_json::Value;
 
 fn dem() -> Dem {
@@ -32,7 +33,7 @@ fn after_volumes(dem: &Dem) -> Session {
     s.set_dem("dem.tif", b"dem", dem);
     s.set_water_profile(&[[0.0, 38.0]]).unwrap();
     let t = dem_sampler(dem, Some(32630)).unwrap();
-    let ter: Terrain = &t;
+    let ter: TerrainSampler = &t;
     // The volumes engine, not the alignment: with water, every bend of the 40 m river is
     // infeasible, and an option with no feasible line has no volumes (issue #366).
     s.align(
@@ -55,7 +56,7 @@ fn the_long_section_sums_to_the_volumes_the_table_shows() {
     let s = after_volumes(&d);
     let t = dem_sampler(&d, Some(32630)).unwrap();
     let walk = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     let ls = s.long_section("rolling-circle", &walk).unwrap();
     let row = &s.document()["stages"]["volumes"]["results"]["options"][0];
@@ -84,7 +85,7 @@ fn a_cross_section_is_the_walk_s_station_and_its_cut_agrees_with_the_long_sectio
     let s = after_volumes(&d);
     let t = dem_sampler(&d, Some(32630)).unwrap();
     let walk = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     let ls = s.long_section("rolling-circle", &walk).unwrap();
     // Ask between two stations: the nearest one answers, and says which.
@@ -106,7 +107,7 @@ fn a_point_picked_on_the_map_gives_the_nearest_station() {
     let s = after_volumes(&d);
     let t = dem_sampler(&d, Some(32630)).unwrap();
     let walk = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     let ls = s.long_section("rolling-circle", &walk).unwrap();
     let p = &ls["positions"][25];
@@ -120,14 +121,14 @@ fn the_sections_need_fresh_volumes_and_a_known_option() {
     let mut s = after_volumes(&d);
     let t = dem_sampler(&d, Some(32630)).unwrap();
     assert!(
-        s.option_section_walk("nope", &t as Terrain)
+        s.option_section_walk("nope", &t as TerrainSampler)
             .unwrap_err()
             .to_string()
             .contains("no option `nope`")
     );
     s.set_water_profile(&[[0.0, 37.0]]).unwrap();
     let e = s
-        .option_section_walk("rolling-circle", &t as Terrain)
+        .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap_err()
         .to_string();
     assert!(e.contains("stale"), "{e}");

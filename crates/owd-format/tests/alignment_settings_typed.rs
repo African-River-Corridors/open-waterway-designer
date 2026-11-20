@@ -7,8 +7,9 @@
 //! Label: property
 
 use owd_format::design::terrain::dem_sampler;
-use owd_format::design::{AlignMethod, AlignmentSettings, Session, Terrain};
+use owd_format::design::{AlignMethod, AlignmentSettings, Session};
 use owd_format::geotiff;
+use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -48,7 +49,7 @@ fn the_re_route_with_no_settings_writes_the_typed_defaults() {
     s.align(
         AlignMethod::Reroute,
         &Value::Null,
-        Some(&terrain as Terrain),
+        Some(&terrain as TerrainSampler),
     )
     .unwrap();
     let defaults = AlignmentSettings::default().to_value();

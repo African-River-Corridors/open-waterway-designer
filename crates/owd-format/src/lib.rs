@@ -6,5 +6,6 @@ mod eval;
 mod eval_rules;
 pub mod geotiff;
 pub mod host;
+pub mod types;
 
 pub use eval::{ENTRY_POINTS, EvalError, eval};

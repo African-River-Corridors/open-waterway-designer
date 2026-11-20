@@ -26,6 +26,7 @@ use crate::geom::overlay::contains_xy;
 use crate::geom::{Polygon, Pt, linear};
 use crate::numpy::{arange, argmin, np_min, np_mod, np_sum};
 use crate::py_max;
+use crate::types::TerrainSampler;
 
 pub const DEFAULT_CORRIDOR_SWEEP: [f64; 7] = [40.0, 60.0, 80.0, 120.0, 160.0, 220.0, 300.0];
 
@@ -87,9 +88,6 @@ pub fn chainage_and_side(line: &[Pt], p: Pt) -> (f64, f64) {
     }
     (s_best, side_best)
 }
-
-/// A terrain sampler: heights for the points `(xs[i], ys[i])`, NaN where unknown.
-pub type Terrain<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
 
 /// `CostGrid`.
 #[derive(Debug, Clone, PartialEq)]
@@ -189,7 +187,7 @@ fn hypot(a: f64, b: f64) -> f64 {
 /// Transect-approximation cut volume for every (station, offset).
 pub fn build_cost_grid(
     line: &[Pt],
-    terrain: Terrain,
+    terrain: TerrainSampler,
     river: &[Polygon],
     grade_at: &dyn Fn(f64) -> f64,
     p: &GridParams,
@@ -201,7 +199,7 @@ pub fn build_cost_grid(
 /// The zones are read on `bank_line` (the river centreline), or on the baseline when it is None.
 pub fn build_cost_grid_with(
     line: &[Pt],
-    terrain: Terrain,
+    terrain: TerrainSampler,
     river: &[Polygon],
     grade_at: &dyn Fn(f64) -> f64,
     p: &GridParams,

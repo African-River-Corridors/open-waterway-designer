@@ -2134,6 +2134,8 @@ dependencies = [
  "png",
  "proj4rs",
  "rusqlite",
+ "schemars",
+ "serde",
  "serde_json",
  "sha2",
  "tiff",

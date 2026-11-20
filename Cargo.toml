@@ -34,6 +34,9 @@ ord = { git = "https://github.com/African-River-Corridors/open-report-designer",
 otd-imagery = { git = "https://github.com/African-River-Corridors/open-technical-drawer", tag = "v0.4.0" }
 # float_roundtrip, arbitrary_precision: read every number exactly as written, big ints too.
 # preserve_order: a JSON object keeps its key order, as a Python dict does.
+# Typed stage contracts (spec 0017): the shared value types derive these, and the JSON schemas come from schemars.
+serde = { version = "1", features = ["derive"] }
+schemars = "1"
 serde_json = { version = "1", features = ["float_roundtrip", "arbitrary_precision", "preserve_order"] }
 
 # The web build (tools/build_web.sh): link-time optimisation in one unit, and no symbol names. Smaller and no
