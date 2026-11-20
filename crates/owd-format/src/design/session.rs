@@ -246,8 +246,12 @@ impl Session {
             }
             _ => {}
         }
+        // Answers stored by an older OWD say why they show stale (read before the line moves: the
+        // old hashes read `inputs.reference_line`).
+        notes.extend(super::fits::older_answer_note(&doc));
+        notes.extend(super::envelope::older_answer_note(&doc));
         // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
-        super::reference_line::move_from_inputs(&mut doc);
+        notes.extend(super::reference_line::move_from_inputs(&mut doc));
         match &doc["format_version"] {
             Value::Number(n) => {
                 return Err(DesignError::Input(format!(

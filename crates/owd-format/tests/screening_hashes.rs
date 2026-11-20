@@ -167,7 +167,7 @@ fn an_old_file_with_a_fresh_line_and_a_bed_keeps_its_volumes_fresh_and_run_keeps
     assert!(ran.is_empty(), "nothing is due: {ran:?}");
     assert_eq!(volumes_numbers(&back), before);
     // A moved line that was stale stays stale.
-    let stale = to_old_place(doc, "an old hash that no longer matches");
+    let stale = to_old_place(doc, &"1".repeat(64));
     let back = Session::open(&stale.to_string()).unwrap();
     assert_eq!(back.reference_line_status(), StageStatus::Stale);
 }
@@ -280,10 +280,18 @@ fn the_envelope_goes_stale_on_each_thing_it_reads() {
 
     let mut t = Session::open(&s.to_text()).unwrap();
     t.set_water_profile(&[[0.0, 10.0]]).unwrap();
-    assert_eq!(t.envelope_status(), StageStatus::Fresh, "the water is not read");
+    assert_eq!(
+        t.envelope_status(),
+        StageStatus::Fresh,
+        "the water is not read"
+    );
     t.set_bed_model(&[[0.0, 3.0], [4000.0, 3.0]], Some("dry"), "2026-11-20")
         .unwrap();
-    assert_eq!(t.envelope_status(), StageStatus::Stale, "bed shallowest depth");
+    assert_eq!(
+        t.envelope_status(),
+        StageStatus::Stale,
+        "bed shallowest depth"
+    );
 }
 
 /// Item 10. The fits answer goes stale when its settings, the custom vessel, the polygon or the

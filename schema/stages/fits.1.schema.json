@@ -72,6 +72,34 @@
             }
           ],
           "default": null
+        },
+        "left_bank": {
+          "description": "The left bank, when there is one. With both banks a rerun reads a reference line, so their\narrival makes an answer read on the centreline stale (QA on PR 560).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "right_bank": {
+          "description": "The right bank, when there is one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "crs": {
+          "description": "The project CRS, as the document holds it.",
+          "default": null
         }
       },
       "required": [
@@ -123,8 +151,15 @@
         "dem_sha256": {
           "description": "The DEM, by its hash."
         },
-        "sizing_rule_sets": {
-          "description": "The sizing's Rule Set selection."
+        "sizing_settings": {
+          "description": "The sizing's settings, whole. Each class is sized on a copy of the design that keeps them\nbut for the Rule Sets, the set inputs and the vessel it sets; all are hashed, so a change to\nany makes the answer stale (stale too often, never fresh when it should not be)."
+        },
+        "volumes_settings": {
+          "description": "The volumes' settings: each class's sections are walked with them."
+        },
+        "optimise_profile": {
+          "description": "The optimise stage's pool levels, when it has run: the water the walk reads before the\nprofile of the inputs.",
+          "default": null
         },
         "bed_axis": {
           "description": "The reference line the assumed bed is centred on, by its hash, when fresh.",
@@ -138,7 +173,8 @@
         "bed_model",
         "water_level",
         "dem_sha256",
-        "sizing_rule_sets",
+        "sizing_settings",
+        "volumes_settings",
         "dem_holds_bathymetry"
       ]
     },
