@@ -246,7 +246,7 @@
         "optimise": { "$ref": "#/$defs/stage" },
         "volumes": { "$ref": "#/$defs/stage" },
         "reference_line": {
-          "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of what makes the line (the banks, the river polygon, the project CRS and the parameters; the formula used before it was a stage). Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, keeping its hash, so a fresh line stays fresh. Optional.",
+          "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of its whole input and the project CRS. The results' `line_basis` is the hash of what shapes the line (the banks, the river polygon, the project CRS and the parameters; the formula used before it was a stage): the bed is centred on the line while it matches. Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, keeping its hash, so a fresh line stays fresh. Optional.",
           "$ref": "#/$defs/stage"
         },
         "plan_cut": {

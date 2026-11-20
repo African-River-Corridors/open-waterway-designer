@@ -251,7 +251,8 @@ impl Session {
         notes.extend(super::fits::older_answer_note(&doc));
         notes.extend(super::envelope::older_answer_note(&doc));
         // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
-        notes.extend(super::reference_line::move_from_inputs(&mut doc));
+        let (moved, moved_fresh) = super::reference_line::move_from_inputs(&mut doc);
+        notes.extend(moved);
         match &doc["format_version"] {
             Value::Number(n) => {
                 return Err(DesignError::Input(format!(
@@ -278,6 +279,10 @@ impl Session {
             library: engine::built_in().clone(),
             notes,
         };
+        // A moved line that was fresh keeps a fresh record: its hash becomes the record's own.
+        if moved_fresh && let Some(h) = s.reference_line_record_hash() {
+            s.doc["stages"][super::reference_line::STAGE]["depends_on"] = json!(h);
+        }
         if s.doc["inputs"].is_object() && s.validate_schema_only().is_empty() {
             s.migrate_water_settings();
             s.canonical_vessel_ids();

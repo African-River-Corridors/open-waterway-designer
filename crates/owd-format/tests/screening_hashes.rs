@@ -154,9 +154,9 @@ fn an_old_file_with_a_fresh_line_and_a_bed_keeps_its_volumes_fresh_and_run_keeps
     let s = bedded_with_volumes();
     let doc = s.document();
     assert_eq!(
-        doc["stages"]["reference_line"]["depends_on"],
+        doc["stages"]["reference_line"]["results"]["line_basis"],
         json!(old_line_hash(doc)),
-        "a reference line's hash is what makes the line: banks, polygon, CRS, parameters"
+        "the line's shape is keyed by what makes it: banks, polygon, CRS, parameters"
     );
     let before = volumes_numbers(&s);
     let old = to_old_place(doc, &old_line_hash(doc));
@@ -193,7 +193,11 @@ fn new_bank_notes_make_the_record_stale_but_keep_the_bed_axis_and_the_volumes() 
         {"from_m": 500.0, "to_m": 700.0, "kind": "narrow"}]}))
         .unwrap();
     assert_eq!(s.reference_line_status(), StageStatus::Stale, "bank notes");
-    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh, "bed axis kept");
+    assert_eq!(
+        s.stage_status(Stage::Volumes),
+        StageStatus::Fresh,
+        "bed axis kept"
+    );
 
     let mut t = river(true);
     t.run_reference_line().unwrap();

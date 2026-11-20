@@ -173,6 +173,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "line_basis": {
+          "description": "The hash of what shaped the line: the banks, the river polygon, the project CRS and the\nparameters (the record's `depends_on` hashes its whole input). The bed is centred on the\nline while this matches, so new bank notes leave the volumes fresh (QA on PR 560).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
