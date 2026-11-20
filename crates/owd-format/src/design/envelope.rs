@@ -6,8 +6,10 @@
 //! Spec 0017 ticket 7: its output is the typed [`EnvelopeResult`] (schema
 //! `schema/stages/envelope.1.schema.json`), and its `depends_on` is the hash of the typed
 //! [`EnvelopeIn`] it read: the plan line (the fresh reference line, else the centreline), the water,
-//! the custom vessel, the settings and the bed's shallowest depth. It has no hash of its own.
+//! the custom vessel, the settings, the bed's shallowest depth, the banks and the project CRS. It
+//! has no hash of its own. A sweep stored by an older OWD opens stale, with a note.
 
+use super::alignment::pts_of;
 use super::hash::hash_value;
 use super::screening::SCREENING_NOTICE;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
@@ -104,8 +106,10 @@ pub struct BedLimit {
     pub note: String,
 }
 
-/// What the envelope stage returns, as the study keeps it.
+/// What the envelope stage returns, as the study keeps it. A field the contract does not know is
+/// refused, so none is dropped without a word (the rows inside are not checked this way yet).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct EnvelopeResult {
     pub label: String,
     pub notice: String,
@@ -145,6 +149,16 @@ pub struct EnvelopeIn {
     /// The shallowest depth of the bed model, when there is one.
     #[serde(default)]
     pub bed_shallowest_depth_m: Option<f64>,
+    /// The left bank, when there is one. With both banks a rerun reads a reference line, so their
+    /// arrival makes a sweep read on the centreline stale (QA on PR 560).
+    #[serde(default)]
+    pub left_bank: Option<Polyline>,
+    /// The right bank, when there is one.
+    #[serde(default)]
+    pub right_bank: Option<Polyline>,
+    /// The project CRS, as the document holds it.
+    #[serde(default)]
+    pub crs: Value,
 }
 
 fn stretch_json(st: &FitStretch) -> Value {
@@ -204,6 +218,33 @@ fn envelope_json(e: &Envelope, at: &dyn Fn(f64) -> Pt) -> Value {
     })
 }
 
+/// A plain note when the stored sweep was made by an older OWD: its hash is the old hand-made
+/// formula (PR 558's), and fresh by it. It now shows stale, since its hash is the hash of
+/// [`EnvelopeIn`]. Read on the raw document before the reference line moves (the old formula read
+/// `inputs.reference_line`).
+pub(super) fn older_answer_note(doc: &Value) -> Option<String> {
+    let e = &doc["stages"][STAGE];
+    if e["results"].is_null() {
+        return None;
+    }
+    let inp = &doc["inputs"];
+    let old = hash_value(&json!({
+        "left_bank": inp["left_bank"],
+        "right_bank": inp["right_bank"],
+        "river_polygon": inp["river_polygon"],
+        "centreline": inp["centreline"],
+        "crs": doc["project"]["crs"],
+        "reference_line": inp["reference_line"]["depends_on"],
+        "custom_vessel": doc["stages"]["sizing"]["settings"]["custom_vessel"],
+        "settings": e["settings"],
+    }));
+    (e["depends_on"].as_str() == Some(old.as_str())).then(|| {
+        "The largest-vessel sweep was stored by an older OWD. OWD now records what it read in \
+         another way, so it shows as stale though nothing changed: run `owd envelope` again."
+            .to_string()
+    })
+}
+
 impl Session {
     /// The settings as the record stores them.
     fn envelope_settings_value(settings: &Settings) -> Value {
@@ -249,6 +290,9 @@ impl Session {
             custom_vessel: self.doc["stages"]["sizing"]["settings"]["custom_vessel"].clone(),
             settings,
             bed_shallowest_depth_m: self.bed_shallowest(),
+            left_bank: pts_of(&self.doc["inputs"]["left_bank"]).map(Polyline),
+            right_bank: pts_of(&self.doc["inputs"]["right_bank"]).map(Polyline),
+            crs: self.doc["project"]["crs"].clone(),
         })
     }
 

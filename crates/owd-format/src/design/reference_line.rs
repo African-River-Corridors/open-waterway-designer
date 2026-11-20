@@ -4,9 +4,14 @@
 //!
 //! [`reference_line_stage`] is a pure function from a [`ReferenceLineIn`] to a [`ReferenceLine`]. The
 //! document stores it as a stage record under `stages.reference_line`: the parameters as its
-//! settings, the line as its results, and as `depends_on` the hash of the input it read (no hash of
-//! its own). The design stages do not read it: storing it leaves them fresh. A line stored the old
-//! way, as `inputs.reference_line`, moves to the stage record when the file opens, marked stale.
+//! settings and the line as its results. Its `depends_on` is the hash of what makes the line: the
+//! two banks, the river polygon, the project CRS and the parameters (`basis_of`). The centreline
+//! and the banks' low-confidence stretches are left out: they only place notes on the line, and
+//! with them in, a new centreline would make the line stale and the bed centred on it would fall
+//! back to the centreline (QA on PR 560). It is the formula OWD used before the line was a stage.
+//! The design stages do not read it: storing it leaves them fresh. A line stored the old way, as
+//! `inputs.reference_line`, moves to the stage record when the file opens, keeping its hash: a
+//! fresh line stays fresh, a stale one stays stale.
 
 use super::alignment::pts_of;
 use super::hash::hash_value;
@@ -147,23 +152,51 @@ pub fn reference_line_stage(input: &ReferenceLineIn) -> Result<ReferenceLine, St
     })
 }
 
-/// Move a reference line stored the old way (`inputs.reference_line`) to its stage record, marked
-/// stale (its old hash is not the hash of its input). For any format: on the raw JSON, before the
-/// schema check.
-pub(super) fn move_from_inputs(doc: &mut Value) {
+/// What makes the line, hashed: the two banks, the river polygon, the project CRS and the
+/// parameters, as the document holds them. The stored line is fresh while its `depends_on` equals
+/// this. The same formula as before the line became a stage, so an older file's hash still holds.
+pub(super) fn basis_of(doc: &Value) -> String {
+    let inp = &doc["inputs"];
+    hash_value(&json!({
+        "left_bank": inp["left_bank"],
+        "right_bank": inp["right_bank"],
+        "river_polygon": inp["river_polygon"],
+        "crs": doc["project"]["crs"],
+        "parameters": reference_line_parameters(),
+    }))
+}
+
+/// Move a reference line stored the old way (`inputs.reference_line`) to its stage record, keeping
+/// its hash, and say what happened in plain words. For any format: on the raw JSON, before the
+/// schema check. A file that also holds the stage record keeps the record; the old copy goes.
+pub(super) fn move_from_inputs(doc: &mut Value) -> Vec<String> {
     let Some(old) = doc
         .get_mut("inputs")
         .and_then(Value::as_object_mut)
         .and_then(|o| o.remove("reference_line"))
     else {
-        return;
+        return vec![];
     };
     if !old.is_object() {
-        return;
+        return vec![];
+    }
+    if doc["stages"][STAGE].is_object() {
+        return vec![
+            "The file held the reference line in two places: the stage record \
+             `stages.reference_line` is kept and the old copy under `inputs.reference_line` is \
+             dropped."
+                .into(),
+        ];
     }
     if !doc["stages"].is_object() {
         doc["stages"] = json!({});
     }
+    let fresh = old["depends_on"].as_str() == Some(basis_of(doc).as_str());
+    // A hash that is not one (an edited file) is replaced by one that matches nothing: stale.
+    let depends_on = match old["depends_on"].as_str() {
+        Some(h) if h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()) => json!(h),
+        _ => json!(hash_value(&json!({"moved_from_inputs": old["depends_on"]}))),
+    };
     doc["stages"][STAGE] = json!({
         "settings": old["parameters"],
         "results": {
@@ -172,9 +205,19 @@ pub(super) fn move_from_inputs(doc: &mut Value) {
             "outside_water": old.get("outside_water").cloned().unwrap_or(json!([])),
             "notes": old.get("notes").cloned().unwrap_or(json!([])),
         },
-        "depends_on": hash_value(&json!({"moved_from_inputs": old["depends_on"]})),
+        "depends_on": depends_on,
         "engine_version": doc["engine_version"],
     });
+    vec![if fresh {
+        "The reference line moved from `inputs.reference_line` to its stage record \
+         `stages.reference_line`. It is still fresh: nothing it is made from changed."
+            .into()
+    } else {
+        "The reference line moved from `inputs.reference_line` to its stage record \
+         `stages.reference_line`. It was stale and stays stale: the next `owd fits` or \
+         `owd envelope` makes it again."
+            .into()
+    }]
 }
 
 impl Session {
@@ -205,20 +248,16 @@ impl Session {
         })
     }
 
-    /// The hash of what the reference line reads now, when it can be made.
-    fn reference_line_basis(&self) -> Option<String> {
-        self.reference_line_input().map(|i| hash_value(&json!(i)))
-    }
-
     /// Where the stored reference line stands: not made, fresh, or stale.
     pub fn reference_line_status(&self) -> StageStatus {
         let r = &self.doc["stages"][STAGE];
         if !r["results"].is_object() {
             return StageStatus::NotRun;
         }
-        match (r["depends_on"].as_str(), self.reference_line_basis()) {
-            (Some(h), Some(now)) if h == now => StageStatus::Fresh,
-            _ => StageStatus::Stale,
+        if r["depends_on"].as_str() == Some(basis_of(&self.doc).as_str()) {
+            StageStatus::Fresh
+        } else {
+            StageStatus::Stale
         }
     }
 
@@ -253,7 +292,7 @@ impl Session {
         self.doc["stages"][STAGE] = json!({
             "settings": input.parameters,
             "results": out,
-            "depends_on": hash_value(&json!(input)),
+            "depends_on": basis_of(&self.doc),
             "engine_version": ENGINE_VERSION,
         });
         Ok(())

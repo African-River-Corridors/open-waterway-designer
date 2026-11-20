@@ -69,6 +69,34 @@
           ],
           "format": "double",
           "default": null
+        },
+        "left_bank": {
+          "description": "The left bank, when there is one. With both banks a rerun reads a reference line, so their\narrival makes a sweep read on the centreline stale (QA on PR 560).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "right_bank": {
+          "description": "The right bank, when there is one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Polyline"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "crs": {
+          "description": "The project CRS, as the document holds it.",
+          "default": null
         }
       },
       "required": [
@@ -112,7 +140,7 @@
       ]
     },
     "EnvelopeResult": {
-      "description": "What the envelope stage returns, as the study keeps it.",
+      "description": "What the envelope stage returns, as the study keeps it. A field the contract does not know is\nrefused, so none is dropped without a word (the rows inside are not checked this way yet).",
       "type": "object",
       "properties": {
         "label": {
@@ -206,6 +234,7 @@
           ]
         }
       },
+      "additionalProperties": false,
       "required": [
         "label",
         "notice",

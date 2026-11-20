@@ -50,6 +50,7 @@ pub(super) fn run_all<J: Sync, T: Send>(
         jobs.iter().map(f).collect()
     }
 }
+use super::alignment::pts_of;
 use super::envelope::{Num, StretchOut};
 use super::hash::hash_value;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
@@ -207,8 +208,16 @@ pub struct FitsFullIn {
     pub water_level: Value,
     /// The DEM, by its hash.
     pub dem_sha256: Value,
-    /// The sizing's Rule Set selection.
-    pub sizing_rule_sets: Value,
+    /// The sizing's settings, whole. Each class is sized on a copy of the design that keeps them
+    /// but for the Rule Sets, the set inputs and the vessel it sets; all are hashed, so a change to
+    /// any makes the answer stale (stale too often, never fresh when it should not be).
+    pub sizing_settings: Value,
+    /// The volumes' settings: each class's sections are walked with them.
+    pub volumes_settings: Value,
+    /// The optimise stage's pool levels, when it has run: the water the walk reads before the
+    /// profile of the inputs.
+    #[serde(default)]
+    pub optimise_profile: Value,
     /// The reference line the assumed bed is centred on, by its hash, when fresh.
     #[serde(default)]
     pub bed_axis: Option<Value>,
@@ -233,6 +242,16 @@ pub struct FitsIn {
     /// For a full answer, what it read beyond the plan.
     #[serde(default)]
     pub full: Option<FitsFullIn>,
+    /// The left bank, when there is one. With both banks a rerun reads a reference line, so their
+    /// arrival makes an answer read on the centreline stale (QA on PR 560).
+    #[serde(default)]
+    pub left_bank: Option<Polyline>,
+    /// The right bank, when there is one.
+    #[serde(default)]
+    pub right_bank: Option<Polyline>,
+    /// The project CRS, as the document holds it.
+    #[serde(default)]
+    pub crs: Value,
 }
 
 /// The Rule Set choice (an old ruleset name) a run uses when none is named.
@@ -301,6 +320,58 @@ fn fits_json(f: &Fits) -> Value {
     })
 }
 
+/// A plain note when the stored answer was made by an older OWD: its hash is the old hand-made
+/// formula (PR 558's), and fresh by it. It now shows stale, since its hash is the hash of
+/// [`FitsIn`]. Read on the raw document before the reference line moves (the old formula read
+/// `inputs.reference_line`).
+pub(super) fn older_answer_note(doc: &Value) -> Option<String> {
+    let f = &doc["fits"];
+    if f["results"].is_null() {
+        return None;
+    }
+    let inp = &doc["inputs"];
+    let line = &inp["reference_line"];
+    // The old bed axis: the old line's hash, while the line was fresh.
+    let line_fresh = line.is_object()
+        && line["depends_on"].as_str() == Some(super::reference_line::basis_of(doc).as_str());
+    let full = (f["results"]["mode"] == "full").then(|| {
+        let mut v = json!({
+            "bed_model": inp["bed_model"],
+            "water_level": inp["water_level"],
+            "dem": inp["dem"]["sha256"],
+            "sizing": doc["stages"]["sizing"]["settings"]["rule_sets"],
+        });
+        if line_fresh {
+            v["bed_axis"] = line["depends_on"].clone();
+        }
+        if inp["dem"]["holds_bathymetry"] == true {
+            v["dem_holds_bathymetry"] = json!(true);
+        }
+        v
+    });
+    let mut dep = json!({
+        "full": full,
+        "left_bank": inp["left_bank"],
+        "right_bank": inp["right_bank"],
+        "centreline": inp["centreline"],
+        "river_polygon": inp["river_polygon"],
+        "crs": doc["project"]["crs"],
+        "settings": f["settings"],
+    });
+    if f["results"]["plan_line"] == "reference" {
+        dep["reference_line"] = line["depends_on"].clone();
+    }
+    let custom = &doc["stages"]["sizing"]["settings"]["custom_vessel"];
+    if custom.is_object() {
+        dep["custom_vessel"] = custom.clone();
+    }
+    (f["depends_on"].as_str() == Some(hash_value(&dep).as_str())).then(|| {
+        "The \"what fits\" answer was stored by an older OWD. OWD now records what it read in \
+         another way, so it shows as stale though nothing changed: run `owd fits` again."
+            .to_string()
+    })
+}
+
 impl Session {
     /// What the stored answer would read now: `None` when it has not run, or the river has no
     /// polygon or line.
@@ -332,7 +403,9 @@ impl Session {
             bed_model: inp["bed_model"].clone(),
             water_level: inp["water_level"].clone(),
             dem_sha256: inp["dem"]["sha256"].clone(),
-            sizing_rule_sets: self.doc["stages"]["sizing"]["settings"]["rule_sets"].clone(),
+            sizing_settings: self.doc["stages"]["sizing"]["settings"].clone(),
+            volumes_settings: self.doc["stages"]["volumes"]["settings"].clone(),
+            optimise_profile: self.doc["stages"]["optimise"]["results"]["profile"].clone(),
             bed_axis: self.bed_axis_hash(),
             dem_holds_bathymetry: self.dem_holds_bathymetry(),
         });
@@ -343,6 +416,9 @@ impl Session {
             custom_vessel: self.doc["stages"]["sizing"]["settings"]["custom_vessel"].clone(),
             settings: rec["settings"].clone(),
             full,
+            left_bank: pts_of(&inp["left_bank"]).map(Polyline),
+            right_bank: pts_of(&inp["right_bank"]).map(Polyline),
+            crs: self.doc["project"]["crs"].clone(),
         })
     }
 
