@@ -217,8 +217,10 @@ fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
         let dem = session
             .dem_path()
             .and_then(|p| std::fs::read(doc_dir(path).join(p)).ok())
-            .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
-            .and_then(|b| owd_format::geotiff::read_bytes(&b).ok());
+            .and_then(|b| {
+                let b = owd_format::design::stage_terrain(&session, Some(&b)).ok()?;
+                owd_format::geotiff::read_bytes(b).ok()
+            });
         let sampler = dem
             .as_ref()
             .and_then(|d| owd_format::design::terrain::dem_sampler(d, project_epsg(&session)).ok());
@@ -514,8 +516,10 @@ pub fn import_toward(
             None => session
                 .dem_path()
                 .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok())
-                .filter(|b| session.dem_check(Some(b)) == owd_format::design::DemCheck::Matches)
-                .and_then(|b| owd_format::geotiff::read_bytes(&b).ok()),
+                .and_then(|b| {
+                    let b = owd_format::design::stage_terrain(&session, Some(&b)).ok()?;
+                    owd_format::geotiff::read_bytes(b).ok()
+                }),
         };
         let sampler = match &dem {
             Some(d) => Some(
