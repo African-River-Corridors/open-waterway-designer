@@ -1,5 +1,5 @@
 {
-  "format_version": "0.4",
+  "format_version": "0.5",
   "engine_version": "0.3.1",
   "project": {
     "title": "Synthetic river",
@@ -14402,7 +14402,6 @@
       "engine_version": null
     }
   },
-  "options": [],
   "provenance": {
     "left_bank": {
       "source": "user-file",

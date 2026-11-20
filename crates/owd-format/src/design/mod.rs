@@ -7,6 +7,7 @@ pub mod banks;
 pub mod bed;
 pub mod crs;
 pub mod dem_source;
+pub mod design_line;
 pub mod envelope;
 pub mod export;
 pub mod fits;
@@ -17,6 +18,8 @@ pub mod hash;
 pub mod hillshade;
 pub mod map;
 pub mod midline;
+pub mod migrate;
+pub mod mouth;
 pub mod optimise;
 pub mod plan_cut;
 pub mod provenance;
@@ -39,7 +42,9 @@ pub use alignment::{
     AlignMethod, AlignmentSettings, CentrelineSettings, RerouteSettings, RollingCircleSettings,
 };
 pub use bed::DEPTH_FROM_DEM_LABEL;
+pub use design_line::{DesignLine, design_lines_of, final_line_of, volume_rows_of};
 pub use geojson::Role;
+pub use mouth::{MouthAt, MouthReport, parse_mouth};
 pub use optimise::OptimiseSettings;
 pub use session::{
     DesignError, ImportReport, Session, Stage, StageStatus, Status, check_file_name, date_from_unix,

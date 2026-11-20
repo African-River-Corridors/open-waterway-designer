@@ -1,6 +1,6 @@
-//! The alignment stage on the synthetic river (given in UTM 30N, shifted into the zone): options
-//! equal the core called directly, a failed R_min is recorded, an upstream stale stage is
-//! refused, and two methods give two options that rerun independently.
+//! The alignment stage on the synthetic river (given in UTM 30N, shifted into the zone): the design
+//! line equals the core called directly, a failed R_min is recorded, an upstream stale stage is
+//! refused, and a second method replaces the first: one design line per run (spec 0017).
 //!
 //! Label: property
 
@@ -54,13 +54,11 @@ fn river_line() -> Vec<Pt> {
         .collect()
 }
 
+/// The one design line, made by `method`.
 fn option<'a>(s: &'a Session, method: &str) -> &'a Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|o| o["method"] == method)
-        .unwrap()
+    let line = &s.document()["stages"]["alignment"]["results"];
+    assert_eq!(line["method"], method, "the design line's method");
+    line
 }
 
 fn coords(o: &Value) -> Vec<Pt> {
@@ -164,7 +162,7 @@ fn align_with_a_stale_or_missing_sizing_is_refused_and_names_sizing() {
 }
 
 #[test]
-fn two_methods_give_two_options_and_a_rerun_replaces_only_its_own() {
+fn a_second_method_replaces_the_design_line_and_the_reroute_starts_from_the_river() {
     let river = synthetic_river(RiverParams::default()).unwrap();
     let terrain = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
         xs.iter()
@@ -180,10 +178,14 @@ fn two_methods_give_two_options_and_a_rerun_replaces_only_its_own() {
     let reroute = json!({"corridor_sweep_m": [40.0, 80.0]});
     s.align(AlignMethod::Reroute, &reroute, Some(&terrain))
         .unwrap();
-    assert_eq!(s.document()["options"].as_array().unwrap().len(), 2);
+    assert!(s.document().get("options").is_none(), "no list of options");
+    assert_eq!(
+        s.document()["stages"]["alignment"]["settings"]["method"],
+        "reroute"
+    );
 
-    // The re-route option equals optimise_route called directly, from the rolling-circle line.
-    let rolled = coords(option(&s, "rolling_circle"));
+    // The re-route equals optimise_route called directly, from the river centreline.
+    let rolled = river_line();
     let shape = &s.document()["stages"]["sizing"]["results"];
     let (r_min, depth) = (
         shape["min_bend_radius_m"].as_f64().unwrap(),
@@ -235,13 +237,18 @@ fn two_methods_give_two_options_and_a_rerun_replaces_only_its_own() {
         json!(direct.radius_check_chord_m)
     );
 
-    // Rerun the rolling circle with another step: its own option changes, the re-route's does not.
-    let before = option(&s, "reroute").clone();
+    // The rolling circle again, with another step: it replaces the re-route's line, and the
+    // re-route's settings stay stored for the next time it is the method.
     s.align(AlignMethod::RollingCircle, &json!({"step_m": 20.0}), None)
         .unwrap();
-    assert_eq!(s.document()["options"].as_array().unwrap().len(), 2);
     assert_eq!(option(&s, "rolling_circle")["settings"]["step_m"], 20.0);
-    assert_eq!(*option(&s, "reroute"), before);
+    assert_eq!(
+        s.document()["stages"]["alignment"]["settings"]["reroute"]["corridor_sweep_m"],
+        json!([40.0, 80.0])
+    );
+    // A stage run runs the stored method.
+    s.run_stage(Stage::Alignment).unwrap();
+    assert_eq!(option(&s, "rolling_circle")["settings"]["step_m"], 20.0);
 }
 
 #[test]
@@ -265,8 +272,8 @@ fn a_stage_run_runs_the_rolling_circle_and_a_new_vessel_makes_it_stale_then_run_
     let mut s = design(&river_line(), "CEMT_IV");
     s.run_stage(Stage::Alignment).unwrap();
     assert_eq!(
-        s.document()["stages"]["alignment"]["results"]["methods"],
-        json!(["rolling_circle"])
+        s.document()["stages"]["alignment"]["results"]["method"],
+        "rolling_circle"
     );
     // A new vessel makes alignment stale; sizing first, then run reruns it.
     s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])

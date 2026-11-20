@@ -37,7 +37,8 @@
   const WATER: Record<UseWater, string> = { default: "Default", true: "Keep to the water", false: "Ignore the water" };
   let useWater = $derived(useWaterChoice(snap?.document.stages.alignment.settings?.rolling_circle?.use_water));
   let lastUsed = $derived.by(() => {
-    const used = snap?.document.options?.find((o) => o.method === "rolling_circle")?.settings?.use_water;
+    const line = snap?.document.stages.alignment.results;
+    const used = line?.method === "rolling_circle" ? line.settings?.use_water : undefined;
     return used == null ? null : WATER[useWaterChoice(used)];
   });
 </script>

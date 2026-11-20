@@ -41,8 +41,9 @@ The natural line midway between the two banks of the river as it is today. An in
 _Avoid_: centerline, thalweg, natural line
 
 **Design line**:
-The axis of the navigation channel being designed. Each method that produces one (rolling
-circle, least-cost re-route, pool lattice) yields a new **design line option**.
+The axis of the navigation channel being designed. A design has one (spec 0017): the method that
+makes it (rolling circle, least-cost re-route, river centreline, a given line) is a setting, and the
+pool lattice refines it. Options are separate runs, compared outside the design.
 _Avoid_: route, rolled line, sailing line, fairway (as a line)
 
 **Alignment**:
@@ -85,7 +86,8 @@ One of several input lines, in order, that are joined into one design line befor
 A point on a line at which a cross-section is taken, identified by its chainage.
 
 **Chainage**:
-Distance in metres along a line from its start.
+Distance in metres along a line from its start. When the design states the **river mouth**, the
+river's lines run from the mouth, so river chainage 0 is at the mouth (spec 0017).
 _Avoid_: stationing, KP
 
 ### Channel sizing

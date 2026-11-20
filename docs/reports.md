@@ -22,7 +22,7 @@ owd report design.owd --kind all --format all -o reports/
 
 - `--kind` is `screening` (the default), `quantities`, `sections`, `run` or `all`.
 - `--format` is `pdf` (the default), `html`, `docx` or `all`.
-- `--option NAME` picks the design line option (default: the first).
+- `--option NAME` names the design line (default: the design line; a design has one, spec 0017).
 - Files are named after the document number in lower case, for example `owd-my-river-sr.pdf`.
 
 In the app, open **Sheets**, then **Report…**: pick the kind, the format, the revision, the status and who prepared

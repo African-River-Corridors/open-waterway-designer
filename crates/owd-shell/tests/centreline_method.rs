@@ -13,10 +13,8 @@ fn example() -> PathBuf {
 }
 
 fn centreline_option(doc: &Value) -> Value {
-    doc["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    owd_format::design::design_lines_of(doc)
+        .into_iter()
         .find(|o| o["method"] == "centreline")
         .expect("no option of the method `centreline`")
         .clone()
@@ -68,6 +66,6 @@ fn the_shell_and_the_cli_give_the_same_centreline_option() {
         from_shell["line"]["coordinates"], written["inputs"]["centreline"]["coordinates"],
         "the design line is not the centreline of the document"
     );
-    // The option the example already had is kept.
-    assert_eq!(written["options"].as_array().unwrap().len(), 2);
+    // One design line per run (spec 0017): the centreline replaces the example's line.
+    assert_eq!(owd_format::design::design_lines_of(&written).len(), 1);
 }

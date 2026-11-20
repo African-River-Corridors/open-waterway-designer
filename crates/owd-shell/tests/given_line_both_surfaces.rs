@@ -88,19 +88,23 @@ fn a_given_line_gives_equal_documents_through_the_shell_and_the_command_line() {
         ),
     );
     let from_cli = read(&doc);
-    let options = from_cli["options"].as_array().unwrap();
-    assert_eq!(options.len(), 2, "the example's option and the given line");
-    assert_eq!(options[1]["method"], "given");
-    assert_eq!(options[1]["name"], NAME);
-    assert_eq!(options[1]["checks"]["radius_ok"], json!(true));
-    let id = options[1]["id"].as_str().unwrap().to_string();
+    // One design line per run (spec 0017): the given line replaces the example's.
+    let options = owd_format::design::design_lines_of(&from_cli);
+    assert_eq!(options.len(), 1, "the given line only");
+    assert_eq!(options[0]["method"], "given");
+    assert_eq!(options[0]["name"], NAME);
+    assert_eq!(options[0]["checks"]["radius_ok"], json!(true));
+    let id = options[0]["id"].as_str().unwrap().to_string();
 
     // The shell.
     let mut shell = AppState::open(&doc, &example_text, Some(&dem_bytes)).unwrap();
     assert_eq!(shell.load_design_line(&text, NAME).unwrap(), id);
     assert!(shell.is_dirty());
     let from_shell: Value = serde_json::from_str(&shell.save_text_for(&doc)).unwrap();
-    assert_eq!(from_shell["options"], from_cli["options"]);
+    assert_eq!(
+        from_shell["stages"]["alignment"],
+        from_cli["stages"]["alignment"]
+    );
     assert_eq!(from_shell, from_cli);
 
     // The volumes stage is now stale on both. Each surface runs it on the document's terrain.
@@ -108,12 +112,10 @@ fn a_given_line_gives_equal_documents_through_the_shell_and_the_command_line() {
     let from_cli = read(&doc);
     shell_volumes(&mut shell);
     let from_shell: Value = serde_json::from_str(&shell.save_text_for(&doc)).unwrap();
-    let rows = from_cli["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[1]["id"], json!(id));
-    assert!(rows[1]["total_m3"].as_f64().unwrap() > 0.0);
+    let rows = owd_format::design::volume_rows_of(&from_cli);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["id"], json!(id));
+    assert!(rows[0]["total_m3"].as_f64().unwrap() > 0.0);
     assert_eq!(from_shell, from_cli);
 }
 

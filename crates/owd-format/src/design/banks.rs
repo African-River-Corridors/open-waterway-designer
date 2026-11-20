@@ -329,6 +329,61 @@ impl Session {
         self.doc["inputs"]["banks"] = banks.clone();
     }
 
+    /// Store what a bank dataset file says, after its banks were imported. Its low-confidence
+    /// stretches are counted along the banks as the file draws them; when the design states a mouth
+    /// and the file's banks run towards it, they are counted again from the mouth, as the stored
+    /// banks now run (QA on PR 558).
+    pub fn set_bank_metadata_from(&mut self, file: &BankFile) {
+        let mut banks = file.banks.clone();
+        if let Some(mouth) = self.stored_mouth()
+            && self.file_banks_run_to(file, mouth.point)
+            && let Ok(line) = self.base_line()
+            && let Some(lc) = banks
+                .get_mut("low_confidence")
+                .and_then(Value::as_array_mut)
+        {
+            let len = owd_core::geom::linear::length(&line);
+            lc.reverse();
+            for s in lc.iter_mut() {
+                let (f, t) = (
+                    s["from_m"].as_f64().unwrap_or(0.0),
+                    s["to_m"].as_f64().unwrap_or(0.0),
+                );
+                s["from_m"] = serde_json::json!((len - t).max(0.0));
+                s["to_m"] = serde_json::json!((len - f).max(0.0));
+            }
+        }
+        self.set_bank_metadata(&banks);
+    }
+
+    /// True when the file's left bank, in the project CRS, ends nearer `mouth` than it starts.
+    fn file_banks_run_to(&self, file: &BankFile, mouth: [f64; 2]) -> bool {
+        use super::crs::Crs;
+        use super::geojson::{Role, parse, to_project_crs};
+        let Some((_, text)) = file.items.iter().find(|(r, _)| *r == Role::LeftBank) else {
+            return false;
+        };
+        let utm = match self.doc["project"]["crs"]["epsg"]
+            .as_u64()
+            .and_then(|c| Crs::from_epsg(c as u32).ok())
+        {
+            Some(Crs::Utm(u)) => u,
+            _ => return false,
+        };
+        let Some(pts) = parse(Role::LeftBank, text)
+            .ok()
+            .and_then(|p| to_project_crs(&p, utm).ok())
+            .map(|g| super::geojson::all_positions(&g))
+        else {
+            return false;
+        };
+        let d = |p: [f64; 2]| libm::hypot(p[0] - mouth[0], p[1] - mouth[1]);
+        match (pts.first(), pts.last()) {
+            (Some(a), Some(b)) => d(*b) < d(*a),
+            _ => false,
+        }
+    }
+
     /// Import a bank dataset file: the two banks, the river polygon and what the source says, in
     /// one go, through [`Session::import`]. The whole file is read first; a refusal changes
     /// nothing.
@@ -339,7 +394,7 @@ impl Session {
         let file = read_bank_file(text)?;
         let mut s = self.clone();
         let report = s.import(&file.items())?;
-        s.set_bank_metadata(&file.banks);
+        s.set_bank_metadata_from(&file);
         *self = s;
         Ok(report)
     }

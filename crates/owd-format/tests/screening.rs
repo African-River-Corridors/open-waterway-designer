@@ -71,10 +71,8 @@ fn screened(params: RiverParams) -> (Session, SyntheticRiver) {
 }
 
 fn screening(s: &Session) -> Vec<Value> {
-    s.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    owd_format::design::volume_rows_of(s.document())
+        .into_iter()
         .map(|o| o["screening"].clone())
         .collect()
 }
@@ -107,7 +105,7 @@ fn every_option_has_a_verdict_and_its_stretches_and_the_sizing_has_its_design_ba
         );
         assert_eq!(b["rule_sets"], json!(["pianc-wg141@0.3.0"]));
     }
-    let options = s.document()["options"].as_array().unwrap().clone();
+    let options = owd_format::design::design_lines_of(s.document());
     for (o, sc) in options.iter().zip(screening(&s)) {
         assert_eq!(sc["notice"], "Screening \u{2014} not for construction");
         assert!(sc["rules_notice"].as_str().unwrap().contains("unverified"));
@@ -154,7 +152,7 @@ fn every_option_has_a_verdict_and_its_stretches_and_the_sizing_has_its_design_ba
 #[test]
 fn the_trace_is_the_same_on_every_run_and_is_refused_when_a_stored_hash_differs() {
     let (s, _) = screened(RiverParams::default());
-    let id = s.document()["options"][0]["id"]
+    let id = s.document()["stages"]["alignment"]["results"]["id"]
         .as_str()
         .unwrap()
         .to_string();
@@ -241,7 +239,7 @@ fn a_straight_option_has_no_radius_stretch_and_says_which_line_it_read() {
             ]
         })
         .collect();
-    doc["options"][0]["line"]["coordinates"] = json!(straight);
+    doc["stages"]["alignment"]["results"]["line"]["coordinates"] = json!(straight);
     let mut s = Session::open(&doc.to_string()).unwrap();
     let terrain = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
         xs.iter()

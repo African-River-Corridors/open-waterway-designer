@@ -388,7 +388,7 @@ fn exit_code_1_is_a_failed_check() {
     let dir = work_dir("exit1");
     let doc = build(&dir);
     let text = std::fs::read_to_string(&doc).unwrap().replacen(
-        "\"format_version\": \"0.4\"",
+        "\"format_version\": \"0.5\"",
         "\"format_version\": \"three\"",
         1,
     );
@@ -714,36 +714,44 @@ fn new_refuses_the_old_extension_and_writes_the_new_one() {
 // --- the alignment stage (ticket 61) -------------------------------------------------------
 
 #[test]
-fn align_adds_a_rolling_circle_option_and_replaces_it_when_run_again() {
+fn align_makes_the_rolling_circle_design_line_and_replaces_it_when_run_again() {
     let dir = work_dir("align");
     let doc = build(&dir);
     let o = run(&["align", &doc, "--method", "rolling-circle", "--json"], "");
     assert!(code(&o) == 0 || code(&o) == 1, "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
-    assert_eq!(res["option"]["method"], "rolling_circle");
+    assert_eq!(res["design_line"]["method"], "rolling_circle");
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
-    assert_eq!(saved["options"].as_array().unwrap().len(), 1);
+    assert!(saved.get("options").is_none(), "one design line, no list");
     assert_eq!(
-        saved["options"][0]["checks"]["radius_ok"],
-        res["option"]["checks"]["radius_ok"]
+        saved["stages"]["alignment"]["results"]["checks"]["radius_ok"],
+        res["design_line"]["checks"]["radius_ok"]
     );
     // The design is saved: exit code 0, and a failed check is a warning on stderr (ticket A13). The
     // synthetic river has a river polygon, so the rolling circle is water-aware (spec 0005): at 40 m
     // it fails `fits_in_water` at every apex.
-    let c = &res["option"]["checks"];
+    let c = &res["design_line"]["checks"];
     let failed = c["radius_ok"].as_bool() == Some(false)
         || c["fits_in_water"]["ok"].as_bool() == Some(false);
     assert!(c["fits_in_water"].is_object());
     assert_eq!(code(&o), 0, "{}", err(&o));
-    assert_eq!(err(&o).contains("the option fails:"), failed, "{}", err(&o));
-    // Again, with another step: one option still, with the new setting.
+    assert_eq!(
+        err(&o).contains("the design line fails:"),
+        failed,
+        "{}",
+        err(&o)
+    );
+    // Again, with another step: one design line still, with the new setting.
     run(
         &["align", &doc, "--method", "rolling-circle", "--step", "20"],
         "",
     );
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
-    assert_eq!(saved["options"].as_array().unwrap().len(), 1);
-    assert_eq!(saved["options"][0]["settings"]["step_m"], 20.0);
+    assert!(saved.get("options").is_none());
+    assert_eq!(
+        saved["stages"]["alignment"]["results"]["settings"]["step_m"],
+        20.0
+    );
     let s = run(&["status", &doc, "--json"], "");
     let st: Value = serde_json::from_str(&out(&s)).unwrap();
     assert_eq!(st["stages"]["alignment"], "fresh");
@@ -780,7 +788,7 @@ fn a_failed_fits_in_water_check_is_in_status_the_csv_and_the_geojson_and_exits_0
     assert!(err(&o).contains("fits_in_water"), "{}", err(&o));
     assert!(err(&o).contains("no_feasible_line"), "{}", err(&o));
     let res: Value = serde_json::from_str(&out(&o)).unwrap();
-    let c = &res["option"]["checks"]["fits_in_water"];
+    let c = &res["design_line"]["checks"]["fits_in_water"];
     assert_eq!(c["ok"], false);
     assert!(c["stretches"].as_array().unwrap().len() >= 8);
     assert!(
@@ -793,7 +801,7 @@ fn a_failed_fits_in_water_check_is_in_status_the_csv_and_the_geojson_and_exits_0
     let st = run(&["status", &doc, "--json"], "");
     let sj: Value = serde_json::from_str(&out(&st)).unwrap();
     assert!(
-        sj["options"][0]["failed_checks"]
+        sj["design_line"]["failed_checks"]
             .as_array()
             .unwrap()
             .contains(&json!("fits_in_water")),
@@ -801,14 +809,14 @@ fn a_failed_fits_in_water_check_is_in_status_the_csv_and_the_geojson_and_exits_0
     );
     // Issue #366: every apex too narrow is no feasible line, in every output.
     assert!(
-        sj["options"][0]["failed_checks"]
+        sj["design_line"]["failed_checks"]
             .as_array()
             .unwrap()
             .contains(&json!("no_feasible_line")),
         "{sj}"
     );
     assert_eq!(
-        sj["options"][0]["notes"],
+        sj["design_line"]["notes"],
         "no feasible line; width only, no depth data"
     );
     let human = run(&["status", &doc], "");

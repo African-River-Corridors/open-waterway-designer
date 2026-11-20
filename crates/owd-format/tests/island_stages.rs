@@ -91,14 +91,11 @@ fn line_of(o: &Value) -> Vec<Pt> {
         .collect()
 }
 
+/// The one design line (spec 0017), made by `method`.
 fn option(s: &Session, method: &str) -> Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|o| o["method"] == method)
-        .unwrap()
-        .clone()
+    let line = s.document()["stages"]["alignment"]["results"].clone();
+    assert_eq!(line["method"], method);
+    line
 }
 
 /// How many points of the line stand on the island rectangle.

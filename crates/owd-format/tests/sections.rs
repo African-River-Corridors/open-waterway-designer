@@ -59,7 +59,7 @@ fn the_long_section_sums_to_the_volumes_the_table_shows() {
         .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
     let ls = s.long_section("rolling-circle", &walk).unwrap();
-    let row = &s.document()["stages"]["volumes"]["results"]["options"][0];
+    let row = &s.document()["stages"]["volumes"]["results"];
     let n = ls["chainage_m"].as_array().unwrap().len();
     assert_eq!(n as u64, row["stations"].as_u64().unwrap());
     let sum = |k: &str| ls[k].as_array().unwrap().iter().map(f).sum::<f64>() * f(&ls["station_m"]);
@@ -124,7 +124,7 @@ fn the_sections_need_fresh_volumes_and_a_known_option() {
         s.option_section_walk("nope", &t as TerrainSampler)
             .unwrap_err()
             .to_string()
-            .contains("no option `nope`")
+            .contains("no design line `nope`")
     );
     s.set_water_profile(&[[0.0, 37.0]]).unwrap();
     let e = s

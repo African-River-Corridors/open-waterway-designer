@@ -502,10 +502,11 @@ pub(super) fn build(
 ) -> Result<Vec<Sheet>, DrawError> {
     let p = &options.style.long_section();
     let doc = session.document();
-    let option = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-        .ok_or_else(|| DrawError::Input(format!("there is no option `{option_id}`")))?;
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .ok_or_else(|| DrawError::Input(format!("there is no design line `{option_id}`")))?;
     let s = Series::read(&session.long_section(option_id, walk)?);
     if s.chainage.len() < 2 {
         return Err(DrawError::Missing(format!(
