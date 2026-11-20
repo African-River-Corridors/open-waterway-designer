@@ -74,8 +74,14 @@ fn every_fixture_gives_its_answer_or_its_code() {
         let got = water(&input);
         let expect = &f["expect"];
         if let Some(code) = expect["error"].as_str() {
-            let e = got.err().unwrap_or_else(|| panic!("{name}: expected {code}"));
-            assert_eq!((e.stage.as_str(), e.code.as_str()), ("water", code), "{name}");
+            let e = got
+                .err()
+                .unwrap_or_else(|| panic!("{name}: expected {code}"));
+            assert_eq!(
+                (e.stage.as_str(), e.code.as_str()),
+                ("water", code),
+                "{name}"
+            );
             continue;
         }
         let out = got.unwrap_or_else(|e| panic!("{name}: refused: {e}"));
@@ -226,7 +232,13 @@ fn a_new_water_level_makes_the_stored_water_stale() {
     assert_eq!(s.water_status(), StageStatus::Stale);
     s.run_water().unwrap();
     assert_eq!(s.water_status(), StageStatus::Fresh);
-    assert!(s.design_water().unwrap().points.iter().all(|p| p.level_m == 9.0));
+    assert!(
+        s.design_water()
+            .unwrap()
+            .points
+            .iter()
+            .all(|p| p.level_m == 9.0)
+    );
 }
 
 #[test]
@@ -239,6 +251,9 @@ fn the_optimise_stage_s_pools_are_read_as_pools() {
         "profile": [[0.0, 9.0], [1500.0, 9.0], [1500.0, 11.0], [3000.0, 11.0]],
     });
     doc["stages"]["optimise"]["engine_version"] = doc["engine_version"].clone();
+    // Stale (the volumes would refuse to run on it), but its pools are the water it stores, as the
+    // volumes walk reads them.
+    doc["stages"]["optimise"]["depends_on"] = json!("0".repeat(64));
     s = Session::open(&doc.to_string()).unwrap();
     let input = s.water_input().expect("the water input");
     assert_eq!(input.pools.len(), 2);

@@ -258,6 +258,9 @@ impl Session {
         };
 
         let plan = self.section_plan(overrides)?;
+        // The water along the line, stored for the drawings and the report (spec 0017 ticket 8).
+        // The walk below reads the same levels at its own stations.
+        self.run_water()?;
         let id = o["id"].as_str().unwrap_or("?");
         let v = self.option_sections(&plan, &o, terrain)?;
         let screening = self.screening_value(&o, &v, &plan.river, &plan.centre)?;

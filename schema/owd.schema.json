@@ -249,6 +249,10 @@
           "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of what makes the line (the banks, the river polygon, the project CRS and the parameters; the formula used before it was a stage). Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, keeping its hash, so a fresh line stays fresh. Optional.",
           "$ref": "#/$defs/stage"
         },
+        "water": {
+          "description": "Spec 0017 ticket 8: the water level along the design line, as a stage record (`schema/stages/water.1.schema.json`): the step between points as `settings`, the points (design-line chainage, the river chainage each was read at, the level, where it comes from: given, pool or open river, a pool's minimum and maximum level when it has them, and whether it is held flat beyond the profile's ends) and the stretches as `results`, and as `depends_on` the hash of the input it read. Not a stage of the chain: the volumes stage runs it, and no other stage's hash reads it. Optional.",
+          "$ref": "#/$defs/stage"
+        },
         "plan_cut": {
           "description": "Ticket C2b: the plan cut of the design line, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, the design line or the settings change. Optional.",
           "type": "object",

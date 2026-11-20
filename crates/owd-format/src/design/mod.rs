@@ -37,6 +37,7 @@ pub mod table;
 pub mod terrain;
 pub mod volumes;
 pub mod water;
+pub mod water_stage;
 
 pub use alignment::{
     AlignMethod, AlignmentSettings, CentrelineSettings, RerouteSettings, RollingCircleSettings,
