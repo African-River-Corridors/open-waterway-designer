@@ -224,6 +224,37 @@
             }
           ]
         },
+        "run": {
+          "description": "Spec 0017 ticket 11: the run inputs (`schema/stages/inputs.run.1.schema.json`). `objective`: one design measure to minimise or maximise. `limits`: design measures each with a bound, at most one bound of each kind on a measure; a bound on cost is money and names its currency, a bound on another measure is in that measure's unit (m³ for the cuts, m² for land take, m for line length, a count of structures) and names none; a bound on capacity is refused until its unit is settled. `target_level`: the output level the run aims at. Every part is optional. Absent: no objective, no limits, and the target is concept. Nothing optimises on them yet.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "objective": {
+              "type": "object",
+              "required": ["measure", "sense"],
+              "additionalProperties": false,
+              "properties": {
+                "measure": { "$ref": "#/$defs/design_measure" },
+                "sense": { "enum": ["minimise", "maximise"] }
+              }
+            },
+            "limits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["measure", "bound", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "measure": { "$ref": "#/$defs/design_measure" },
+                  "bound": { "enum": ["at_most", "at_least"] },
+                  "value": { "type": "number", "minimum": 0 },
+                  "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+                }
+              }
+            },
+            "target_level": { "enum": ["concept", "pre_feasibility", "feasibility"] }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
@@ -360,6 +391,10 @@
     }
   },
   "$defs": {
+    "design_measure": {
+      "description": "Spec 0017: one quantity of the whole design.",
+      "enum": ["cost", "total_cut", "dredge", "dry_cut", "land_take", "line_length", "structure_count", "capacity"]
+    },
     "provenance_record": {
       "type": "object",
       "required": ["source", "date", "notice", "mark"],

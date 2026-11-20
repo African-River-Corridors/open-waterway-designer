@@ -26,7 +26,25 @@ _Avoid_: using a former name in new text
 **Channel design**:
 One screening study of one river reach for one vessel: its inputs, the choices made, and the
 results of each stage. The unit a user opens, saves (as a `.owd` file) and shares.
-_Avoid_: project, scenario, run
+_Avoid_: project, scenario, run (a run is one pass of the stages over it, below)
+
+**Run**:
+One pass of the stages over one channel design. It makes one design (spec 0017).
+
+**Design measure**:
+One quantity of the whole design: cost, total cut, dredge, dry cut, land take, line length,
+structure count, capacity. Not the rules engine's Measure, which is per object and tested by a Rule.
+
+**Objective**:
+The one design measure a run aims to minimise or maximise.
+
+**Limit**:
+A design measure and a bound (at most or at least a value) the run must stay within. A bound on
+cost is money and names its currency.
+
+**Output level**:
+How far a run's figures can be trusted, from the inputs it had: concept, pre-feasibility or
+feasibility. The run states a **target level**; a stage reports the level each reach reached.
 
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,

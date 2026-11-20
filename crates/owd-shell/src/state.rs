@@ -664,6 +664,35 @@ impl AppState {
         Ok(())
     }
 
+    /// Set the run inputs from the app's fields (spec 0017, ticket 11): the objective
+    /// (`SENSE:MEASURE`, empty for none), the limits (one `MEASURE<=VALUE` a line, empty for none)
+    /// and the target level (empty for none), through `Session::edit_run_inputs`, as `owd
+    /// run-inputs` does. The app sends all three, so each replaces what is stored. No stage goes
+    /// stale. A refusal changes nothing.
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let limits: Vec<String> = limits
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        self.session
+            .edit_run_inputs(&owd_format::design::run_inputs::RunInputsEdit {
+                objective: Some(objective),
+                limits: Some(&limits),
+                target_level: Some(target_level),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// State the river mouth from the app's field: `downstream` or `LON,LAT`, as `owd import
     /// --mouth` reads it, through the same shell call. The river inputs are turned to run from the
     /// mouth when it is at their far end, and the stages that read them go stale. A refusal (no

@@ -801,6 +801,32 @@ enum Command {
         #[command(subcommand)]
         action: WaterwaySub,
     },
+    /// Set what the run aims at and must stay within, and the output level it aims to reach (spec
+    /// 0017). Each flag given replaces that part; a part not named is kept. With no flag, print them
+    /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
+    RunInputs {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// The objective: `SENSE:MEASURE`, for example `minimise:cost` or `minimise:total_cut`.
+        /// `none` (or empty) states none. Measures: cost, total_cut, dredge, dry_cut, land_take,
+        /// line_length, structure_count, capacity.
+        #[arg(long, value_name = "SENSE:MEASURE")]
+        objective: Option<String>,
+        /// A limit (repeatable; together they replace the limits): `MEASURE<=VALUE` or
+        /// `MEASURE>=VALUE`, in the measure's unit (m³ for the cuts, m² for land take, m for line
+        /// length). A bound on cost names its currency: `cost<=2000000 USD`.
+        #[arg(long = "limit", value_name = "MEASURE<=VALUE")]
+        limits: Vec<String>,
+        /// Remove every limit.
+        #[arg(long, conflicts_with = "limits")]
+        no_limits: bool,
+        /// The output level the run aims at: `concept`, `pre-feasibility` or `feasibility`. Empty
+        /// states none (the run then aims at concept).
+        #[arg(long, value_name = "LEVEL")]
+        target_level: Option<String>,
+        #[command(flatten)]
+        out: Out,
+    },
     /// List the Rule Sets, show one with its Rules and their status, or list the Measures.
     Rules {
         /// `show` to print one set.
@@ -1136,6 +1162,24 @@ pub fn main() -> ExitCode {
                     air_draught,
                     deadweight,
                 }),
+            },
+            &out.output,
+            out.json,
+        ),
+        Command::RunInputs {
+            doc,
+            objective,
+            limits,
+            no_limits,
+            target_level,
+            out,
+        } => crate::run_inputs::run_inputs(
+            &doc,
+            &crate::run_inputs::RunFlags {
+                objective,
+                limits,
+                no_limits,
+                target_level,
             },
             &out.output,
             out.json,

@@ -82,13 +82,15 @@ pub fn file_name(stage: &str, version: u32) -> String {
 }
 
 /// Every stage contract with a schema file. A stage joins this list in the ticket that gives it typed
-/// input and output.
+/// input and output. A run input with its own type (`inputs.run`) is listed here too, so its schema
+/// is checked the same way.
 pub fn contracts() -> Vec<StageContract> {
     use crate::design::design_line::{self, AlignmentIn, DesignLine};
     use crate::design::envelope::{self, EnvelopeIn, EnvelopeResult};
     use crate::design::fits::{self, FitsAnswer, FitsIn};
     use crate::design::reference_line::{self, ReferenceLine, ReferenceLineIn};
     use crate::design::river::{self, RiverGeometry, RiverIn};
+    use crate::design::run_inputs::{self, RunInputs};
     use crate::design::sizing::{self, ChannelSize, SizingIn};
     use crate::design::volumes_stage::{self, Volumes, VolumesIn};
     use crate::design::water_stage::{self, DesignWater, WaterIn};
@@ -102,6 +104,8 @@ pub fn contracts() -> Vec<StageContract> {
         StageContract::of::<StageRecord<FitsIn, FitsAnswer>>(fits::STAGE, 1),
         StageContract::of::<StageRecord<WaterIn, DesignWater>>(water_stage::STAGE, 1),
         StageContract::of::<StageRecord<VolumesIn, Volumes>>(volumes_stage::STAGE, 1),
+        // A run input, not a stage: its own type, not a stage record (ticket 11).
+        StageContract::of::<RunInputs>(run_inputs::CONTRACT, 1),
     ]
 }
 

@@ -12,6 +12,7 @@
     onTerrainLimit,
     onDownstream,
     onMouth,
+    onRunInputs,
   }: {
     snap: Snapshot | null;
     busy: boolean;
@@ -26,6 +27,8 @@
     onDownstream: (point: string) => void;
     /** State the river mouth, `downstream` or `LON,LAT` (spec 0017). */
     onMouth: (mouth: string) => void;
+    /** Set the run's objective, limits (one a line) and target level (spec 0017), as `owd run-inputs` does. */
+    onRunInputs: (objective: string, limits: string, level: string) => void;
   } = $props();
 
   const count = (g: { coordinates: unknown[] } | null | undefined) => (g ? `${g.coordinates.length} positions` : "not loaded");
@@ -40,6 +43,16 @@
   let limitGib = $state("");
   let downstream = $state("");
   let mouth = $state("");
+  let objective = $state("");
+  let limits = $state("");
+  let runLevel = $state("");
+  // Show the document's run inputs in the text forms the fields take.
+  $effect(() => {
+    const r = inputs?.run;
+    objective = r?.objective ? `${r.objective.sense}:${r.objective.measure}` : "";
+    limits = (r?.limits ?? []).map((l) => `${l.measure}${l.bound === "at_most" ? "<=" : ">="}${l.value}${l.currency ? ` ${l.currency}` : ""}`).join("\n");
+    runLevel = r?.target_level ? r.target_level.replace("_", "-") : "";
+  });
   // Show the document's water level, as a level at the start and the fall to the end.
   $effect(() => {
     const p = inputs?.water_level?.points;
@@ -115,6 +128,24 @@
       <input aria-label="River mouth" bind:value={mouth} disabled={busy} data-testid="river-mouth" />
     </label>
     <button disabled={busy} data-testid="set-river-mouth" onclick={() => onMouth(mouth)} title="The river is stored running from the mouth, and every chainage counts from it. `downstream` takes the lower end, by the water level or the DEM.">Set mouth</button>
+  </div>
+
+  <div class="water">
+    <label>Objective (`minimise:cost`, `minimise:total_cut`…; empty: none)
+      <input aria-label="Objective" bind:value={objective} disabled={busy} data-testid="run-objective" />
+    </label>
+    <label>Limits, one a line (`total_cut&lt;=500000`, `cost&lt;=2000000 USD`; empty: none)
+      <textarea aria-label="Limits" rows="2" bind:value={limits} disabled={busy} data-testid="run-limits"></textarea>
+    </label>
+    <label>Target output level
+      <select aria-label="Target output level" bind:value={runLevel} disabled={busy} data-testid="run-target-level">
+        <option value="">none (concept)</option>
+        <option value="concept">concept</option>
+        <option value="pre-feasibility">pre-feasibility</option>
+        <option value="feasibility">feasibility</option>
+      </select>
+    </label>
+    <button disabled={busy} data-testid="set-run-inputs" onclick={() => onRunInputs(objective, limits, runLevel)} title="What the run aims at, what it must stay within, and the output level it aims to reach. Nothing optimises on them yet, so no stage goes stale.">Set run inputs</button>
   </div>
 </section>
 

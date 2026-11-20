@@ -391,6 +391,10 @@ impl Session {
                 ));
             }
         }
+        // The run inputs are typed and checked beyond what the schema states (ticket 11).
+        if let Err(e) = self.run_inputs() {
+            errors.push(format!("/inputs/run: {e}"));
+        }
         // The one design line, and the lattice's, are typed: each must read as a `DesignLine`.
         for (at, v) in [
             (

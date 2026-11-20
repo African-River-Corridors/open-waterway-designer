@@ -24,6 +24,7 @@ declare module "*/wasm-pkg/owd_web.js" {
     set_terrain_limit(gib: string): string;
     set_downstream_point(point: string): string;
     set_mouth(mouth: string): string;
+    set_run_inputs(objective: string, limits: string, target_level: string): string;
     run_stage(stage: string, method?: string, progress?: (samples: number) => void): string;
     option_table(): string;
     map_geometry(): string;
