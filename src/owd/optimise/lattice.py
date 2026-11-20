@@ -95,7 +95,9 @@ class LatticeConfig:
     arc_step_m: float = 10.0                  # sampling step along each primitive
     goal_pos_tol_m: Optional[float] = None    # default half a pitch
     goal_head_tol_bins: float = 1.0
-    close_goal: bool = True                   # end on the goal pose exactly (issue #6)
+    # End on the goal pose exactly through a closing path (issue #6). The search is the Rust one
+    # (``_rust.call("lattice", ...)``), so both settings act here as in Rust (issue #557).
+    close_goal: bool = True
     close_reach_m: Optional[float] = None     # closing paths tried within this; default 3 × R_min
     heuristic: str = "c_min"                  # "c_min" | "reverse_dijkstra" | "none"
     heuristic_weight: float = 1.0             # > 1 is weighted A*: faster, not optimal

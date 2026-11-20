@@ -401,6 +401,11 @@ impl Session {
             "radius_ok": radius_ok(measured, r_min),
             "measured_min_radius_m": measured,
             "radius_check_chord_m": chord,
+            // A design line must never contain a loop (issue #569): a failed check, as R_min.
+            "no_self_crossing": {
+                "ok": out.self_crossing_m.is_none(),
+                "first_crossing_m": out.self_crossing_m,
+            },
         });
         let details = json!({
             "n_replaced": out.n_replaced(),
@@ -414,6 +419,14 @@ impl Session {
                 "radius_check_chord_m": p.result.radius_check_chord_m,
                 "radius_ok": p.result.radius_ok,
                 "goal_closed": p.result.goal_closed,
+                "expansions": p.result.expansions,
+                "hit_cap": p.result.hit_cap,
+                "end_moved_from_m": p.end_moved_from_m,
+                "start_moved_from_m": p.start_moved_from_m,
+                "piece": p.piece.map(|c| json!({
+                    "index": c.index, "count": c.count,
+                    "pool_start_m": c.pool_start_m, "pool_end_m": c.pool_end_m,
+                })),
             })).collect::<Vec<_>>(),
             "joins": out.joins.iter().map(|j| json!({
                 "at_m": j.at_m,
@@ -423,6 +436,7 @@ impl Session {
                 "radius_check_chord_m": out.radius_check_chord_m,
                 "radius_ok": j.radius_ok,
             })).collect::<Vec<_>>(),
+            "self_crossing_m": out.self_crossing_m,
         });
         let river_geometry = self
             .river_geometry()
@@ -446,10 +460,27 @@ impl Session {
                 &c.no_go,
             );
         }
-        // One warning for each pool join that does not hold R_min (issue #6).
+        // The design line's own sanity check, one warning for each pool (or piece) whose search
+        // hit its limit (issue #559), and one for each pool join that does not hold R_min (issue #6).
         if let Some(w) = refined.sanity["warnings"].as_array_mut() {
+            for p in out.capped_pools() {
+                w.push(json!(capped_warning(p, lattice.max_expand)));
+            }
             for j in out.failed_joins() {
                 w.push(json!(join_warning(j, r_min, out.radius_check_chord_m)));
+            }
+            // A pool that could not close on its end pose (issue #565): kept as the baseline, or
+            // closed on a moved search end. A loop in the line is already a warning of the line's
+            // own sanity check, with its chainage.
+            for p in out.unclosed_pools() {
+                w.push(json!(unclosed_warning(p)));
+            }
+            for p in out.moved_boundaries() {
+                w.push(json!(moved_warning(p)));
+            }
+            // A pool whose line crossed itself or the rest of the line keeps its baseline (#569).
+            for p in out.looped_pools() {
+                w.push(json!(looped_warning(p)));
             }
         }
 
@@ -496,6 +527,85 @@ fn join_warning(j: &owd_core::optimise::lattice::PoolJoin, r_min: f64, chord: f6
     w
 }
 
+/// The sanity warning for a pool (or a piece of one) whose search hit its expansion limit, so it
+/// keeps the baseline unsearched.
+fn capped_warning(p: &owd_core::optimise::lattice::PoolAlignment, max_expand: i64) -> String {
+    let what = match p.piece {
+        Some(c) => format!(
+            "piece {} of {} of the pool from {:.0} m to {:.0} m ({:.0} m to {:.0} m)",
+            c.index + 1,
+            c.count,
+            c.pool_start_m,
+            c.pool_end_m,
+            p.start_m,
+            p.end_m
+        ),
+        None => format!("the pool from {:.0} m to {:.0} m", p.start_m, p.end_m),
+    };
+    format!(
+        "{what} was not searched: the search hit its limit of {max_expand} expansions, so it keeps \
+         the baseline"
+    )
+}
+
+/// How a pool (or a piece of one) is named in a warning.
+fn pool_name(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    let start = p.start_moved_from_m.unwrap_or(p.start_m);
+    let end = p.end_moved_from_m.unwrap_or(p.end_m);
+    match p.piece {
+        Some(c) => format!(
+            "piece {} of {} of the pool from {:.0} m to {:.0} m ({start:.0} m to {end:.0} m)",
+            c.index + 1,
+            c.count,
+            c.pool_start_m,
+            c.pool_end_m,
+        ),
+        None => format!("the pool from {start:.0} m to {end:.0} m"),
+    }
+}
+
+/// The sanity warning for a pool whose search could not close on its end pose at any end tried, and
+/// whose line would have broken its join, so it keeps the baseline (issue #565).
+fn unclosed_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    format!(
+        "{} keeps the baseline: its search could not end on the pool's end pose, even with the end \
+         moved, and its line would have joined the next piece {:.1} m and {:.1}° off, breaking \
+         R_min or crossing itself",
+        pool_name(p),
+        p.result.end_err_m,
+        p.result.end_heading_err_rad.to_degrees()
+    )
+}
+
+/// The sanity warning for a pool whose line crossed itself (at every search end tried) or crossed
+/// the rest of the design line, so it keeps the baseline (issue #569).
+fn looped_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    format!(
+        "{} keeps the baseline: {}",
+        pool_name(p),
+        p.kept_baseline_because.unwrap_or("its line makes a loop")
+    )
+}
+
+/// The sanity warning for a pool whose search closed only on an end moved along the baseline.
+fn moved_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    let from = p.end_moved_from_m.unwrap_or(p.end_m);
+    let (by, way) = if p.end_m >= from {
+        (p.end_m - from, "downstream")
+    } else {
+        (from - p.end_m, "upstream")
+    };
+    format!(
+        "{}: the search could not end on the pool's end pose with a line that does not cross \
+         itself, so its search end moved {by:.0} m {way}, to {:.0} m, where it does; the pool's \
+         water level and weir are unchanged, so check the line between {:.0} m and {:.0} m",
+        pool_name(p),
+        p.end_m,
+        from.min(p.end_m),
+        from.max(p.end_m)
+    )
+}
+
 /// A finite number, or null (JSON has no NaN).
 fn num_or_null(v: f64) -> Value {
     if v.is_finite() { json!(v) } else { Value::Null }
@@ -524,5 +634,82 @@ mod tests {
         j.position_gap_m = 0.0;
         j.heading_gap_rad = 0.0;
         assert!(join_warning(&j, 340.0, 113.0).ends_with("against R_min 340 m"));
+    }
+
+    /// Label: property (a capped pool's warning names the pool, or the piece and its pool).
+    #[test]
+    fn a_capped_warning_names_the_pool_or_the_piece() {
+        use owd_core::optimise::lattice::{
+            HalfWidthSpec, LatticeConfig, PoolAlignment, PoolPiece, SectionSpec,
+        };
+        let flat = |xs: &[f64], _: &[f64]| vec![0.0; xs.len()];
+        let line = [[0.0, 0.0], [100.0, 0.0]];
+        let poly = owd_core::geom::Polygon {
+            exterior: vec![
+                [0.0, -5.0],
+                [100.0, -5.0],
+                [100.0, 5.0],
+                [0.0, 5.0],
+                [0.0, -5.0],
+            ],
+            holes: vec![],
+        };
+        let mut cfg = LatticeConfig::new(50.0);
+        cfg.max_expand = 1;
+        let cfg = cfg.validated().unwrap();
+        let mut p: PoolAlignment = owd_core::optimise::lattice::optimise_pool(
+            &line,
+            &flat,
+            core::slice::from_ref(&poly),
+            0.0,
+            100.0,
+            0.0,
+            1.0,
+            &SectionSpec::new(HalfWidthSpec::Fixed(2.0)),
+            &cfg,
+            None,
+            owd_core::optimise::lattice::PoolOptions {
+                corridor_half_m: 20.0,
+                cell_m: 5.0,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            capped_warning(&p, 4_000_000),
+            "the pool from 0 m to 100 m was not searched: the search hit its limit of 4000000 \
+             expansions, so it keeps the baseline"
+        );
+        p.piece = Some(PoolPiece {
+            index: 1,
+            count: 3,
+            pool_start_m: 0.0,
+            pool_end_m: 300.0,
+        });
+        assert!(
+            capped_warning(&p, 9)
+                .starts_with("piece 2 of 3 of the pool from 0 m to 300 m (0 m to 100 m) was not")
+        );
+
+        // Label: property (a moved or unclosed pool's warning names the pool and the move).
+        p.piece = None;
+        p.end_m = 80.0;
+        p.end_moved_from_m = Some(100.0);
+        assert_eq!(
+            moved_warning(&p),
+            "the pool from 0 m to 100 m: the search could not end on the pool's end pose with a \
+             line that does not cross itself, so its search end moved 20 m upstream, to 80 m, where \
+             it does; the pool's water level and weir are unchanged, so check the line between 80 m \
+             and 100 m"
+        );
+        p.end_m = 100.0;
+        p.end_moved_from_m = None;
+        p.result.end_err_m = 7.34;
+        p.result.end_heading_err_rad = 14f64.to_radians();
+        assert_eq!(
+            unclosed_warning(&p),
+            "the pool from 0 m to 100 m keeps the baseline: its search could not end on the pool's \
+             end pose, even with the end moved, and its line would have joined the next piece \
+             7.3 m and 14.0° off, breaking R_min or crossing itself"
+        );
     }
 }

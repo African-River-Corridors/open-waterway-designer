@@ -1259,8 +1259,19 @@ pub fn optimise(
         })
         .collect();
     let c = &option["checks"];
-    let ok = c["radius_ok"].as_bool().unwrap_or(false);
-    let human = format!(
+    let radius = c["radius_ok"].as_bool().unwrap_or(false);
+    // R_min, and a line that crosses itself (issue #569), are both failed checks.
+    let failed: Vec<&str> = if radius {
+        failed_checks(&option)
+    } else {
+        let mut f = failed_checks(&option);
+        if !f.contains(&"R_min") {
+            f.insert(0, "R_min");
+        }
+        f
+    };
+    let ok = failed.is_empty();
+    let mut human = format!(
         "weirs: {}\nPool lattice: {} pool(s) re-routed, minimum radius {:.0} m on a {:.0} m chord against R_min {:.0} m: {}",
         if weirs.is_empty() {
             "none".to_string()
@@ -1271,14 +1282,19 @@ pub fn optimise(
         c["measured_min_radius_m"].as_f64().unwrap_or(f64::NAN),
         c["radius_check_chord_m"].as_f64().unwrap_or(f64::NAN),
         c["r_min_m"].as_f64().unwrap_or(f64::NAN),
-        if ok { "ok" } else { "FAILS R_min" }
+        if radius { "ok" } else { "FAILS R_min" }
     );
-    let human = if ok {
-        human
-    } else {
-        format!("{human}\nthe design line is saved, marked failed: R_min")
-    };
-    let failed: Vec<&str> = if ok { vec![] } else { vec!["R_min"] };
+    if let Some(at) = c["no_self_crossing"]["first_crossing_m"].as_f64() {
+        human.push_str(&format!(
+            "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
+        ));
+    }
+    if !ok {
+        human.push_str(&format!(
+            "\nthe design line is saved, marked failed: {}",
+            failed.join(", ")
+        ));
+    }
     say(
         dest == "-",
         json_mode,
