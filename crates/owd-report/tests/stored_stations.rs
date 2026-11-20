@@ -69,6 +69,9 @@ fn a_stale_record_is_not_read_as_fresh_in_the_quantity_schedule() {
     };
     let r = build(&s.to_text(), Some(&dem), &req).unwrap();
     let text = r.document.to_string();
-    assert!(text.contains("stale"), "the schedule says the volumes are stale");
+    assert!(
+        text.contains("stale"),
+        "the schedule says the volumes are stale"
+    );
     assert!(text.contains("not computed"));
 }
