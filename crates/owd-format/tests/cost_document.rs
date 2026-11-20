@@ -74,7 +74,10 @@ fn the_cost_of_the_document_is_the_rates_times_its_stored_volumes_by_reach() {
         assert_eq!(r.items.dredge.amount, 10.0 * d);
         assert_eq!(r.items.dry_cut.amount, 5.0 * x);
         assert_eq!(r.items.disposal.amount, 2.0 * t);
-        assert_eq!(r.items.haul.amount, 1.0 * t * 3.0);
+        // Haul is summed station by station (QA on PR 571): equal to the reach's volume times
+        // 3 km to rounding.
+        assert!((r.items.haul.amount - t * 3.0).abs() <= 1e-9 * (t * 3.0).max(1.0));
+        assert!((r.haul_m3_km - t * 3.0).abs() <= 1e-9 * (t * 3.0).max(1.0));
     }
     assert!(c.totals.total.amount > 0.0);
 }

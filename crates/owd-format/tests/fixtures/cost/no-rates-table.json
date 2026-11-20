@@ -7,7 +7,7 @@
         "from": 0.0,
         "to": 1000.0,
         "source": "given",
-        "stations": 41,
+        "stations": 4,
         "dredge_m3": 1000.0,
         "excav_m3": 200.0,
         "total_m3": 1200.0
@@ -17,10 +17,53 @@
         "to": 2000.0,
         "source": "pool",
         "pool": 0,
-        "stations": 40,
+        "stations": 4,
         "dredge_m3": 0.0,
         "excav_m3": 500.0,
         "total_m3": 500.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 500.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 750.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 1000.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1250.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1500.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1750.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
       }
     ],
     "volumes_fresh": true,

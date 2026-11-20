@@ -1,13 +1,13 @@
 {
   "label": "Label: property",
-  "why": "Reach 0 to 1000 m has no haul distance of its own and the run gives none: refused, never read as zero.",
+  "why": "No run distance, and the only haul stretch starts at 1000 m: the station at 0 m has no haul distance. Refused at its chainage, never read as zero.",
   "input": {
     "by_reach": [
       {
         "from": 0.0,
         "to": 1000.0,
         "source": "given",
-        "stations": 41,
+        "stations": 4,
         "dredge_m3": 1000.0,
         "excav_m3": 200.0,
         "total_m3": 1200.0
@@ -17,10 +17,53 @@
         "to": 2000.0,
         "source": "pool",
         "pool": 0,
-        "stations": 40,
+        "stations": 4,
         "dredge_m3": 0.0,
         "excav_m3": 500.0,
         "total_m3": 500.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 500.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 750.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 1000.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1250.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1500.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1750.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
       }
     ],
     "volumes_fresh": true,
@@ -53,7 +96,7 @@
     }
   },
   "expect": {
-    "code": "COST_RATE_MISSING",
+    "code": "COST_HAUL_UNCOVERED",
     "at": 0.0
   }
 }

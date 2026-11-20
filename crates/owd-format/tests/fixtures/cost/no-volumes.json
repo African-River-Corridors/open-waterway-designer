@@ -3,6 +3,8 @@
   "why": "The volumes stage has stored no volumes by reach: run it first.",
   "input": {
     "by_reach": [],
+    "station_m": 250.0,
+    "stations": [],
     "volumes_fresh": true,
     "rates": {
       "dredge_per_m3": {

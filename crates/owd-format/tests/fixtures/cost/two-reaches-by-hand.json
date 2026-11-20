@@ -1,13 +1,13 @@
 {
   "label": "Label: golden",
-  "why": "Rates 10, 5, 2 USD per m3 and 1 USD per m3 km. Reach 0 to 1000 m: dredge 1000 x 10 = 10000, dry cut 200 x 5 = 1000, disposal 1200 x 2 = 2400, haul 1200 x 1 x 3 km (the run's distance) = 3600; 17000 in all. Reach 1000 to 2000 m: 0, 500 x 5 = 2500, 500 x 2 = 1000, 500 x 1 x 5 km (its own distance) = 2500; 6000. Totals add the reach figures: 10000, 3500, 3400, 6100; 23000.",
+  "why": "Rates 10, 5, 2 USD per m3 and 1 USD per m3 km. Stations every 250 m: four in each reach (the one at 1000 m is in the upper reach); in the first, 1.0 m2 of dredge and 0.2 m2 of dry cut each (1000 and 200 m3 in all); in the second, 0.5 m2 of dry cut each (500 m3). Reach 0 to 1000 m: dredge 1000 x 10 = 10000, dry cut 200 x 5 = 1000, disposal 1200 x 2 = 2400, haul 1200 m3 x 3 km (the run's distance) x 1 = 3600; 17000 in all. Reach 1000 to 2000 m: 0, 500 x 5 = 2500, 500 x 2 = 1000, haul 500 m3 x 5 km (the stretch from 1000 m) x 1 = 2500; 6000. Totals add the reach figures: 10000, 3500, 3400, 6100; 23000.",
   "input": {
     "by_reach": [
       {
         "from": 0.0,
         "to": 1000.0,
         "source": "given",
-        "stations": 41,
+        "stations": 4,
         "dredge_m3": 1000.0,
         "excav_m3": 200.0,
         "total_m3": 1200.0
@@ -17,10 +17,53 @@
         "to": 2000.0,
         "source": "pool",
         "pool": 0,
-        "stations": 40,
+        "stations": 4,
         "dredge_m3": 0.0,
         "excav_m3": 500.0,
         "total_m3": 500.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 500.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 750.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 1000.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1250.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1500.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
+      },
+      {
+        "chainage_m": 1750.0,
+        "dredge_area_m2": 0.0,
+        "excav_area_m2": 0.5
       }
     ],
     "volumes_fresh": true,
@@ -60,7 +103,7 @@
         {
           "from": 0.0,
           "to": 1000.0,
-          "haul_km": 3.0,
+          "haul_m3_km": 3600.0,
           "items": {
             "dredge": {
               "amount": 10000.0,
@@ -87,7 +130,7 @@
         {
           "from": 1000.0,
           "to": 2000.0,
-          "haul_km": 5.0,
+          "haul_m3_km": 2500.0,
           "items": {
             "dredge": {
               "amount": 0.0,
