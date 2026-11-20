@@ -1,0 +1,40 @@
+{
+  "label": "Label: snapshot",
+  "why": "A CEMT Va barge under PIANC WG 141 at quality B with the draught set by the user: the draught in the answer is the user's.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "B"
+      }
+    ],
+    "vessel_standard_id": "CEMT_Va",
+    "draught_m": 3.0
+  },
+  "expect": {
+    "output": {
+      "rule_sets": "pianc-wg141@0.3.0 (se_quality B)",
+      "vessel_standard_id": "CEMT-Va",
+      "loa_m": 110.0,
+      "beam_m": 11.4,
+      "draught_m": 3.0,
+      "formation": "motor_vessel",
+      "bottom_width_straight_m": 36.480000000000004,
+      "min_bend_radius_m": 330.0,
+      "design_depth_m": 3.9000000000000004,
+      "bend_widening_at_rmin_m": 18.333333333333332,
+      "bottom_width_at_rmin_m": 54.81333333333333,
+      "width_basis": "rule"
+    }
+  }
+}

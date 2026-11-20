@@ -380,8 +380,8 @@ impl Session {
         terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         self.upstream_ready()?;
-        let shape = self.doc["stages"]["sizing"]["results"].clone();
-        let r_min = shape["min_bend_radius_m"].as_f64().unwrap_or(f64::NAN);
+        let size = self.channel_size()?;
+        let r_min = size.min_bend_radius_m;
         let settings = self.method_settings(method, overrides)?;
         let option = match method {
             AlignMethod::RollingCircle => self.water_aware_rolling_circle(&settings, r_min)?,
@@ -400,7 +400,7 @@ impl Session {
                         "the re-route needs a water level: set one with `owd import --water-level LEVEL` (a constant), `--water-slope` or `--water-table FILE`".into(),
                     )
                 })?;
-                let depth = shape["design_depth_m"].as_f64().unwrap_or(f64::NAN);
+                let depth = size.design_depth_m;
                 // The line it starts from: the rolling-circle option's, if there is one.
                 let start = self.doc["options"]
                     .as_array()
@@ -413,9 +413,7 @@ impl Session {
                     .unwrap_or_default();
                 let widest = sweep.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let params = GridParams {
-                    bottom_width: shape["bottom_width_straight_m"]
-                        .as_f64()
-                        .unwrap_or(f64::NAN),
+                    bottom_width: size.bottom_width_straight_m,
                     depth,
                     side_slope: num(&settings, "side_slope")?,
                     corridor_half: widest,
@@ -628,8 +626,8 @@ impl Session {
         };
         let clearance = opt_num(settings, "clearance_m")?.unwrap_or(0.0);
         let r_pref = opt_num(settings, "r_pref_m")?;
-        let shape = if use_water || self.seed_legs().is_some() {
-            Some(self.sized_shape()?)
+        let size = if use_water || self.seed_legs().is_some() {
+            Some(self.channel_size()?)
         } else {
             None
         };
@@ -648,7 +646,10 @@ impl Session {
         let base = match self.seed_legs() {
             None => self.base_line()?,
             Some((legs, fixed)) => {
-                let shape = shape.as_ref().expect("a shape when there are seed legs");
+                let shape = size
+                    .as_ref()
+                    .expect("a channel size when there are seed legs")
+                    .shape();
                 // Without water the legs are joined in open space: a box well round them.
                 let open = || {
                     let all: Vec<Pt> = legs.iter().flatten().copied().collect();
@@ -683,10 +684,10 @@ impl Session {
                 j.line
             }
         };
-        let wi = match (&water, &shape) {
+        let wi = match (&water, &size) {
             (Some(w), Some(sh)) => Some(WaterInput {
                 water: w,
-                shape: sh,
+                shape: sh.shape(),
                 clearance_m: clearance,
                 smooth_m: 0.0,
                 r_pref_m: r_pref,

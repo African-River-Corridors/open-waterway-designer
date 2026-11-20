@@ -1,0 +1,33 @@
+{
+  "label": "Label: sourced - GB 50139-2014, class IV clearance 0.3 m at the strict end",
+  "why": "A typed GB class overrides the class found by tonnage: 2.5 m + 0.3 m = 2.8 m.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "gb50139",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "range_end",
+        "value": "strict"
+      },
+      {
+        "name": "gb_class",
+        "value": "IV"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV",
+    "draught_m": 2.5
+  },
+  "expect": {
+    "output": {
+      "design_depth_m": 2.8
+    }
+  }
+}

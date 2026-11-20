@@ -28,6 +28,7 @@ pub mod schema;
 pub mod screening;
 pub mod sections;
 pub mod session;
+pub mod sizing;
 pub mod stage_terrain;
 pub mod table;
 pub mod terrain;
