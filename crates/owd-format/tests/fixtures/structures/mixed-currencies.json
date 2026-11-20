@@ -1,0 +1,76 @@
+{
+  "label": "Label: property",
+  "why": "One cost in USD and one in EUR: the structures are priced in one currency.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "name": "weir A",
+          "kind": "weir",
+          "site": {
+            "chainage": 300.0
+          },
+          "upstream_level_m": 10.0,
+          "height_m": 4.0,
+          "cost": {
+            "amount": 1000000.0,
+            "currency": "USD"
+          }
+        },
+        {
+          "name": "lock B",
+          "kind": "lock",
+          "site": {
+            "chainage": 600.0
+          },
+          "upstream_level_m": 12.0,
+          "height_m": 5.0,
+          "cost": {
+            "amount": 2000000.0,
+            "currency": "EUR"
+          }
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      }
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ],
+      [
+        1000.0,
+        9.0
+      ]
+    ]
+  },
+  "expect": {
+    "error": "WEIRS_MIXED_CURRENCY"
+  }
+}

@@ -242,10 +242,11 @@ impl Session {
         let trace = match option {
             None => selection.check(&vessel, &sized),
             Some(id) => {
-                let o = self.doc["options"]
-                    .as_array()
-                    .and_then(|l| l.iter().find(|o| o["id"] == id))
-                    .ok_or_else(|| DesignError::Input(format!("no design line option `{id}`")))?;
+                let lines = self.design_lines();
+                let o = lines
+                    .iter()
+                    .find(|o| o["id"] == id)
+                    .ok_or_else(|| DesignError::Input(format!("no design line `{id}`")))?;
                 let line: Vec<Pt> = all_positions(&o["line"]);
                 let chord = o["checks"]["radius_check_chord_m"]
                     .as_f64()
@@ -360,7 +361,8 @@ mod tests {
             "checks": {"radius_ok": true, "r_min_m": 330.0, "radius_check_chord_m": 100.0},
             "details": {},
         });
-        s.doc["options"] = json!([option.clone()]);
+        s.doc["stages"]["alignment"]["results"] =
+            json!(crate::design::DesignLine::from_old_option(&option).unwrap());
         let stations = line
             .iter()
             .enumerate()
@@ -387,6 +389,8 @@ mod tests {
                     bench_right: false,
                     tag: String::new(),
                     has_water: true,
+                    weighted_dredge_area_m2: None,
+                    weighted_excav_area_m2: None,
                 }
             })
             .collect();

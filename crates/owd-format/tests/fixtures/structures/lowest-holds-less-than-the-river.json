@@ -1,0 +1,64 @@
+{
+  "label": "Label: property",
+  "why": "The river is 8.3 m at 300 m; weir A says it holds 8 m there: it holds nothing back.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "name": "weir A",
+          "kind": "weir",
+          "site": {
+            "chainage": 300.0
+          },
+          "upstream_level_m": 8.0,
+          "height_m": 4.0,
+          "cost": {
+            "amount": 1000000.0,
+            "currency": "USD"
+          }
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      }
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ],
+      [
+        1000.0,
+        9.0
+      ]
+    ]
+  },
+  "expect": {
+    "error": "WEIRS_LEVELS_NOT_STEPPED",
+    "at": 300.0
+  }
+}

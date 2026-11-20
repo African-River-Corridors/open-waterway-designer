@@ -140,11 +140,8 @@ const snapshot: Snapshot = {
       alignment: { settings: null, results: null }, optimise: { settings: null, results: null },
       volumes: {
         settings: null,
-        results: { options: [
-          { id: "o1", name: opts[0].name, screening: screening("not-navigable", stretchList) },
-          { id: "o2", name: opts[1].name, screening: screening("navigable-with-works", []) },
-          { id: "o3", name: opts[2].name, screening: screening("navigable-as-is", []) },
-        ] },
+        // One design line per run (spec 0017): the volumes row of the first.
+        results: { id: "o1", name: opts[0].name, screening: screening("not-navigable", stretchList) },
       },
     },
   },

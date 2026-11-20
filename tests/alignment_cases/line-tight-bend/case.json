@@ -64,7 +64,7 @@
     {
       "name": "checked_against_m",
       "read": {
-        "pointer": "/options/0/checks/r_min_m"
+        "pointer": "/stages/alignment/results/checks/r_min_m"
       },
       "value": 255.0,
       "class": "exact",
@@ -76,7 +76,7 @@
     {
       "name": "radius_ok",
       "read": {
-        "pointer": "/options/0/checks/radius_ok"
+        "pointer": "/stages/alignment/results/checks/radius_ok"
       },
       "value": false,
       "class": "exact",

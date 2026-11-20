@@ -1,0 +1,16 @@
+{
+  "label": "Label: property",
+  "why": "Capacity's unit is open (spec 0017, open assumption 1): a bound on it is refused until it is settled.",
+  "input": {
+    "limits": [
+      {
+        "measure": "capacity",
+        "bound": "at_least",
+        "value": 1000.0
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_UNIT_OPEN"
+  }
+}

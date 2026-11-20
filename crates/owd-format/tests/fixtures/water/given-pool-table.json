@@ -1,0 +1,115 @@
+{
+ "label": "Label: golden",
+ "why": "A pool table given by the engineer (12 m to 400 m, then 10 m) is a stepped given profile. The stage keeps the step: two points at 400 m, the later level holding at 400 m itself.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "given": [
+   [
+    0.0,
+    12.0
+   ],
+   [
+    400.0,
+    12.0
+   ],
+   [
+    400.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 400.0,
+     "river_chainage": 400.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 400.0,
+     "river_chainage": 400.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 10.0,
+     "source": "given"
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 1000.0,
+     "source": "given"
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    399.0,
+    12.0
+   ],
+   [
+    400.0,
+    10.0
+   ],
+   [
+    401.0,
+    10.0
+   ]
+  ]
+ }
+}

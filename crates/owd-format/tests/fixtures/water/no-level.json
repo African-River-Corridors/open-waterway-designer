@@ -1,0 +1,30 @@
+{
+ "label": "Label: property",
+ "why": "Neither a given profile nor a pool: there is no water level to read.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0
+ },
+ "expect": {
+  "error": "WATER_NO_LEVEL"
+ }
+}

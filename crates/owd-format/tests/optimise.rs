@@ -226,10 +226,8 @@ fn weirs_pools_and_the_lattice_option_equal_the_core_called_directly() {
         true,
     )
     .unwrap();
-    let opt = s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    let opt = owd_format::design::design_lines_of(s.document())
+        .into_iter()
         .find(|o| o["method"] == "lattice")
         .unwrap()
         .clone();
@@ -259,18 +257,16 @@ fn weirs_pools_and_the_lattice_option_equal_the_core_called_directly() {
 }
 
 #[test]
-fn volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels() {
+fn volumes_measure_the_lattice_line_under_the_pool_levels() {
     let mut s = design();
     s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
     assert_eq!(s.stage_status(Stage::Volumes), StageStatus::NotRun);
     s.run_volumes(&json!({"cut_model": "b", "maxw_m": 120.0}), Some(&terrain))
         .unwrap();
-    let rows = s.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .unwrap()
-        .clone();
+    let rows = owd_format::design::volume_rows_of(s.document());
     let ids: Vec<&str> = rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["rolling-circle", "lattice"]);
+    // One design line per run (spec 0017): the lattice's refined line is the one measured.
+    assert_eq!(ids, ["lattice"]);
     assert!(rows.iter().all(|r| r["water_source"] == "optimise"));
     // The profile is the pool levels: a step of the weir's lift where the weir stands.
     let (profile, source) = s.water_profile().unwrap();
@@ -285,8 +281,6 @@ fn volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels() {
     assert!(!steps.is_empty(), "{profile:?}");
     assert!((steps[0][1][1] - steps[0][0][1] - lift).abs() < 1e-9);
     assert!(rows.iter().all(|r| r["dredge_m3"].as_f64().unwrap() > 0.0));
-    // The lattice moves dredge to dry cut, as the example shows: more dredge, less dry cut.
-    assert!(rows[1]["excav_m3"].as_f64().unwrap() < rows[0]["excav_m3"].as_f64().unwrap());
     // A new optimise run leaves the volumes stale.
     s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
     assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh);
@@ -299,10 +293,8 @@ fn volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels() {
 fn the_lattice_option_carries_a_sanity_entry_like_every_other_option() {
     let mut s = design();
     s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
-    let o = s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    let o = owd_format::design::design_lines_of(s.document())
+        .into_iter()
         .find(|o| o["method"] == "lattice")
         .unwrap()
         .clone();

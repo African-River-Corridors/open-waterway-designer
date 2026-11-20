@@ -95,7 +95,7 @@ fn volumes(wgs84: bool) -> (Session, Value) {
     s.set_water_profile(&[[0.0, 0.0]]).unwrap();
     s.run_volumes(&json!({"cut_model": "b"}), Some(&terrain))
         .unwrap();
-    let rows = s.document()["stages"]["volumes"]["results"]["options"][0].clone();
+    let rows = s.document()["stages"]["volumes"]["results"].clone();
     (s, rows)
 }
 

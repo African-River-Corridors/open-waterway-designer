@@ -1,0 +1,73 @@
+{
+  "label": "Label: property",
+  "why": "The rates are in USD and the weir's cost in EUR: one cost is in one currency.",
+  "input": {
+    "by_reach": [
+      {
+        "from": 0.0,
+        "to": 250.0,
+        "source": "open_river",
+        "stations": 1,
+        "dredge_m3": 200.0,
+        "excav_m3": 50.0,
+        "total_m3": 250.0
+      },
+      {
+        "from": 250.0,
+        "to": 500.0,
+        "source": "pool",
+        "pool": 0,
+        "stations": 1,
+        "dredge_m3": 200.0,
+        "excav_m3": 50.0,
+        "total_m3": 250.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      }
+    ],
+    "volumes_fresh": true,
+    "rates": {
+      "dredge_per_m3": {
+        "amount": 10.0,
+        "currency": "USD"
+      },
+      "dry_cut_per_m3": {
+        "amount": 5.0,
+        "currency": "USD"
+      },
+      "disposal_per_m3": {
+        "amount": 2.0,
+        "currency": "USD"
+      },
+      "haul_per_m3_km": {
+        "amount": 1.0,
+        "currency": "USD"
+      },
+      "haul_km": 2.0
+    },
+    "structures": [
+      {
+        "pool": 0,
+        "chainage": 250.0,
+        "cost": {
+          "amount": 1000000.0,
+          "currency": "EUR"
+        }
+      }
+    ]
+  },
+  "expect": {
+    "code": "COST_MIXED_CURRENCY"
+  }
+}

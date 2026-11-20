@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/African-River-Corridors/open-waterway-designer/schema/owd.schema.json",
-  "title": "Open Waterway Designer document (.owd), format 0.4",
+  "title": "Open Waterway Designer document (.owd), format 0.5",
   "description": "One screening study of one river reach for one vessel: its inputs, the choices made and the results of each stage. Each stage records a hash of what it depended on; a stage whose hash no longer matches is stale. Numbers are SI. Geometry is GeoJSON in the project CRS.",
   "type": "object",
-  "required": ["format_version", "engine_version", "project", "inputs", "stages", "options"],
+  "required": ["format_version", "engine_version", "project", "inputs", "stages"],
   "additionalProperties": false,
   "properties": {
     "format_version": {
-      "description": "The string \"0.4\" since spec 0015 (the custom vessel). A file with the number 3 (format 0.3, spec 0007) opens and is saved as 0.4. An older file is refused, with no migration: rebuild the design.",
-      "const": "0.4"
+      "description": "The string \"0.5\" since spec 0017 ticket 6 (one design line per run). A 0.4 file opens and is saved as 0.5: its rolling-circle option (or the first other one) becomes the design line, its pool-lattice option the optimise stage's refined line, any other option is not kept, and its stages after sizing are marked stale. A file with the number 3 (format 0.3, spec 0007) opens the same way. An older file is refused, with no migration: rebuild the design.",
+      "const": "0.5"
     },
     "engine_version": { "type": "string", "minLength": 1 },
     "project": {
@@ -172,28 +172,6 @@
           "type": "array",
           "items": { "$ref": "#/$defs/line" }
         },
-        "reference_line": {
-          "description": "Spec 0016: the reference line, one smooth line in the water that belongs to no vessel: the smoothed mid-line of the banks, refitted in the water. Made from the banks and the river polygon, and stale when they change (`depends_on`). Chainage is along `line`, in metres from its start. Optional.",
-          "type": "object",
-          "required": ["line", "parameters", "depends_on"],
-          "additionalProperties": false,
-          "properties": {
-            "line": { "$ref": "#/$defs/line" },
-            "parameters": { "type": "object" },
-            "depends_on": { "type": "string" },
-            "low_confidence": {
-              "description": "The banks' low-confidence stretches (`low_confidence_width`), carried onto the line by position.",
-              "type": "array",
-              "items": { "$ref": "#/$defs/line_stretch" }
-            },
-            "outside_water": {
-              "description": "Stretches where the water is too narrow to hold the line.",
-              "type": "array",
-              "items": { "$ref": "#/$defs/line_stretch" }
-            },
-            "notes": { "type": "array", "items": { "type": "string" } }
-          }
-        },
         "banks": {
           "description": "What the bank source says about the banks (draft ADR 0016, banks are a dataset): who made them, how accurate they are, and where the source is unsure. The bank lines stay in left_bank and right_bank. Optional; no member is required.",
           "type": "object",
@@ -231,6 +209,163 @@
             }
           }
         },
+        "mouth": {
+          "description": "Spec 0017: the river mouth, where chainage 0 is. `point` is the first point of the stored centreline, in the project CRS: the river lines are stored running from it, and every river chainage (the water level, the bed depths, the waterway reaches, the low-confidence stretches) counts from it. `stated_as` says whether the user gave the point or said `downstream` (the lower end, by the water level or the ground). Null or absent: no mouth is stated, and chainage runs from the first point of the stored centreline.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["point", "stated_as"],
+              "additionalProperties": false,
+              "properties": {
+                "point": { "$ref": "#/$defs/position" },
+                "stated_as": { "enum": ["point", "downstream"] }
+              }
+            }
+          ]
+        },
+        "run": {
+          "description": "Spec 0017 ticket 11: the run inputs (`schema/stages/inputs.run.1.schema.json`). `objective`: one design measure to minimise or maximise. `limits`: design measures each with a bound, at most one bound of each kind on a measure; a bound on cost is money and names its currency, a bound on another measure is in that measure's unit (m³ for the cuts, m² for land take, m for line length, a count of structures) and names none; a bound on capacity is refused until its unit is settled. `target_level`: the output level the run aims at. Every part is optional. Absent: no objective, no limits, and the target is concept. Nothing optimises on them yet.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "objective": {
+              "type": "object",
+              "required": ["measure", "sense"],
+              "additionalProperties": false,
+              "properties": {
+                "measure": { "$ref": "#/$defs/design_measure" },
+                "sense": { "enum": ["minimise", "maximise"] }
+              }
+            },
+            "limits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["measure", "bound", "value"],
+                "additionalProperties": false,
+                "properties": {
+                  "measure": { "$ref": "#/$defs/design_measure" },
+                  "bound": { "enum": ["at_most", "at_least"] },
+                  "value": { "type": "number", "minimum": 0 },
+                  "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+                }
+              }
+            },
+            "target_level": { "enum": ["concept", "pre_feasibility", "feasibility"] }
+          }
+        },
+        "rates": {
+          "description": "Spec 0017 ticket 12: the rates table (`schema/stages/inputs.rates.1.schema.json`): one rate per item, each an amount and a currency, all in one currency: dredge and dry cut per m³, disposal per m³ of all cut, haul per m³ per km. `haul_km` is the run's haul distance; `haul_by_reach` gives stretches of design-line chainage their own. A rate left out is refused when the cost is worked out, never read as zero. Absent: no cost.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dredge_per_m3": { "$ref": "#/$defs/money" },
+            "dry_cut_per_m3": { "$ref": "#/$defs/money" },
+            "disposal_per_m3": { "$ref": "#/$defs/money" },
+            "haul_per_m3_km": { "$ref": "#/$defs/money" },
+            "haul_km": { "type": "number", "minimum": 0 },
+            "haul_by_reach": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["reach", "km"],
+                "additionalProperties": false,
+                "properties": {
+                  "reach": {
+                    "type": "object",
+                    "required": ["from", "to"],
+                    "additionalProperties": false,
+                    "properties": { "from": { "type": "number" }, "to": { "type": "number" } }
+                  },
+                  "km": { "type": "number", "minimum": 0 }
+                }
+              }
+            }
+          }
+        },
+        "constraints": {
+          "description": "Spec 0017 ticket 13: the run's constraints (`schema/stages/inputs.constraints.1.schema.json`). `no_go`: polygons in the project CRS (an outer ring and holes, each a list of [x, y] points), each with a unique name and a kind; the re-route treats them as impassable and every design line reports those it touches. `cut_rate_multiplier`: a raster referenced like the DEM (path relative to the document, SHA-256, CRS, nodata), whose cell value multiplies the cut rate in that cell; no data means 1. Absent: no constraints.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "no_go": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "kind", "polygon"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "kind": { "type": "string", "minLength": 1 },
+                  "polygon": {
+                    "type": "object",
+                    "required": ["shell"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "shell": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/position" } },
+                      "holes": {
+                        "type": "array",
+                        "items": { "type": "array", "minItems": 3, "items": { "$ref": "#/$defs/position" } }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "cut_rate_multiplier": {
+              "type": "object",
+              "required": ["path", "sha256", "crs", "nodata"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+                "crs": { "type": "string" },
+                "nodata": { "type": ["number", "null"] }
+              }
+            }
+          }
+        },
+        "structures": {
+          "description": "Spec 0017 ticket 14: given weirs and locks (`schema/stages/inputs.structures.1.schema.json`). `mode`: `given` (the search over candidate sites is ticket 15). `items`: each with a site (`{\"chainage\": river chainage from the mouth}` or `{\"point\": [x, y]}` in the project CRS), the mean water level it holds upstream, its height, its cost (an amount and a currency, one currency for all), and optionally a name and a kind (`weir`, `lock` or `weir_and_lock`; a weir when not given). `pool_levels`: the allowances below and above each pool's level that give its minimum level (navigation depth is checked there) and its maximum level (flood risk is checked there), written out in full. The volumes read the structures; no stage before them does. Absent: no weirs or locks.",
+          "type": "object",
+          "required": ["mode", "items"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["given"] },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["site", "upstream_level_m", "height_m", "cost"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "kind": { "enum": ["weir", "lock", "weir_and_lock"] },
+                  "site": {
+                    "oneOf": [
+                      { "type": "object", "required": ["chainage"], "additionalProperties": false, "properties": { "chainage": { "type": "number" } } },
+                      { "type": "object", "required": ["point"], "additionalProperties": false, "properties": { "point": { "$ref": "#/$defs/position" } } }
+                    ]
+                  },
+                  "upstream_level_m": { "type": "number" },
+                  "height_m": { "type": "number", "exclusiveMinimum": 0 },
+                  "cost": { "$ref": "#/$defs/money" }
+                }
+              }
+            },
+            "pool_levels": {
+              "type": "object",
+              "required": ["below_m", "above_m"],
+              "additionalProperties": false,
+              "properties": {
+                "below_m": { "type": "number", "minimum": 0 },
+                "above_m": { "type": "number", "minimum": 0 }
+              }
+            }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
@@ -252,8 +387,20 @@
         "alignment": { "$ref": "#/$defs/alignment_stage" },
         "optimise": { "$ref": "#/$defs/stage" },
         "volumes": { "$ref": "#/$defs/stage" },
+        "reference_line": {
+          "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of its whole input and the project CRS. The results' `line_basis` is the hash of what shapes the line (the banks, the river polygon, the project CRS and the parameters; the formula used before it was a stage): the bed is centred on the line while it matches. Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, keeping its hash, so a fresh line stays fresh. Optional.",
+          "$ref": "#/$defs/stage"
+        },
+        "structures": {
+          "description": "Spec 0017 ticket 14: the given weirs and locks placed on the river and the design line, as a stage record (`schema/stages/structures.1.schema.json`): the pool-level allowances as `settings`; the structures (river and design-line chainage, site, upstream and downstream level, lift, and the height, footprint and cost the structures seam returned, with their source: given or seam) and the pools between them (river and design-line chainage, level, minimum and maximum level) as `results`; and as `depends_on` the hash of the input it read. Not a stage of the chain: the volumes stage runs it with the given structures, and removes it when there are none. Optional.",
+          "$ref": "#/$defs/stage"
+        },
+        "water": {
+          "description": "Spec 0017 ticket 8: the water level along the design line, as a stage record (`schema/stages/water.1.schema.json`): the step between points as `settings`, the points (design-line chainage, the river chainage each was read at, the level, where it comes from: given, pool or open river, a pool's minimum and maximum level when it has them, and whether it is held flat beyond the profile's ends) and the stretches as `results`, and as `depends_on` the hash of the input it read. Not a stage of the chain: the volumes stage runs it, and no other stage's hash reads it. Optional.",
+          "$ref": "#/$defs/stage"
+        },
         "plan_cut": {
-          "description": "Ticket C2b: the plan cut of each design line option, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, an option's line or the settings change. Optional.",
+          "description": "Ticket C2b: the plan cut of the design line, the fairway at the water surface less the river polygon (`owd plan-cut`). Plan only: no terrain, no water level. Not a stage of the chain: never rerun by `run`, stale when the river, its banks or centreline, the CRS, the sizing, the design line or the settings change. Optional.",
           "type": "object",
           "required": ["settings", "results", "depends_on"],
           "properties": {
@@ -279,11 +426,6 @@
     "fits": {
       "description": "The answer to \"what fits\" over every vessel class (spec 0012). It is not a stage: it never reruns by itself, and it shows as stale when the banks or the centreline change.",
       "$ref": "#/$defs/stage"
-    },
-    "options": {
-      "description": "Design line options, added by the alignment and optimise stages.",
-      "type": "array",
-      "items": { "type": "object" }
     },
     "reach": {
       "description": "Spec 0012: the reach the study was started from. Start, end and via points and the trace are the user's own longitude-latitude clicks. The route is OSM way ids only, never OSM geometry (ODbL); a stretch with no waterway near it is kept as the user drew it, kind `as-drawn`. Optional.",
@@ -364,6 +506,19 @@
     }
   },
   "$defs": {
+    "money": {
+      "type": "object",
+      "required": ["amount", "currency"],
+      "additionalProperties": false,
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "minLength": 3, "maxLength": 3 }
+      }
+    },
+    "design_measure": {
+      "description": "Spec 0017: one quantity of the whole design.",
+      "enum": ["cost", "total_cut", "dredge", "dry_cut", "land_take", "line_length", "structure_count", "capacity"]
+    },
     "provenance_record": {
       "type": "object",
       "required": ["source", "date", "notice", "mark"],
@@ -458,9 +613,22 @@
       "additionalProperties": false,
       "properties": {
         "settings": {
-          "description": "Settings of each alignment method, by method name. A setting left out takes its default.",
+          "description": "The method that makes the one design line (`method`), the settings of each method by method name, and the line the user gave (`given`) for the method `given`. A setting left out takes its default.",
           "type": ["object", "null"],
           "properties": {
+            "method": {
+              "description": "Spec 0017: the method that makes the one design line. Default rolling_circle.",
+              "enum": ["rolling_circle", "reroute", "centreline", "given"]
+            },
+            "given": {
+              "description": "Ticket C21: the line the user gave, for the method `given`: its name and its points in the project CRS.",
+              "type": "object",
+              "required": ["name", "line"],
+              "properties": {
+                "name": { "type": "string" },
+                "line": { "$ref": "#/$defs/line" }
+              }
+            },
             "rolling_circle": {
               "type": "object",
               "properties": {
@@ -492,7 +660,10 @@
             }
           }
         },
-        "results": { "type": ["object", "null"] },
+        "results": {
+          "description": "Spec 0017: the one design line (`schema/stages/alignment.1.schema.json`): its line from the mouth, its method and settings, its checks, its bends and its cut-offs. Null until the stage has run.",
+          "type": ["object", "null"]
+        },
         "depends_on": { "$ref": "#/$defs/hash_or_null" },
         "engine_version": { "type": ["string", "null"] }
       }

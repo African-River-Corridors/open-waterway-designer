@@ -1,0 +1,67 @@
+{
+  "label": "Label: property",
+  "why": "A weir given as a point 30 m from the design line, more than half the 20 m channel width.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "name": "weir A",
+          "kind": "weir",
+          "site": {
+            "point": [
+              500.0,
+              40.0
+            ]
+          },
+          "upstream_level_m": 10.0,
+          "height_m": 4.0,
+          "cost": {
+            "amount": 1000000.0,
+            "currency": "USD"
+          }
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 1.0
+      }
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ],
+      [
+        1000.0,
+        9.0
+      ]
+    ]
+  },
+  "expect": {
+    "error": "WEIRS_SITE_OFF_LINE",
+    "at": 500.0
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "label": "Label: golden",
+  "why": "A weir given as a point 4 m off the design line (inside half the 20 m channel width): it projects to river chainage 400 m and design-line chainage 400 m, and sits on the design line at (400, 10). The river is 8 m everywhere, so it lifts 9.5 - 8 = 1.5 m. No allowance given: the defaults, 0.5 m below and 0.5 m above, give a pool from 400 m to the end at 9.5 m, min 9 m, max 10 m. No kind given: a weir.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "design_line": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        10.0
+      ]
+    ],
+    "channel_width_m": 20.0,
+    "structures": {
+      "mode": "given",
+      "items": [
+        {
+          "site": {
+            "point": [
+              400.0,
+              14.0
+            ]
+          },
+          "upstream_level_m": 9.5,
+          "height_m": 3.0,
+          "cost": {
+            "amount": 500000.0,
+            "currency": "USD"
+          }
+        }
+      ]
+    },
+    "step_m": 250.0,
+    "given_water": [
+      [
+        0.0,
+        8.0
+      ]
+    ]
+  },
+  "expect": {
+    "output": {
+      "structures": [
+        {
+          "id": 0,
+          "kind": "weir",
+          "river_chainage": 400.0,
+          "chainage": 400.0,
+          "point": [
+            400.0,
+            10.0
+          ],
+          "upstream_level_m": 9.5,
+          "downstream_level_m": 8.0,
+          "lift_m": 1.5,
+          "height_m": 3.0,
+          "cost": {
+            "amount": 500000.0,
+            "currency": "USD"
+          },
+          "source": "given"
+        }
+      ],
+      "pools": [
+        {
+          "held_by": 0,
+          "river_from": 400.0,
+          "river_to": 1000.0,
+          "from": 400.0,
+          "to": 1000.0,
+          "level_m": 9.5,
+          "min_level_m": 9.0,
+          "max_level_m": 10.0
+        }
+      ],
+      "pool_levels": {
+        "below_m": 0.5,
+        "above_m": 0.5
+      },
+      "currency": "USD"
+    }
+  }
+}

@@ -131,13 +131,11 @@ fn design(cl: &[Pt]) -> Session {
     s
 }
 
+/// The lattice's design line (one design line per run, spec 0017).
 fn lattice_option(s: &Session) -> Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    owd_format::design::design_lines_of(s.document())
+        .into_iter()
         .find(|o| o["method"] == "lattice")
-        .cloned()
         .unwrap()
 }
 

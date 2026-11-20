@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Structures",
+  "description": "The `inputs.structures` block: the structures and the rule for minimum and maximum pool levels.\nAbsent: no weirs or locks.",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "description": "How the structures are found.",
+      "$ref": "#/$defs/StructuresMode"
+    },
+    "items": {
+      "description": "The given structures, in any order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GivenStructure"
+      }
+    },
+    "pool_levels": {
+      "description": "The rule for minimum and maximum pool levels. Written out in full when stored, so a later\nchange of default never changes what a stored design meant.",
+      "$ref": "#/$defs/PoolLevelRule",
+      "default": {
+        "below_m": 0.5,
+        "above_m": 0.5
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "mode",
+    "items"
+  ],
+  "$defs": {
+    "StructuresMode": {
+      "description": "How the structures are found. Only `given` today; the search over candidate sites is ticket 15.",
+      "oneOf": [
+        {
+          "description": "The engineer gives each structure.",
+          "type": "string",
+          "const": "given"
+        }
+      ]
+    },
+    "GivenStructure": {
+      "description": "One structure the engineer gives.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "A name for reports.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "Weir, lock, or both. A weir when not given.",
+          "$ref": "#/$defs/StructureKind",
+          "default": "weir"
+        },
+        "site": {
+          "description": "Where it is.",
+          "$ref": "#/$defs/Site"
+        },
+        "upstream_level_m": {
+          "description": "The mean water level it holds upstream: its pool's design level, metres above datum.",
+          "type": "number",
+          "format": "double"
+        },
+        "height_m": {
+          "description": "The structure's height, metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "description": "What it costs.",
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "site",
+        "upstream_level_m",
+        "height_m",
+        "cost"
+      ]
+    },
+    "StructureKind": {
+      "description": "What a structure is.",
+      "oneOf": [
+        {
+          "description": "A weir: it holds the pool; vessels do not pass it.",
+          "type": "string",
+          "const": "weir"
+        },
+        {
+          "description": "A lock: vessels pass it.",
+          "type": "string",
+          "const": "lock"
+        },
+        {
+          "description": "A weir with a lock beside it.",
+          "type": "string",
+          "const": "weir_and_lock"
+        }
+      ]
+    },
+    "Site": {
+      "description": "Where a structure is: a river chainage from the mouth, or a point in the project CRS.",
+      "oneOf": [
+        {
+          "description": "River chainage from the mouth, metres.",
+          "type": "object",
+          "properties": {
+            "chainage": {
+              "$ref": "#/$defs/Chainage"
+            }
+          },
+          "required": [
+            "chainage"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "description": "A point `[x, y]` in the project CRS. It must lie within half the channel width of the design\nline; its river chainage is where it projects onto the river centreline.",
+          "type": "object",
+          "properties": {
+            "point": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            }
+          },
+          "required": [
+            "point"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    },
+    "Money": {
+      "description": "An amount of money and its currency.\n\nAn amount is checked when it is made (`Money::new`) and again when it is read from JSON.",
+      "type": "object",
+      "properties": {
+        "amount": {
+          "description": "The amount, in the currency's main unit.",
+          "type": "number",
+          "format": "double"
+        },
+        "currency": {
+          "description": "ISO 4217 code: three capital letters.",
+          "type": "string",
+          "pattern": "^[A-Z]{3}$"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ]
+    },
+    "PoolLevelRule": {
+      "description": "How a pool's minimum and maximum levels follow from its level: an allowance below and above,\none pair for the run.",
+      "type": "object",
+      "properties": {
+        "below_m": {
+          "description": "The minimum level is the pool's level less this, metres. Navigation depth is checked there.",
+          "type": "number",
+          "format": "double"
+        },
+        "above_m": {
+          "description": "The maximum level is the pool's level plus this, metres. Flood risk is checked there.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "below_m",
+        "above_m"
+      ]
+    }
+  }
+}

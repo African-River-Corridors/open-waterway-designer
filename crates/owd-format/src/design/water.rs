@@ -7,8 +7,10 @@
 //! the later point holds. The optimise stage's pool levels are such a table and, once it has run,
 //! they are the profile the volumes stage reads.
 
-use super::session::{DesignError, Session, Stage};
-use crate::types::{Chainage, WaterProfile};
+use super::hash::hash_value;
+use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
+use super::water_stage::{self, BeyondPools, DEFAULT_STEP_M, DesignWater, Pool, WaterIn};
+use crate::types::{Chainage, Polyline, WaterProfile};
 use owd_core::geom::{Pt, linear};
 use serde_json::{Value, json};
 
@@ -152,6 +154,121 @@ impl Session {
             }
         }
         self.input_water_profile().map(|p| (p, "input"))
+    }
+
+    /// The optimise stage's pool levels as pools: its stored profile is each pool's two ends on river
+    /// chainage, in order. Empty when it has not run.
+    fn optimise_pools(&self) -> Vec<Pool> {
+        let opt = &self.doc["stages"]["optimise"]["results"];
+        if opt.is_null() {
+            return vec![];
+        }
+        profile_of(&opt["profile"])
+            .to_pairs()
+            .chunks(2)
+            .map(|c| Pool {
+                from: Chainage(c[0][0]),
+                to: Chainage(c.get(1).map_or(c[0][0], |e| e[0])),
+                level_m: c[0][1],
+                min_level_m: None,
+                max_level_m: None,
+            })
+            .collect()
+    }
+
+    /// What the water stage reads (spec 0017 ticket 8): the river centreline, the design line the
+    /// later stages read, the water profile of the inputs and the optimise stage's pools, read as
+    /// the volumes stage has always read them (held flat beyond their ends). `None` without a design
+    /// line or a river centreline.
+    ///
+    /// With given structures (ticket 14), the pools are theirs, not the optimise stage's: each is
+    /// held flat from its structure to the next, with its minimum and maximum level, and the river
+    /// is open below the lowest structure. `None` too when the structures cannot be placed on the
+    /// line ([`Session::try_water_input`] says why).
+    pub fn water_input(&self) -> Option<WaterIn> {
+        self.try_water_input().ok().flatten()
+    }
+
+    /// [`Session::water_input`], with the reason when the given structures cannot be placed.
+    pub fn try_water_input(&self) -> Result<Option<WaterIn>, DesignError> {
+        let Some(design_line) = self.final_line().map(|d| d.line) else {
+            return Ok(None);
+        };
+        let Ok(centreline) = self.river_centreline() else {
+            return Ok(None);
+        };
+        self.water_input_on(design_line, Polyline(centreline))
+            .map(Some)
+    }
+
+    /// What the water stage reads for `design_line`: the same river, water and pools. The step is
+    /// the volumes stage's station step, so each volumes station is a point of the answer.
+    pub(super) fn water_input_on(
+        &self,
+        design_line: Polyline,
+        centreline: Polyline,
+    ) -> Result<WaterIn, DesignError> {
+        let step_m = self
+            .volumes_settings(&Value::Null)
+            .map_or(DEFAULT_STEP_M, |v| v.station_m);
+        let (pools, beyond_pools) =
+            match self.structure_plan_on(design_line.clone(), centreline.clone())? {
+                Some((_, plan)) => (plan.water_pools(), BeyondPools::OpenRiver),
+                None => (self.optimise_pools(), BeyondPools::HoldPoolLevel),
+            };
+        Ok(WaterIn {
+            centreline,
+            design_line,
+            given: self.input_water_profile(),
+            pools,
+            beyond_pools,
+            step_m,
+        })
+    }
+
+    /// Where the stored water stands: not run, fresh, or stale. It is fresh while the hash of what
+    /// it would read now equals the one it recorded.
+    pub fn water_status(&self) -> StageStatus {
+        let r = &self.doc["stages"][water_stage::STAGE];
+        if !r["results"].is_object() {
+            return StageStatus::NotRun;
+        }
+        match (r["depends_on"].as_str(), self.water_input()) {
+            (Some(h), Some(i)) if h == hash_value(&json!(i)) => StageStatus::Fresh,
+            _ => StageStatus::Stale,
+        }
+    }
+
+    /// The stored water along the design line, fresh or not. `None` before it has run.
+    pub fn design_water(&self) -> Option<DesignWater> {
+        let r = &self.doc["stages"][water_stage::STAGE]["results"];
+        r.is_object()
+            .then(|| serde_json::from_value(r.clone()).ok())
+            .flatten()
+    }
+
+    /// Run the water stage and store it as a stage record: the step as its settings, the answer as
+    /// its results, the hash of its input as `depends_on`. Not a stage of the chain: the volumes
+    /// stage runs it, and no other stage's hash reads it.
+    pub fn run_water(&mut self) -> Result<(), DesignError> {
+        let Some(input) = self.try_water_input()? else {
+            return Err(DesignError::Input(if self.final_line().is_none() {
+                "the water stage needs a design line: run the alignment stage first".into()
+            } else {
+                "the water stage needs the river centreline: import the river first".into()
+            }));
+        };
+        let out = water_stage::water(&input).map_err(|e| DesignError::Input(e.message))?;
+        if !self.doc["stages"].is_object() {
+            self.doc["stages"] = json!({});
+        }
+        self.doc["stages"][water_stage::STAGE] = json!({
+            "settings": {"step_m": input.step_m},
+            "results": out,
+            "depends_on": hash_value(&json!(input)),
+            "engine_version": ENGINE_VERSION,
+        });
+        Ok(())
     }
 
     /// The profile set by hand or by import.

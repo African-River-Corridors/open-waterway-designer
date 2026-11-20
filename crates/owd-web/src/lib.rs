@@ -138,9 +138,14 @@ impl Session {
         Ok(self.snapshot())
     }
 
-    /// The station walk of an option, made now or taken from the cache.
-    fn walked(&mut self, option: &str) -> Js<owd_shell::state::Walked> {
-        let walked = ok(self.state.begin_walk(option).run())?;
+    /// The stations of an option, read now or taken from the cache, with the section profile of
+    /// the station nearest each of `profiles_at`.
+    fn walked(&mut self, option: &str, profiles_at: &[f64]) -> Js<owd_shell::state::Walked> {
+        let walked = ok(self
+            .state
+            .begin_walk(option)
+            .with_profiles_at(profiles_at)
+            .run())?;
         self.state.keep_walk(&walked);
         Ok(walked)
     }
@@ -437,6 +442,48 @@ impl Session {
         self.edit(|s| s.set_downstream_point_text(point))
     }
 
+    /// State the river mouth (spec 0017): `downstream` or `LON,LAT`, as `owd import --mouth` reads
+    /// it, through the same shell call.
+    pub fn set_mouth(&mut self, mouth: &str) -> Js<String> {
+        self.edit(|s| s.set_mouth(mouth))
+    }
+
+    /// Set the run inputs (spec 0017, ticket 11): the objective (`SENSE:MEASURE`), the limits (one
+    /// `MEASURE<=VALUE` a line) and the target level, each empty for none, as `owd run-inputs`
+    /// sets them, through the same session call.
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Js<String> {
+        self.edit(|s| s.set_run_inputs(objective, limits, target_level))
+    }
+
+    /// Set the given weirs and locks (spec 0017, ticket 14) from JSON text, as `owd structures
+    /// --given` reads its file, through the same session call. Empty text removes them.
+    pub fn set_structures(&mut self, json: &str) -> Js<String> {
+        self.edit(|s| s.set_structures(json))
+    }
+
+    /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text (a FeatureCollection of polygons
+    /// in the project CRS, each with `name` and `kind`), as `owd constraints --no-go` reads it,
+    /// through the same session call. Empty text removes them.
+    pub fn set_no_go(&mut self, geojson: &str) -> Js<String> {
+        self.edit(|s| s.set_no_go(geojson))
+    }
+
+    /// Set the cut-rate multiplier raster (spec 0017, ticket 13) from the bytes of a GeoTIFF, as
+    /// `owd constraints --multiplier` does, through the same session call.
+    pub fn set_cut_rate_multiplier(&mut self, name: &str, bytes: Vec<u8>) -> Js<String> {
+        self.edit(|s| s.set_cut_rate_multiplier(Path::new(name), bytes))
+    }
+
+    /// Remove the cut-rate multiplier raster (spec 0017, ticket 13).
+    pub fn clear_cut_rate_multiplier(&mut self) -> Js<String> {
+        self.edit(|s| s.clear_cut_rate_multiplier())
+    }
+
     /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as JSON
     /// text, as `owd align --use-water` does (ticket #494). Nothing runs.
     pub fn set_alignment_settings(&mut self, method: &str, settings: &str) -> Js<String> {
@@ -567,7 +614,7 @@ impl Session {
     }
 
     pub fn long_section(&mut self, option: &str) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         Ok(ok(w
             .session
             .long_section(option, &w.walk)
@@ -576,7 +623,7 @@ impl Session {
     }
 
     pub fn cross_section(&mut self, option: &str, chainage: f64) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[chainage])?;
         Ok(ok(w
             .session
             .cross_section(&w.walk, chainage)
@@ -585,7 +632,7 @@ impl Session {
     }
 
     pub fn station_near(&mut self, option: &str, lon: f64, lat: f64) -> Js<f64> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         ok(w.session
             .station_near(&w.walk, lon, lat)
             .map_err(|e| e.to_string()))

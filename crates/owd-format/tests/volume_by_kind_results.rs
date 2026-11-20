@@ -9,6 +9,7 @@
 //!
 //! Label: property
 
+use owd_format::design::sections::Stations;
 use owd_format::design::{AlignMethod, Session, Stage};
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
@@ -78,7 +79,7 @@ fn design(y0: f64, y1: f64) -> Session {
 }
 
 fn row(s: &Session) -> Value {
-    s.document()["stages"]["volumes"]["results"]["options"][0].clone()
+    s.document()["stages"]["volumes"]["results"].clone()
 }
 
 fn num(v: &Value, key: &str) -> f64 {
@@ -176,7 +177,9 @@ fn the_long_section_and_the_cross_section_give_the_kinds_at_each_station() {
     let s = design(-10.5, 10.5);
     let (all, inside) = section_m2(&s, 10.5);
     let walk = s.option_section_walk("rolling-circle", &flat).unwrap();
-    let long = s.long_section("rolling-circle", &walk).unwrap();
+    let long = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
     let col = |key: &str| -> Vec<f64> {
         long[key]
             .as_array()
@@ -202,7 +205,9 @@ fn the_long_section_and_the_cross_section_give_the_kinds_at_each_station() {
             "the kinds of one station add up",
         );
     }
-    let cross = s.cross_section(&walk, 1500.0).unwrap();
+    let cross = s
+        .cross_section(&Stations::from(walk.clone()), 1500.0)
+        .unwrap();
     close(num(&cross, "in_river_area_m2"), inside, "the cross-section");
     close(
         num(&cross, "widening_area_m2"),

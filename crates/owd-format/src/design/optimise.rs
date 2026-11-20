@@ -1,11 +1,11 @@
 //! The optimise stage (spec 0002): the weir cascade search sets the weir sites and pool levels, and
-//! the pool lattice adds a design line option. The calls are those of the `optimise_pools` example:
+//! the pool lattice refines the design line (spec 0017 ticket 6: one design line per run). Its line
+//! is stored as `results.design_line`; once it is there, it is the design line the later stages read. The calls are those of the `optimise_pools` example:
 //! `build_level_table`, `search_cascade` with an earthworks reach cost, then `optimise_pools`.
 //!
-//! The baseline is the rolling-circle option's line, else the river centreline. Chainages are
+//! The baseline is the alignment's design line, else the river centreline. Chainages are
 //! metres along it. Weights are settings, not prices: 1.0 / 1.0 minimises volume.
 
-use super::geojson::all_positions;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::types::TerrainSampler;
 use owd_core::alignment::radius_check::{default_check_chord, min_radius_on_chord, radius_ok};
@@ -21,7 +21,8 @@ use owd_core::optimise::lattice::{
 use owd_core::volumes::sections::HalfWidth;
 use serde_json::{Value, json};
 
-const OPTION_ID: &str = "lattice";
+/// The id and the method of the lattice's design line.
+const LATTICE: &str = "lattice";
 
 /// The settings of the optimise stage, typed. A key the stage does not know is refused by name.
 #[derive(Debug, Clone, PartialEq)]
@@ -223,8 +224,8 @@ impl Session {
             .apply(overrides)
     }
 
-    /// Run the optimise stage: choose weir sites and pool levels, then add the lattice design line
-    /// option (replacing the one an earlier run made). `terrain` is the DEM in the project CRS.
+    /// Run the optimise stage: choose weir sites and pool levels, then refine the design line in
+    /// the pools with the lattice (replacing the line an earlier run made). `terrain` is the DEM in the project CRS.
     pub fn run_optimise(
         &mut self,
         overrides: &Value,
@@ -278,11 +279,10 @@ impl Session {
             })?,
         };
 
-        let baseline: Vec<Pt> = self.doc["options"]
-            .as_array()
-            .and_then(|o| o.iter().find(|o| o["method"] == "rolling_circle"))
-            .map(|o| all_positions(&o["line"]))
-            .map_or_else(|| self.base_line(), Ok)?;
+        let baseline: Vec<Pt> = match super::design_line::alignment_line_of(&self.doc) {
+            Some(l) => l.line.0,
+            None => self.base_line()?,
+        };
         let length = linear::length(&baseline);
         // The water level below the first weir: a setting, else the document's profile at the start
         // of the baseline (the profile of the inputs; the stage's own pool levels come after).
@@ -396,58 +396,100 @@ impl Session {
         };
         let measured =
             min_radius_on_chord(&out.line, chord).map_err(|e| DesignError::Input(e.message))?;
-        let mut option = json!({
-            "id": OPTION_ID, "name": "Pool lattice",
-            "method": "lattice", "settings": settings,
-            "line": {"type": "LineString", "coordinates": out.line},
-            "checks": {
-                "r_min_m": r_min,
-                "radius_ok": radius_ok(measured, r_min),
-                "measured_min_radius_m": measured,
-                "radius_check_chord_m": chord,
-                // A design line must never contain a loop (issue #569): a failed check, as R_min.
-                "no_self_crossing": {
-                    "ok": out.self_crossing_m.is_none(),
-                    "first_crossing_m": out.self_crossing_m,
-                },
-            },
-            "details": {
-                "n_replaced": out.n_replaced(),
-                "pools": out.pools.iter().map(|p| json!({
-                    "start_m": p.start_m, "end_m": p.end_m, "water_level_m": p.water_level_m,
-                    "converged": p.result.converged, "cost": p.result.cost,
-                    "used": p.used,
-                    "kept_baseline_because": p.kept_baseline_because,
-                    "baseline_cost": p.baseline_cost,
-                    "measured_min_radius_m": num_or_null(p.result.measured_min_radius_m),
-                    "radius_check_chord_m": p.result.radius_check_chord_m,
-                    "radius_ok": p.result.radius_ok,
-                    "goal_closed": p.result.goal_closed,
-                    "expansions": p.result.expansions,
-                    "hit_cap": p.result.hit_cap,
-                    "end_moved_from_m": p.end_moved_from_m,
-                    "start_moved_from_m": p.start_moved_from_m,
-                    "piece": p.piece.map(|c| json!({
-                        "index": c.index, "count": c.count,
-                        "pool_start_m": c.pool_start_m, "pool_end_m": c.pool_end_m,
-                    })),
-                })).collect::<Vec<_>>(),
-                "joins": out.joins.iter().map(|j| json!({
-                    "at_m": j.at_m,
-                    "position_gap_m": num_or_null(j.position_gap_m),
-                    "heading_gap_deg": num_or_null(j.heading_gap_rad.to_degrees()),
-                    "measured_min_radius_m": num_or_null(j.measured_min_radius_m),
-                    "radius_check_chord_m": out.radius_check_chord_m,
-                    "radius_ok": j.radius_ok,
-                })).collect::<Vec<_>>(),
-                "self_crossing_m": out.self_crossing_m,
+        let checks = json!({
+            "r_min_m": r_min,
+            "radius_ok": radius_ok(measured, r_min),
+            "measured_min_radius_m": measured,
+            "radius_check_chord_m": chord,
+            // A design line must never contain a loop (issue #569): a failed check, as R_min.
+            "no_self_crossing": {
+                "ok": out.self_crossing_m.is_none(),
+                "first_crossing_m": out.self_crossing_m,
             },
         });
-        // The design sanity check of the line, as every other option has it, one warning for each
-        // pool (or piece) whose search hit its limit (issue #559), and one for each pool join that
-        // does not hold R_min (issue #6).
-        option["sanity"] = super::alignment::sanity_of(&option);
-        if let Some(w) = option["sanity"]["warnings"].as_array_mut() {
+        let details = json!({
+            "n_replaced": out.n_replaced(),
+            "pools": out.pools.iter().map(|p| json!({
+                "start_m": p.start_m, "end_m": p.end_m, "water_level_m": p.water_level_m,
+                "converged": p.result.converged, "cost": p.result.cost,
+                "used": p.used,
+                "kept_baseline_because": p.kept_baseline_because,
+                "baseline_cost": p.baseline_cost,
+                "measured_min_radius_m": num_or_null(p.result.measured_min_radius_m),
+                "radius_check_chord_m": p.result.radius_check_chord_m,
+                "radius_ok": p.result.radius_ok,
+                "goal_closed": p.result.goal_closed,
+                "expansions": p.result.expansions,
+                "hit_cap": p.result.hit_cap,
+                "end_moved_from_m": p.end_moved_from_m,
+                "start_moved_from_m": p.start_moved_from_m,
+                "piece": p.piece.map(|c| json!({
+                    "index": c.index, "count": c.count,
+                    "pool_start_m": c.pool_start_m, "pool_end_m": c.pool_end_m,
+                })),
+            })).collect::<Vec<_>>(),
+            "joins": out.joins.iter().map(|j| json!({
+                "at_m": j.at_m,
+                "position_gap_m": num_or_null(j.position_gap_m),
+                "heading_gap_deg": num_or_null(j.heading_gap_rad.to_degrees()),
+                "measured_min_radius_m": num_or_null(j.measured_min_radius_m),
+                "radius_check_chord_m": out.radius_check_chord_m,
+                "radius_ok": j.radius_ok,
+            })).collect::<Vec<_>>(),
+            "self_crossing_m": out.self_crossing_m,
+        });
+        let river_geometry = self
+            .river_geometry()
+            .map_err(super::rule_sets::stage_error)?;
+        let mut refined = super::design_line::finish(
+            LATTICE,
+            "Pool lattice",
+            LATTICE,
+            settings.clone(),
+            out.line.clone(),
+            checks,
+            details,
+            &river_geometry,
+        );
+        // The lattice does not steer by the constraints yet (spec 0017 ticket 16, line refinement):
+        // its line reports what its footprint enters and fails `no_go_clear` when it enters a no-go
+        // area or hard-exclusion ground, as every design line does (ticket 13).
+        if let Some(c) = self.constraints()?.filter(|c| !c.is_empty()) {
+            let raster = match self.stage_multiplier() {
+                Ok(r) => r,
+                Err(path) => {
+                    return Err(refuse(format!(
+                        "OPTIMISE_NO_MULTIPLIER: the cut-rate multiplier raster `{path}` is not \
+                         there to read: put it beside the design, or set it again"
+                    )));
+                }
+            };
+            let epsg = self.multiplier_epsg();
+            let weight = match &raster {
+                Some(r) => Some((
+                    super::constraints::multiplier_sampler(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                    super::constraints::multiplier_cell_m(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                )),
+                None => None,
+            };
+            let m = weight
+                .as_ref()
+                .map(|(w, cell_m)| super::constraints::Multiplier {
+                    at: w as TerrainSampler,
+                    cell_m: *cell_m,
+                });
+            super::design_line::mark_constraints(
+                &mut refined,
+                &self.channel_size()?,
+                &c,
+                m.as_ref(),
+            );
+        }
+        // The design line's own sanity check, one warning for each pool (or piece) whose search
+        // hit its limit (issue #559), and one for each pool join that does not hold R_min (issue #6).
+        if let Some(w) = refined.sanity["warnings"].as_array_mut() {
             for p in out.capped_pools() {
                 w.push(json!(capped_warning(p, lattice.max_expand)));
             }
@@ -468,13 +510,6 @@ impl Session {
                 w.push(json!(looped_warning(p)));
             }
         }
-        let options = self.doc["options"]
-            .as_array_mut()
-            .expect("options is a list");
-        match options.iter().position(|o| o["method"] == "lattice") {
-            Some(i) => options[i] = option,
-            None => options.push(option),
-        }
 
         let profile_points = self.pool_profile(&baseline, &pools)?;
         let st = &mut self.doc["stages"]["optimise"];
@@ -494,7 +529,7 @@ impl Session {
                     "structure_cost": w.structure_cost,
                 })).collect::<Vec<_>>(),
             },
-            "option": OPTION_ID,
+            "design_line": refined,
         });
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Optimise);

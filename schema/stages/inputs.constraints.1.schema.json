@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Constraints",
+  "description": "The run's constraints: `inputs.constraints`. Absent from a document that has none.",
+  "type": "object",
+  "properties": {
+    "no_go": {
+      "description": "The no-go areas.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/NoGoArea"
+      }
+    },
+    "cut_rate_multiplier": {
+      "description": "The cut-rate multiplier raster.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MultiplierRaster"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "NoGoArea": {
+      "description": "One no-go area.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name, unique among the run's no-go areas.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "What it is, in the engineer's words (free text).",
+          "type": "string"
+        },
+        "polygon": {
+          "description": "The area, in the project CRS.",
+          "$ref": "#/$defs/Area"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "polygon"
+      ]
+    },
+    "Area": {
+      "description": "A polygon in the project CRS: an outer ring and holes. A ring is closed by implication.",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Holes: ground inside the shell that is not part of the area.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "shell"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "MultiplierRaster": {
+      "description": "The cut-rate multiplier raster, by reference, as the DEM is: it is never embedded.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path relative to the document.",
+          "type": "string"
+        },
+        "sha256": {
+          "description": "SHA-256 of the file, in hex.",
+          "type": "string"
+        },
+        "crs": {
+          "description": "The raster's CRS: `EPSG:nnnn`, or `unknown`.",
+          "type": "string"
+        },
+        "nodata": {
+          "description": "The value that marks no data, if the file has one. No data multiplies by 1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "crs"
+      ]
+    }
+  }
+}

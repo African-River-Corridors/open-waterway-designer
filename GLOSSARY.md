@@ -26,7 +26,47 @@ _Avoid_: using a former name in new text
 **Channel design**:
 One screening study of one river reach for one vessel: its inputs, the choices made, and the
 results of each stage. The unit a user opens, saves (as a `.owd` file) and shares.
-_Avoid_: project, scenario, run
+_Avoid_: project, scenario, run (a run is one pass of the stages over it, below)
+
+**Run**:
+One pass of the stages over one channel design. It makes one design (spec 0017).
+
+**Design measure**:
+One quantity of the whole design: cost, total cut, dredge, dry cut, land take, line length,
+structure count, capacity. Not the rules engine's Measure, which is per object and tested by a Rule.
+
+**Objective**:
+The one design measure a run aims to minimise or maximise.
+
+**Limit**:
+A design measure and a bound (at most or at least a value) the run must stay within. A bound on
+cost is money and names its currency.
+
+**Output level**:
+How far a run's figures can be trusted, from the inputs it had: concept, pre-feasibility or
+feasibility. The run states a **target level**; a stage reports the level each reach reached.
+
+**Rates table**:
+The engineer's unit rates for one run, in one currency: dredge and dry cut per m³, disposal per m³,
+haul per m³ per km, with a haul distance for the run or for a reach. **Cost** is these rates times
+OWD's volumes, by reach and in total.
+
+**Constraint**:
+Something on the ground the design line must respect. A **no-go area** is a named polygon the
+line avoids (the re-route treats it as impassable; every design line reports the no-go areas its
+**channel footprint**, the strip of the straight bottom width, enters). The **cut-rate multiplier**
+is a raster whose cell value multiplies the cut rate in that cell: the re-route weighs its cut by
+it, the volumes stage stores the **weighted volumes** beside the plain ones, and the cost prices
+dredge and dry cut on them. A cell at or above 1e6 is a **hard exclusion**, as a no-go area is.
+
+**Structure**:
+A weir, a lock, or a weir with a lock beside it, on the design line. Structures are optional. The
+engineer gives each one (its site, the mean water level it holds upstream, its height and cost);
+OWD places it and holds a **pool** above it: flat at that level up to the next structure. Each pool
+has a **minimum level** and a **maximum level**, its level less and plus an allowance: navigation
+depth is checked at the minimum and flood risk at the maximum. The **structures seam** is where a
+structures tool can work out a structure's height, footprint and cost from its site, levels and
+channel width; today it returns what the engineer gave.
 
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,
@@ -41,8 +81,9 @@ The natural line midway between the two banks of the river as it is today. An in
 _Avoid_: centerline, thalweg, natural line
 
 **Design line**:
-The axis of the navigation channel being designed. Each method that produces one (rolling
-circle, least-cost re-route, pool lattice) yields a new **design line option**.
+The axis of the navigation channel being designed. A design has one (spec 0017): the method that
+makes it (rolling circle, least-cost re-route, river centreline, a given line) is a setting, and the
+pool lattice refines it. Options are separate runs, compared outside the design.
 _Avoid_: route, rolled line, sailing line, fairway (as a line)
 
 **Alignment**:
@@ -85,7 +126,8 @@ One of several input lines, in order, that are joined into one design line befor
 A point on a line at which a cross-section is taken, identified by its chainage.
 
 **Chainage**:
-Distance in metres along a line from its start.
+Distance in metres along a line from its start. When the design states the **river mouth**, the
+river's lines run from the mouth, so river chainage 0 is at the mouth (spec 0017).
 _Avoid_: stationing, KP
 
 ### Channel sizing

@@ -1,0 +1,131 @@
+{
+ "label": "Label: golden",
+ "why": "A given profile from 200 m (10 m) to 800 m (12 m). Beyond its ends the level is held flat, and those points say so.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "given": [
+   [
+    200.0,
+    10.0
+   ],
+   [
+    800.0,
+    12.0
+   ]
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 10.0,
+     "source": "given",
+     "held_flat": true
+    },
+    {
+     "chainage": 200.0,
+     "river_chainage": 200.0,
+     "level_m": 10.0,
+     "source": "given",
+     "held_flat": true
+    },
+    {
+     "chainage": 200.0,
+     "river_chainage": 200.0,
+     "level_m": 10.0,
+     "source": "given"
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 10.166666666666666,
+     "source": "given"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 11.0,
+     "source": "given"
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 11.833333333333334,
+     "source": "given"
+    },
+    {
+     "chainage": 800.0,
+     "river_chainage": 800.0,
+     "level_m": 12.0,
+     "source": "given"
+    },
+    {
+     "chainage": 800.0,
+     "river_chainage": 800.0,
+     "level_m": 12.0,
+     "source": "given",
+     "held_flat": true
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 12.0,
+     "source": "given",
+     "held_flat": true
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 200.0,
+     "source": "given",
+     "held_flat": true
+    },
+    {
+     "from": 200.0,
+     "to": 800.0,
+     "source": "given"
+    },
+    {
+     "from": 800.0,
+     "to": 1000.0,
+     "source": "given",
+     "held_flat": true
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    500.0,
+    11.0
+   ],
+   [
+    900.0,
+    12.0
+   ]
+  ]
+ }
+}
