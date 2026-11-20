@@ -176,11 +176,14 @@ enum Command {
         /// OWD does not check it, and every output that reads it says so. A new DEM clears it.
         #[arg(long, requires = "dem")]
         holds_bathymetry: bool,
-        /// The water level in metres: a constant, or with --water-slope the level at the river's start.
+        /// The water level in metres: a constant, or with --water-slope the level at chainage 0 (the
+        /// river's start, or its mouth when one is stated).
         #[arg(long, value_name = "METRES")]
         water_level: Option<f64>,
-        /// The fall of the water per metre of river chainage (with --water-level).
-        #[arg(long, value_name = "M_PER_M")]
+        /// The fall of the water per metre of river chainage (with --water-level). With a mouth,
+        /// chainage 0 is the mouth and --water-level is the level there, so a river that falls
+        /// towards its mouth has a negative slope: the level rises upstream.
+        #[arg(long, value_name = "M_PER_M", allow_hyphen_values = true)]
         water_slope: Option<f64>,
         /// The water level as a table: lines of `chainage_m,level_m` along the river centreline.
         /// Two lines at one chainage make a step (a weir).
@@ -296,8 +299,9 @@ enum Command {
         /// Re-route: set the water level (the level at the river's start), in metres.
         #[arg(long, value_name = "METRES")]
         water_level: Option<f64>,
-        /// Re-route: the fall of the water per metre of river chainage (with --water-level).
-        #[arg(long, value_name = "M_PER_M")]
+        /// Re-route: the fall of the water per metre of river chainage (with --water-level). With a
+        /// mouth, chainage 0 is the mouth: a river that falls towards it has a negative slope.
+        #[arg(long, value_name = "M_PER_M", allow_hyphen_values = true)]
         water_slope: Option<f64>,
         #[arg(long, value_name = "LIST", help = align_help("reroute", "corridor_sweep_m", "Re-route: the half-widths of the corridors to try, in metres, comma separated", ""))]
         corridors: Option<String>,
