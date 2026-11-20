@@ -396,7 +396,7 @@ impl Session {
         };
         let measured =
             min_radius_on_chord(&out.line, chord).map_err(|e| DesignError::Input(e.message))?;
-        let option = json!({
+        let mut option = json!({
             "id": OPTION_ID, "name": "Pool lattice",
             "method": "lattice", "settings": settings,
             "line": {"type": "LineString", "coordinates": out.line},
@@ -411,6 +411,8 @@ impl Session {
                 "pools": out.pools.iter().map(|p| json!({
                     "start_m": p.start_m, "end_m": p.end_m, "water_level_m": p.water_level_m,
                     "converged": p.result.converged, "cost": p.result.cost,
+                    "used": p.used,
+                    "kept_baseline_because": p.kept_baseline_because,
                     "baseline_cost": p.baseline_cost,
                     "measured_min_radius_m": num_or_null(p.result.measured_min_radius_m),
                     "radius_check_chord_m": p.result.radius_check_chord_m,
@@ -418,6 +420,8 @@ impl Session {
                 })).collect::<Vec<_>>(),
             },
         });
+        // The design sanity check of the line, as every other option has it.
+        option["sanity"] = super::alignment::sanity_of(&option);
         let options = self.doc["options"]
             .as_array_mut()
             .expect("options is a list");

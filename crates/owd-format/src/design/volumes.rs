@@ -275,6 +275,12 @@ impl Session {
                 "cut_through_m3": v.cut_through_m3(),
                 "max_face_h_m": v.max_face_h_m(),
                 "stations": v.stations.len(),
+                // The design sanity check of the cut: stations far above their neighbours, and
+                // stations whose cut is huge against the channel's own section.
+                "sanity": {
+                    "checked": true,
+                    "warnings": cut_warnings(&v, plan.typed.wet_slope),
+                },
                 // A failed check stays with the option's numbers.
                 "radius_ok": o["checks"]["radius_ok"],
                 "water_source": plan.water_source,
@@ -300,6 +306,33 @@ impl Session {
         self.doc["stages"]["volumes"]["depends_on"] = json!(h);
         Ok(())
     }
+}
+
+/// The design sanity warnings of an option's cut: the spike check (relative) and the extreme check
+/// (absolute, against the design channel's own wetted section at each station).
+fn cut_warnings(v: &owd_core::volumes::sections::SectionVolumes, wet_slope: f64) -> Vec<String> {
+    use owd_core::sanity::{CutStation, cut_spikes, extreme_cuts};
+    let cuts: Vec<(f64, f64)> = v
+        .stations
+        .iter()
+        .map(|s| (s.chainage_m, s.dredge_area_m2 + s.excav_area_m2))
+        .collect();
+    let stations: Vec<CutStation> = v
+        .stations
+        .iter()
+        .map(|s| CutStation {
+            chainage_m: s.chainage_m,
+            cut_m2: s.dredge_area_m2 + s.excav_area_m2,
+            face_h_m: s.max_face_h_m,
+            channel_area_m2: owd_core::volumes::sections::trapezoid_area(s.hb, s.depth, wet_slope),
+            depth_m: s.depth,
+        })
+        .collect();
+    cut_spikes(&cuts)
+        .iter()
+        .chain(extreme_cuts(&stations).iter())
+        .map(owd_core::sanity::Finding::message)
+        .collect()
 }
 
 /// What every option's station walk shares: the settings, the water, the sizing and the river.
