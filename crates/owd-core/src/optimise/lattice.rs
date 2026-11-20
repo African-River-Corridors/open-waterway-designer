@@ -1280,6 +1280,7 @@ pub fn solve_lattice_until(
     let close = cfg.close_goal;
     let reach = cfg.close_reach();
     let mut closing: Option<[Piece; 3]> = None;
+    let mut closing_from: Option<Pose> = None;
     let mut fallback: Option<(Key, i64)> = None;
     let sk = key(start_pose.0, start_pose.1, start_pose.2, 0);
     let mut g: HashMap<Key, f64> = HashMap::new();
@@ -1355,6 +1356,7 @@ pub fn solve_lattice_until(
                 prev.insert(GOAL, Some(k));
                 prev_prim.insert(GOAL, None);
                 closing = Some(path);
+                closing_from = Some((x, y, th));
                 pq.push(Entry(gc + c, gc + c, GOAL));
             }
         }
@@ -1411,7 +1413,8 @@ pub fn solve_lattice_until(
         .map(|k| prev_prim[k].expect("a non-start state has a primitive"))
         .collect();
     // Forward-integrate the exact primitive sequence from the true start pose: tangent-continuous
-    // by construction, and the geometry the costs were computed on.
+    // by construction. It is the geometry the costs were computed on unless a state on the way was
+    // reached again more cheaply from another pose (see below).
     let (mut cx, mut cy, mut cth) = start_pose;
     let mut dense: Vec<Pt> = vec![[cx, cy]];
     for &pi in &seq {
@@ -1425,6 +1428,48 @@ pub fn solve_lattice_until(
         dense.extend(pts.iter().map(|q| [q.0, q.1]));
         (cx, cy, cth) = pts[pts.len() - 1];
     }
+    // A state is a snapped position and heading. When one is reached again more cheaply its pose is
+    // replaced, and states already reached from its old pose keep theirs; the chain run forward
+    // from the start can then end some metres from the pose the closing path was computed from. A
+    // closing path appended as it was would end that far off the goal, in line with it, while the
+    // result says the goal is closed. So the closing path is computed again from where the line
+    // really ends, and the line is costed as it is rebuilt; when no closing path leaves from there,
+    // the goal is not closed and the result says so (`end_err_m`).
+    let mut closed = closed;
+    let mut cost = g[&best];
+    if closed
+        && closing_from.is_some_and(|f| {
+            hypot(cx - f.0, cy - f.1) > 1e-9
+                || (py_mod(cth - f.2 + core::f64::consts::PI, TAU) - core::f64::consts::PI).abs()
+                    > 1e-12
+        })
+    {
+        let insign = seq.last().map_or(0, |&pi| prims[pi].sign);
+        let end = (cx, cy, cth);
+        let redone = closing_path(end, goal_pose, cfg.r_min_m, insign)
+            .and_then(|path| closing_cost(end, &path).map(|c| (path, c)));
+        // The chain's own cost, primitive by primitive along the line as rebuilt.
+        let (mut px, mut py, mut pth) = start_pose;
+        let mut chain_cost = 0.0;
+        for &pi in &seq {
+            let p = &prims[pi];
+            chain_cost += scorers[pi].score(p, (px, py, pth)).0;
+            let (ct, st) = (libm::cos(pth), libm::sin(pth));
+            let (ex, ey, eth) = p.end;
+            (px, py, pth) = (px + ct * ex - st * ey, py + st * ex + ct * ey, pth + eth);
+        }
+        match redone {
+            Some((path, c)) => {
+                closing = Some(path);
+                cost = chain_cost + c;
+            }
+            None => {
+                closed = false;
+                closing = None;
+                cost = chain_cost;
+            }
+        }
+    }
     let close_pieces: Vec<Piece> = match (closed, closing) {
         (true, Some(path)) => path.into_iter().filter(|p| p.2 > 1e-9).collect(),
         _ => Vec::new(),
@@ -1435,7 +1480,7 @@ pub fn solve_lattice_until(
     }
     res.converged = true;
     res.goal_closed = closed;
-    res.cost = g[&best];
+    res.cost = cost;
     if let Ok(m) = min_radius_on_chord(&dense, res.radius_check_chord_m) {
         res.measured_min_radius_m = m;
         res.radius_ok = radius_ok(m, cfg.r_min_m);
