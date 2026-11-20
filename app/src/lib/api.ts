@@ -143,8 +143,15 @@ export interface Provenance {
   mark: Mark;
   provisional?: boolean;
 }
+/** A note from opening a design saved in an older format: information, or something to do. */
+export interface OpenNote {
+  kind: "info" | "action";
+  text: string;
+}
 export interface Snapshot {
   engine_version: string;
+  /** What opening an older-format design changed. The `action` notes are in `warnings` too. */
+  open_notes?: OpenNote[];
   document: {
     project: {
       title: string;

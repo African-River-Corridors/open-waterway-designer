@@ -33,6 +33,15 @@ export function plainWarning(w: string): string {
     : `The DEM file ${name} has changed since it was loaded. Load the DEM again with its Load button; until then the volumes may not hold.`;
 }
 
+/** An engine note as a sentence on the screen: a capital first letter, a full stop, and names
+ * without the code marks around them. */
+export function plainNote(text: string): string {
+  const t = text.trim().replace(/`/g, "");
+  if (t === "") return t;
+  const s = t[0].toUpperCase() + t.slice(1);
+  return /[.!?]$/.test(s) ? s : `${s}.`;
+}
+
 /** The value of a bank row: its size, or why it is empty. A loaded river polygon stands in for banks. */
 export function bankValue(line: { coordinates: unknown[] } | null | undefined, polygonLoaded: boolean): string {
   if (line) return `${line.coordinates.length} positions`;

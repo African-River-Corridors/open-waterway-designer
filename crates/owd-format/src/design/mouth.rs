@@ -18,7 +18,7 @@
 //! neither can tell, the design is not turned, and the notes say to state the mouth.
 
 use super::river::{Mouth, RiverIn, river};
-use super::session::{DesignError, Session};
+use super::session::{DesignError, OpenNote, Session};
 use crate::types::TerrainSampler;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -408,10 +408,10 @@ impl Session {
         }
         self.old_mouth_pending = false;
         // The note that said it waits for the elevation model gives way to what it found.
-        self.notes.retain(|n| !n.starts_with(WAITS_FOR_DEM));
+        self.notes.retain(|n| !n.text.starts_with(WAITS_FOR_DEM));
         let notes = self.old_file_mouth(terrain, false);
         self.notes.extend(notes.iter().cloned());
-        notes
+        notes.into_iter().map(|n| n.text).collect()
     }
 
     /// The mouth of a file moved from format 0.4, which records none (spec 0017): the end with the
@@ -426,7 +426,7 @@ impl Session {
         &mut self,
         terrain: Option<TerrainSampler>,
         may_wait: bool,
-    ) -> Vec<String> {
+    ) -> Vec<OpenNote> {
         // A design with no river has no end to orient.
         if self.stored_mouth().is_some() || self.base_line().is_err() {
             return Vec::new();
@@ -443,17 +443,17 @@ impl Session {
             Ok(r) => r,
             Err(_) if may_wait && terrain.is_none() && self.dem_path().is_some() => {
                 self.old_mouth_pending = true;
-                return vec![format!(
+                return vec![OpenNote::action(format!(
                     "{WAITS_FOR_DEM}: the mouth is worked out from the elevation model once it is \
                      loaded (the command line and the app load it beside the file); without it, \
                      {state}"
-                )];
+                ))];
             }
             Err(_) => {
-                return vec![format!(
+                return vec![OpenNote::action(format!(
                     "no mouth is recorded, and neither the water level nor the elevation model \
                      says which end is lower, so the design is not turned: {state}"
-                )];
+                ))];
             }
         };
         let by = if self.input_water_profile().is_some_and(|p| {
@@ -469,24 +469,24 @@ impl Session {
         };
         let mut notes = Vec::new();
         if !report.turned {
-            notes.push(format!(
+            notes.push(OpenNote::info(format!(
                 "the mouth is the first end of the stored centreline (the lower end, by {by}); it \
                  is recorded, and nothing else changes"
-            ));
+            )));
         } else {
-            notes.push(format!(
+            notes.push(OpenNote::info(format!(
                 "the mouth is the far end of the stored centreline (the lower end, by {by}), so the \
                  design is turned to run from it: the river, its inputs and the stored results \
                  now count chainage from the mouth"
-            ));
-            notes.extend(report.notes);
+            )));
+            notes.extend(report.notes.into_iter().map(OpenNote::action));
             if bed_on_line && fresh.contains(&super::session::Stage::Volumes) {
                 fresh.retain(|s| *s != super::session::Stage::Volumes);
-                notes.push(
+                notes.push(OpenNote::action(
                     "the volumes read a bed centred on the reference line, which is made again \
                      from the mouth, so they are marked stale: run `owd volumes`"
                         .to_string(),
-                );
+                ));
             }
             notes.extend(self.turn_results(river_len, &fresh));
         }
@@ -498,7 +498,7 @@ impl Session {
     /// Turn the stored results of a design whose river was just turned (it is `river_len` metres
     /// long): every stage's, fresh or not, so no chainage is left counting from the old start.
     /// Returns what could not be turned exactly, in plain words.
-    fn turn_results(&mut self, river_len: f64, fresh: &[super::session::Stage]) -> Vec<String> {
+    fn turn_results(&mut self, river_len: f64, fresh: &[super::session::Stage]) -> Vec<OpenNote> {
         use super::session::Stage;
         let mut notes = Vec::new();
         let doc = &mut self.doc;
@@ -539,14 +539,14 @@ impl Session {
             }
             turn_design_line(&mut r["design_line"], baseline_len);
             if fresh.contains(&Stage::Optimise) {
-                notes.push(
+                notes.push(OpenNote::action(
                     "the pools and the weirs are the same, counted from the mouth: a weir's pool \
                      level is now the level on its upstream side looking from the mouth, and its \
                      lift is negative where the water steps down going upstream. The optimise \
                      settings (the base level and the terminal level) are kept as they were, but \
                      they now read from the mouth: check them before you run `owd optimise` again"
                         .to_string(),
-                );
+                ));
             }
         }
         // The volumes: the row of the design line the later stages read.
@@ -591,28 +591,28 @@ impl Session {
                 }
             }
             if fresh.contains(&Stage::Volumes) {
-                notes.push(
+                notes.push(OpenNote::info(
                     "the volumes keep their totals (the same line, the same cut); their stations \
                      were walked from the old start, so a new `owd volumes` run, which walks from \
                      the mouth, may move the totals a little"
                         .to_string(),
-                );
+                ));
                 if texts {
-                    notes.push(
+                    notes.push(OpenNote::info(
                         "the chainages in the volumes' warnings are turned from whole metres, so \
                          each is within a metre"
                             .to_string(),
-                    );
+                    ));
                 }
             }
         }
         for (k, what) in [("fits", "fits"), ("envelope", "envelope")] {
             let stored = |v: Option<&Value>| v.is_some_and(|v| !v.is_null());
             if stored(doc.get(k)) || stored(doc["stages"].get(k)) {
-                notes.push(format!(
+                notes.push(OpenNote::action(format!(
                     "the {what} answer stored with the file ran from the other end: it shows as \
                      stale; run `owd {what}` again"
-                ));
+                )));
             }
         }
         notes

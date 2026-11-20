@@ -1,7 +1,7 @@
 // Plain-words helpers (no browser). Run: node --test e2e/words.test.mjs
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bankValue, demNotLoaded, fileNameOf, lineOnScreen, plainWarning, roundedFall, sectionReason } from "../src/lib/words.ts";
+import { bankValue, demNotLoaded, fileNameOf, lineOnScreen, plainNote, plainWarning, roundedFall, sectionReason } from "../src/lib/words.ts";
 
 const stages = (...s) => s.map((x) => ({ name: x.split(":")[0], status: x.split(":")[1] }));
 
@@ -36,6 +36,13 @@ describe("DEM words", () => {
     assert.match(t, /Load button/);
   });
   it("leaves other warnings alone", () => assert.equal(plainWarning("hello"), "hello"));
+});
+
+describe("plainNote", () => {
+  it("makes an engine note a sentence: capital, full stop, no code marks", () => {
+    assert.equal(plainNote("its design line is `lattice` (Pool lattice)"), "Its design line is lattice (Pool lattice).");
+  });
+  it("leaves a finished sentence alone", () => assert.equal(plainNote("The line moved."), "The line moved."));
 });
 
 describe("bankValue", () => {

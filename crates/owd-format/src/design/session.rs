@@ -186,6 +186,39 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+/// What a note from opening a file asks of the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NoteKind {
+    /// It says what opening changed. Nothing was lost and there is nothing to do.
+    Info,
+    /// The user has something to do or to check: a stage to run again, a line that was not kept.
+    Action,
+}
+
+/// One note from opening a file made by an older OWD: a plain sentence and its kind.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OpenNote {
+    pub kind: NoteKind,
+    pub text: String,
+}
+
+impl OpenNote {
+    pub fn info(text: impl Into<String>) -> Self {
+        OpenNote {
+            kind: NoteKind::Info,
+            text: text.into(),
+        }
+    }
+
+    pub fn action(text: impl Into<String>) -> Self {
+        OpenNote {
+            kind: NoteKind::Action,
+            text: text.into(),
+        }
+    }
+}
+
 /// One channel design.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
@@ -194,7 +227,7 @@ pub struct Session {
     /// The Rule Sets the session can select: the built-in ones and any loaded at run time.
     pub(super) library: Library,
     /// What opening the file changed, in plain words (a move from an older format). Not stored.
-    pub(super) notes: Vec<String>,
+    pub(super) notes: Vec<OpenNote>,
     /// The cut-rate multiplier raster the document names (spec 0017 ticket 13), read from the file
     /// whose hash it recorded, when the host has attached it. Not stored: the document holds only
     /// its reference, as for the DEM.
@@ -267,8 +300,8 @@ impl Session {
         }
         // Answers stored by an older OWD say why they show stale (read before the line moves: the
         // old hashes read `inputs.reference_line`).
-        notes.extend(super::fits::older_answer_note(&doc));
-        notes.extend(super::envelope::older_answer_note(&doc));
+        notes.extend(super::fits::older_answer_note(&doc).map(OpenNote::action));
+        notes.extend(super::envelope::older_answer_note(&doc).map(OpenNote::action));
         // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
         let (moved_line, moved_fresh) = super::reference_line::move_from_inputs(&mut doc);
         notes.extend(moved_line);
@@ -361,7 +394,13 @@ impl Session {
 
     /// What opening the file changed, one plain sentence each: empty unless the file was made by an
     /// older OWD and moved to this format. The command line prints them; the app shows them.
-    pub fn open_notes(&self) -> &[String] {
+    pub fn open_notes(&self) -> Vec<String> {
+        self.notes.iter().map(|n| n.text.clone()).collect()
+    }
+
+    /// The same notes with their kind: information, or something for the user to do. The app
+    /// shows the two kinds apart.
+    pub fn open_notes_by_kind(&self) -> &[OpenNote] {
         &self.notes
     }
 
