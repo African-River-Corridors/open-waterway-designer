@@ -45,6 +45,7 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 | owd-reach::bankcheck: `the_recorded_whole_river_gives_a_centreline_about_as_long_as_its_seed` | 30 s | The bank checks on 144 km of recorded banks (issue #373); the gap rule's fast guard is `midline::tests::a_gap_in_a_bank_does_not_tangle_the_mid_line`. |
 | owd-reach::bankcheck: `one_more_round_with_only_the_side_repairs_moves_nothing_at_the_ends` | 106 s | Runs the bank checks twice on 144 km of recorded banks (issue #411). |
 | owd-core::lattice_long_pool: `a_31_km_pool_is_searched_in_pieces_of_the_default_length` | 20 s release, longer in debug | Searches a 31 km pool whole (to the cap) and then in six pieces (issue #559); its short twin `a_long_pool_is_searched_in_pieces_that_join_at_r_min` stays in the pull-request job. |
+| owd-format::lattice_self_crossing: `a_self_crossing_lattice_line_never_passes` | 45 s | Sizing, the cascade and the pool lattice end to end on an 8 km synthetic meander (issue #569); the core tests in `owd-core::lattice_self_crossing` (the guard and the unchanged simple line) and the `no_self_crossing` unit test in `export.rs` stay in the pull-request job. |
 
 Times are from one local nextest run (10 cores, tests in parallel, so inflated); CI times are in the pull request.
 Python tests (about 33 s in total) all still run in the pull-request job.

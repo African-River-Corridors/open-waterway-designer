@@ -405,6 +405,11 @@ impl Session {
                 "radius_ok": radius_ok(measured, r_min),
                 "measured_min_radius_m": measured,
                 "radius_check_chord_m": chord,
+                // A design line must never contain a loop (issue #569): a failed check, as R_min.
+                "no_self_crossing": {
+                    "ok": out.self_crossing_m.is_none(),
+                    "first_crossing_m": out.self_crossing_m,
+                },
             },
             "details": {
                 "n_replaced": out.n_replaced(),
@@ -457,6 +462,10 @@ impl Session {
             }
             for p in out.moved_boundaries() {
                 w.push(json!(moved_warning(p)));
+            }
+            // A pool whose line crossed itself or the rest of the line keeps its baseline (#569).
+            for p in out.looped_pools() {
+                w.push(json!(looped_warning(p)));
             }
         }
         let options = self.doc["options"]
@@ -560,6 +569,16 @@ fn unclosed_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
     )
 }
 
+/// The sanity warning for a pool whose line crossed itself (at every search end tried) or crossed
+/// the rest of the design line, so it keeps the baseline (issue #569).
+fn looped_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    format!(
+        "{} keeps the baseline: {}",
+        pool_name(p),
+        p.kept_baseline_because.unwrap_or("its line makes a loop")
+    )
+}
+
 /// The sanity warning for a pool whose search closed only on an end moved along the baseline.
 fn moved_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
     let from = p.end_moved_from_m.unwrap_or(p.end_m);
@@ -569,9 +588,9 @@ fn moved_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
         (from - p.end_m, "upstream")
     };
     format!(
-        "{}: the search could not end on the pool's end pose, so its search end moved {by:.0} m \
-         {way}, to {:.0} m, where it closes; the pool's water level and weir are unchanged, so check \
-         the line between {:.0} m and {:.0} m",
+        "{}: the search could not end on the pool's end pose with a line that does not cross \
+         itself, so its search end moved {by:.0} m {way}, to {:.0} m, where it does; the pool's \
+         water level and weir are unchanged, so check the line between {:.0} m and {:.0} m",
         pool_name(p),
         p.end_m,
         from.min(p.end_m),
@@ -669,9 +688,10 @@ mod tests {
         p.end_moved_from_m = Some(100.0);
         assert_eq!(
             moved_warning(&p),
-            "the pool from 0 m to 100 m: the search could not end on the pool's end pose, so its \
-             search end moved 20 m upstream, to 80 m, where it closes; the pool's water level and \
-             weir are unchanged, so check the line between 80 m and 100 m"
+            "the pool from 0 m to 100 m: the search could not end on the pool's end pose with a \
+             line that does not cross itself, so its search end moved 20 m upstream, to 80 m, where \
+             it does; the pool's water level and weir are unchanged, so check the line between 80 m \
+             and 100 m"
         );
         p.end_m = 100.0;
         p.end_moved_from_m = None;

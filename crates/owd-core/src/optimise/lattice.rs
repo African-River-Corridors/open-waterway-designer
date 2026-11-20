@@ -1499,6 +1499,16 @@ pub const HIT_CAP_REASON: &str = "the search hit its expansion limit";
 pub const UNCLOSED_REASON: &str = "the search could not end on the pool's end pose, even with the \
     end moved, and its line would join the next piece with a step that breaks R_min or crosses itself";
 
+/// Why a pool keeps its baseline when its own line crosses itself at every search end tried
+/// (issue #569): a design line must never contain a loop.
+pub const SELF_CROSSING_REASON: &str = "its line crosses itself, even with the end moved: a loop is \
+    not a design";
+
+/// Why a pool keeps its baseline when its line crosses the rest of the joined line (another pool's
+/// line, or the baseline) (issue #569).
+pub const CROSSES_LINE_REASON: &str = "its line crosses the rest of the design line: a loop is not \
+    a design";
+
 /// A pool whose search cannot close on its end pose is searched again with its end moved along the
 /// baseline in steps of this fraction of R_min ...
 pub const BOUNDARY_STEP_FRACTION: f64 = 0.25;
@@ -1738,7 +1748,18 @@ impl PoolsResult {
             .filter(|p| p.kept_baseline_because == Some(UNCLOSED_REASON))
     }
 
-    /// The pools whose search end was moved so that the search closes.
+    /// The pools (or pieces) that keep their baseline because their line crossed itself
+    /// ([`SELF_CROSSING_REASON`]) or crossed the rest of the line ([`CROSSES_LINE_REASON`]).
+    pub fn looped_pools(&self) -> impl Iterator<Item = &PoolAlignment> {
+        self.pools.iter().filter(|p| {
+            matches!(
+                p.kept_baseline_because,
+                Some(SELF_CROSSING_REASON | CROSSES_LINE_REASON)
+            )
+        })
+    }
+
+    /// The pools whose search end was moved so that the search closes with a simple line.
     pub fn moved_boundaries(&self) -> impl Iterator<Item = &PoolAlignment> {
         self.pools.iter().filter(|p| p.end_moved_from_m.is_some())
     }
@@ -1774,7 +1795,14 @@ impl PoolsResult {
 /// and one heading bin of its end pose) is spliced only if its join holds R_min and the joined line
 /// does not cross itself there; otherwise the pool keeps its baseline ([`UNCLOSED_REASON`]). With
 /// `close_goal` false (the older search) fallback lines are spliced as they are, and joins that
-/// break R_min are reported. In every case a joined line that crosses itself says where
+/// break R_min are reported.
+///
+/// A design line must never contain a loop (issue #569). A pool whose own line crosses itself is
+/// searched again on moved ends in the same way, and keeps its baseline
+/// ([`SELF_CROSSING_REASON`]) when no end gives a simple line. After the join, a pool whose line
+/// crosses the rest of the joined line keeps its baseline ([`CROSSES_LINE_REASON`]): at each
+/// crossing the later pool of the two passes, one at a time, until the line is simple or only
+/// baseline crosses baseline. In every case a joined line that still crosses itself says where
 /// (`self_crossing_m`).
 #[allow(clippy::too_many_arguments)]
 pub fn optimise_pools(
@@ -1836,7 +1864,10 @@ pub fn optimise_pools(
             )
         };
         let mut pa = search(b0)?;
-        if cfg.close_goal && pa.result.converged && !pa.result.goal_closed {
+        // A pool is searched again with a moved end when its search could not close (with
+        // `close_goal`), or when its own line crosses itself (issue #569): a loop is never spliced.
+        let unclosed = |r: &LatticeResult| cfg.close_goal && !r.goal_closed;
+        if pa.result.converged && (unclosed(&pa.result) || crosses_itself(&pa.result)) {
             // The next pool, when it starts where this one ends.
             let next = split
                 .get(idx + 1)
@@ -1858,7 +1889,7 @@ pub fn optimise_pools(
                 .collect();
             for e in ends {
                 let t = search(e)?;
-                if t.result.converged && t.result.goal_closed {
+                if t.result.converged && !unclosed(&t.result) && !crosses_itself(&t.result) {
                     if e > b0 && next.is_some() {
                         start_override = Some((e, b0));
                     }
@@ -1877,6 +1908,8 @@ pub fn optimise_pools(
             (false, Some(HIT_CAP_REASON))
         } else if !converged {
             (false, Some("the search did not converge"))
+        } else if crosses_itself(&pa.result) {
+            (false, Some(SELF_CROSSING_REASON))
         } else if keep_if_dearer && dearer {
             let base_ok = line_of(linear::substring(baseline, pa.start_m, pa.end_m))
                 .ok()
@@ -1901,31 +1934,39 @@ pub fn optimise_pools(
     }
     let chord = default_check_chord(cfg.r_min_m);
     // A pool that still cannot close keeps its baseline when its line breaks the join; keeping it
-    // changes the line, so join again until nothing more is dropped (at most once per pool).
+    // changes the line, so join again until nothing more is dropped (at most once per pool). Then a
+    // pool whose line crosses the rest of the joined line keeps its baseline too (issue #569): at each
+    // crossing, the later pool's line of the two passes (or the one pool's, when the other pass is
+    // baseline), one pool per join, until the line is simple or no pool's line is in a crossing.
     let (coords, joins) = loop {
-        let (coords, joins) = join_line(baseline, blen, &out_pools, chord, cfg.r_min_m)?;
-        if !cfg.close_goal {
-            break (coords, joins);
-        }
+        let (coords, joins, spans) = join_line(baseline, blen, &out_pools, chord, cfg.r_min_m)?;
         let mut dropped = false;
-        for p in out_pools
-            .iter_mut()
-            .filter(|p| p.used && !p.result.goal_closed)
-        {
-            let Some((j, s)) = joins.iter().find(|(j, _)| (j.at_m - p.end_m).abs() <= 1e-9) else {
-                continue; // the line ends where this pool ends: nothing joins it there
-            };
-            let total = linear::length(&coords);
-            let window = line_of(linear::substring(
-                &coords,
-                crate::py_max(0.0, s - 2.0 * chord),
-                crate::py_min(total, s + 2.0 * chord),
-            ))?;
-            if !j.radius_ok || crate::alignment::loops::is_self_intersecting(&window) {
-                p.used = false;
-                p.kept_baseline_because = Some(UNCLOSED_REASON);
-                dropped = true;
+        if cfg.close_goal {
+            for p in out_pools
+                .iter_mut()
+                .filter(|p| p.used && !p.result.goal_closed)
+            {
+                let Some((j, s)) = joins.iter().find(|(j, _)| (j.at_m - p.end_m).abs() <= 1e-9)
+                else {
+                    continue; // the line ends where this pool ends: nothing joins it there
+                };
+                let total = linear::length(&coords);
+                let window = line_of(linear::substring(
+                    &coords,
+                    crate::py_max(0.0, s - 2.0 * chord),
+                    crate::py_min(total, s + 2.0 * chord),
+                ))?;
+                if !j.radius_ok || crate::alignment::loops::is_self_intersecting(&window) {
+                    p.used = false;
+                    p.kept_baseline_because = Some(UNCLOSED_REASON);
+                    dropped = true;
+                }
             }
+        }
+        if !dropped && let Some(pi) = pool_in_a_crossing(&coords, &spans) {
+            out_pools[pi].used = false;
+            out_pools[pi].kept_baseline_because = Some(CROSSES_LINE_REASON);
+            dropped = true;
         }
         if !dropped {
             break (coords, joins);
@@ -1943,8 +1984,40 @@ pub fn optimise_pools(
     })
 }
 
-/// The joined line, and each join with its chainage along that line.
-type JoinedLine = (Vec<Pt>, Vec<(PoolJoin, f64)>);
+/// Whether a converged search's own line crosses itself (issue #569).
+fn crosses_itself(r: &LatticeResult) -> bool {
+    r.line
+        .as_deref()
+        .is_some_and(crate::alignment::loops::is_self_intersecting)
+}
+
+/// The pool to keep as baseline for the first crossing of the joined line that a pool's line is in:
+/// the pool on the later pass, else the pool on the earlier pass. `None` when the line does not
+/// cross itself, or only baseline crosses baseline.
+fn pool_in_a_crossing(coords: &[Pt], spans: &[(f64, f64, Option<usize>)]) -> Option<usize> {
+    let pool_at = |s: f64| -> Option<usize> {
+        let last = spans.len().checked_sub(1)?;
+        spans
+            .iter()
+            .enumerate()
+            .find(|(i, (a, b, _))| *a <= s && (s < *b || *i == last))
+            .and_then(|(_, sp)| sp.2)
+    };
+    let mut crossings = crate::alignment::loops::self_crossings_m(coords);
+    crossings.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.total_cmp(&y.1)));
+    crossings
+        .into_iter()
+        .find_map(|(a, b)| pool_at(b).or_else(|| pool_at(a)))
+}
+
+/// The joined line, each join with its chainage along that line, and each piece of the line: where
+/// it starts and ends along the line, and the index of the pool whose line it is (`None` for the
+/// baseline).
+type JoinedLine = (
+    Vec<Pt>,
+    Vec<(PoolJoin, f64)>,
+    Vec<(f64, f64, Option<usize>)>,
+);
 
 /// Splice the used pools' lines into `baseline`, and read every join of a used pool's line: each
 /// with its chainage along the joined line.
@@ -1955,38 +2028,45 @@ fn join_line(
     chord: f64,
     r_min_m: f64,
 ) -> Result<JoinedLine, Refusal> {
-    // Each piece, with the baseline chainage it starts at and whether it is a pool's line.
-    let mut pieces: Vec<(Vec<Pt>, f64, bool)> = Vec::new();
+    // Each piece, with the baseline chainage it starts at and the pool whose line it is.
+    let mut pieces: Vec<(Vec<Pt>, f64, Option<usize>)> = Vec::new();
     // The miss (position, heading) of each used pool at its far end, by its end chainage.
     let mut misses: Vec<(f64, f64, f64)> = Vec::new();
     let mut cursor = 0.0;
-    for p in pools.iter().filter(|p| p.used) {
+    for (pi, p) in pools.iter().enumerate().filter(|(_, p)| p.used) {
         misses.push((p.end_m, p.result.end_err_m, p.result.end_heading_err_rad));
         if p.start_m > cursor {
             pieces.push((
                 line_of(linear::substring(baseline, cursor, p.start_m))?,
                 cursor,
-                false,
+                None,
             ));
         }
-        pieces.push((p.result.line.clone().unwrap_or_default(), p.start_m, true));
+        pieces.push((
+            p.result.line.clone().unwrap_or_default(),
+            p.start_m,
+            Some(pi),
+        ));
         cursor = p.end_m;
     }
     if cursor < blen {
         pieces.push((
             line_of(linear::substring(baseline, cursor, blen))?,
             cursor,
-            false,
+            None,
         ));
     }
     let mut coords: Vec<Pt> = Vec::new();
+    // The index in `coords` where each piece starts.
+    let mut piece_at: Vec<usize> = Vec::new();
     // The index in `coords` where each piece after the first starts, when a pool's line is on
     // either side of it.
     let mut join_at: Vec<(usize, f64)> = Vec::new();
     for (i, (pc, at, lattice)) in pieces.iter().enumerate() {
-        if i > 0 && (*lattice || pieces[i - 1].2) {
+        if i > 0 && (lattice.is_some() || pieces[i - 1].2.is_some()) {
             join_at.push((coords.len().saturating_sub(1), *at));
         }
+        piece_at.push(coords.len().saturating_sub(1));
         for xy in pc {
             let far = coords
                 .last()
@@ -2025,5 +2105,57 @@ fn join_line(
             s,
         ));
     }
-    Ok((coords, joins))
+    let spans = pieces
+        .iter()
+        .enumerate()
+        .map(|(i, pc)| {
+            let end = piece_at
+                .get(i + 1)
+                .map_or(total, |&k| cum[k.min(cum.len() - 1)]);
+            (cum[piece_at[i].min(cum.len() - 1)], end, pc.2)
+        })
+        .collect();
+    Ok((coords, joins, spans))
+}
+
+#[cfg(test)]
+mod crossing_tests {
+    //! Label: property (which pool keeps its baseline for a crossing of the joined line, #569).
+    use super::*;
+
+    /// East along y = 0 (baseline, then pool 0), then pool 1 turns back west across the baseline.
+    fn line() -> (Vec<Pt>, Vec<(f64, f64, Option<usize>)>) {
+        let coords = vec![
+            [0.0, 0.0],
+            [100.0, 0.0],
+            [200.0, 0.0],
+            [200.0, 50.0],
+            [50.0, 50.0],
+            [50.0, -50.0],
+        ];
+        // Baseline 0..100 m, pool 0 from 100 to 250 m, pool 1 from 250 m to the end (500 m).
+        (
+            coords,
+            vec![
+                (0.0, 100.0, None),
+                (100.0, 250.0, Some(0)),
+                (250.0, 500.0, Some(1)),
+            ],
+        )
+    }
+
+    #[test]
+    fn the_later_pool_of_a_crossing_keeps_its_baseline() {
+        let (coords, spans) = line();
+        // Pool 1 crosses the baseline at x = 50: pool 1 is on the later pass.
+        assert_eq!(pool_in_a_crossing(&coords, &spans), Some(1));
+        // With pool 1 baseline, the earlier pass's pool is named when the later pass is baseline.
+        let spans = vec![(0.0, 100.0, Some(0)), (100.0, 500.0, None)];
+        assert_eq!(pool_in_a_crossing(&coords, &spans), Some(0));
+        // Baseline crossing baseline names no pool; a simple line names none.
+        let spans = vec![(0.0, 500.0, None)];
+        assert_eq!(pool_in_a_crossing(&coords, &spans), None);
+        let simple = vec![[0.0, 0.0], [100.0, 0.0], [200.0, 50.0]];
+        assert_eq!(pool_in_a_crossing(&simple, &[(0.0, 211.8, Some(0))]), None);
+    }
 }

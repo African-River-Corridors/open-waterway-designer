@@ -18,7 +18,8 @@ pub fn no_feasible_line(option: &Value) -> bool {
 /// The checks an option fails, by name. `R_min` when the minimum radius is under the ruleset's;
 /// `fits_in_water` when a water-aware option has an infeasible stretch, and `join_guard` when a
 /// join that held R_min failed after a later fit (spec 0005); `no_feasible_line` when every bend
-/// of a water-aware option is infeasible (issue #366).
+/// of a water-aware option is infeasible (issue #366); `no_self_crossing` when the pool lattice's
+/// line crosses itself (issue #569).
 pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     let mut failed = Vec::new();
     if no_feasible_line(option) {
@@ -33,6 +34,9 @@ pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     }
     if c["join_guard"]["ok"].as_bool() == Some(false) {
         failed.push("join_guard");
+    }
+    if c["no_self_crossing"]["ok"].as_bool() == Some(false) {
+        failed.push("no_self_crossing");
     }
     failed
 }
@@ -509,4 +513,23 @@ fn part_of(line: &[[f64; 2]], a: f64, b: f64) -> Vec<[f64; 2]> {
         out.push(p);
     }
     out
+}
+
+#[cfg(test)]
+mod crossing_tests {
+    //! Label: property (a lattice line that crosses itself is a failed check, #569).
+    use super::*;
+
+    #[test]
+    fn a_line_that_crosses_itself_fails_no_self_crossing() {
+        let mut o = json!({"checks": {"radius_ok": true,
+            "no_self_crossing": {"ok": false, "first_crossing_m": 313.0}}});
+        assert_eq!(failed_checks(&o), vec!["no_self_crossing"]);
+        o["checks"]["radius_ok"] = json!(false);
+        assert_eq!(failed_checks(&o), vec!["R_min", "no_self_crossing"]);
+        o["checks"]["no_self_crossing"] = json!({"ok": true, "first_crossing_m": null});
+        assert_eq!(failed_checks(&o), vec!["R_min"]);
+        // An option with no such check (every other method) is not failed by it.
+        assert!(failed_checks(&json!({"checks": {"radius_ok": true}})).is_empty());
+    }
 }
