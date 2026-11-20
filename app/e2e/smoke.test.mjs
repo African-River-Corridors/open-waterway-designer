@@ -372,7 +372,7 @@ describe("Open Waterway Designer app smoke test", () => {
     await until("alignment to be fresh", async () => (await text("status-alignment")) === "fresh", 60000);
     await until("the last run's mode", async () => /Ignore the water/.test(await text("use-water-last")));
     const doc = await savedDoc();
-    assert.equal(doc.options.find((o) => o.method === "rolling_circle").settings.use_water, false);
+    assert.equal(doc.stages.alignment.results.settings.use_water, false);
     // A change marks the stage stale.
     await choose("use-water", "default");
     await until("alignment to go stale", async () => (await text("status-alignment")) === "stale");

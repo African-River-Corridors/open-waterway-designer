@@ -26,9 +26,11 @@
 
   let tab = $state<"options" | "stretches">("options");
 
-  /** The screening outputs of an option, from the document's volumes results. */
-  const screeningOf = (id: string | null): Screening | undefined =>
-    id ? snap?.document.stages.volumes.results?.options?.find((o) => o.id === id)?.screening : undefined;
+  /** The screening outputs of the design line, from the document's volumes results. */
+  const screeningOf = (id: string | null): Screening | undefined => {
+    const row = snap?.document.stages.volumes.results;
+    return id && row?.id === id ? row.screening : undefined;
+  };
   let screening = $derived(screeningOf(selectedId));
   let selectedName = $derived(table?.rows.find((r) => r.id === selectedId)?.name ?? selectedId ?? "");
   let onMap = $derived(new Set((stretches?.features ?? []).map((f) => f.properties.option_id)));

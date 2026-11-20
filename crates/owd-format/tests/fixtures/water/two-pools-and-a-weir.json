@@ -1,0 +1,144 @@
+{
+ "label": "Label: golden",
+ "why": "Two pools meet at a weir at 400 m: 10 m below it, 12 m above. Each pool carries a minimum and a maximum level (issue 532). The stage puts two points at the weir, the lower level first; at the weir itself the upstream pool holds, as in a water profile.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "pools": [
+   {
+    "from": 0.0,
+    "to": 400.0,
+    "level_m": 10.0,
+    "min_level_m": 9.5,
+    "max_level_m": 10.6
+   },
+   {
+    "from": 400.0,
+    "to": 1000.0,
+    "level_m": 12.0,
+    "min_level_m": 11.6,
+    "max_level_m": 12.4
+   }
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 10.0,
+     "source": "pool",
+     "min_level_m": 9.5,
+     "max_level_m": 10.6
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 10.0,
+     "source": "pool",
+     "min_level_m": 9.5,
+     "max_level_m": 10.6
+    },
+    {
+     "chainage": 400.0,
+     "river_chainage": 400.0,
+     "level_m": 10.0,
+     "source": "pool",
+     "min_level_m": 9.5,
+     "max_level_m": 10.6
+    },
+    {
+     "chainage": 400.0,
+     "river_chainage": 400.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "min_level_m": 11.6,
+     "max_level_m": 12.4
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "min_level_m": 11.6,
+     "max_level_m": 12.4
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "min_level_m": 11.6,
+     "max_level_m": 12.4
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "min_level_m": 11.6,
+     "max_level_m": 12.4
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 400.0,
+     "source": "pool",
+     "pool": 0,
+     "pool_level_m": 10.0,
+     "min_level_m": 9.5,
+     "max_level_m": 10.6
+    },
+    {
+     "from": 400.0,
+     "to": 1000.0,
+     "source": "pool",
+     "pool": 1,
+     "pool_level_m": 12.0,
+     "min_level_m": 11.6,
+     "max_level_m": 12.4
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    100.0,
+    10.0
+   ],
+   [
+    399.0,
+    10.0
+   ],
+   [
+    400.0,
+    12.0
+   ],
+   [
+    401.0,
+    12.0
+   ]
+  ]
+ }
+}

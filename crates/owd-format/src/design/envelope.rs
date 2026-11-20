@@ -2,13 +2,23 @@
 //! sizes on the reference line (see `owd_core::envelope`), kept in the study. Like `fits`, it is
 //! never rerun by `run_stale`: a change to the banks, the river polygon, the reference line, the
 //! custom vessel or the settings makes it stale, and only `owd envelope` replaces it.
+//!
+//! Spec 0017 ticket 7: its output is the typed [`EnvelopeResult`] (schema
+//! `schema/stages/envelope.1.schema.json`), and its `depends_on` is the hash of the typed
+//! [`EnvelopeIn`] it read: the plan line (the fresh reference line, else the centreline), the water,
+//! the custom vessel, the settings, the bed's shallowest depth, the banks and the project CRS. It
+//! has no hash of its own. A sweep stored by an older OWD opens stale, with a note.
 
+use super::alignment::pts_of;
 use super::hash::hash_value;
 use super::screening::SCREENING_NOTICE;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
+use crate::types::{Polyline, RiverPolygon};
 use owd_core::envelope::{Envelope, Settings, Size, combine, longest_for_beam, size_result};
 use owd_core::fits::FitStretch;
 use owd_core::geom::Pt;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// Said on every output: the sweep reads width and radius on lines fitted in the banks as found.
@@ -17,6 +27,139 @@ pub const BANK_CAVEAT: &str = "the answer is only as good as the banks: a narrow
 
 /// Said on every output: what the sweep reads.
 pub const ENVELOPE_LABEL: &str = "single-hull motor vessels; width and radius only, no depth";
+
+/// The stage's name, as the document stores it.
+pub const STAGE: &str = "envelope";
+
+/// A number the sweep reports; `null` where it is not a number (JSON has no NaN).
+pub type Num = Option<f64>;
+
+/// One stretch where a size does not fit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct StretchOut {
+    pub kind: String,
+    pub start_chainage_m: Num,
+    pub end_chainage_m: Num,
+    pub start: [Num; 2],
+    pub end: [Num; 2],
+    pub required_m: Num,
+    pub found_m: Num,
+    pub deficit_m: Num,
+}
+
+/// A size of the series, by label.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SizeLabel {
+    pub label: String,
+    pub loa_m: Num,
+    pub beam_m: Num,
+}
+
+/// One size's answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SizeRow {
+    pub label: String,
+    pub loa_m: Num,
+    pub beam_m: Num,
+    pub r_min_m: Num,
+    pub bottom_width_straight_m: Num,
+    pub passes: bool,
+    pub stretch_count: usize,
+    pub stretches: Vec<StretchOut>,
+    pub notes: Vec<String>,
+}
+
+/// The largest size that fits in one kilometre of the plan line.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct KmRow {
+    pub from_m: Num,
+    pub to_m: Num,
+    pub from: [Num; 2],
+    pub to: [Num; 2],
+    pub largest: Option<SizeLabel>,
+}
+
+/// A vessel class (or the custom vessel) marked against the answer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MarkRow {
+    pub id: String,
+    pub custom: bool,
+    pub loa_m: Num,
+    pub beam_m: Num,
+    pub within: bool,
+}
+
+/// The longest length for one beam (ticket C5).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BeamRow {
+    pub beam_m: Num,
+    pub longest_m: Num,
+    pub at_max: bool,
+    pub binding: Vec<StretchOut>,
+}
+
+/// The bed model's draught limit, beside the answer (the sweep is plan only).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BedLimit {
+    pub shallowest_depth_m: Num,
+    pub draught_m: Num,
+    pub note: String,
+}
+
+/// What the envelope stage returns, as the study keeps it. A field the contract does not know is
+/// refused, so none is dropped without a word (the rows inside are not checked this way yet).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EnvelopeResult {
+    pub label: String,
+    pub notice: String,
+    pub bank_caveat: String,
+    pub rule_set: String,
+    pub draught_m: Num,
+    pub clearance_m: Num,
+    pub length_m: Num,
+    pub largest: Option<SizeLabel>,
+    pub sizes: Vec<SizeRow>,
+    pub per_km: Vec<KmRow>,
+    pub marks: Vec<MarkRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by_beam: Option<Vec<BeamRow>>,
+    /// `reference` or `centreline`: the line the sizes were read on.
+    pub plan_line: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_line_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bed_model: Option<BedLimit>,
+}
+
+/// What the envelope stage reads.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EnvelopeIn {
+    /// The line the sizes are read on: the fresh reference line, else the river centreline.
+    pub plan_line: Polyline,
+    /// `reference` or `centreline`.
+    pub plan_line_kind: String,
+    /// The river as water.
+    pub river_polygon: RiverPolygon,
+    /// The custom vessel, marked against the answer when there is one.
+    #[serde(default)]
+    pub custom_vessel: Value,
+    /// The sweep's settings, as stored.
+    pub settings: Value,
+    /// The shallowest depth of the bed model, when there is one.
+    #[serde(default)]
+    pub bed_shallowest_depth_m: Option<f64>,
+    /// The left bank, when there is one. With both banks a rerun reads a reference line, so their
+    /// arrival makes a sweep read on the centreline stale (QA on PR 560).
+    #[serde(default)]
+    pub left_bank: Option<Polyline>,
+    /// The right bank, when there is one.
+    #[serde(default)]
+    pub right_bank: Option<Polyline>,
+    /// The project CRS, as the document holds it.
+    #[serde(default)]
+    pub crs: Value,
+}
 
 fn stretch_json(st: &FitStretch) -> Value {
     json!({
@@ -75,21 +218,95 @@ fn envelope_json(e: &Envelope, at: &dyn Fn(f64) -> Pt) -> Value {
     })
 }
 
+/// A plain note when the stored sweep was made by an older OWD: its hash is the old hand-made
+/// formula (PR 558's), and fresh by it. It now shows stale, since its hash is the hash of
+/// [`EnvelopeIn`]. Read on the raw document before the reference line moves (the old formula read
+/// `inputs.reference_line`).
+pub(super) fn older_answer_note(doc: &Value) -> Option<String> {
+    let e = &doc["stages"][STAGE];
+    if e["results"].is_null() {
+        return None;
+    }
+    let inp = &doc["inputs"];
+    let old = hash_value(&json!({
+        "left_bank": inp["left_bank"],
+        "right_bank": inp["right_bank"],
+        "river_polygon": inp["river_polygon"],
+        "centreline": inp["centreline"],
+        "crs": doc["project"]["crs"],
+        "reference_line": inp["reference_line"]["depends_on"],
+        "custom_vessel": doc["stages"]["sizing"]["settings"]["custom_vessel"],
+        "settings": e["settings"],
+    }));
+    (e["depends_on"].as_str() == Some(old.as_str())).then(|| {
+        "The largest-vessel sweep was stored by an older OWD. OWD now records what it read in \
+         another way, so it shows as stale though nothing changed: run `owd envelope` again."
+            .to_string()
+    })
+}
+
 impl Session {
-    /// What the sweep depends on: the banks, the river polygon, the CRS, the reference line, the
-    /// custom vessel and the settings.
+    /// The settings as the record stores them.
+    fn envelope_settings_value(settings: &Settings) -> Value {
+        let mut v = json!({
+            "sizes": settings.sizes.iter().map(size_json).collect::<Vec<_>>(),
+            "draught_m": settings.draught_m,
+            "rule_set": settings.rule_set,
+            "clearance_m": settings.clearance_m,
+        });
+        // The length search's settings, only when it ran: a sweep with no beam is as before.
+        if !settings.beams_m.is_empty() {
+            v["beams_m"] = json!(settings.beams_m);
+            let ls = settings.length_search;
+            v["length_search"] = json!({"min_m": ls.min_m, "max_m": ls.max_m, "step_m": ls.step_m});
+        }
+        v
+    }
+
+    /// The bed model's shallowest depth, when there is a bed model.
+    fn bed_shallowest(&self) -> Option<f64> {
+        let b = self.bed_model_value()?;
+        let d = b["points"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|p| p[1].as_f64())
+            .fold(f64::INFINITY, f64::min);
+        d.is_finite().then_some(d)
+    }
+
+    /// What the envelope stage reads, from the document, with `settings` as the record stores them:
+    /// the fresh reference line, else the centreline. `None` without a river polygon or a line.
+    fn envelope_input_with(&self, settings: Value) -> Option<EnvelopeIn> {
+        let river_polygon = RiverPolygon::from_geometry(&self.doc["inputs"]["river_polygon"])?;
+        let (line, kind) = match self.bed_axis_line() {
+            Some(l) => (l, "reference"),
+            None => (self.river_centreline().ok()?, "centreline"),
+        };
+        Some(EnvelopeIn {
+            plan_line: Polyline(line),
+            plan_line_kind: kind.into(),
+            river_polygon,
+            custom_vessel: self.doc["stages"]["sizing"]["settings"]["custom_vessel"].clone(),
+            settings,
+            bed_shallowest_depth_m: self.bed_shallowest(),
+            left_bank: pts_of(&self.doc["inputs"]["left_bank"]).map(Polyline),
+            right_bank: pts_of(&self.doc["inputs"]["right_bank"]).map(Polyline),
+            crs: self.doc["project"]["crs"].clone(),
+        })
+    }
+
+    /// What the stored sweep would read now, with its stored settings.
+    pub fn envelope_input(&self) -> Option<EnvelopeIn> {
+        let settings = self.doc["stages"][STAGE]["settings"].clone();
+        (!settings.is_null())
+            .then(|| self.envelope_input_with(settings))
+            .flatten()
+    }
+
+    /// The hash of what the stored sweep would read now.
     fn envelope_dependency_hash(&self) -> String {
-        let inp = &self.doc["inputs"];
-        hash_value(&json!({
-            "left_bank": inp["left_bank"],
-            "right_bank": inp["right_bank"],
-            "river_polygon": inp["river_polygon"],
-            "centreline": inp["centreline"],
-            "crs": self.doc["project"]["crs"],
-            "reference_line": inp["reference_line"]["depends_on"],
-            "custom_vessel": self.doc["stages"]["sizing"]["settings"]["custom_vessel"],
-            "settings": self.doc["stages"]["envelope"]["settings"],
-        }))
+        hash_value(&json!(self.envelope_input()))
     }
 
     /// Where the sweep stands: not run, fresh, or stale.
@@ -200,30 +417,23 @@ impl Session {
                 });
             }
         }
+        // The typed output: what the study keeps must read as the contract says.
+        let typed: EnvelopeResult = serde_json::from_value(results).map_err(|e| {
+            DesignError::Input(format!(
+                "the sweep's answer does not read as its contract: {e}"
+            ))
+        })?;
+        let set = Self::envelope_settings_value(&settings);
+        let input = self.envelope_input_with(set.clone());
         if !self.doc["stages"].is_object() {
             self.doc["stages"] = json!({});
         }
-        self.doc["stages"]["envelope"] = json!({
-            "settings": {
-                "sizes": settings.sizes.iter().map(size_json).collect::<Vec<_>>(),
-                "draught_m": settings.draught_m,
-                "rule_set": settings.rule_set,
-                "clearance_m": settings.clearance_m,
-            },
-            "results": results,
-            "depends_on": null,
+        self.doc["stages"][STAGE] = json!({
+            "settings": set,
+            "results": typed,
+            "depends_on": hash_value(&json!(input)),
             "engine_version": ENGINE_VERSION,
         });
-        // The length search's settings, only when it ran: a sweep with no beam is as before.
-        if !settings.beams_m.is_empty() {
-            let set = &mut self.doc["stages"]["envelope"]["settings"];
-            set["beams_m"] = json!(settings.beams_m);
-            let ls = settings.length_search;
-            set["length_search"] =
-                json!({"min_m": ls.min_m, "max_m": ls.max_m, "step_m": ls.step_m});
-        }
-        let h = self.envelope_dependency_hash();
-        self.doc["stages"]["envelope"]["depends_on"] = json!(h);
         Ok(())
     }
 }

@@ -1,0 +1,152 @@
+{
+ "label": "Label: golden",
+ "why": "Two pools cover 200 m to 800 m only (10 m, then 12 m from 500 m). Beyond their ends the level is held flat at the nearer pool's level, as the optimise stage's pools are read today; those points say `held_flat` and carry no pool limits.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "pools": [
+   {
+    "from": 200.0,
+    "to": 500.0,
+    "level_m": 10.0
+   },
+   {
+    "from": 500.0,
+    "to": 800.0,
+    "level_m": 12.0
+   }
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 10.0,
+     "source": "pool",
+     "held_flat": true
+    },
+    {
+     "chainage": 200.0,
+     "river_chainage": 200.0,
+     "level_m": 10.0,
+     "source": "pool",
+     "held_flat": true
+    },
+    {
+     "chainage": 200.0,
+     "river_chainage": 200.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 12.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 12.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 800.0,
+     "river_chainage": 800.0,
+     "level_m": 12.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 800.0,
+     "river_chainage": 800.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "held_flat": true
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 12.0,
+     "source": "pool",
+     "held_flat": true
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 200.0,
+     "source": "pool",
+     "held_flat": true
+    },
+    {
+     "from": 200.0,
+     "to": 500.0,
+     "source": "pool",
+     "pool": 0,
+     "pool_level_m": 10.0
+    },
+    {
+     "from": 500.0,
+     "to": 800.0,
+     "source": "pool",
+     "pool": 1,
+     "pool_level_m": 12.0
+    },
+    {
+     "from": 800.0,
+     "to": 1000.0,
+     "source": "pool",
+     "held_flat": true
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    100.0,
+    10.0
+   ],
+   [
+    600.0,
+    12.0
+   ],
+   [
+    900.0,
+    12.0
+   ]
+  ]
+ }
+}

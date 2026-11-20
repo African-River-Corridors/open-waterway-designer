@@ -49,7 +49,7 @@
     },
     {
       "name": "design_line_length_m",
-      "read": { "pointer": "/options/0/line", "measure": "length_m" },
+      "read": { "pointer": "/stages/alignment/results/line", "measure": "length_m" },
       "value": 3200.0,
       "class": "outcome",
       "tolerance": { "relative": 0.01 },

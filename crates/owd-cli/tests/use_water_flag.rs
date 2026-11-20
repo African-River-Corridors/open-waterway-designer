@@ -75,7 +75,7 @@ fn stored(d: &Value) -> &Value {
 }
 
 fn used(d: &Value) -> &Value {
-    &d["options"][0]["settings"]["use_water"]
+    &d["stages"]["alignment"]["results"]["settings"]["use_water"]
 }
 
 fn align(path: &Path, extra: &[&str]) -> Output {
@@ -99,7 +99,10 @@ fn the_flag_sets_and_stores_the_setting_and_run_keeps_it() {
     assert!(code(&o) == 0 || code(&o) == 1, "{}", err(&o));
     let again = read(&path);
     assert_eq!(stored(&again), &json!(false));
-    assert_eq!(again["options"][0]["line"], off["options"][0]["line"]);
+    assert_eq!(
+        again["stages"]["alignment"]["results"]["line"],
+        off["stages"]["alignment"]["results"]["line"]
+    );
 
     // `owd run` after a change of sizing reruns the alignment with the stored setting.
     let mut d = read(&path);
@@ -128,7 +131,10 @@ fn the_flag_true_and_the_default_give_the_same_line_here() {
     assert_eq!(stored(&on), &json!(true));
     assert_eq!(stored(&default), &Value::Null);
     assert_eq!(used(&default), &json!(true));
-    assert_eq!(on["options"][0]["line"], default["options"][0]["line"]);
+    assert_eq!(
+        on["stages"]["alignment"]["results"]["line"],
+        default["stages"]["alignment"]["results"]["line"]
+    );
 }
 
 #[test]

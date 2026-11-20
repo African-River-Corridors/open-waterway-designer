@@ -337,7 +337,7 @@ fn volumes_with(islands: &[Vec<Pt>]) -> (f64, f64) {
     s.set_dem("dem.tif", b"flat", &dem);
     let sampler = dem_sampler(&dem, Some(32630)).unwrap();
     s.run_volumes(&json!({}), Some(&sampler)).unwrap();
-    let r = &s.document()["stages"]["volumes"]["results"]["options"][0];
+    let r = &s.document()["stages"]["volumes"]["results"];
     let num = |k: &str| r[k].as_f64().unwrap_or_else(|| panic!("{k} in {r}"));
     (num("dredge_m3"), num("excav_m3"))
 }

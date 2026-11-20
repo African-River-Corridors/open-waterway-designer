@@ -384,12 +384,12 @@ fn the_sizing_choices_list_rule_sets_with_their_inputs_and_vessel_classes_with_l
 }
 
 /// A study saved before the shared catalogue names its class by an old id (`CEMT_IV`): it opens with
-/// the same stages fresh, the same sizing, and saves the catalogue id (spec 0015 T0).
+/// its sizing fresh, the same sizing, and saves the catalogue id (spec 0015 T0). The file is format
+/// 0.3, so its stages after sizing open stale (spec 0017: one design line).
 #[test]
 fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
     let text = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/web/river-example.owd"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/format-0.3-example.owd"),
     )
     .unwrap();
     assert!(
@@ -407,12 +407,13 @@ fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
         doc["stages"]["sizing"]["results"]["vessel_standard_id"],
         "CEMT-IV"
     );
-    for stage in [Stage::Sizing, Stage::Alignment, Stage::Volumes] {
-        assert_eq!(
-            s.stage_status(stage),
-            StageStatus::Fresh,
-            "{stage:?} was fresh in the file and stays fresh"
-        );
+    assert_eq!(
+        s.stage_status(Stage::Sizing),
+        StageStatus::Fresh,
+        "the sizing was fresh in the file and stays fresh"
+    );
+    for stage in [Stage::Alignment, Stage::Volumes] {
+        assert_eq!(s.stage_status(stage), StageStatus::Stale, "{stage:?}");
     }
     for k in [
         "bottom_width_straight_m",

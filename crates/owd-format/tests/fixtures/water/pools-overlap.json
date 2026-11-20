@@ -1,0 +1,42 @@
+{
+ "label": "Label: property",
+ "why": "The second pool starts before the first ends.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "pools": [
+   {
+    "from": 0.0,
+    "to": 500.0,
+    "level_m": 10.0
+   },
+   {
+    "from": 400.0,
+    "to": 1000.0,
+    "level_m": 12.0
+   }
+  ]
+ },
+ "expect": {
+  "error": "WATER_POOLS_OVERLAP"
+ }
+}
