@@ -1943,6 +1943,9 @@ pub fn optimise_pools(
     })
 }
 
+/// The joined line, and each join with its chainage along that line.
+type JoinedLine = (Vec<Pt>, Vec<(PoolJoin, f64)>);
+
 /// Splice the used pools' lines into `baseline`, and read every join of a used pool's line: each
 /// with its chainage along the joined line.
 fn join_line(
@@ -1951,7 +1954,7 @@ fn join_line(
     pools: &[PoolAlignment],
     chord: f64,
     r_min_m: f64,
-) -> Result<(Vec<Pt>, Vec<(PoolJoin, f64)>), Refusal> {
+) -> Result<JoinedLine, Refusal> {
     // Each piece, with the baseline chainage it starts at and whether it is a pool's line.
     let mut pieces: Vec<(Vec<Pt>, f64, bool)> = Vec::new();
     // The miss (position, heading) of each used pool at its far end, by its end chainage.
