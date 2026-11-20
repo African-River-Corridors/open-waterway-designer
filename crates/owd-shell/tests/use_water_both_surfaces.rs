@@ -1,8 +1,9 @@
 //! `use_water` set through the command line (`owd align --use-water`) and through the app shell
 //! (its alignment settings, then a run of the stage) gives the same document (ticket #488).
 //!
-//! The river is two closed-form sine banks (see `owd-format/tests/use_water_default.rs`): the
-//! import builds the polygon, so `true` and `false` give different lines.
+//! The river is two closed-form sine banks (the roomy river of `owd-format/tests/use_water_default.rs`,
+//! 350 m amplitude, 1.8 km wavelength, banks 360 m apart): the import builds the polygon, the water
+//! has room to move the line, so `true` and `false` give different lines.
 //!
 //! Label: property
 
@@ -20,7 +21,7 @@ fn sine(off: f64) -> Vec<Pt> {
     (0..=600)
         .map(|i| {
             let x = 10.0 * f64::from(i);
-            let y = 600.0 * (2.0 * std::f64::consts::PI * x / 1200.0).sin() + off;
+            let y = 350.0 * (2.0 * std::f64::consts::PI * x / 1800.0).sin() + off;
             [500_000.0 + x, 600_000.0 + y]
         })
         .collect()
@@ -34,7 +35,7 @@ fn line_text(pts: &[Pt]) -> String {
 }
 
 fn design() -> String {
-    let (left, right) = (line_text(&sine(75.0)), line_text(&sine(-75.0)));
+    let (left, right) = (line_text(&sine(180.0)), line_text(&sine(-180.0)));
     let mut s = Session::new("Use water", "2026-11-10");
     s.import(&[(Role::LeftBank, &left), (Role::RightBank, &right)])
         .unwrap();
