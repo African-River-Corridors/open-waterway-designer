@@ -258,9 +258,6 @@ impl Session {
         };
 
         let plan = self.section_plan(overrides)?;
-        // The water along the line, stored for the drawings and the report (spec 0017 ticket 8).
-        // The walk below reads the same levels at its own stations.
-        self.run_water()?;
         let id = o["id"].as_str().unwrap_or("?");
         let v = self.option_sections(&plan, &o, terrain)?;
         let screening = self.screening_value(&o, &v, &plan.river, &plan.centre)?;
@@ -303,6 +300,9 @@ impl Session {
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Volumes);
         self.doc["stages"]["volumes"]["depends_on"] = json!(h);
+        // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
+        // after the settings, so its step is the stations' step. The walk read the same levels.
+        self.run_water()?;
         Ok(())
     }
 }
@@ -355,7 +355,10 @@ impl Session {
     /// the river, once, for the station walk of every option.
     /// The volumes settings: the defaults, then the document's, then `overrides`. A key the stage
     /// does not know, in the document or from the caller, is refused by name.
-    fn volumes_settings(&self, overrides: &Value) -> Result<VolumesSettings, DesignError> {
+    pub(super) fn volumes_settings(
+        &self,
+        overrides: &Value,
+    ) -> Result<VolumesSettings, DesignError> {
         VolumesSettings::default()
             .apply(&self.doc["stages"]["volumes"]["settings"])?
             .apply(overrides)
@@ -425,8 +428,26 @@ impl Session {
             }
             None => terrain,
         };
-        let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
-        let level = Level::AtChainage(&wl);
+        // The level at each station: through the water stage's own reader (one path, spec 0017
+        // ticket 8). Only the port tests' hidden sampling by design-line chainage reads otherwise.
+        let water_in = self.water_input_on(
+            crate::types::Polyline(line.clone()),
+            crate::types::Polyline(plan.centre.clone()),
+        );
+        let stage_level;
+        let port_level;
+        let wl: &dyn Fn(f64) -> f64 = match self.water_sampling {
+            super::water::WaterSampling::Projection => {
+                stage_level = super::water_stage::level_reader(&water_in)
+                    .map_err(|e| DesignError::Input(e.message))?;
+                &stage_level
+            }
+            super::water::WaterSampling::DesignLineChainage => {
+                port_level = self.water_level_along(&plan.profile, &line, &plan.centre);
+                &port_level
+            }
+        };
+        let level = Level::AtChainage(wl);
         let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
         let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
         let half_width = match plan.fixed_hb {

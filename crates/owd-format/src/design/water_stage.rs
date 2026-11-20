@@ -20,7 +20,8 @@
 //! Beyond the ends of the profile that sets it, a level is held flat, as a water profile always is;
 //! those points say so (`held_flat`).
 //!
-//! The answer is points on design-line chainage: one every `step_m`, and two at each place where
+//! The answer is points on design-line chainage: one at each station of the volumes walk (`step_m`
+//! apart, or a little more, so that they reach the end evenly), and two at each place where
 //! the level steps or its source changes (a weir), the lower chainage's level first. Read between
 //! points, it is linear; at a step, the upstream level holds, as in a [`WaterProfile`].
 
@@ -100,6 +101,9 @@ pub enum WaterSource {
     Pool,
     /// The river's own level, outside every pool.
     OpenRiver,
+    /// Between two pools that do not touch: read straight from the lower pool's level to the upper
+    /// one's (how the optimise stage's pools have always been read).
+    BetweenPools,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -274,13 +278,30 @@ impl Prepared<'_> {
                 }
             },
             BeyondPools::HoldPoolLevel => {
-                let segment = segment_of(pp, c);
-                let held = segment < 0 || segment >= pp.len() as isize;
+                let held_at = segment_of(pp, c);
+                let held = held_at < 0 || held_at >= pp.len() as isize;
+                let pool = if held { None } else { self.pool_at(c) };
+                // Pool k is segment 2k and the gap above it 2k + 1, so a change of segment is a
+                // change of pool or of gap, never one inside a pool.
+                let segment = match (held, pool) {
+                    (true, _) => held_at,
+                    (false, Some(k)) => 2 * k as isize,
+                    (false, None) => {
+                        let below = self.input.pools.iter().rposition(|q| q.to.0 < c);
+                        2 * below.map_or(0, |k| k as isize) + 1
+                    }
+                };
                 Reading {
                     river: c,
                     level: pp.level_at(Chainage(c)),
-                    source: WaterSource::Pool,
-                    pool: if held { None } else { self.pool_at(c) },
+                    // Inside the pools' span but in no pool: read straight from one pool's level
+                    // to the next one's.
+                    source: if held || pool.is_some() {
+                        WaterSource::Pool
+                    } else {
+                        WaterSource::BetweenPools
+                    },
+                    pool,
                     held,
                     segment,
                 }
@@ -451,10 +472,17 @@ pub fn water(input: &WaterIn) -> Result<DesignWater, StageError> {
     check(input)?;
     let prepared = prepare(input);
     let p = &prepared;
-    let n = (p.length_m / input.step_m).ceil().max(1.0) as usize;
-    let samples: Vec<f64> = (0..=n)
-        .map(|i| (i as f64 * input.step_m).min(p.length_m))
-        .collect();
+    // The volumes walk's stations (`station_frame` in the core): `floor(length / step) + 1`
+    // chainages evenly from 0 to the length, so each station is a point of the answer.
+    let n = (p.length_m / input.step_m).floor() as usize + 1;
+    let samples: Vec<f64> = if n < 2 {
+        vec![0.0, p.length_m]
+    } else {
+        let every = p.length_m / (n - 1) as f64;
+        let mut v: Vec<f64> = (0..n).map(|i| i as f64 * every).collect();
+        v[n - 1] = p.length_m;
+        v
+    };
 
     let mut points: Vec<DesignWaterPoint> = Vec::new();
     let mut readings: Vec<Reading> = Vec::new();
@@ -531,8 +559,17 @@ pub fn water(input: &WaterIn) -> Result<DesignWater, StageError> {
 /// and the answer's point at the same chainage give the same level. NaN for an input the stage
 /// refuses.
 pub fn level_on_line(input: &WaterIn, s: f64) -> f64 {
-    if check(input).is_err() {
-        return f64::NAN;
+    match level_reader(input) {
+        Ok(read) => read(s),
+        Err(_) => f64::NAN,
     }
-    prepare(input).reading_at(s).level
+}
+
+/// The level along the design line of `input` as a function of design-line chainage, read as the
+/// stage reads it; refused by code as the stage refuses. The volumes walk reads its levels through
+/// it, so a station and the stored point at its chainage have one level (one path).
+pub fn level_reader(input: &WaterIn) -> Result<impl Fn(f64) -> f64 + '_, StageError> {
+    check(input)?;
+    let p = prepare(input);
+    Ok(move |s: f64| p.reading_at(s).level)
 }
