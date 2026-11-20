@@ -473,6 +473,10 @@ impl Session {
             // volumes read the assumed bed, which is centred on it (#398).
             if let Some(inputs) = dep["inputs"].as_object_mut() {
                 inputs.remove("reference_line");
+                // No stage of the chain reads the run inputs yet (spec 0017, ticket 11): setting
+                // them leaves every stage fresh, and a file saved before them keeps its hashes. The
+                // stage that first reads them adds them to its own hash.
+                inputs.remove(super::run_inputs::INPUT);
             }
             if stage == Stage::Volumes
                 && self.bed_model_value().is_some()
