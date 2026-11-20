@@ -17,8 +17,10 @@ fn at(x: f64, y: f64) -> [f64; 2] {
     [x + 500_000.0, y + 600_000.0]
 }
 
-/// A straight river 100 m wide and 2 km long.
-fn banks() -> (Vec<[f64; 2]>, Vec<[f64; 2]>, Vec<[f64; 2]>) {
+type Line = Vec<[f64; 2]>;
+
+/// A straight river 100 m wide and 2 km long: the left bank, the right bank and the polygon's ring.
+fn banks() -> (Line, Line, Line) {
     let left: Vec<[f64; 2]> = (0..=100).map(|i| at(20.0 * i as f64, 50.0)).collect();
     let right: Vec<[f64; 2]> = (0..=100).map(|i| at(20.0 * i as f64, -50.0)).collect();
     let mut ring = right.clone();
