@@ -9,7 +9,10 @@
 //! 2. **Push out**: a fillet on the line's own tangents either side of the bend, at the smallest
 //!    radius from R_min up (a fixed ladder) at which the channel, widened for that radius, fits.
 //! 3. **Fairway fit** over a window around the bend, between the line's poses at the window ends.
-//! 4. **Infeasible**: the fairway fit's line, which breaks the rules least, and its stretches.
+//! 4. **Infeasible**: the better of the fairway fit's line and the line as it stood (the plain
+//!    rolling circle's), and the fit's stretches. The better is the one that holds R_min on the
+//!    chord (else the one that breaks it least), then the one with less channel width outside the
+//!    water (issue #503). A fit that makes the line cross itself is never taken.
 //!
 //! "Fits" means: every station of the window lies in the water shrunk by half the bottom width
 //! widened for the bend's radius, plus the clearance (navigable water for that radius), and the
@@ -21,7 +24,10 @@ use crate::alignment::fairway_fit::{
     FitParams, Fixed, Pose, fairway_fit_in_water, merge_stretches,
 };
 use crate::alignment::fillet::fillet;
-use crate::alignment::navigable::{Chained, Stretch, StretchReason, navigable_water, width_check};
+use crate::alignment::loops::is_self_intersecting;
+use crate::alignment::navigable::{
+    Chained, Stretch, StretchReason, WaterIndex, navigable_water, width_check,
+};
 use crate::alignment::radius_check::{min_radius_on_chord, radius_ok};
 use crate::geom::grid::EdgeGrid;
 use crate::geom::{Geometry, Polygon, Pt, linear};
@@ -268,6 +274,43 @@ impl<'a> Ladder<'a> {
             .all(|&s| radius_ok(line.local_radius(s, self.chord), self.r_min))
     }
 
+    /// Channel width the water lacks along `window`, summed over `CHECK_STEP_M` stations (m2): the
+    /// shortfall of the water's width against the bottom width the local radius needs.
+    fn width_missing(&self, window: &[Pt]) -> f64 {
+        let index = WaterIndex::new(self.w.water);
+        let c = Chained::new(window);
+        let n = (c.length() / CHECK_STEP_M).ceil() as usize;
+        (0..=n)
+            .map(|i| {
+                let s = (i as f64 * CHECK_STEP_M).min(c.length());
+                let need = self
+                    .w
+                    .shape
+                    .bottom_width_at_m(c.local_radius(s, self.chord));
+                (need - index.width_at(&c, s)).max(0.0) * CHECK_STEP_M
+            })
+            .sum()
+    }
+
+    /// Whether the fairway fit's window (with a chord of line either side) is strictly better than
+    /// the window as it stood (the same stretch of line, with a chord either side): first the
+    /// one that holds R_min on the chord (else the one with the larger radius), then the one with
+    /// less channel width outside the water. A tie keeps the line as it stood.
+    fn fit_is_better(&self, fit: &[Pt], old: &[Pt]) -> Result<bool, PyError> {
+        let (rf, ro) = (
+            min_radius_on_chord(fit, self.chord)?,
+            min_radius_on_chord(old, self.chord)?,
+        );
+        let (hf, ho) = (radius_ok(rf, self.r_min), radius_ok(ro, self.r_min));
+        Ok(if hf && ho {
+            self.width_missing(fit) < self.width_missing(old)
+        } else if hf != ho {
+            hf
+        } else {
+            rf > ro
+        })
+    }
+
     /// One bend: the rung it takes, the line after it, and any infeasible stretches.
     fn bend(&mut self, line: &[Pt], tangent: Pt, contact: Pt) -> Result<BendOutcome, PyError> {
         let c = Chained::new(line);
@@ -336,7 +379,20 @@ impl<'a> Ladder<'a> {
             &fixed,
             &params,
         )?;
-        let spliced = splice(&c, s0, s1, &fit.line);
+        let mut spliced = splice(&c, s0, s1, &fit.line);
+        // The two lines are compared with a chord of line either side of the window, so that the
+        // joins (where the fit meets the line again) count: a fit that holds R_min inside the
+        // window can still kink at a join (issue #514).
+        let pad = self.chord;
+        let sp = Chained::new(&spliced);
+        let fit_end = s0 + linear::length(&fit.line);
+        let new_window = sp.slice((s0 - pad).max(0.0), (fit_end + pad).min(sp.length()));
+        let old_window = c.slice((s0 - pad).max(0.0), (s1 + pad).min(len));
+        let simple = !is_self_intersecting(&spliced) || is_self_intersecting(line);
+        if !(simple && self.fit_is_better(&new_window, &old_window)?) {
+            // Rung 4 compared: the line as it stood is the better one here.
+            spliced = line.to_vec();
+        }
         // The bend itself: its span and half a chord either side, found again on the fitted
         // window by position. A stretch outside it (a window reaching a cut end of the water)
         // is not this bend's.
