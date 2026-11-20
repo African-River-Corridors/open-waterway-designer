@@ -93,3 +93,24 @@ fn a_bed_model_is_reported_beside_the_answer() {
     assert_eq!(b["shallowest_depth_m"], 1.5);
     assert_eq!(b["draught_m"], 2.0);
 }
+
+/// Spec 0017 ticket 7: the sweep's output is typed (it reads as `EnvelopeResult`, with a schema),
+/// and its `depends_on` is the hash of the typed input it read, not a hash of its own.
+#[test]
+fn the_sweep_is_a_typed_stage_whose_hash_is_the_hash_of_its_input() {
+    use owd_format::design::envelope::EnvelopeResult;
+    use owd_format::design::hash::hash_value;
+    let mut s = study();
+    s.run_envelope(Settings::default(), true).unwrap();
+    let rec = &s.document()["stages"]["envelope"];
+    let typed: EnvelopeResult = serde_json::from_value(rec["results"].clone()).unwrap();
+    assert_eq!(serde_json::to_value(&typed).unwrap(), rec["results"]);
+    let input = s.envelope_input().expect("the sweep's input");
+    assert_eq!(rec["depends_on"], json!(hash_value(&json!(input))));
+    assert!(
+        owd_format::stage::contracts()
+            .iter()
+            .any(|c| c.stage == "envelope"),
+        "the envelope has a schema file"
+    );
+}
