@@ -460,6 +460,24 @@ impl Session {
         self.edit(|s| s.set_run_inputs(objective, limits, target_level))
     }
 
+    /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text (a FeatureCollection of polygons
+    /// in the project CRS, each with `name` and `kind`), as `owd constraints --no-go` reads it,
+    /// through the same session call. Empty text removes them.
+    pub fn set_no_go(&mut self, geojson: &str) -> Js<String> {
+        self.edit(|s| s.set_no_go(geojson))
+    }
+
+    /// Set the cut-rate multiplier raster (spec 0017, ticket 13) from the bytes of a GeoTIFF, as
+    /// `owd constraints --multiplier` does, through the same session call.
+    pub fn set_cut_rate_multiplier(&mut self, name: &str, bytes: Vec<u8>) -> Js<String> {
+        self.edit(|s| s.set_cut_rate_multiplier(Path::new(name), bytes))
+    }
+
+    /// Remove the cut-rate multiplier raster (spec 0017, ticket 13).
+    pub fn clear_cut_rate_multiplier(&mut self) -> Js<String> {
+        self.edit(|s| s.clear_cut_rate_multiplier())
+    }
+
     /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as JSON
     /// text, as `owd align --use-water` does (ticket #494). Nothing runs.
     pub fn set_alignment_settings(&mut self, method: &str, settings: &str) -> Js<String> {

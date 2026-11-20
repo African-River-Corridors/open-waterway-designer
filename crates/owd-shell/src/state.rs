@@ -693,6 +693,70 @@ impl AppState {
         Ok(())
     }
 
+    /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text, as `owd constraints --no-go`
+    /// reads it, through `Session::set_constraints`. Empty text removes them. The stages that read
+    /// them go stale. A refusal changes nothing.
+    pub fn set_no_go(&mut self, geojson: &str) -> Result<(), String> {
+        use owd_format::design::constraints::{ConstraintsEdit, no_go_from_geojson};
+        self.refuse_while_running()?;
+        let areas = if geojson.trim().is_empty() {
+            Vec::new()
+        } else {
+            let v: Value = serde_json::from_str(geojson)
+                .map_err(|e| format!("the no-go areas are not JSON: {e}"))?;
+            no_go_from_geojson(&v).map_err(|e| format!("{}: {}", e.code, e.message))?
+        };
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: Some(areas),
+                multiplier: None,
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the cut-rate multiplier raster (spec 0017, ticket 13) from a GeoTIFF the user picked,
+    /// as `owd constraints --multiplier` does, through `Session::set_constraints`: recorded by its
+    /// path (relative to the design's folder), hash, CRS and nodata, and attached. A refusal changes
+    /// nothing.
+    pub fn set_cut_rate_multiplier(&mut self, file: &Path, bytes: Vec<u8>) -> Result<(), String> {
+        use owd_format::design::constraints::{ConstraintsEdit, MultiplierFile};
+        self.refuse_while_running()?;
+        let rel = match self.path.as_deref().and_then(Path::parent) {
+            Some(b) => relative_to(b, file),
+            None => file
+                .file_name()
+                .map_or_else(|| file.to_string_lossy(), |n| n.to_string_lossy())
+                .into_owned(),
+        };
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: None,
+                multiplier: Some(Some(MultiplierFile {
+                    path: &rel,
+                    bytes: &bytes,
+                })),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Remove the cut-rate multiplier raster (spec 0017, ticket 13).
+    pub fn clear_cut_rate_multiplier(&mut self) -> Result<(), String> {
+        use owd_format::design::constraints::ConstraintsEdit;
+        self.refuse_while_running()?;
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: None,
+                multiplier: Some(None),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// State the river mouth from the app's field: `downstream` or `LON,LAT`, as `owd import
     /// --mouth` reads it, through the same shell call. The river inputs are turned to run from the
     /// mouth when it is at their far end, and the stages that read them go stale. A refusal (no
