@@ -38,10 +38,8 @@ fn session() -> Session {
 }
 
 fn option(s: &Session, method: AlignMethod) -> Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
+    owd_format::design::design_lines_of(s.document())
+        .into_iter()
         .find(|o| o["method"] == method.name())
         .unwrap()
         .clone()

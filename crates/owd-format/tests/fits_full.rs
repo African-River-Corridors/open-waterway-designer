@@ -449,3 +449,28 @@ fn a_dem_marked_as_holding_the_bed_gives_the_full_answer_with_its_own_label() {
     // No DEM: nothing to mark.
     assert!(river().set_dem_holds_bathymetry(true).is_err());
 }
+
+/// Spec 0017 ticket 7: the answer is typed, plan-only and full alike (it reads as `FitsAnswer`
+/// and back unchanged). What its hash covers is tested field by field in `screening_hashes.rs`.
+#[test]
+fn the_answer_is_typed() {
+    use owd_format::design::fits::FitsAnswer;
+    let check = |s: &Session| {
+        let rec = &s.document()["fits"];
+        let typed: FitsAnswer = serde_json::from_value(rec["results"].clone())
+            .unwrap_or_else(|e| panic!("the answer reads as its type: {e}"));
+        assert_eq!(serde_json::to_value(&typed).unwrap(), rec["results"]);
+    };
+    let mut plain = river();
+    plain.run_fits(None).unwrap();
+    check(&plain);
+    let mut full = with_bar(river());
+    full.run_fits_with(None, Some(&land)).unwrap();
+    assert_eq!(full.document()["fits"]["results"]["mode"], "full");
+    check(&full);
+    assert!(
+        owd_format::stage::contracts()
+            .iter()
+            .any(|c| c.stage == "fits")
+    );
+}

@@ -8,6 +8,7 @@ mod common;
 
 use common::*;
 use owd_format::design::Session;
+use owd_format::design::sections::Stations;
 use owd_format::design::terrain::dem_sampler;
 use owd_report::{Control, Format, Kind, Report, Request, build};
 
@@ -116,7 +117,9 @@ fn the_tallest_face_of_a_stretch_is_the_walks() {
     let grid = owd_format::geotiff::read_bytes(&dem).unwrap();
     let sampler = dem_sampler(&grid, Some(32630)).unwrap();
     let walk = s.option_section_walk("rolling-circle", &sampler).unwrap();
-    let ls = s.long_section("rolling-circle", &walk).unwrap();
+    let ls = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
     let ch: Vec<f64> = ls["chainage_m"]
         .as_array()
         .unwrap()

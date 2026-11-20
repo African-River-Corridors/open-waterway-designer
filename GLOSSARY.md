@@ -26,7 +26,30 @@ _Avoid_: using a former name in new text
 **Channel design**:
 One screening study of one river reach for one vessel: its inputs, the choices made, and the
 results of each stage. The unit a user opens, saves (as a `.owd` file) and shares.
-_Avoid_: project, scenario, run
+_Avoid_: project, scenario, run (a run is one pass of the stages over it, below)
+
+**Run**:
+One pass of the stages over one channel design. It makes one design (spec 0017).
+
+**Design measure**:
+One quantity of the whole design: cost, total cut, dredge, dry cut, land take, line length,
+structure count, capacity. Not the rules engine's Measure, which is per object and tested by a Rule.
+
+**Objective**:
+The one design measure a run aims to minimise or maximise.
+
+**Limit**:
+A design measure and a bound (at most or at least a value) the run must stay within. A bound on
+cost is money and names its currency.
+
+**Output level**:
+How far a run's figures can be trusted, from the inputs it had: concept, pre-feasibility or
+feasibility. The run states a **target level**; a stage reports the level each reach reached.
+
+**Rates table**:
+The engineer's unit rates for one run, in one currency: dredge and dry cut per m³, disposal per m³,
+haul per m³ per km, with a haul distance for the run or for a reach. **Cost** is these rates times
+OWD's volumes, by reach and in total.
 
 **Stage**:
 One step of a channel design that turns earlier results into new ones: sizing, alignment,
@@ -41,8 +64,9 @@ The natural line midway between the two banks of the river as it is today. An in
 _Avoid_: centerline, thalweg, natural line
 
 **Design line**:
-The axis of the navigation channel being designed. Each method that produces one (rolling
-circle, least-cost re-route, pool lattice) yields a new **design line option**.
+The axis of the navigation channel being designed. A design has one (spec 0017): the method that
+makes it (rolling circle, least-cost re-route, river centreline, a given line) is a setting, and the
+pool lattice refines it. Options are separate runs, compared outside the design.
 _Avoid_: route, rolled line, sailing line, fairway (as a line)
 
 **Alignment**:
@@ -85,7 +109,8 @@ One of several input lines, in order, that are joined into one design line befor
 A point on a line at which a cross-section is taken, identified by its chainage.
 
 **Chainage**:
-Distance in metres along a line from its start.
+Distance in metres along a line from its start. When the design states the **river mouth**, the
+river's lines run from the mouth, so river chainage 0 is at the mouth (spec 0017).
 _Avoid_: stationing, KP
 
 ### Channel sizing

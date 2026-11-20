@@ -1,6 +1,6 @@
 //! The volumes stage and the DEM reference (spec 0002). The DEM is named by relative path, SHA-256,
-//! CRS and nodata value; its bytes are never in the document. The stage gives every design line
-//! option its dredge, dry cut and tallest face by calling the core's `section_volumes` on the DEM,
+//! CRS and nodata value; its bytes are never in the document. The stage gives the design line (spec
+//! 0017: one per run) its dredge, dry cut and tallest face by calling the core's `section_volumes` on the DEM,
 //! under the cut model chosen in the settings.
 
 use super::geojson::all_positions;
@@ -8,11 +8,10 @@ use super::hash::sha256_hex;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::geotiff::Dem;
 use crate::types::{TerrainSampler, WaterProfile};
-use owd_core::cut_model::{CUT_MODEL, WIDEN_RMAX, widened_hb_from_shape};
+use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Polygon, Pt};
 use owd_core::volumes::sections::{
-    DEFAULT_DX_M, DEFAULT_MAXW_M, DEFAULT_STATION_M, DEFAULT_WET_SLOPE, HalfWidth, Level,
-    section_volumes,
+    DEFAULT_DX_M, DEFAULT_MAXW_M, DEFAULT_STATION_M, DEFAULT_WET_SLOPE,
 };
 use serde_json::{Value, json};
 
@@ -30,7 +29,8 @@ pub enum DemCheck {
 }
 
 /// The settings of the volumes stage, typed. A key the stage does not know is refused by name.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct VolumesSettings {
     /// The cut model (`a` or `b`).
     pub cut_model: String,
@@ -205,7 +205,8 @@ impl Session {
         }
     }
 
-    /// Run the volumes stage: dredge, dry cut and tallest face for every design line option.
+    /// Run the volumes stage: dredge, dry cut and tallest face of the design line (the lattice's when
+    /// the optimise stage has refined it, else the alignment's).
     ///
     /// The water level is the document's profile along the river centreline (ADR 0006), or the pool
     /// levels of the optimise stage once it has run. `terrain` is the DEM in the project CRS, or `None`
@@ -250,60 +251,80 @@ impl Session {
                 "the DEM `{dem_path}` is missing: the volumes stage cannot run without it"
             ))
         })?;
-        let options: Vec<Value> = self.doc["options"].as_array().cloned().unwrap_or_default();
-        if options.is_empty() {
+        let Some(o) = self.design_lines().into_iter().next() else {
             return Err(DesignError::Input(
-                "there are no design line options: run the alignment stage first".into(),
+                "there is no design line: run the alignment stage first".into(),
             ));
-        }
+        };
 
         let plan = self.section_plan(overrides)?;
-        let mut rows = Vec::new();
-        for o in &options {
-            let id = o["id"].as_str().unwrap_or("?");
-            let v = self.option_sections(&plan, o, terrain)?;
-            let screening = self.screening_value(o, &v, &plan.river, &plan.centre)?;
-            rows.push(json!({
-                "id": id,
-                "name": o["name"],
-                "dredge_m3": v.dredge_m3(),
-                "excav_m3": v.excav_m3(),
-                "total_m3": v.total_m3(),
-                // The three kinds of cut (ticket C23); they add up to the total.
-                "in_river_m3": v.in_river_m3(),
-                "widening_m3": v.widening_m3(),
-                "cut_through_m3": v.cut_through_m3(),
-                "max_face_h_m": v.max_face_h_m(),
-                "stations": v.stations.len(),
-                // The design sanity check of the cut: stations far above their neighbours, and
-                // stations whose cut is huge against the channel's own section.
-                "sanity": {
-                    "checked": true,
-                    "warnings": cut_warnings(&v, plan.typed.wet_slope),
-                },
-                // A failed check stays with the option's numbers.
-                "radius_ok": o["checks"]["radius_ok"],
-                "water_source": plan.water_source,
-                // A, the verdict, and C, the constraint stretches (spec 0007).
-                "screening": screening,
-            }));
-            let row = rows.last_mut().expect("a row was just pushed");
-            // Issue #366: an option with no feasible line keeps its numbers, flagged: not a design.
-            if super::export::no_feasible_line(o) {
-                row["no_feasible_line"] = json!(true);
-                row["note"] = json!(super::alignment::NO_FEASIBLE_LINE);
-            }
-            if let Some(note) = self.depth_note() {
-                row["depth_basis"] = json!(note);
-            }
+        let id = o["id"].as_str().unwrap_or("?");
+        let v = self.option_sections(&plan, &o, terrain)?;
+        let screening = self.screening_value(&o, &v, &plan.river, &plan.centre)?;
+        let mut row = json!({
+            "id": id,
+            "name": o["name"],
+            "dredge_m3": v.dredge_m3(),
+            "excav_m3": v.excav_m3(),
+            "total_m3": v.total_m3(),
+            // The three kinds of cut (ticket C23); they add up to the total.
+            "in_river_m3": v.in_river_m3(),
+            "widening_m3": v.widening_m3(),
+            "cut_through_m3": v.cut_through_m3(),
+            "max_face_h_m": v.max_face_h_m(),
+            "stations": v.stations.len(),
+            // The design sanity check of the cut: stations far above their neighbours, and
+            // stations whose cut is huge against the channel's own section.
+            "sanity": {
+                "checked": true,
+                "warnings": cut_warnings(&v, plan.typed.wet_slope),
+            },
+            // A failed check stays with the line's numbers.
+            "radius_ok": o["checks"]["radius_ok"],
+            "water_source": plan.water_source,
+            // A, the verdict, and C, the constraint stretches (spec 0007).
+            "screening": screening,
+        });
+        // The stations, by reach and in total (spec 0017 ticket 9), for the drawings and the report.
+        // A profile is kept where a cross-section sheet draws by default: see `volumes_stage`.
+        let mut profile_at: Vec<f64> = super::map::option_tight_bends(&o)
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect();
+        profile_at.extend(
+            row["screening"]["constraint_stretches"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|x| x["worst_chainage_m"].as_f64()),
+        );
+        // Issue #366: a line that is not feasible keeps its numbers, flagged: not a design.
+        if super::export::no_feasible_line(&o) {
+            row["no_feasible_line"] = json!(true);
+            row["note"] = json!(super::alignment::NO_FEASIBLE_LINE);
         }
-        let settings = plan.settings;
-        let st = &mut self.doc["stages"]["volumes"];
-        st["settings"] = settings;
-        st["results"] = json!({ "options": rows });
+        if let Some(note) = self.depth_note() {
+            row["depth_basis"] = json!(note);
+        }
+        // Build the whole record on a copy and keep it only when every part is made: a failure in
+        // the water stage or the sections leaves the design as it was, not fresh volumes with no
+        // stations.
+        let mut next = self.clone();
+        let st = &mut next.doc["stages"]["volumes"];
+        st["settings"] = plan.settings;
+        st["results"] = row;
         st["engine_version"] = json!(ENGINE_VERSION);
-        let h = self.dependency_hash(Stage::Volumes);
-        self.doc["stages"]["volumes"]["depends_on"] = json!(h);
+        let h = next.dependency_hash(Stage::Volumes);
+        next.doc["stages"]["volumes"]["depends_on"] = json!(h);
+        // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
+        // after the settings, so its step is the stations' step. The walk read the same levels.
+        next.run_water()?;
+        let water = next.design_water().ok_or_else(|| {
+            DesignError::Input("the water stage did not store the water level".into())
+        })?;
+        next.doc["stages"]["volumes"]["results"]["sections"] =
+            json!(super::volumes_stage::summarise(&v, &water, &profile_at));
+        *self = next;
         Ok(())
     }
 }
@@ -344,7 +365,6 @@ pub(super) struct SectionPlan {
     pub(super) centre: Vec<Pt>,
     model: String,
     shape: super::sizing::ChannelSize,
-    depth: f64,
     pub(super) river: Vec<Polygon>,
     fixed_hb: Option<f64>,
     /// The bed model, when the document has one (spec 0012), with the water level it hangs from.
@@ -356,7 +376,10 @@ impl Session {
     /// the river, once, for the station walk of every option.
     /// The volumes settings: the defaults, then the document's, then `overrides`. A key the stage
     /// does not know, in the document or from the caller, is refused by name.
-    fn volumes_settings(&self, overrides: &Value) -> Result<VolumesSettings, DesignError> {
+    pub(super) fn volumes_settings(
+        &self,
+        overrides: &Value,
+    ) -> Result<VolumesSettings, DesignError> {
         VolumesSettings::default()
             .apply(&self.doc["stages"]["volumes"]["settings"])?
             .apply(overrides)
@@ -373,7 +396,6 @@ impl Session {
         let model = typed.cut_model.clone();
 
         let shape = self.channel_size()?;
-        let depth = shape.design_depth_m;
 
         // A polygon with no outer ring is no river: there is no water to split the cut by.
         let river: Vec<Polygon> = self
@@ -400,7 +422,6 @@ impl Session {
             centre,
             model,
             shape,
-            depth,
             river,
             fixed_hb,
             bed,
@@ -426,30 +447,36 @@ impl Session {
             }
             None => terrain,
         };
-        let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
-        let level = Level::AtChainage(&wl);
-        let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
-        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
-        let half_width = match plan.fixed_hb {
-            Some(h) => HalfWidth::Fixed(h),
-            None => HalfWidth::FromStations(&from_shape),
+        // The level at each station: through the water stage's own reader (one path, spec 0017
+        // ticket 8). Only the port tests' hidden sampling by design-line chainage reads otherwise.
+        let water_in = self.water_input_on(
+            crate::types::Polyline(line.clone()),
+            crate::types::Polyline(plan.centre.clone()),
+        );
+        let stage_level;
+        let port_level;
+        let wl: &dyn Fn(f64) -> f64 = match self.water_sampling {
+            super::water::WaterSampling::Projection => {
+                stage_level = super::water_stage::level_reader(&water_in)
+                    .map_err(|e| DesignError::Input(e.message))?;
+                &stage_level
+            }
+            super::water::WaterSampling::DesignLineChainage => {
+                port_level = self.water_level_along(&plan.profile, &line, &plan.centre);
+                &port_level
+            }
         };
-        section_volumes(
-            &line,
-            terrain,
-            &plan.river,
-            &level,
-            plan.depth,
-            &half_width,
-            &plan.model,
-            plan.typed.wet_slope,
-            plan.typed.station_m,
-            plan.typed.maxw_m,
-            plan.typed.dx_m,
-            None,
-            None,
-            owd_core::volumes::sections::DEFAULT_CHUNK,
+        let mut settings = plan.typed.clone();
+        settings.cut_model = plan.model.clone();
+        settings.half_width_m = plan.fixed_hb;
+        super::volumes_stage::walk(&line, &plan.shape, &plan.river, wl, &settings, terrain).map_err(
+            |e| {
+                if e.code == "VOLUMES_WALK" {
+                    DesignError::Input(format!("option `{id}`: {}", e.message))
+                } else {
+                    super::rule_sets::stage_error(e)
+                }
+            },
         )
-        .map_err(|e| DesignError::Input(format!("option `{id}`: {e}")))
     }
 }

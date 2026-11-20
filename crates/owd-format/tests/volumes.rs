@@ -105,12 +105,9 @@ fn settings() -> Value {
 fn the_volumes_equal_section_volumes_called_directly() {
     let mut s = with_dem();
     s.run_volumes(&settings(), Some(&terrain)).unwrap();
-    let rows = s.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .unwrap()
-        .clone();
+    let rows = owd_format::design::volume_rows_of(s.document());
     assert_eq!(rows.len(), 1);
-    let line: Vec<Pt> = s.document()["options"][0]["line"]["coordinates"]
+    let line: Vec<Pt> = s.document()["stages"]["alignment"]["results"]["line"]["coordinates"]
         .as_array()
         .unwrap()
         .iter()
@@ -157,7 +154,7 @@ fn the_volumes_equal_section_volumes_called_directly() {
     // A failed check stays with the option's numbers.
     assert_eq!(
         r["radius_ok"],
-        s.document()["options"][0]["checks"]["radius_ok"]
+        s.document()["stages"]["alignment"]["results"]["checks"]["radius_ok"]
     );
 }
 

@@ -1,0 +1,23 @@
+{
+  "label": "Label: property",
+  "why": "Two cost bounds in two currencies cannot be compared: refused.",
+  "input": {
+    "limits": [
+      {
+        "measure": "cost",
+        "bound": "at_most",
+        "value": 2000000.0,
+        "currency": "USD"
+      },
+      {
+        "measure": "cost",
+        "bound": "at_least",
+        "value": 10.0,
+        "currency": "EUR"
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_LIMIT_CURRENCY"
+  }
+}

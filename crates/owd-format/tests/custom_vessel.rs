@@ -1,4 +1,4 @@
-//! The custom vessel in the session and the file (spec 0015 T1), and file format 0.4.
+//! The custom vessel in the session and the file (spec 0015 T1), and the file formats since 0.4.
 //!
 //! Label: property (a custom vessel with a class's figures against the class; a format-0.3 study
 //! against itself after the upgrade; a deep draught's dredge against the class's).
@@ -149,7 +149,7 @@ fn a_class_replaces_a_custom_vessel_and_a_custom_vessel_replaces_a_class() {
 }
 
 #[test]
-fn a_custom_vessel_study_saves_as_format_0_4_and_reopens_the_same() {
+fn a_custom_vessel_study_saves_as_format_0_5_and_reopens_the_same() {
     let mut s = imported();
     s.set_custom_vessel(&CustomVessel {
         formation: Formation::Convoy,
@@ -162,7 +162,7 @@ fn a_custom_vessel_study_saves_as_format_0_4_and_reopens_the_same() {
     s.run_stale_with(None).unwrap();
     let text = s.to_text();
     assert!(
-        text.contains(r#""format_version": "0.4""#),
+        text.contains(r#""format_version": "0.5""#),
         "{}",
         &text[..200]
     );
@@ -193,16 +193,17 @@ fn changing_the_custom_vessel_makes_sizing_stale() {
 #[test]
 fn a_format_0_3_study_opens_upgrades_and_gives_the_same_results() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/web/river-example.owd");
+        .join("tests/data/format-0.3-two-lines.owd");
     let text = std::fs::read_to_string(path).unwrap();
     assert!(
         text.contains(r#""format_version": 3,"#),
         "the fixture is format 0.3"
     );
     let s = Session::open(&text).unwrap();
-    assert_eq!(s.document()["format_version"], "0.4");
-    for stage in [Stage::Sizing, Stage::Alignment, Stage::Volumes] {
-        assert_eq!(s.stage_status(stage), StageStatus::Fresh, "{stage:?}");
+    // Through 0.4 to 0.5 (spec 0017): one design line, its later stages stale.
+    assert_eq!(s.document()["format_version"], "0.5");
+    for stage in [Stage::Alignment, Stage::Optimise, Stage::Volumes] {
+        assert_eq!(s.stage_status(stage), StageStatus::Stale, "{stage:?}");
     }
     // Rerun from the upgraded file: the same results.
     let before = s.document().clone();
@@ -231,7 +232,7 @@ fn a_format_0_3_study_opens_upgrades_and_gives_the_same_results() {
 #[test]
 fn a_format_from_a_newer_owd_or_an_old_number_is_refused_in_words() {
     let mut doc = imported().document().clone();
-    doc["format_version"] = json!("0.5");
+    doc["format_version"] = json!("0.6");
     let Err(DesignError::Input(m)) = Session::open(&doc.to_string()) else {
         panic!()
     };
@@ -244,9 +245,9 @@ fn a_format_from_a_newer_owd_or_an_old_number_is_refused_in_words() {
 }
 
 #[test]
-fn the_schema_takes_format_0_4_and_a_custom_vessel() {
+fn the_schema_takes_format_0_5_and_a_custom_vessel() {
     let schema: Value = serde_json::from_str(Session::schema_text()).unwrap();
-    assert_eq!(schema["properties"]["format_version"]["const"], "0.4");
+    assert_eq!(schema["properties"]["format_version"]["const"], "0.5");
     let mut s = imported();
     s.set_custom_vessel(&like_iv()).unwrap();
     s.run_stale_with(None).unwrap();
@@ -284,7 +285,7 @@ fn a_draught_deeper_than_the_river_sizes_and_shows_as_more_dredge() {
         };
         s.run_volumes(&json!({"cut_model": "b"}), Some(&terrain))
             .unwrap();
-        s.document()["stages"]["volumes"]["results"]["options"][0]["dredge_m3"]
+        s.document()["stages"]["volumes"]["results"]["dredge_m3"]
             .as_f64()
             .unwrap()
     };

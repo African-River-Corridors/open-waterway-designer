@@ -1,5 +1,5 @@
 //! One exit-code rule (ticket A13): a command that saved the design exits 0, whether or not an
-//! option fails a check; the failed checks are on stderr ("the option fails: …"), in the document
+//! option fails a check; the failed checks are on stderr ("the design line fails: …"), in the document
 //! and in `--json`. The global `--strict` makes a failed check exit code 1, after the save. A
 //! command that cannot run keeps its own non-zero code.
 //!
@@ -124,22 +124,19 @@ fn fails_line(o: &Output) -> Option<String> {
     String::from_utf8_lossy(&o.stderr)
         .lines()
         .map(|l| l.strip_prefix("owd: ").unwrap_or(l))
-        .find(|l| l.starts_with("the option fails:"))
+        .find(|l| l.starts_with("the design line fails:"))
         .map(str::to_string)
 }
 
-/// Whether the `--json` output lists a failed check: `failed_checks` at the top (one option) or on
-/// an option of `options`.
+/// Whether the `--json` output lists a failed check: `failed_checks` at the top, or on the design
+/// line (`owd run`, `owd volumes`).
 fn json_lists_failed_checks(o: &Output) -> bool {
     let v: Value = match serde_json::from_slice(&o.stdout) {
         Ok(v) => v,
         Err(_) => return false,
     };
     let non_empty = |f: &Value| f.as_array().is_some_and(|a| !a.is_empty());
-    non_empty(&v["failed_checks"])
-        || v["options"]
-            .as_array()
-            .is_some_and(|os| os.iter().any(|o| non_empty(&o["failed_checks"])))
+    non_empty(&v["failed_checks"]) || non_empty(&v["design_line"]["failed_checks"])
 }
 
 fn read(dir: &Path, doc: &str) -> Value {
@@ -240,8 +237,11 @@ fn optimise_follows_the_rule() {
 
 #[test]
 fn volumes_follows_the_rule() {
-    check_failing(
+    // One design line per run (spec 0017): the volumes measure the lattice's line alone, and since
+    // issue #6 it holds R_min on the default chord. Read on a 10 m chord, it fails, as for optimise.
+    check_failing_edited(
         "volumes",
+        &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
         &[
             &["align", "--method", "rolling-circle"],
             &["optimise", "--sites", "1200"],
@@ -253,8 +253,15 @@ fn volumes_follows_the_rule() {
 
 #[test]
 fn run_follows_the_rule() {
-    // After `size`, the options are stale: `run` makes them again, and they fail.
-    check_failing("run", &[], "run", &[]);
+    // After `size`, the stages are stale: `run` makes the design line again, and it fails. Its
+    // lattice line holds R_min on the default chord since issue #6: read on a 10 m chord.
+    check_failing_edited(
+        "run",
+        &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
+        &[],
+        "run",
+        &[],
+    );
 }
 
 #[test]

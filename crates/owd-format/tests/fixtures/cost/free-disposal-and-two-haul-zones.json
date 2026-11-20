@@ -1,0 +1,131 @@
+{
+  "label": "Label: golden",
+  "why": "Rates in EUR: dredge 8, dry cut 5, disposal 0 (free, given as zero), haul 0.5 per m3 km. No run distance: two haul zones, 4 km to 600 m and 6 km beyond. One reach, four stations 250 m apart, 1.0 m2 of dredge each (250 m3 each, 1000 m3 in all). Haul: stations at 0, 250 and 500 m, 750 m3 x 4 = 3000; at 750 m, 250 x 6 = 1500; 4500 m3 km x 0.5 = 2250. Dredge 1000 x 8 = 8000, dry cut 0, disposal 0; 10250.",
+  "input": {
+    "by_reach": [
+      {
+        "from": 0.0,
+        "to": 1000.0,
+        "source": "given",
+        "stations": 4,
+        "dredge_m3": 1000.0,
+        "excav_m3": 0.0,
+        "total_m3": 1000.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.0
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.0
+      },
+      {
+        "chainage_m": 500.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.0
+      },
+      {
+        "chainage_m": 750.0,
+        "dredge_area_m2": 1.0,
+        "excav_area_m2": 0.0
+      }
+    ],
+    "volumes_fresh": true,
+    "rates": {
+      "dredge_per_m3": {
+        "amount": 8.0,
+        "currency": "EUR"
+      },
+      "dry_cut_per_m3": {
+        "amount": 5.0,
+        "currency": "EUR"
+      },
+      "disposal_per_m3": {
+        "amount": 0.0,
+        "currency": "EUR"
+      },
+      "haul_per_m3_km": {
+        "amount": 0.5,
+        "currency": "EUR"
+      },
+      "haul_by_reach": [
+        {
+          "reach": {
+            "from": 0.0,
+            "to": 600.0
+          },
+          "km": 4.0
+        },
+        {
+          "reach": {
+            "from": 600.0,
+            "to": 2000.0
+          },
+          "km": 6.0
+        }
+      ]
+    }
+  },
+  "expect": {
+    "cost": {
+      "currency": "EUR",
+      "by_reach": [
+        {
+          "from": 0.0,
+          "to": 1000.0,
+          "haul_m3_km": 4500.0,
+          "items": {
+            "dredge": {
+              "amount": 8000.0,
+              "currency": "EUR"
+            },
+            "dry_cut": {
+              "amount": 0.0,
+              "currency": "EUR"
+            },
+            "disposal": {
+              "amount": 0.0,
+              "currency": "EUR"
+            },
+            "haul": {
+              "amount": 2250.0,
+              "currency": "EUR"
+            },
+            "total": {
+              "amount": 10250.0,
+              "currency": "EUR"
+            }
+          }
+        }
+      ],
+      "totals": {
+        "dredge": {
+          "amount": 8000.0,
+          "currency": "EUR"
+        },
+        "dry_cut": {
+          "amount": 0.0,
+          "currency": "EUR"
+        },
+        "disposal": {
+          "amount": 0.0,
+          "currency": "EUR"
+        },
+        "haul": {
+          "amount": 2250.0,
+          "currency": "EUR"
+        },
+        "total": {
+          "amount": 10250.0,
+          "currency": "EUR"
+        }
+      }
+    }
+  }
+}

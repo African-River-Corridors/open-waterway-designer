@@ -1,0 +1,37 @@
+{
+ "label": "Label: property",
+ "why": "A pool that ends before it starts.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "pools": [
+   {
+    "from": 500.0,
+    "to": 400.0,
+    "level_m": 10.0
+   }
+  ]
+ },
+ "expect": {
+  "error": "WATER_POOL_INVALID"
+ }
+}

@@ -1,0 +1,36 @@
+{
+ "label": "Label: property",
+ "why": "The sample step must be a positive number of metres.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 0.0,
+  "given": [
+   [
+    0.0,
+    10.0
+   ]
+  ]
+ },
+ "expect": {
+  "error": "WATER_SETTING"
+ }
+}
