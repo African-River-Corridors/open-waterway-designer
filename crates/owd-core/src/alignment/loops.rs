@@ -49,6 +49,16 @@ pub fn is_self_intersecting(coords: &[Pt]) -> bool {
 /// when the line does not cross itself. Segments are swept by their x extent, so a long line that
 /// does not cross itself costs about as much as `is_self_intersecting`.
 pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
+    self_crossings_m(coords)
+        .into_iter()
+        .map(|(a, _)| a)
+        .min_by(f64::total_cmp)
+}
+
+/// Every place the polyline crosses itself, as the pair of chainages (m along the line) where it
+/// passes that point: the earlier pass first. Empty exactly when the line does not cross itself
+/// ([`is_self_intersecting`]); a collinear overlap counts once, at its earlier end on each pass.
+pub fn self_crossings_m(coords: &[Pt]) -> Vec<(f64, f64)> {
     use crate::geom::{SegHit, segment_intersection};
     let mut pts: Vec<Pt> = Vec::with_capacity(coords.len());
     for &p in coords {
@@ -58,7 +68,7 @@ pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
     }
     let n = pts.len().saturating_sub(1);
     if n < 2 {
-        return None;
+        return Vec::new();
     }
     let mut cum = vec![0.0; n + 1];
     for i in 0..n {
@@ -71,12 +81,7 @@ pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
     let is_line_end =
         |seg: usize, p: Pt| (seg == 0 && p == pts[0]) || (seg == n - 1 && p == pts[n]);
     let along = |seg: usize, p: Pt| cum[seg] + libm::hypot(p[0] - pts[seg][0], p[1] - pts[seg][1]);
-    let mut first: Option<f64> = None;
-    let mut keep = |s: f64| {
-        if first.is_none_or(|f| s < f) {
-            first = Some(s);
-        }
-    };
+    let mut out: Vec<(f64, f64)> = Vec::new();
     for (k, &i) in order.iter().enumerate() {
         for &j in &order[k + 1..] {
             if minx(j) > maxx(i) {
@@ -86,8 +91,11 @@ pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
             let p = match segment_intersection(pts[lo], pts[lo + 1], pts[hi], pts[hi + 1]) {
                 SegHit::None => continue,
                 SegHit::Overlap { a, b } => {
-                    // A collinear overlap is never simple: the earlier segment's end of it.
-                    keep(along(lo, a).min(along(lo, b)));
+                    // A collinear overlap is never simple: each pass's earlier end of it.
+                    out.push((
+                        along(lo, a).min(along(lo, b)),
+                        along(hi, a).min(along(hi, b)),
+                    ));
                     continue;
                 }
                 SegHit::Point { p, .. } => p,
@@ -101,11 +109,11 @@ pub fn first_self_crossing_m(coords: &[Pt]) -> Option<f64> {
                 !(is_line_end(lo, p) && is_line_end(hi, p))
             };
             if crossing {
-                keep(along(lo, p));
+                out.push((along(lo, p), along(hi, p)));
             }
         }
     }
-    first
+    out
 }
 
 /// What `loop_verdict` measured.
