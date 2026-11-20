@@ -1,0 +1,1 @@
+- **CI gate time limit.** The `gate-rust` job limit is 30 minutes, not 15. One test group (`exit_code_rule`, about 5 to 8 minutes per test on a runner) decides how long its partition runs, and a 15-minute cap cancelled it on two pull requests. No test changed.

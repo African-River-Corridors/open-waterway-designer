@@ -80,13 +80,20 @@ jobs:
           GATES_STEPS: fmt,clippy,oldnames
         run: bash tools/gates.sh
 
-  # The Rust tests in N hash partitions (cargo-nextest, pinned), with Python made unusable. N = 3 by
-  # measurement: the partitions take about 70-95 s of test time each, which is about as long as the
-  # Python part. The slowest tests run in nightly.yml instead; see docs/agents/slow-tests.md.
+  # The Rust tests in N hash partitions (cargo-nextest, pinned), with Python made unusable. N = 3.
+  # The slowest tests run in nightly.yml instead; see docs/agents/slow-tests.md.
+  # Time limit, measured on a run of 2026-11-19: the partitions took 3, 6.5 and 9.5 minutes (each with
+  # about 1 minute of build). The time is one test, not the number of tests: `owd-cli::exit_code_rule`
+  # runs the full river through the command line in a debug build, and `optimise_follows_the_rule`
+  # alone ran 490 s, `run_follows_the_rule` and `volumes_follows_the_rule` about 330 s. A partition that
+  # holds one of them takes as long as it does, and the partly shared runner makes it vary by minutes.
+  # More partitions would not help: the longest test is the floor, and the hash decides where it lands.
+  # The doctests (partition 1) take about 1 s and are not the cause. A cap of 15 minutes cancelled
+  # partition 1 on two pull requests on 2026-11-19, so the cap is 30.
   gate-rust:
     name: gate-rust (${{ matrix.partition }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
