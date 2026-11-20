@@ -1,0 +1,535 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/EnvelopeIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvelopeResult"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "EnvelopeIn": {
+      "description": "What the envelope stage reads.",
+      "type": "object",
+      "properties": {
+        "plan_line": {
+          "description": "The line the sizes are read on: the fresh reference line, else the river centreline.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "plan_line_kind": {
+          "description": "`reference` or `centreline`.",
+          "type": "string"
+        },
+        "river_polygon": {
+          "description": "The river as water.",
+          "$ref": "#/$defs/RiverPolygon"
+        },
+        "custom_vessel": {
+          "description": "The custom vessel, marked against the answer when there is one.",
+          "default": null
+        },
+        "settings": {
+          "description": "The sweep's settings, as stored."
+        },
+        "bed_shallowest_depth_m": {
+          "description": "The shallowest depth of the bed model, when there is one.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        }
+      },
+      "required": [
+        "plan_line",
+        "plan_line_kind",
+        "river_polygon",
+        "settings"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "RiverPolygon": {
+      "description": "The river as water: an outer ring and the islands cut out of it. A ring is a [`Polyline`] that is\nclosed by implication (the last point joins the first).",
+      "type": "object",
+      "properties": {
+        "shell": {
+          "description": "The outer ring.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "holes": {
+          "description": "Islands: each is dry land inside the shell.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Polyline"
+          }
+        }
+      },
+      "required": [
+        "shell"
+      ]
+    },
+    "EnvelopeResult": {
+      "description": "What the envelope stage returns, as the study keeps it.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "notice": {
+          "type": "string"
+        },
+        "bank_caveat": {
+          "type": "string"
+        },
+        "rule_set": {
+          "type": "string"
+        },
+        "draught_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "clearance_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "length_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "largest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SizeLabel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sizes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SizeRow"
+          }
+        },
+        "per_km": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/KmRow"
+          }
+        },
+        "marks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MarkRow"
+          }
+        },
+        "by_beam": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/BeamRow"
+          }
+        },
+        "plan_line": {
+          "description": "`reference` or `centreline`: the line the sizes were read on.",
+          "type": "string"
+        },
+        "plan_line_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bed_model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BedLimit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "notice",
+        "bank_caveat",
+        "rule_set",
+        "sizes",
+        "per_km",
+        "marks",
+        "plan_line"
+      ]
+    },
+    "SizeLabel": {
+      "description": "A size of the series, by label.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "loa_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "beam_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
+    "SizeRow": {
+      "description": "One size's answer.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "loa_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "beam_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "r_min_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "bottom_width_straight_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "passes": {
+          "type": "boolean"
+        },
+        "stretch_count": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "stretches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StretchOut"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "label",
+        "passes",
+        "stretch_count",
+        "stretches",
+        "notes"
+      ]
+    },
+    "StretchOut": {
+      "description": "One stretch where a size does not fit.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "start_chainage_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "end_chainage_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "start": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "end": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "required_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "found_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "deficit_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "kind",
+        "start",
+        "end"
+      ]
+    },
+    "KmRow": {
+      "description": "The largest size that fits in one kilometre of the plan line.",
+      "type": "object",
+      "properties": {
+        "from_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "to_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "from": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "to": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "largest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SizeLabel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "MarkRow": {
+      "description": "A vessel class (or the custom vessel) marked against the answer.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "custom": {
+          "type": "boolean"
+        },
+        "loa_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "beam_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "within": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "custom",
+        "within"
+      ]
+    },
+    "BeamRow": {
+      "description": "The longest length for one beam (ticket C5).",
+      "type": "object",
+      "properties": {
+        "beam_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "longest_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "at_max": {
+          "type": "boolean"
+        },
+        "binding": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/StretchOut"
+          }
+        }
+      },
+      "required": [
+        "at_max",
+        "binding"
+      ]
+    },
+    "BedLimit": {
+      "description": "The bed model's draught limit, beside the answer (the sweep is plan only).",
+      "type": "object",
+      "properties": {
+        "shallowest_depth_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "draught_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "note"
+      ]
+    }
+  }
+}
