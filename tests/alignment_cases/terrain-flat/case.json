@@ -44,7 +44,7 @@
     },
     {
       "name": "dredge_m3",
-      "read": { "pointer": "/stages/volumes/results/options/0/dredge_m3" },
+      "read": { "pointer": "/stages/volumes/results/dredge_m3" },
       "value": 232960.0,
       "class": "outcome",
       "tolerance": { "relative": 0.02 },
@@ -52,7 +52,7 @@
     },
     {
       "name": "dry_cut_m3",
-      "read": { "pointer": "/stages/volumes/results/options/0/excav_m3" },
+      "read": { "pointer": "/stages/volumes/results/excav_m3" },
       "value": 0.0,
       "class": "outcome",
       "tolerance": { "absolute": 1.0 },
@@ -60,7 +60,7 @@
     },
     {
       "name": "tallest_face_m",
-      "read": { "pointer": "/stages/volumes/results/options/0/max_face_h_m" },
+      "read": { "pointer": "/stages/volumes/results/max_face_h_m" },
       "value": 0.0,
       "class": "outcome",
       "tolerance": { "absolute": 0.001 },

@@ -654,6 +654,33 @@ impl AppState {
         Ok(())
     }
 
+    /// State the river mouth from the app's field: `downstream` or `LON,LAT`, as `owd import
+    /// --mouth` reads it, through the same shell call. The river inputs are turned to run from the
+    /// mouth when it is at their far end, and the stages that read them go stale. A refusal (no
+    /// river yet, or `downstream` with neither a water level nor a DEM to say which end is lower)
+    /// changes nothing.
+    pub fn set_mouth(&mut self, text: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => Some(
+                owd_format::design::terrain::dem_sampler(d, self.project_epsg())
+                    .map_err(message)?,
+            ),
+            None => None,
+        };
+        crate::import::set_mouth(
+            &mut self.session,
+            text,
+            sampler
+                .as_ref()
+                .map(|s| s as owd_format::types::TerrainSampler),
+        )
+        .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the water level from a pool table: the text of `owd import --water-pools FILE`, read by
     /// the session's one reader. A refusal changes nothing.
     pub fn set_water_pools(&mut self, table: &str) -> Result<(), String> {
@@ -1282,9 +1309,7 @@ mod tests {
         // The constraint stretches for the map: the session's export in WGS84, one line each.
         let fc = s.stretches_geojson().unwrap();
         let doc = s.snapshot()["document"].clone();
-        let count: usize = doc["stages"]["volumes"]["results"]["options"]
-            .as_array()
-            .unwrap()
+        let count: usize = owd_format::design::volume_rows_of(&doc)
             .iter()
             .map(|o| {
                 o["screening"]["constraint_stretches"]
@@ -1573,7 +1598,7 @@ mod tests {
             .session
             .long_section("rolling-circle", &first.walk)
             .unwrap();
-        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"]["options"][0];
+        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"];
         assert_eq!(
             ls["chainage_m"].as_array().unwrap().len() as u64,
             row["stations"].as_u64().unwrap()

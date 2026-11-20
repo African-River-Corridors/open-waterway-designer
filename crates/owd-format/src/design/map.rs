@@ -183,7 +183,7 @@ impl Session {
                 .map_err(DesignError::Input)?;
             out["river_polygon"] = json!({"type": "Polygon", "coordinates": rings});
         }
-        for o in self.doc["options"].as_array().into_iter().flatten() {
+        for o in self.design_lines().iter() {
             let pts = all_positions(&o["line"]);
             if pts.len() < 2 {
                 continue;

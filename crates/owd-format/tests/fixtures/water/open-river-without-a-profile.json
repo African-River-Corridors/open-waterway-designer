@@ -1,0 +1,38 @@
+{
+ "label": "Label: property",
+ "why": "Open river beyond the pools needs a given river profile to read.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "beyond_pools": "open_river",
+  "pools": [
+   {
+    "from": 300.0,
+    "to": 600.0,
+    "level_m": 10.0
+   }
+  ]
+ },
+ "expect": {
+  "error": "WATER_NO_OPEN_RIVER_LEVEL"
+ }
+}

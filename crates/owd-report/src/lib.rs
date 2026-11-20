@@ -312,16 +312,14 @@ impl<'a> Context<'a> {
         asked: Option<&str>,
     ) -> Result<Context<'a>, ReportError> {
         let doc = session.document();
-        let list = doc["options"].as_array().cloned().unwrap_or_default();
+        let list = session.design_lines();
         let option = match asked {
             None => list.first().cloned(),
             Some(a) => Some(
                 list.iter()
                     .find(|o| o["id"] == a || o["name"] == a)
                     .cloned()
-                    .ok_or_else(|| {
-                        ReportError::Design(format!("there is no design line option `{a}`"))
-                    })?,
+                    .ok_or_else(|| ReportError::Design(format!("there is no design line `{a}`")))?,
             ),
         };
         let title = doc["project"]["title"]
@@ -341,10 +339,8 @@ impl<'a> Context<'a> {
     /// The volumes stage's row of the chosen option.
     pub fn volumes_row(&self) -> Option<&'a Value> {
         let id = self.option.as_ref()?["id"].clone();
-        self.doc["stages"]["volumes"]["results"]["options"]
-            .as_array()?
-            .iter()
-            .find(|r| r["id"] == id)
+        let r = &self.doc["stages"]["volumes"]["results"];
+        (r.is_object() && r["id"] == id).then_some(r)
     }
 }
 

@@ -11,6 +11,7 @@
     onWater,
     onTerrainLimit,
     onDownstream,
+    onMouth,
   }: {
     snap: Snapshot | null;
     busy: boolean;
@@ -23,6 +24,8 @@
     onTerrainLimit: (gib: string) => void;
     /** Set the point the river flows towards for the next bank import, `LON,LAT` (empty: none). */
     onDownstream: (point: string) => void;
+    /** State the river mouth, `downstream` or `LON,LAT` (spec 0017). */
+    onMouth: (mouth: string) => void;
   } = $props();
 
   const count = (g: { coordinates: unknown[] } | null | undefined) => (g ? `${g.coordinates.length} positions` : "not loaded");
@@ -36,6 +39,7 @@
   let fall = $state("");
   let limitGib = $state("");
   let downstream = $state("");
+  let mouth = $state("");
   // Show the document's water level, as a level at the start and the fall to the end.
   $effect(() => {
     const p = inputs?.water_level?.points;
@@ -107,6 +111,10 @@
       <input aria-label="Downstream point" bind:value={downstream} disabled={busy} data-testid="downstream-point" />
     </label>
     <button disabled={busy} data-testid="set-downstream-point" onclick={() => onDownstream(downstream)} title="The banks are run towards this point and named left and right looking downstream, whatever way they were drawn or named.">Set point</button>
+    <label>River mouth, where chainage 0 is (`downstream` or lon,lat; {inputs?.mouth ? `set at ${inputs.mouth.stated_as === "downstream" ? "the lower end" : "a point"}` : "none: chainage runs from the start of the centreline"})
+      <input aria-label="River mouth" bind:value={mouth} disabled={busy} data-testid="river-mouth" />
+    </label>
+    <button disabled={busy} data-testid="set-river-mouth" onclick={() => onMouth(mouth)} title="The river is stored running from the mouth, and every chainage counts from it. `downstream` takes the lower end, by the water level or the DEM.">Set mouth</button>
   </div>
 </section>
 

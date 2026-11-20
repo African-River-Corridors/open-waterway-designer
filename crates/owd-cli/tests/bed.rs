@@ -146,7 +146,7 @@ fn read_doc(doc: &str) -> Value {
 
 fn volumes(doc: &str) -> Value {
     let o = ok(&["volumes", doc, "--json", "--model", "a"]);
-    serde_json::from_str::<Value>(&out(&o)).unwrap()["options"][0].clone()
+    serde_json::from_str::<Value>(&out(&o)).unwrap()["design_line"].clone()
 }
 
 /// The dredge area (m2) of one station of the straight channel, by hand. The river is 100 m wide

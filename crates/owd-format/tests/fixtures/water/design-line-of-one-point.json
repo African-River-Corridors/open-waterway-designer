@@ -1,0 +1,31 @@
+{
+ "label": "Label: property",
+ "why": "A design line needs two points.",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ]
+  ],
+  "given": [
+   [
+    0.0,
+    10.0
+   ]
+  ]
+ },
+ "expect": {
+  "error": "WATER_NO_DESIGN_LINE"
+ }
+}

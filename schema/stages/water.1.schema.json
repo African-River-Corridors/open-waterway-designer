@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StageRecord",
+  "description": "One stage as the document stores it.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "description": "The version of the stage's contract: which schema its settings and output follow.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "depends_on": {
+      "description": "The hash of the input the stage read, so staleness can be worked out on load. Absent until\nthe stage has run.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "settings": {
+      "description": "The settings the stage ran with (or will run with).",
+      "$ref": "#/$defs/WaterIn"
+    },
+    "output": {
+      "description": "What the stage returned. Absent until the stage has run.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DesignWater"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "settings"
+  ],
+  "$defs": {
+    "WaterIn": {
+      "description": "What the water stage reads.",
+      "type": "object",
+      "properties": {
+        "centreline": {
+          "description": "The river centreline the levels are read on, from the mouth when one is stated.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "design_line": {
+          "description": "The design line the stages after this one read.",
+          "$ref": "#/$defs/Polyline"
+        },
+        "given": {
+          "description": "The water profile of the inputs, on river chainage.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaterProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pools": {
+          "description": "The pools, in order of river chainage. Empty: no pools.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pool"
+          },
+          "default": []
+        },
+        "beyond_pools": {
+          "description": "What the level is outside every pool.",
+          "$ref": "#/$defs/BeyondPools",
+          "default": "hold_pool_level"
+        },
+        "step_m": {
+          "description": "The step between points of the answer, metres of design-line chainage.",
+          "type": "number",
+          "format": "double",
+          "default": 25.0
+        }
+      },
+      "required": [
+        "centreline",
+        "design_line"
+      ]
+    },
+    "Polyline": {
+      "description": "A line in the project CRS: `[x, y]` points in order.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "WaterProfile": {
+      "description": "The water level along a river: points sorted by chainage, read linearly between points and held\nflat beyond the first and last. Two points at one chainage make a step (a weir): at that chainage\nthe later point holds.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WaterPoint"
+      }
+    },
+    "WaterPoint": {
+      "description": "One point of a water level profile: a river chainage and the level there, in metres. It is\nwritten as the pair `[chainage, level]`.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Pool": {
+      "description": "One pool: a stretch of river held at one level by the structure at its downstream end.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "River chainage where the pool starts (its downstream end).",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "River chainage where the pool ends (its upstream end). Not below `from`.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "level_m": {
+          "description": "The pool's design level, metres above datum.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_level_m": {
+          "description": "The lowest level the pool is held at: navigation depth is checked here (issue 532).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_level_m": {
+          "description": "The highest level the pool reaches: flood risk is checked here (issue 532).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "level_m"
+      ]
+    },
+    "Chainage": {
+      "description": "Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river\nstates one (spec 0017); with no mouth stated, it is at the start of the line as it was given.",
+      "type": "number",
+      "format": "double"
+    },
+    "BeyondPools": {
+      "description": "What the level is outside every pool.",
+      "oneOf": [
+        {
+          "description": "The pools' levels, read as one stepped profile and held flat beyond its ends. How the\noptimise stage's pools have always been read; the default, so no stored number moves.",
+          "type": "string",
+          "const": "hold_pool_level"
+        },
+        {
+          "description": "The river's own level, from the given profile (open river below the lowest weir).",
+          "type": "string",
+          "const": "open_river"
+        }
+      ]
+    },
+    "DesignWater": {
+      "description": "What the water stage returns: the water level along the design line.",
+      "type": "object",
+      "properties": {
+        "length_m": {
+          "description": "The design line's length, metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "points": {
+          "description": "The points, in order of design-line chainage; two at a step.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DesignWaterPoint"
+          }
+        },
+        "stretches": {
+          "description": "The stretches, in order, with no gap between them.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WaterStretch"
+          }
+        }
+      },
+      "required": [
+        "length_m",
+        "points",
+        "stretches"
+      ]
+    },
+    "DesignWaterPoint": {
+      "description": "One point of the answer.",
+      "type": "object",
+      "properties": {
+        "chainage": {
+          "description": "Design-line chainage.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_chainage": {
+          "description": "The river chainage the point projects to, where its level was read.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "level_m": {
+          "description": "The design water level, metres above datum.",
+          "type": "number",
+          "format": "double"
+        },
+        "source": {
+          "description": "Where the level comes from.",
+          "$ref": "#/$defs/WaterSource"
+        },
+        "min_level_m": {
+          "description": "The pool's minimum level, inside a pool that has one.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_level_m": {
+          "description": "The pool's maximum level, inside a pool that has one.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "held_flat": {
+          "description": "True beyond the ends of the profile that sets the level: the nearer end's level, held flat.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "chainage",
+        "river_chainage",
+        "level_m",
+        "source"
+      ]
+    },
+    "WaterSource": {
+      "description": "Where a level comes from.",
+      "oneOf": [
+        {
+          "description": "The water profile of the inputs.",
+          "type": "string",
+          "const": "given"
+        },
+        {
+          "description": "A pool held by a structure.",
+          "type": "string",
+          "const": "pool"
+        },
+        {
+          "description": "The river's own level, outside every pool.",
+          "type": "string",
+          "const": "open_river"
+        },
+        {
+          "description": "Between two pools that do not touch: read straight from the lower pool's level to the upper\none's (how the optimise stage's pools have always been read).",
+          "type": "string",
+          "const": "between_pools"
+        }
+      ]
+    },
+    "WaterStretch": {
+      "description": "A stretch of design line whose level comes from one source (and one pool).",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Design-line chainage where it starts.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "description": "Design-line chainage where it ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "source": {
+          "description": "Where its level comes from.",
+          "$ref": "#/$defs/WaterSource"
+        },
+        "pool": {
+          "description": "The pool it lies in: its index in the input's pools.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "pool_level_m": {
+          "description": "That pool's design level.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "min_level_m": {
+          "description": "That pool's minimum level.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "max_level_m": {
+          "description": "That pool's maximum level.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "held_flat": {
+          "description": "True beyond the ends of the profile that sets the level.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "source"
+      ]
+    }
+  }
+}
