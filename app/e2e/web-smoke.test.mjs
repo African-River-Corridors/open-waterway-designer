@@ -275,7 +275,10 @@ describe("OWD web smoke tests", () => {
     const radiusCell = await b.execute(() => document.querySelector("[data-testid=option-row] [data-col=radius-ok]").textContent);
     assert.equal(radiusCell.includes("✓"), rminPassed === "true", `radius column "${radiusCell}", R_min check ${rminPassed}`);
     assert.ok((await text(b, "verdict-reason")).length > 0, "the verdict's reason is shown");
-    await (await tid(b, "tab-stretches")).click();
+    // The stretches are in a drawer, closed until asked for.
+    assert.equal(await exists(b, "stretches-panel"), false, "the stretches drawer starts closed");
+    assert.equal(await text(b, "stretches-toggle"), `Constraint stretches (${sc.constraint_stretches.length})`);
+    await (await tid(b, "stretches-toggle")).click();
     assert.ok(sc.constraint_stretches.length > 0, "the example falls short of the Rules somewhere");
     await until(b, "the stretch table", async () => (await b.$$("[data-testid=stretch-row]")).length === sc.constraint_stretches.length);
     assert.match(await text(b, "screening-notice"), /Screening/);
@@ -586,7 +589,7 @@ describe("OWD web smoke tests", () => {
     // Optimise is fresh and holds the lattice's line: the screen draws it, and the label says so.
     await until(b, "the optimise line named", async () => /^Line on screen: .+ \(from Optimise\)$/.test(await text(b, "line-on-screen")));
     const onScreen = await text(b, "line-on-screen");
-    const tableName = await b.execute(() => document.querySelector("[data-testid=option-row] td.name").textContent.trim());
+    const tableName = await b.execute(() => document.querySelector("[data-testid=option-row] [data-col=name]").textContent.trim());
     assert.equal(onScreen, `Line on screen: ${tableName} (from Optimise)`, "the label names the table's line");
     // Set the cost per metre: the design holds it, the stored value shows, optimise goes stale, the alignment's line is on screen.
     assert.equal(await text(b, "length-weight-stored"), "Stored: 0");
@@ -902,11 +905,11 @@ describe("OWD web smoke tests", () => {
     await (await tid(b, "open-example")).click();
     await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
     await until(b, "the table", async () => (await b.$$("[data-testid=option-row]")).length === 1);
-    // 5: the table is headed with the design line, not Options.
-    assert.equal(await text(b, "tab-options"), "Design line");
-    const head = await (await b.$("[data-testid=option-table] thead")).getText();
-    assert.match(head, /Design line/);
-    assert.doesNotMatch(head, /Option/);
+    // 5: the card is headed with the design line, not Options.
+    assert.equal((await text(b, "design-line-heading")).toLowerCase(), "design line");
+    const card = await text(b, "option-table");
+    assert.match(card, /Dredge m³/);
+    assert.doesNotMatch(card, /Option/);
     // 4: the line on screen and what the next run uses are both said.
     assert.match(await text(b, "line-on-screen"), /Line on screen: \S/);
     assert.match(await text(b, "line-next-run"), /Next run uses: Rolling circle/);
@@ -933,6 +936,7 @@ describe("OWD web smoke tests", () => {
     // 3: a stale alignment gives one true reason in the section panel.
     await (await b.$("input[aria-label=Draught]")).setValue("2.6");
     await until(b, "alignment stale", async () => (await stageStatus(b)).includes("alignment:stale"));
+    await (await tid(b, "profile-toggle")).click();
     await until(b, "the section note", async () => (await exists(b, "section-note")) && (await text(b, "section-note")).includes("No sections yet"));
     assert.equal(await text(b, "section-note"), "No sections yet: the alignment is out of date. Run alignment, then volumes.");
   });
@@ -1036,7 +1040,12 @@ describe("OWD web smoke tests", () => {
     await b.url(`${origin}/owd/app`);
     await loaded(b);
     await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    // No section is asked for while the panels are hidden; the Section toggle shows the panel and its slider.
+    assert.equal(await exists(b, "station-slider"), false);
+    await (await tid(b, "section-toggle")).click();
     await until(b, "the first cross section", async () => (await exists(b, "cs-chainage")), 120000);
+    assert.ok(await b.execute(() => document.querySelector("[data-testid=section-panel]").contains(document.querySelector("[data-testid=station-slider]"))), "the Station slider is in the floating section panel");
     const first = await text(b, "cs-chainage");
     // Count the cross sections asked for, and slow each one down so the panel's working state shows.
     await b.execute(() => {
@@ -1075,6 +1084,191 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "cross-busy"), false);
   });
 
+  it("map-first layout: the design line card and the checks are in the left panel, and the map fills the rest (UI-4)", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the design line card", async () => (await b.$$("[data-testid=option-row]")).length === 1);
+    await until(b, "the checks", async () => (await b.$$("[data-testid=check]")).length > 0);
+    const at = await b.execute(() => {
+      const box = (sel) => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
+      };
+      const left = document.querySelector("section.left");
+      const inLeft = (id) => left.contains(document.querySelector(`[data-testid="${id}"]`));
+      const order = ["Stages", "Design line", "Checks", "Data"].map((name) => left.querySelector(`section[aria-label="${name}"]`).getBoundingClientRect().top + left.scrollTop);
+      return {
+        card: inLeft("option-table"), checks: inLeft("checks-list"), toggle: inLeft("stretches-toggle"), order,
+        cardBox: box("[data-testid=option-row]"), left: box("section.left"), map: box("[data-testid=plan-map]"), area: box("[data-testid=map-area]"),
+        footerTop: document.querySelector("[data-testid=status-line]").getBoundingClientRect().top, wide: window.innerWidth,
+      };
+    });
+    assert.ok(at.card && at.checks && at.toggle, "the design line card, the checks and the stretches button are in the left panel");
+    assert.deepEqual([...at.order].sort((x, y) => x - y), at.order, `Stages, Design line, Checks, Data, in that order: ${at.order}`);
+    assert.ok(at.cardBox.width <= at.left.width && at.cardBox.right <= at.left.right + 1, "the card fits the panel's width");
+    // The card names each number, stacked.
+    const card = await text(b, "option-row");
+    for (const label of ["Dredge m³", "Dry cut m³", "Tallest face m", "Min radius m", "Radius ok", "Checks"]) assert.ok(card.includes(label), `the card shows ${label}`);
+    // The map takes all the space right of the left panel, down to the status line: no fixed rows under it.
+    assert.ok(Math.abs(at.map.right - at.wide) <= 1, `the map reaches the right edge: ${at.map.right} of ${at.wide}`);
+    assert.ok(Math.abs(at.map.bottom - at.footerTop) <= 1, `the map reaches the status line: ${at.map.bottom} of ${at.footerTop}`);
+    assert.ok(at.map.left - at.left.right <= 8, "the map starts beside the left panel");
+    assert.equal(await exists(b, "bottom-panel"), false);
+    assert.equal(await exists(b, "profile-panel"), false, "the profile starts hidden");
+    assert.equal(await exists(b, "section-panel"), false, "the section starts hidden");
+    assert.equal(await exists(b, "stretches-panel"), false, "the stretches start closed");
+  });
+
+  it("the Profile and Section toggles show and hide the floating panels; Close and Escape hide them; the slider moves the station (UI-4)", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the design line card", async () => (await b.$$("[data-testid=option-row]")).length === 1);
+    const pressed = async (id) => (await tid(b, id)).getAttribute("aria-pressed");
+    assert.equal(await text(b, "profile-toggle"), "Profile");
+    assert.equal(await text(b, "section-toggle"), "Section");
+    assert.equal(await (await tid(b, "profile-toggle")).getTagName(), "button");
+    assert.equal(await pressed("profile-toggle"), "false");
+    // Profile: the long section, over the map.
+    await (await tid(b, "profile-toggle")).click();
+    await until(b, "the profile panel", async () => await exists(b, "profile-panel"));
+    assert.equal(await pressed("profile-toggle"), "true");
+    await until(b, "the long section", async () => (await exists(b, "long-section")) && Number(await (await tid(b, "long-section")).getAttribute("data-stations")) > 2, 120000);
+    assert.equal(await exists(b, "section-panel"), false, "Profile does not show the section");
+    assert.equal(await (await tid(b, "profile-panel")).getAttribute("aria-label"), "Profile");
+    // Section: the cross-section with its slider.
+    await (await tid(b, "section-toggle")).click();
+    await until(b, "the section panel", async () => await exists(b, "section-panel"));
+    await until(b, "the first cross section", async () => await exists(b, "cs-chainage"), 120000);
+    const over = await b.execute(() => {
+      const r = (id) => document.querySelector(`[data-testid="${id}"]`).getBoundingClientRect();
+      const [m, p, s] = [r("map-area"), r("profile-panel"), r("section-panel")];
+      const inside = (x) => x.left >= m.left && x.right <= m.right + 1 && x.top >= m.top && x.bottom <= m.bottom + 1;
+      const ground = getComputedStyle(document.querySelector("[data-testid=section-panel]")).backgroundColor;
+      return { inside: inside(p) && inside(s), ground };
+    });
+    assert.ok(over.inside, "both panels float inside the map area");
+    const alpha = /\/\s*([\d.]+)\)|rgba\([^)]*,\s*([\d.]+)\)/.exec(over.ground);
+    assert.ok(alpha && Number(alpha[1] ?? alpha[2]) < 1 && Number(alpha[1] ?? alpha[2]) > 0.5, `the panel ground is see-through but readable: ${over.ground}`);
+    // The slider in the floating panel changes the station and the section drawn.
+    const drawn = () => b.execute(() => ({ chainage: document.querySelector("[data-testid=cross-section]").dataset.chainage, terrain: document.querySelector("[data-testid=cs-terrain]")?.getAttribute("d") ?? "" }));
+    const first = await drawn();
+    await b.execute(() => {
+      const el = document.querySelector("[data-testid=section-panel] [data-testid=station-slider]");
+      el.value = String(Math.floor(Number(el.max) / 2));
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await until(b, "the section to move", async () => (await drawn()).chainage !== first.chainage && !(await exists(b, "cross-busy")));
+    assert.notEqual((await drawn()).terrain, first.terrain, "another station has another ground profile");
+    // Close hides the section; Escape hides the focused profile and gives the focus back to its toggle.
+    await (await tid(b, "section-close")).click();
+    await until(b, "the section to hide", async () => !(await exists(b, "section-panel")));
+    assert.equal(await pressed("section-toggle"), "false");
+    await (await tid(b, "profile-toggle")).click();
+    await until(b, "the profile to hide", async () => !(await exists(b, "profile-panel")));
+    await (await tid(b, "profile-toggle")).click();
+    await until(b, "the profile again", async () => await exists(b, "profile-panel"));
+    await until(b, "the focus in the profile", async () => await b.execute(() => document.querySelector("[data-testid=profile-panel]").contains(document.activeElement)));
+    await b.keys("Escape");
+    await until(b, "Escape to hide the profile", async () => !(await exists(b, "profile-panel")));
+    assert.equal(await pressed("profile-toggle"), "false");
+    assert.ok(await b.execute(() => document.activeElement === document.querySelector("[data-testid=profile-toggle]")), "the focus is back on the toggle");
+    // Both hidden: only the map is in the map area.
+    assert.equal(await exists(b, "section-panel"), false);
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("the constraint stretches drawer opens from the left panel, lists the rows, picks one for the map, and closes (UI-4)", async () => {
+    // The map needs WebGL to draw the picked stretch: headless Chrome gets it from SwiftShader, in software.
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await (await b.$("button=Run stale")).click();
+    await until(b, "volumes fresh", async () => (await stageStatus(b)).includes("volumes:fresh"), 120000);
+    const doc = await pageDoc(b);
+    const n = doc.stages.volumes.results.screening.constraint_stretches.length;
+    assert.ok(n > 0, "the example has stretches");
+    await until(b, "the count on the button", async () => (await text(b, "stretches-toggle")) === `Constraint stretches (${n})`);
+    const toggle = await tid(b, "stretches-toggle");
+    assert.equal(await toggle.getTagName(), "button");
+    assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    assert.equal(await exists(b, "stretch-row"), false, "no rows are drawn while the drawer is closed");
+    await toggle.click();
+    await until(b, "the rows", async () => (await b.$$("[data-testid=stretch-row]")).length === n);
+    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
+    const under = await b.execute(() => {
+      const r = (id) => document.querySelector(`[data-testid="${id}"]`).getBoundingClientRect();
+      return { mapBottom: r("map-area").bottom, top: r("stretches-panel").top, bottom: r("stretches-panel").bottom, footer: r("status-line").top, mapHeight: r("map-area").height };
+    });
+    assert.ok(Math.abs(under.top - under.mapBottom) <= 1 && Math.abs(under.bottom - under.footer) <= 1, `the drawer is under the map: ${JSON.stringify(under)}`);
+    assert.ok(under.mapHeight > 300, "the map keeps most of the height");
+    await b.execute(() => document.querySelector('[data-testid=stretch-row][data-index="0"]').click());
+    await until(b, "the map to show the picked stretch", async () => (await (await tid(b, "plan-map")).getAttribute("data-stretch")) === `${doc.stages.volumes.results.id}:0`);
+    assert.equal(await (await b.$('[data-testid=stretch-row][data-index="0"]')).getAttribute("aria-selected"), "true");
+    await (await tid(b, "stretches-close")).click();
+    await until(b, "the drawer to close", async () => !(await exists(b, "stretches-panel")));
+    assert.equal(await toggle.getAttribute("aria-expanded"), "false");
+    // The button opens it again, and Escape closes it from inside.
+    await toggle.click();
+    await until(b, "the drawer again", async () => await exists(b, "stretches-panel"));
+    await until(b, "the focus in the drawer", async () => await b.execute(() => document.querySelector("[data-testid=stretches-panel]").contains(document.activeElement)));
+    await b.keys("Escape");
+    await until(b, "Escape to close the drawer", async () => !(await exists(b, "stretches-panel")));
+  });
+
+  it("remembers where a floating panel was put, and its size, after a reload; nothing of it is in the design (UI-4)", async () => {
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await (await tid(b, "section-toggle")).click();
+    await until(b, "the section panel", async () => await exists(b, "section-panel"));
+    const rect = () =>
+      b.execute(() => {
+        const s = document.querySelector("[data-testid=section-panel]").style;
+        return [s.left, s.top, s.width, s.height].map((v) => parseFloat(v));
+      });
+    await until(b, "the panel to be placed", async () => (await rect())[2] > 0);
+    const start0 = await rect();
+    // Drag by the title bar, then resize from the corner, with the pointer.
+    const drag = (id, dx, dy) =>
+      b.execute((id, dx, dy) => {
+        const el = document.querySelector(`[data-testid="${id}"]`);
+        const r = el.getBoundingClientRect();
+        const [x, y] = [r.left + Math.min(r.width / 2, 40), r.top + r.height / 2];
+        const fire = (type, cx, cy) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: cx, clientY: cy }));
+        fire("pointerdown", x, y);
+        fire("pointermove", x + dx / 2, y + dy / 2);
+        fire("pointermove", x + dx, y + dy);
+        fire("pointerup", x + dx, y + dy);
+      }, id, dx, dy);
+    await drag("section-bar", -180, -140);
+    const moved = await rect();
+    assert.deepEqual([moved[0], moved[1]], [start0[0] - 180, start0[1] - 140], "the title bar moves the panel");
+    assert.deepEqual([moved[2], moved[3]], [start0[2], start0[3]], "moving keeps the size");
+    await drag("section-grip", 60, 50);
+    const sized = await rect();
+    assert.deepEqual(sized, [moved[0], moved[1], moved[2] + 60, moved[3] + 50], "the corner resizes the panel");
+    const stored = await b.execute(() => localStorage.getItem("owd-panels"));
+    assert.deepEqual(JSON.parse(stored).section, { x: sized[0], y: sized[1], w: sized[2], h: sized[3] });
+    assert.ok(!JSON.stringify(await pageDoc(b)).includes("owd-panels"), "the placement is not in the design");
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the design back", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    assert.equal(await exists(b, "section-panel"), false, "the panels start hidden after a reload");
+    await (await tid(b, "section-toggle")).click();
+    await until(b, "the panel where it was put", async () => (await exists(b, "section-panel")) && (await rect())[2] > 0);
+    assert.deepEqual(await rect(), sized, "the place and size are remembered");
+    // The profile was never placed: it has its own default, and no entry.
+    assert.equal(JSON.parse(await b.execute(() => localStorage.getItem("owd-panels"))).profile, undefined);
+  });
+
   it("still loads when browser storage is blocked", async () => {
     // Blocking cookies and site data makes `localStorage` throw.
     const b = await start({ prefs: { "profile.default_content_setting_values.cookies": 2 } });
@@ -1091,6 +1285,10 @@ describe("OWD web smoke tests", () => {
     await loaded(b);
     await (await tid(b, "open-example")).click();
     await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    assert.equal(await exists(b, "error"), false);
+    // The floating panels open with their default place: nothing to remember, nothing breaks.
+    await (await tid(b, "section-toggle")).click();
+    await until(b, "the section panel", async () => (await exists(b, "section-panel")) && (await b.execute(() => parseFloat(document.querySelector("[data-testid=section-panel]").style.width) > 0)));
     assert.equal(await exists(b, "error"), false);
   });
 });

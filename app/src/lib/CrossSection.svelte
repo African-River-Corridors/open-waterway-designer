@@ -89,8 +89,8 @@
 </div>
 
 <style>
-  .cross { position: relative; display: flex; gap: var(--sp-2); align-items: flex-start; height: 100%; padding: var(--sp-1); overflow: auto; background: var(--surface); }
-  svg { flex: 1 1 auto; min-width: 200px; max-height: 100%; font-family: var(--font-ui); }
+  .cross { position: relative; display: flex; gap: var(--sp-2); align-items: flex-start; flex-wrap: wrap; height: 100%; padding: var(--sp-1); overflow: auto; }
+  svg { flex: 1 1 200px; min-width: 200px; max-height: 100%; font-family: var(--font-ui); }
   .grid { stroke: var(--rule); stroke-width: 1; }
   .tick { font-size: 9px; fill: var(--ink-3); }
   .tick.end { text-anchor: end; }

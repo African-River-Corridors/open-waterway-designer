@@ -84,7 +84,9 @@
 
   onMount(() => {
     const ro = new ResizeObserver(([entry]) => {
-      size = { width: Math.max(200, Math.floor(entry.contentRect.width)), height: Math.max(120, Math.floor(entry.contentRect.height) - 4) };
+      // The legend sits under the plot: leave it room, so it is not cut off in a short panel.
+      const legend = (plot?.root.querySelector(".u-legend") as HTMLElement | null)?.offsetHeight ?? 22;
+      size = { width: Math.max(200, Math.floor(entry.contentRect.width)), height: Math.max(90, Math.floor(entry.contentRect.height) - legend - 4) };
       plot?.setSize(size);
     });
     ro.observe(host);
@@ -112,7 +114,7 @@
 </div>
 
 <style>
-  .long { height: 100%; min-height: 0; background: var(--surface); }
+  .long { height: 100%; min-height: 0; }
   .plot { width: 100%; height: 100%; }
   :global(.long .u-legend) { font-size: var(--fs-11); color: var(--ink-2); }
   :global(.long .u-legend .u-marker) { border-radius: 0; }
