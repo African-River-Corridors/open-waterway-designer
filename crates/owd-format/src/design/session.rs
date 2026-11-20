@@ -819,6 +819,8 @@ impl Session {
             crs_epsg: self.doc["project"]["crs"]["epsg"]
                 .as_u64()
                 .map(|c| c as u32),
+            // The document does not record a mouth yet: its lines are taken as they are stored.
+            ..RiverIn::default()
         }
     }
 

@@ -1,0 +1,62 @@
+{
+  "label": "Label: property",
+  "why": "The same river given the other way round, with the same mouth: the stage returns the same geometry, so a design does not depend on which end the centreline was digitised from.",
+  "input": {
+    "centreline": [
+      [
+        1000.0,
+        0.0
+      ],
+      [
+        900.0,
+        0.0
+      ],
+      [
+        800.0,
+        0.0
+      ],
+      [
+        700.0,
+        0.0
+      ],
+      [
+        600.0,
+        0.0
+      ],
+      [
+        500.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        300.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0
+      ]
+    ],
+    "mouth": {
+      "point": [
+        1000.0,
+        0.0
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "same_output_as": "mouth-at-the-end"
+  }
+}

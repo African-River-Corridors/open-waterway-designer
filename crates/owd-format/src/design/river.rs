@@ -10,7 +10,7 @@
 
 use super::bank_pair::runs_against;
 use super::session::side_wholesale_message;
-use crate::types::{Polyline, RiverPolygon, StageError};
+use crate::types::{Chainage, Polyline, RiverPolygon, StageError, WaterProfile};
 use owd_core::banks::check::{CheckParams, Checks, assess, lines_cross};
 use owd_core::banks::stations::arc;
 use schemars::JsonSchema;
@@ -21,6 +21,17 @@ pub const STAGE: &str = "river";
 
 /// The checks' station step on a river's banks, in metres.
 pub const STATION_M: f64 = 20.0;
+
+/// Where the river meets the sea, a lake or the river it flows into: where chainage 0 is.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Mouth {
+    /// A point in the project CRS. The end of the centreline nearer to it is the mouth.
+    Point([f64; 2]),
+    /// The lower end of the centreline is the mouth. The water profile or the levels at the ends
+    /// decide which end is lower.
+    Downstream,
+}
 
 /// What the river stage reads: the river inputs and the CRS they are in.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
@@ -41,6 +52,17 @@ pub struct RiverIn {
     /// middle of the left bank.
     #[serde(default)]
     pub crs_epsg: Option<u32>,
+    /// Where chainage 0 is. Absent: the lines are used as given and the answer states no mouth.
+    #[serde(default)]
+    pub mouth: Option<Mouth>,
+    /// The water level along the given centreline, by its chainage (as given, before any turning).
+    /// With `Downstream`, it says which end is lower.
+    #[serde(default)]
+    pub water_profile: Option<WaterProfile>,
+    /// The level of the ground (from the elevation model) at the start and at the end of the given
+    /// centreline. With `Downstream` and no water profile, it says which end is lower.
+    #[serde(default)]
+    pub end_levels_m: Option<[f64; 2]>,
 }
 
 /// The two banks, both running the way the centreline runs.
@@ -81,6 +103,12 @@ pub struct RiverGeometry {
     pub bank_checks: Vec<BankCheck>,
     /// Where the two banks cross, if they do (the checks report it, they never repair it).
     pub banks_cross: Option<[f64; 2]>,
+    /// True when the lines were turned round so that they start at the mouth.
+    pub reversed: bool,
+    /// The mouth: the first point of the centreline, when a mouth was stated.
+    pub mouth: Option<[f64; 2]>,
+    /// The water profile, with its chainage from the mouth (turned with the line when it is).
+    pub water_profile: Option<WaterProfile>,
 }
 
 fn refuse(code: &str, message: &str) -> StageError {
@@ -129,7 +157,53 @@ fn planar(
     Ok(())
 }
 
-/// The river stage: the inputs turned into one checked geometry.
+fn dist(a: [f64; 2], b: [f64; 2]) -> f64 {
+    libm::hypot(a[0] - b[0], a[1] - b[1])
+}
+
+/// Whether the centreline must be turned so that it starts at the mouth. `length_m` is its length in
+/// metres, the unit of the water profile's chainage.
+fn must_turn(input: &RiverIn, centre: &[[f64; 2]], length_m: f64) -> Result<bool, StageError> {
+    let (first, last) = (centre[0], centre[centre.len() - 1]);
+    match input.mouth {
+        None => Ok(false),
+        Some(Mouth::Point(p)) => Ok(dist(p, last) < dist(p, first)),
+        Some(Mouth::Downstream) => {
+            // The water profile first: the end with the lower level is the mouth.
+            let by_profile = input
+                .water_profile
+                .as_ref()
+                .filter(|w| !w.is_empty())
+                .map(|w| (w.level_at(Chainage(0.0)), w.level_at(Chainage(length_m))));
+            let by_levels = input.end_levels_m.map(|l| (l[0], l[1]));
+            for (start, end) in [by_profile, by_levels].into_iter().flatten() {
+                if start.is_finite() && end.is_finite() && (start - end).abs() > 1e-9 {
+                    return Ok(end < start);
+                }
+            }
+            Err(refuse(
+                "RIVER_MOUTH_UNKNOWN",
+                "the mouth is `downstream`, but neither the water level profile nor the levels at \
+                 the two ends of the centreline say which end is lower: give the mouth as a point, \
+                 or give a water level or an elevation model",
+            ))
+        }
+    }
+}
+
+/// A water profile with its chainage measured from the other end of a line `length_m` long.
+fn turned(profile: &WaterProfile, length_m: f64) -> WaterProfile {
+    let pairs: Vec<[f64; 2]> = profile
+        .to_pairs()
+        .into_iter()
+        .rev()
+        .map(|[c, l]| [length_m - c, l])
+        .collect();
+    WaterProfile::from_pairs(&pairs)
+}
+
+/// The river stage: the inputs turned into one checked geometry, oriented from the mouth when one is
+/// stated.
 pub fn river(input: &RiverIn) -> Result<RiverGeometry, StageError> {
     if let Some(p) = &input.river_polygon {
         check_polygon(p)?;
@@ -145,22 +219,53 @@ pub fn river(input: &RiverIn) -> Result<RiverGeometry, StageError> {
             "the river needs a centreline or both bank lines",
         ));
     }
-    // The centreline the design reads.
-    let centreline = match (given, &both) {
+    // The centreline the design reads, in the order it was given (or built).
+    let mut centreline = match (given, &both) {
         (Some(c), _) => c.0.clone(),
         (None, Some((l, r))) => owd_core::alignment::centreline::build_centreline(l, r, 20.0, 5, 2)
             .map_err(|m| refuse("RIVER_NO_GEOMETRY", &m))?,
         (None, None) => unreachable!("checked above"),
     };
 
-    // Each bank runs the way the centreline runs (or, with no centreline, the way the left bank runs).
-    let banks = both.map(|(left, mut right)| {
-        let reference = given.map_or(&left[..], |c| &c.0[..]);
-        let mut left = left.clone();
-        if runs_against(&left, reference) {
+    // Planar copies in metres, for the length and the checks: the middle of the left bank, or of the
+    // centreline, picks the UTM zone of a geographic study.
+    let anchor = match &both {
+        Some((l, _)) => l.get(l.len() / 2).copied(),
+        None => centreline.get(centreline.len() / 2).copied(),
+    };
+    let mut centre_m = centreline.clone();
+    {
+        let mut one: Vec<&mut Vec<[f64; 2]>> = vec![&mut centre_m];
+        planar(input.crs_epsg, &mut one, anchor)?;
+    }
+    let length_m = owd_core::geom::linear::length(&centre_m);
+
+    // Turn the river so that chainage 0 is at the mouth.
+    let reversed = must_turn(input, &centreline, length_m)?;
+    if reversed {
+        centreline.reverse();
+    }
+    let mut seed_line = given.map(|c| {
+        let mut c = c.0.clone();
+        if reversed {
+            c.reverse();
+        }
+        c
+    });
+    let water_profile = input.water_profile.as_ref().map(|w| {
+        if reversed {
+            turned(w, length_m)
+        } else {
+            w.clone()
+        }
+    });
+
+    // Each bank runs the way the (oriented) centreline runs.
+    let banks = both.map(|(mut left, mut right)| {
+        if runs_against(&left, &centreline) {
             left.reverse();
         }
-        if runs_against(&right, reference) {
+        if runs_against(&right, &centreline) {
             right.reverse();
         }
         Banks {
@@ -169,27 +274,28 @@ pub fn river(input: &RiverIn) -> Result<RiverGeometry, StageError> {
         }
     });
 
-    // The checks, in metres.
-    let (mut length_line, mut seed_line) = (centreline.clone(), given.map(|c| c.0.clone()));
+    // The checks, in metres. Banks are named looking downstream. A line that starts at the mouth runs
+    // upstream, so its left bank is on the right of the way it runs: the checks get the banks the
+    // other way round. With no mouth stated the line is taken as running downstream, as before.
     let mut report = (0_u32, 0_u32, Vec::new(), None);
     if let Some(b) = &banks {
         let (mut left, mut right) = (b.left.0.clone(), b.right.0.clone());
-        let anchor = left.get(left.len() / 2).copied();
         {
-            let mut all: Vec<&mut Vec<[f64; 2]>> = vec![&mut left, &mut right, &mut length_line];
+            let mut all: Vec<&mut Vec<[f64; 2]>> = vec![&mut left, &mut right];
             if let Some(s) = seed_line.as_mut() {
                 all.push(s);
             }
             planar(input.crs_epsg, &mut all, anchor)?;
         }
+        if input.mouth.is_some() {
+            std::mem::swap(&mut left, &mut right);
+        }
         report = run_checks(&left, &right, seed_line.as_deref());
-    } else {
-        let anchor = length_line.get(length_line.len() / 2).copied();
-        planar(input.crs_epsg, &mut [&mut length_line], anchor)?;
     }
     let (stations_checked, side_fail_stations, bank_checks, banks_cross) = report;
     Ok(RiverGeometry {
-        length_m: owd_core::geom::linear::length(&length_line),
+        length_m,
+        mouth: input.mouth.map(|_| centreline[0]),
         centreline: Polyline(centreline),
         banks,
         polygon: input.river_polygon.clone(),
@@ -197,6 +303,8 @@ pub fn river(input: &RiverIn) -> Result<RiverGeometry, StageError> {
         side_fail_stations,
         bank_checks,
         banks_cross,
+        reversed,
+        water_profile,
     })
 }
 
