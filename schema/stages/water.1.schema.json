@@ -273,6 +273,11 @@
           "description": "The river's own level, outside every pool.",
           "type": "string",
           "const": "open_river"
+        },
+        {
+          "description": "Between two pools that do not touch: read straight from the lower pool's level to the upper\none's (how the optimise stage's pools have always been read).",
+          "type": "string",
+          "const": "between_pools"
         }
       ]
     },

@@ -4,15 +4,20 @@
 //!
 //! [`reference_line_stage`] is a pure function from a [`ReferenceLineIn`] to a [`ReferenceLine`]. The
 //! document stores it as a stage record under `stages.reference_line`: the parameters as its
-//! settings and the line as its results. Its `depends_on` is the hash of what makes the line: the
-//! two banks, the river polygon, the project CRS and the parameters (`basis_of`). The centreline
-//! and the banks' low-confidence stretches are left out: they only place notes on the line, and
-//! with them in, a new centreline would make the line stale and the bed centred on it would fall
-//! back to the centreline (QA on PR 560). It is the formula OWD used before the line was a stage.
-//! The design stages do not read it: storing it leaves them fresh. A line stored the old way, as
-//! `inputs.reference_line`, moves to the stage record when the file opens, keeping its hash: a
-//! fresh line stays fresh, a stale one stays stale.
-
+//! settings and the line as its results. Two hashes (QA on PR 560):
+//!
+//! - The record's `depends_on` hashes its whole input and the project CRS (ADR 0015). A new
+//!   centreline or new bank notes change the line's low-confidence stretches, so the record goes
+//!   stale and says so.
+//! - The line's shape is keyed by `line_basis` in its results: the hash of the banks, the river
+//!   polygon, the CRS and the parameters (`basis_of`), the formula OWD used before the line was a
+//!   stage. The bed is centred on the line while that matches, so new notes do not make the
+//!   volumes fall back to the centreline.
+//!
+//! The design stages do not read the line: storing it leaves them fresh. A line stored the old way,
+//! as `inputs.reference_line`, moves to the stage record when the file opens: a fresh line stays
+//! fresh (and its volumes keep their hash), a stale one stays stale.
+//!
 use super::alignment::pts_of;
 use super::hash::hash_value;
 use super::session::{DesignError, ENGINE_VERSION, Session, StageStatus};
@@ -90,6 +95,11 @@ pub struct ReferenceLine {
     pub outside_water: Vec<LineStretch>,
     /// What the engine says about the line.
     pub notes: Vec<String>,
+    /// The hash of what shaped the line: the banks, the river polygon, the project CRS and the
+    /// parameters (the record's `depends_on` hashes its whole input). The bed is centred on the
+    /// line while this matches, so new bank notes leave the volumes fresh (QA on PR 560).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_basis: Option<String>,
 }
 
 fn refuse(code: &str, message: &str) -> StageError {
@@ -149,6 +159,7 @@ pub fn reference_line_stage(input: &ReferenceLineIn) -> Result<ReferenceLine, St
             })
             .collect(),
         notes: rl.notes.clone(),
+        line_basis: None,
     })
 }
 
@@ -169,24 +180,27 @@ pub(super) fn basis_of(doc: &Value) -> String {
 /// Move a reference line stored the old way (`inputs.reference_line`) to its stage record, keeping
 /// its hash, and say what happened in plain words. For any format: on the raw JSON, before the
 /// schema check. A file that also holds the stage record keeps the record; the old copy goes.
-pub(super) fn move_from_inputs(doc: &mut Value) -> Vec<String> {
+pub(super) fn move_from_inputs(doc: &mut Value) -> (Vec<String>, bool) {
     let Some(old) = doc
         .get_mut("inputs")
         .and_then(Value::as_object_mut)
         .and_then(|o| o.remove("reference_line"))
     else {
-        return vec![];
+        return (vec![], false);
     };
     if !old.is_object() {
-        return vec![];
+        return (vec![], false);
     }
     if doc["stages"][STAGE].is_object() {
-        return vec![
-            "The file held the reference line in two places: the stage record \
+        return (
+            vec![
+                "The file held the reference line in two places: the stage record \
              `stages.reference_line` is kept and the old copy under `inputs.reference_line` is \
              dropped."
-                .into(),
-        ];
+                    .into(),
+            ],
+            false,
+        );
     }
     if !doc["stages"].is_object() {
         doc["stages"] = json!({});
@@ -204,20 +218,24 @@ pub(super) fn move_from_inputs(doc: &mut Value) -> Vec<String> {
             "low_confidence": old.get("low_confidence").cloned().unwrap_or(json!([])),
             "outside_water": old.get("outside_water").cloned().unwrap_or(json!([])),
             "notes": old.get("notes").cloned().unwrap_or(json!([])),
+            "line_basis": depends_on,
         },
         "depends_on": depends_on,
         "engine_version": doc["engine_version"],
     });
-    vec![if fresh {
-        "The reference line moved from `inputs.reference_line` to its stage record \
+    (
+        vec![if fresh {
+            "The reference line moved from `inputs.reference_line` to its stage record \
          `stages.reference_line`. It is still fresh: nothing it is made from changed."
-            .into()
-    } else {
-        "The reference line moved from `inputs.reference_line` to its stage record \
+                .into()
+        } else {
+            "The reference line moved from `inputs.reference_line` to its stage record \
          `stages.reference_line`. It was stale and stays stale: the next `owd fits` or \
          `owd envelope` makes it again."
-            .into()
-    }]
+                .into()
+        }],
+        fresh,
+    )
 }
 
 impl Session {
@@ -254,11 +272,26 @@ impl Session {
         if !r["results"].is_object() {
             return StageStatus::NotRun;
         }
-        if r["depends_on"].as_str() == Some(basis_of(&self.doc).as_str()) {
-            StageStatus::Fresh
-        } else {
-            StageStatus::Stale
+        match (r["depends_on"].as_str(), self.reference_line_record_hash()) {
+            (Some(h), Some(now)) if h == now => StageStatus::Fresh,
+            _ => StageStatus::Stale,
         }
+    }
+
+    /// The hash the stage record keeps: its whole typed input and the project CRS (ADR 0015).
+    pub(super) fn reference_line_record_hash(&self) -> Option<String> {
+        self.reference_line_input()
+            .map(|i| hash_value(&json!({"input": i, "crs": self.doc["project"]["crs"]})))
+    }
+
+    /// True while the stored line's shape is what its banks, polygon, CRS and parameters make now,
+    /// whether or not its notes are up to date.
+    fn reference_line_shape_fresh(&self) -> bool {
+        let r = &self.doc["stages"][STAGE];
+        let basis = r["results"]["line_basis"]
+            .as_str()
+            .or(r["depends_on"].as_str());
+        r["results"].is_object() && basis == Some(basis_of(&self.doc).as_str())
     }
 
     /// The stored reference line (the stage's results), fresh or not.
@@ -285,14 +318,15 @@ impl Session {
                 ..ReferenceLineIn::default()
             }
         });
-        let out = reference_line_stage(&input).map_err(|e| DesignError::Input(e.message))?;
+        let mut out = reference_line_stage(&input).map_err(|e| DesignError::Input(e.message))?;
+        out.line_basis = Some(basis_of(&self.doc));
         if !self.doc["stages"].is_object() {
             self.doc["stages"] = json!({});
         }
         self.doc["stages"][STAGE] = json!({
             "settings": input.parameters,
             "results": out,
-            "depends_on": basis_of(&self.doc),
+            "depends_on": hash_value(&json!({"input": input, "crs": self.doc["project"]["crs"]})),
             "engine_version": ENGINE_VERSION,
         });
         Ok(())
@@ -301,15 +335,16 @@ impl Session {
     /// The line the assumed bed is centred on, when it is not the centreline: a fresh reference
     /// line (#398).
     pub(super) fn bed_axis_line(&self) -> Option<Vec<Pt>> {
-        (self.reference_line_status() == StageStatus::Fresh)
+        self.reference_line_shape_fresh()
             .then(|| self.reference_line())
             .flatten()
     }
 
-    /// What [`Session::bed_axis_line`] was made from, for the hashes of what reads the bed.
+    /// What [`Session::bed_axis_line`] was made from, for the hashes of what reads the bed: the
+    /// hash of what shaped the line (the formula before the line was a stage, so an older file's
+    /// volumes keep their hash).
     pub(super) fn bed_axis_hash(&self) -> Option<Value> {
-        self.bed_axis_line()
-            .map(|_| self.doc["stages"][STAGE]["depends_on"].clone())
+        self.bed_axis_line().map(|_| json!(basis_of(&self.doc)))
     }
 
     /// The reference line, made again first when it is missing or stale.

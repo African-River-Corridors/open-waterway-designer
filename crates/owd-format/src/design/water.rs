@@ -183,17 +183,23 @@ impl Session {
     pub fn water_input(&self) -> Option<WaterIn> {
         let design_line = self.final_line()?.line;
         let centreline = Polyline(self.river_centreline().ok()?);
-        let step_m = self.doc["stages"][water_stage::STAGE]["settings"]["step_m"]
-            .as_f64()
-            .unwrap_or(DEFAULT_STEP_M);
-        Some(WaterIn {
+        Some(self.water_input_on(design_line, centreline))
+    }
+
+    /// What the water stage reads for `design_line`: the same river, water and pools. The step is
+    /// the volumes stage's station step, so each volumes station is a point of the answer.
+    pub(super) fn water_input_on(&self, design_line: Polyline, centreline: Polyline) -> WaterIn {
+        let step_m = self
+            .volumes_settings(&Value::Null)
+            .map_or(DEFAULT_STEP_M, |v| v.station_m);
+        WaterIn {
             centreline,
             design_line,
             given: self.input_water_profile(),
             pools: self.optimise_pools(),
             beyond_pools: BeyondPools::HoldPoolLevel,
             step_m,
-        })
+        }
     }
 
     /// Where the stored water stands: not run, fresh, or stale. It is fresh while the hash of what
