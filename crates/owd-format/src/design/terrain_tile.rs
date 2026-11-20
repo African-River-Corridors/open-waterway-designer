@@ -306,13 +306,47 @@ impl TileMaker {
     pub fn heights(&self, z: u8, x: u32, y: u32) -> Result<Vec<f32>, DesignError> {
         check(z, x, y)?;
         let base = self.info.base_m as f32;
-        let mut out = vec![base; TILE * TILE];
         if !self.touches(z, x, y) {
-            return Ok(out);
+            return Ok(vec![base; TILE * TILE]);
         }
+        Ok(self.sampled(z, x, y, 0, base, |px, py| self.height_at(px, py)))
+    }
+
+    /// The DEM's own heights on the grid of tile `z/x/y`, with `margin` more pixels on every
+    /// side: `TILE + 2 * margin` heights a side, row by row from the north-west, each at a pixel
+    /// centre. NaN where the DEM has no height (off the DEM, or a nodata cell): no base height and
+    /// no apron, since a contour is drawn only where the ground is known.
+    pub fn ground(&self, z: u8, x: u32, y: u32, margin: usize) -> Result<Vec<f32>, DesignError> {
+        check(z, x, y)?;
+        Ok(self.sampled(z, x, y, margin, f32::NAN, |px, py| {
+            self.dem.sample_bilinear(px, py)
+        }))
+    }
+
+    /// Whether tile `z/x/y` holds any of the DEM's own box.
+    pub fn holds_dem(&self, z: u8, x: u32, y: u32) -> bool {
+        let [w, s, e, n] = tile_bounds(z, x, y);
+        let [dw, ds, de, dn] = self.info.bounds;
+        w < de && e > dw && s < dn && n > ds
+    }
+
+    /// `height(px, py)` in the DEM's CRS at every pixel centre of tile `z/x/y` and of `margin`
+    /// pixels around it. A pixel the projection refuses is `unplaced`.
+    fn sampled(
+        &self,
+        z: u8,
+        x: u32,
+        y: u32,
+        margin: usize,
+        unplaced: f32,
+        height: impl Fn(f64, f64) -> f64,
+    ) -> Vec<f32> {
+        let side = TILE + 2 * margin;
+        let mut out = vec![unplaced; side * side];
         // Projecting every pixel is most of the work. A tile is small beside the projection's
         // curve, so only a lattice of points is projected, and a pixel is placed between the
-        // four around it. A lattice point the projection refuses sends its pixels the long way.
+        // four around it (a pixel of the margin: just beyond them, on the same straight lines).
+        // A lattice point the projection refuses sends its pixels the long way.
         let lattice: Option<Vec<Option<[f64; 2]>>> = match &self.forward {
             Some(f) if z >= LATTICE_FROM_ZOOM => Some(
                 (0..LATTICE * LATTICE)
@@ -325,13 +359,14 @@ impl TileMaker {
             ),
             _ => None,
         };
-        let between = |col: usize, row: usize| -> Option<[f64; 2]> {
+        let between = |col: f64, row: f64| -> Option<[f64; 2]> {
             let lattice = lattice.as_ref()?;
-            let (fc, fr) = (
-                (col as f64 + 0.5) / LATTICE_STEP as f64,
-                (row as f64 + 0.5) / LATTICE_STEP as f64,
+            let (fc, fr) = (col / LATTICE_STEP as f64, row / LATTICE_STEP as f64);
+            let last = (LATTICE - 2) as f64;
+            let (c, r) = (
+                libm::floor(fc).clamp(0.0, last) as usize,
+                libm::floor(fr).clamp(0.0, last) as usize,
             );
-            let (c, r) = (fc as usize, fr as usize);
             let (tc, tr) = (fc - c as f64, fr - r as f64);
             let (a, b) = (lattice[r * LATTICE + c]?, lattice[r * LATTICE + c + 1]?);
             let (d, e) = (
@@ -343,21 +378,26 @@ impl TileMaker {
             };
             Some([mix(0), mix(1)])
         };
-        for row in 0..TILE {
-            for col in 0..TILE {
+        for j in 0..side {
+            for i in 0..side {
+                // The pixel's centre, in tile pixels from the north-west corner of the tile.
+                let (col, row) = (
+                    i as f64 - margin as f64 + 0.5,
+                    j as f64 - margin as f64 + 0.5,
+                );
                 let at = between(col, row).or_else(|| {
-                    let ll = pixel_lon_lat(z, x, y, col, row);
+                    let ll = lon_lat_at(z, x, y, col, row);
                     match &self.forward {
                         None => Some(ll),
                         Some(f) => f(ll),
                     }
                 });
                 if let Some([px, py]) = at {
-                    out[row * TILE + col] = self.height_at(px, py) as f32;
+                    out[j * side + i] = height(px, py) as f32;
                 }
             }
         }
-        Ok(out)
+        out
     }
 
     /// Tile `z/x/y` as a Terrarium PNG, from the cache when it is there.

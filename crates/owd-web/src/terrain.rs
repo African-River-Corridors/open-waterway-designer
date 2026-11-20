@@ -1,7 +1,9 @@
 //! The terrain tiles of the session's DEM, for the map's 3D view (MAP-2). The tile maker is kept
 //! with the DEM it was built for: a new DEM gets a new maker and a new number, so the page can
-//! tell that every tile it holds is out of date. Nothing here is written to the design.
+//! tell that every tile it holds is out of date. The contour tiles of the same DEM (MAP-3) are
+//! made from the same maker. Nothing here is written to the design.
 
+use owd_format::design::contours::ContourCache;
 use owd_format::design::terrain_tile::TileMaker;
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
@@ -11,6 +13,8 @@ use std::sync::Arc;
 #[derive(Debug, Default)]
 pub struct TerrainTiles {
     maker: Option<TileMaker>,
+    /// The contour tiles made from the maker's DEM.
+    contours: ContourCache,
     /// Counts the DEMs seen: the `id` in [`TerrainTiles::info`].
     id: u32,
 }
@@ -21,6 +25,7 @@ impl TerrainTiles {
     fn for_dem(&mut self, dem: Option<Arc<Dem>>) -> Result<Option<&mut TileMaker>, String> {
         let Some(dem) = dem else {
             self.maker = None;
+            self.contours.clear();
             return Ok(None);
         };
         if !self
@@ -29,6 +34,7 @@ impl TerrainTiles {
             .is_some_and(|m| Arc::ptr_eq(m.dem(), &dem))
         {
             self.maker = None;
+            self.contours.clear();
             self.maker = Some(TileMaker::new(dem).map_err(|e| e.to_string())?);
             self.id += 1;
         }
@@ -68,6 +74,27 @@ impl TerrainTiles {
             .ok_or_else(|| "there is no DEM in memory to cut terrain tiles from".to_string())?;
         let z = u8::try_from(z).map_err(|_| format!("there is no map tile {z}/{x}/{y}"))?;
         maker.tile(z, x, y).map_err(|e| e.to_string())
+    }
+
+    /// The contour lines of tile `z/x/y` of the DEM, every `interval_m` metres, as a Mapbox
+    /// Vector Tile (no bytes when the tile has no line).
+    pub fn contour_tile(
+        &mut self,
+        dem: Option<Arc<Dem>>,
+        z: u32,
+        x: u32,
+        y: u32,
+        interval_m: f64,
+    ) -> Result<Arc<Vec<u8>>, String> {
+        self.for_dem(dem)?;
+        let maker = self
+            .maker
+            .as_ref()
+            .ok_or_else(|| "there is no DEM in memory to draw contours from".to_string())?;
+        let z = u8::try_from(z).map_err(|_| format!("there is no map tile {z}/{x}/{y}"))?;
+        self.contours
+            .tile(maker, z, x, y, interval_m)
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -124,6 +151,55 @@ mod tests {
         // The DEM goes (a new design): nothing to draw.
         assert_eq!(t.info(None).unwrap(), Value::Null);
         assert!(t.tile(None, 2, 0, 0).is_err());
+    }
+
+    #[test]
+    fn contour_tiles_are_of_the_dem_in_memory_and_go_with_it() {
+        let mut t = TerrainTiles::default();
+        let e = t.contour_tile(None, 12, 2025, 1990, 1.0).unwrap_err();
+        assert!(e.contains("no DEM"), "{e}");
+        // Heights 10 to 59 across the DEM: contours every 5 m, and more of them every 1 m.
+        let a = dem(10.0);
+        let five = t
+            .contour_tile(Some(a.clone()), 12, 2025, 1990, 5.0)
+            .unwrap();
+        let one = t
+            .contour_tile(Some(a.clone()), 12, 2025, 1990, 1.0)
+            .unwrap();
+        assert!(!five.is_empty() && one.len() > five.len());
+        assert!(Arc::ptr_eq(
+            &five,
+            &t.contour_tile(Some(a.clone()), 12, 2025, 1990, 5.0)
+                .unwrap()
+        ));
+        assert_eq!(t.info(Some(a.clone())).unwrap()["id"], 1, "the same DEM");
+        // A tile that holds none of the DEM: no lines, no bytes. No such tile or interval: refused.
+        assert!(
+            t.contour_tile(Some(a.clone()), 12, 0, 0, 5.0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            t.contour_tile(Some(a.clone()), 300, 0, 0, 5.0)
+                .unwrap_err()
+                .contains("300/0/0")
+        );
+        assert!(
+            t.contour_tile(Some(a), 12, 2025, 1990, 0.0)
+                .unwrap_err()
+                .contains("interval")
+        );
+        // Flat ground has no contours; a new DEM never gets the old one's tile.
+        let flat = Arc::new(Dem {
+            data: vec![7.0; 2500],
+            ..(*dem(0.0)).clone()
+        });
+        assert!(
+            t.contour_tile(Some(flat), 12, 2025, 1990, 5.0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(t.contour_tile(None, 12, 2025, 1990, 5.0).is_err());
     }
 
     #[test]

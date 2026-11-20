@@ -569,6 +569,15 @@ impl Session {
         ok(self.terrain.tile(self.state.dem(), z, x, y)).map(|png| png.to_vec())
     }
 
+    /// The contour lines of tile `z/x/y` of the DEM, every `interval_m` metres: a Mapbox Vector
+    /// Tile, made here from the DEM in memory (no bytes when the tile has no line).
+    pub fn contour_tile(&mut self, z: u32, x: u32, y: u32, interval_m: f64) -> Js<Vec<u8>> {
+        ok(self
+            .terrain
+            .contour_tile(self.state.dem(), z, x, y, interval_m))
+        .map(|tile| tile.to_vec())
+    }
+
     /// The drawing sheets of an option (spec 0004, ticket 8) as JSON: `[{number, title, svg,
     /// warnings}]`, made by the same builder as `owd draw`.
     pub fn sheets(&self, option: &str) -> Js<String> {

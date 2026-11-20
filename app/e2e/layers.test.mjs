@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import { LAYERS_KEY, MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, defaultTicks, loadLayerTicks, parseTicks, saveLayerTicks, serialiseTicks } from "../src/lib/mapLayers.ts";
 
 describe("the map layer ticks", () => {
-  it("lists the eight layers, each with the map layers it shows or hides", () => {
-    assert.deepEqual(MAP_LAYERS.map((l) => l.label), ["River polygon", "Centreline", "Bank lines", "Design line", "Constraint stretches", "Station marks", "Terrain shading", "Imagery"]);
+  it("lists the nine layers, each with the map layers it shows or hides", () => {
+    assert.deepEqual(MAP_LAYERS.map((l) => l.label), ["River polygon", "Centreline", "Bank lines", "Design line", "Constraint stretches", "Station marks", "Terrain shading", "Contours", "Imagery"]);
     for (const l of MAP_LAYERS) assert.ok(STYLE_LAYERS[l.id].length > 0, l.id);
   });
-  it("are all on by default but the terrain shading, and for stored text that is not ours", () => {
-    assert.deepEqual(STARTS_OFF, ["terrain-shading"]);
-    for (const l of MAP_LAYERS) assert.equal(defaultTicks()[l.id], l.id !== "terrain-shading", l.id);
+  it("are all on by default but the terrain shading and the contours, and for stored text that is not ours", () => {
+    assert.deepEqual(STARTS_OFF, ["terrain-shading", "contours"]);
+    for (const l of MAP_LAYERS) assert.equal(defaultTicks()[l.id], l.id !== "terrain-shading" && l.id !== "contours", l.id);
     for (const text of [null, "", "{", "{}", "7", '["no-such-layer"]']) assert.deepEqual(parseTicks(text), defaultTicks(), String(text));
   });
   it("round-trip through the stored text, which names only the layers turned off", () => {
@@ -27,6 +27,11 @@ describe("the map layer ticks", () => {
     assert.deepEqual(parseTicks('["imagery"]'), { ...defaultTicks(), imagery: false });
     const both = { ...defaultTicks(), imagery: false, "terrain-shading": true };
     assert.deepEqual(parseTicks(serialiseTicks(both)), both);
+    // The contours (MAP-3) start off too, and text stored before them reads as before.
+    const lines = { ...defaultTicks(), contours: true };
+    assert.equal(serialiseTicks(lines), '["contours"]');
+    assert.deepEqual(parseTicks('["contours"]'), lines);
+    assert.equal(parseTicks('["terrain-shading","imagery"]').contours, false);
   });
   it("are remembered, and a blocked store gives all on without an error", () => {
     const store = new Map();

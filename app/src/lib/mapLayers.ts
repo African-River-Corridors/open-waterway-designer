@@ -9,6 +9,7 @@ export const MAP_LAYERS = [
   { id: "constraint-stretches", label: "Constraint stretches" },
   { id: "station-marks", label: "Station marks" },
   { id: "terrain-shading", label: "Terrain shading" },
+  { id: "contours", label: "Contours" },
   { id: "imagery", label: "Imagery" },
 ] as const;
 
@@ -18,8 +19,9 @@ export type LayerTicks = Record<MapLayerId, boolean>;
 
 export const LAYERS_KEY = "owd-map-layers";
 
-/** The layers that start unticked. Terrain shading darkens the imagery, so the user asks for it (MAP-2). */
-export const STARTS_OFF: readonly MapLayerId[] = ["terrain-shading"];
+/** The layers that start unticked. Terrain shading darkens the imagery, and contours lay lines over
+ * everything, so the user asks for them (MAP-2, MAP-3). */
+export const STARTS_OFF: readonly MapLayerId[] = ["terrain-shading", "contours"];
 
 /** The default ticks: every layer on but those in STARTS_OFF. */
 export const defaultTicks = (): LayerTicks => Object.fromEntries(MAP_LAYERS.map((l) => [l.id, !STARTS_OFF.includes(l.id)])) as LayerTicks;
@@ -75,5 +77,6 @@ export const STYLE_LAYERS: Record<MapLayerId, string[]> = {
   "constraint-stretches": ["stretches-casing", "stretches"],
   "station-marks": ["ticks"],
   "terrain-shading": ["terrain-tint", "terrain-shading"],
+  contours: ["contours-casing", "contours", "contours-labels"],
   imagery: ["under", "basemap", "hillshade"],
 };
