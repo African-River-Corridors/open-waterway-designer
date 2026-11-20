@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { ATTRIBUTION, BASEMAP_TILES } from "../src/lib/basemap.ts";
 import {
-  DEFAULT_IMAGERY, ESRI_FAILED, ESRI_POWERED, ESRI_TILES, esriAttribution, layerFor, loadImagery, maskKey, parse, saveImagery, serialise, usable, validTileUrl,
+  DEFAULT_IMAGERY, ESRI_FAILED, ESRI_MIN_ZOOM, ESRI_POWERED, ESRI_TILES, esriAttribution, layerFor, loadImagery, maskKey, parse, saveImagery, serialise, usable, validTileUrl,
 } from "../src/lib/imagery.ts";
 
 const FAKE = "FAKE-KEY-not-real-abcd1234";
@@ -40,10 +40,14 @@ describe("the key", () => {
     const l = layerFor({ ...DEFAULT_IMAGERY, source: "esri", esriKey: FAKE }, BASEMAP_TILES, "Sources: Example data");
     assert.ok(l.tiles.includes(FAKE));
     assert.ok(l.tiles.includes("{z}/{y}/{x}"), "Esri orders the path level, row, column");
-    assert.equal(l.tileSize, 512);
-    assert.equal(l.attribution, `${ESRI_POWERED}. Sources: Example data`);
+    assert.equal(l.tileSize, 256);
+    assert.equal(l.minzoom, ESRI_MIN_ZOOM, "Esri tiles are asked for only when zoomed in");
+    assert.equal(l.under, BASEMAP_TILES, "the open imagery shows under it, further out");
+    assert.ok(l.attribution.startsWith(`${ESRI_POWERED}. Sources: Example data`));
+    assert.ok(l.attribution.includes(ATTRIBUTION), "both pictures are credited");
+    assert.ok(!ESRI_TILES.includes("/labels/"), "the labels style has no picture");
     assert.equal(esriAttribution(null), ESRI_POWERED);
-    assert.ok(ESRI_TILES.startsWith("https://static-map-tiles-api.arcgis.com/"));
+    assert.ok(ESRI_TILES.startsWith("https://ibasemaps-api.arcgis.com/"));
   });
   it("is remembered, and a blocked store gives the default without an error", () => {
     const store = new Map();

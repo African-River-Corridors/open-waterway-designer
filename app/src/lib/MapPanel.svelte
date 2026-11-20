@@ -171,10 +171,19 @@
   function rasterSource(l: ImageryLayer): maplibregl.RasterSourceSpecification {
     return { type: "raster", tiles: [l.tiles], tileSize: l.tileSize, maxzoom: l.maxzoom };
   }
+  /** The imagery layer: drawn only from its own first zoom level in, when it has one. */
+  function rasterLayer(l: ImageryLayer): maplibregl.RasterLayerSpecification {
+    return { id: "basemap", type: "raster", source: "basemap", ...(l.minzoom ? { minzoom: l.minzoom } : {}) };
+  }
+  /** The open tiles under imagery that has a first zoom level: what shows further out, and while tiles load. */
+  const underSource = (tiles: string): maplibregl.RasterSourceSpecification => ({ type: "raster", tiles: [tiles], tileSize: 256, maxzoom: 14 });
+  const UNDER_LAYER: maplibregl.RasterLayerSpecification = { id: "under", type: "raster", source: "under" };
 
   // Counters for the tiles of the imagery now shown; a change of source starts them again.
   let failed = 0;
   let loaded = 0;
+  let loadingTiles = $state(false);
+  let zoomNow = $state(2);
   let drawnTiles = "";
   /** Put another imagery source under everything else. */
   function swapImagery() {
@@ -185,8 +194,16 @@
     offline = false;
     map.removeLayer("basemap");
     map.removeSource("basemap");
+    if (map.getLayer("under")) {
+      map.removeLayer("under");
+      map.removeSource("under");
+    }
+    if (imagery.under) {
+      map.addSource("under", underSource(imagery.under));
+      map.addLayer(UNDER_LAYER, "hillshade");
+    }
     map.addSource("basemap", rasterSource(imagery));
-    map.addLayer({ id: "basemap", type: "raster", source: "basemap" }, "hillshade");
+    map.addLayer(rasterLayer(imagery), "hillshade");
   }
 
   let shownShade: string | null = null;
@@ -236,9 +253,10 @@
         style: {
           version: 8,
           sources: {
+            ...(imagery.under ? { under: underSource(imagery.under) } : {}),
             basemap: rasterSource(imagery),
           },
-          layers: [{ id: "basemap", type: "raster", source: "basemap" }],
+          layers: [...(imagery.under ? [UNDER_LAYER] : []), rasterLayer(imagery)],
         },
         center: [0, 5],
         zoom: 2,
@@ -290,6 +308,13 @@
       loaded += 1;
       offline = false;
     });
+    // Say so while imagery tiles are on their way, and where the sharper imagery starts.
+    map.on("dataloading", (e) => {
+      const id = (e as { sourceId?: string }).sourceId;
+      if (id === "basemap" || id === "under") loadingTiles = true;
+    });
+    map.on("idle", () => (loadingTiles = false));
+    map.on("zoom", () => (zoomNow = map?.getZoom() ?? 0));
   });
 
   onDestroy(() => map?.remove());
@@ -349,6 +374,11 @@
       Imagery offline{hillshade ? " — showing the DEM hillshade" : " — no DEM to show a hillshade from"}
     </p>
   {/if}
+  {#if !offline && imagery.minzoom && zoomNow < imagery.minzoom}
+    <p class="imagery-state" role="status" data-testid="imagery-zoom-note">Zoom in to see the sharper imagery</p>
+  {:else if !offline && loadingTiles}
+    <p class="imagery-state" role="status" data-testid="imagery-loading">Loading imagery…</p>
+  {/if}
   <p class="attribution" data-testid="attribution" data-source={imagery.source}>{imagery.attribution}</p>
 </div>
 
@@ -361,6 +391,7 @@
   .legend:not(:has(li)) { display: none; }
   .stretch-key { display: inline-block; width: 22px; height: 0; border-top: 4px dashed var(--fail); }
   .bend-key { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; border: var(--lw-thin) solid var(--ink); font-size: var(--fs-11); font-weight: 700; color: var(--fail); }
+  .imagery-state { position: absolute; left: var(--sp-2); bottom: 28px; margin: 0; padding: 3px var(--sp-2); font-size: var(--fs-12); background: var(--surface, #fff); color: var(--ink, #222); border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); z-index: 2; }
   .offline { position: absolute; left: var(--sp-2); bottom: 28px; margin: 0; padding: 3px var(--sp-2); font-size: var(--fs-12); background: var(--warn-soft); color: var(--warn); border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); z-index: 2; }
   .fail { color: var(--fail); margin-left: var(--sp-2); font-weight: 600; }
   .fail::before { content: "✕ "; }

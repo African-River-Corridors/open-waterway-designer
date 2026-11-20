@@ -16,29 +16,31 @@ export interface ImagerySettings {
 }
 
 /**
- * Esri World Imagery, as plain raster XYZ tiles: the Static Basemap Tiles service, style `arcgis/imagery/labels`
- * (512 x 512 px PNG, Web Mercator, level 0 to 22). Source: "Static Basemap Tiles service" request
- * `/arcgis/imagery/labels/static/tile/{level}/{row}/{column}`,
- * https://developers.arcgis.com/rest/static-basemap-tiles/arcgis-imagery-labels-tile-get/ , and the service
- * introduction, https://developers.arcgis.com/documentation/mapping-and-location-services/mapping/basemaps/introduction-static-basemap-tiles-service/ .
- * Esri orders the path level/row/column, so `{y}` comes before `{x}`. `{key}` is replaced by the user's key
- * (the documented `token` query parameter; the key needs the `premium:user:staticbasemaptiles` privilege).
- * Chosen over the Basemap Styles service, whose imagery is a vector style for a library that reads Esri's
- * style JSON: this one is a tile address any raster layer takes. Esri has no imagery-only style here: the
- * labels are part of the picture.
+ * Esri World Imagery, as plain raster XYZ tiles: the World_Imagery map tile service that Esri's Basemap Styles
+ * service draws its `arcgis/imagery` style from (256 x 256 px, Web Mercator). Source: "Service data", the list of
+ * map tile services, https://developers.arcgis.com/rest/basemap-styles/service-data/ . Esri orders the path
+ * level/row/column, so `{y}` comes before `{x}`. `{key}` is replaced by the user's key (the `token` query
+ * parameter; the key needs the Basemaps privilege, `premium:user:basemaps`).
+ * The Static Basemap Tiles service is not used: its one imagery style, `arcgis/imagery/labels`, is place names
+ * only, with no picture.
  */
 export const ESRI_TILES =
-  "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static/tile/{z}/{y}/{x}?token={key}";
+  "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token={key}";
 
 /**
  * The service's metadata, which carries `copyrightText`, the data attribution Esri asks every map to show
  * (https://developers.arcgis.com/documentation/esri-and-data-attribution/interactive-maps/). Fetched with the key,
- * which also tells us at once whether the key works.
+ * so it also tells us at once whether the key works. Esri does not bill for it.
  */
 export const ESRI_METADATA =
-  "https://static-map-tiles-api.arcgis.com/arcgis/rest/services/static-basemap-tiles-service/v1/arcgis/imagery/labels/static?f=json&token={key}";
+  "https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer?f=json&token={key}";
 
-/** The Esri notice the terms require in any application that uses Esri services (same page as above). */
+/**
+ * Esri tiles are asked for only from this zoom level in (about 1 : 500,000 on screen, a river reach). Further out
+ * the open imagery shows. Esri bills per tile, and a whole-river view gains nothing from sharper pictures.
+ */
+export const ESRI_MIN_ZOOM = 10;
+
 export const ESRI_POWERED = "Powered by Esri";
 
 /** The one line shown when Esri imagery fails. */
@@ -56,6 +58,10 @@ export interface ImageryLayer {
   tiles: string;
   tileSize: number;
   maxzoom: number;
+  /** The layer is drawn, and its tiles asked for, only from this zoom level in. Absent: at every level. */
+  minzoom?: number;
+  /** Open tiles drawn under the layer, so the map is never empty: further out than `minzoom`, or while tiles load. */
+  under?: string;
   /** The attribution text for the source shown, always. Esri's is added after its metadata arrives. */
   attribution: string;
 }
@@ -92,7 +98,7 @@ export function esriAttribution(copyright: string | null): string {
 /** The layer for the settings, or the open default when they cannot be used. `openTiles` is the open address (a test may change it). */
 export function layerFor(s: ImagerySettings, openTiles: string = BASEMAP_TILES, esriCopyright: string | null = null): ImageryLayer {
   if (s.source === "esri" && usable(s)) {
-    return { source: "esri", tiles: ESRI_TILES.replace("{key}", encodeURIComponent(s.esriKey.trim())), tileSize: 512, maxzoom: 19, attribution: esriAttribution(esriCopyright) };
+    return { source: "esri", tiles: ESRI_TILES.replace("{key}", encodeURIComponent(s.esriKey.trim())), tileSize: 256, maxzoom: 19, minzoom: ESRI_MIN_ZOOM, under: openTiles, attribution: `${esriAttribution(esriCopyright)} | ${ATTRIBUTION}` };
   }
   if (s.source === "custom" && usable(s)) {
     return { source: "custom", tiles: s.customUrl.trim(), tileSize: 256, maxzoom: 19, attribution: s.customAttribution.trim() };

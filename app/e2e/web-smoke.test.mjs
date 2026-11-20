@@ -537,7 +537,7 @@ describe("OWD web smoke tests", () => {
     // the PDF writer embeds in the wasm: its designer's site and its licence's. Text, never fetched.
     // www.opengis.net and www.google.com are the KML 2.2 namespace and its `gx` extension, written into
     // the QA overlay's KMZ (spec 0013): names of XML vocabularies, never fetched.
-    const KNOWN = ["tiles.maps.eox.at", "cloudless.eox.at", "static-map-tiles-api.arcgis.com", "www.w3.org", "svelte.dev", "maplibre.org", "maplibre.invalid", "github.com", "wiki.openstreetmap.org", "json-schema.org", "tribby.com", "scripts.sil.org", "www.opengis.net", "www.google.com"];
+    const KNOWN = ["tiles.maps.eox.at", "cloudless.eox.at", "ibasemaps-api.arcgis.com", "www.w3.org", "svelte.dev", "maplibre.org", "maplibre.invalid", "github.com", "wiki.openstreetmap.org", "json-schema.org", "tribby.com", "scripts.sil.org", "www.opengis.net", "www.google.com"];
     const allowed = (h) => [...PUBLIC_HOSTS, ...KNOWN].some((k) => h === k || h.startsWith(k)) || reportEngineHost(h) || catalogueHost(h);
     const unknown = [...hosts].filter((h) => !allowed(h));
     assert.deepEqual(unknown, [], `hosts in the web bundle that are neither a public source nor known: ${unknown.join(" ")}`);
