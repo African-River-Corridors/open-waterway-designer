@@ -182,25 +182,33 @@ fn a_moved_file_saved_again_reopens_unchanged() {
     assert_eq!(once, twice);
 }
 
-/// Item 2. The centreline and the banks' notes do not make the line: changing only them leaves
-/// it fresh.
+/// Item 2, and QA item 11 on the second pass. The centreline and the banks' notes place the
+/// line's low-confidence stretches but do not shape the line. A change to either makes the stage
+/// record stale (its stretches are out of date, and it says so), but the bed stays centred on the
+/// line, so the volumes stay fresh. A bank shapes the line: both go stale.
 #[test]
-fn a_new_centreline_or_new_bank_notes_leave_the_line_fresh() {
-    let mut s = river(true);
-    s.run_reference_line().unwrap();
-    let straight: Line = (0..=30).map(|i| at(100.0 * i as f64, 5.0)).collect();
-    s.import(&[(Role::Centreline, line(&straight).as_str())])
-        .unwrap();
-    assert_eq!(s.reference_line_status(), StageStatus::Fresh);
+fn new_bank_notes_make_the_record_stale_but_keep_the_bed_axis_and_the_volumes() {
+    let mut s = bedded_with_volumes();
     s.set_low_confidence_width(json!({"min_width_m": 90.0, "stretches": [
         {"from_m": 500.0, "to_m": 700.0, "kind": "narrow"}]}))
         .unwrap();
-    assert_eq!(s.reference_line_status(), StageStatus::Fresh);
-    // A bank does make it.
+    assert_eq!(s.reference_line_status(), StageStatus::Stale, "bank notes");
+    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh, "bed axis kept");
+
+    let mut t = river(true);
+    t.run_reference_line().unwrap();
+    let straight: Line = (0..=30).map(|i| at(100.0 * i as f64, 5.0)).collect();
+    t.import(&[(Role::Centreline, line(&straight).as_str())])
+        .unwrap();
+    assert_eq!(t.reference_line_status(), StageStatus::Stale, "centreline");
+    t.run_reference_line().unwrap();
+    assert_eq!(t.reference_line_status(), StageStatus::Fresh);
+
     let moved: Line = (0..=60).map(|i| at(50.0 * i as f64, 110.0)).collect();
     s.import(&[(Role::LeftBank, line(&moved).as_str())])
         .unwrap();
     assert_eq!(s.reference_line_status(), StageStatus::Stale);
+    assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Stale, "a bank");
 }
 
 /// Item 3. A river with a polygon and a centreline but no banks: fits and the envelope read the
@@ -383,6 +391,33 @@ fn a_full_answer_goes_stale_on_each_thing_its_run_reads() {
     let mut t = Session::open(&s.to_text()).unwrap();
     t.set_dem_holds_bathymetry(true).unwrap();
     assert_eq!(t.fits_status(), StageStatus::Stale, "bathymetry mark");
+    // QA item 13: the optimise stage's pool levels, which the walk reads before the input profile.
+    let engine = s.document()["engine_version"].clone();
+    let t = edited(
+        &s,
+        "/stages/optimise",
+        json!({"settings": {}, "results": {"profile": [[0.0, 9.0], [3000.0, 9.0]]},
+               "depends_on": "0".repeat(64), "engine_version": engine}),
+    );
+    assert_eq!(t.fits_status(), StageStatus::Stale, "optimise pool levels");
+}
+
+/// QA item 13: a full answer read on the reference line goes stale when the bed axis changes (the
+/// line's shape no longer matches what made it).
+#[test]
+fn a_full_answer_goes_stale_when_the_bed_axis_changes() {
+    let mut s = bedded_with_volumes();
+    let choices = ["PIANC-B".to_string()];
+    s.run_fits_with(Some(&choices), Some(&flat)).unwrap();
+    assert_eq!(s.fits_result().unwrap()["mode"], "full");
+    assert_eq!(s.fits_status(), StageStatus::Fresh);
+    let mut doc = s.document().clone();
+    doc["stages"]["reference_line"]["depends_on"] = json!("1".repeat(64));
+    if let Some(r) = doc["stages"]["reference_line"]["results"].as_object_mut() {
+        r.insert("line_basis".into(), json!("1".repeat(64)));
+    }
+    let t = Session::open(&doc.to_string()).unwrap();
+    assert_eq!(t.fits_status(), StageStatus::Stale, "bed axis");
 }
 
 /// Item 9. A stored sweep with a field the contract does not know is refused, not read with the
