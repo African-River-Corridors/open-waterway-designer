@@ -5,6 +5,7 @@ pub mod bed;
 pub mod check_banks;
 pub mod cli;
 pub mod commands;
+pub mod constraints;
 pub mod cost;
 pub mod design_line;
 pub mod envelope;

@@ -814,6 +814,31 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
+    /// Set the run's constraints (spec 0017): no-go areas the re-route goes round, and a cut-rate
+    /// multiplier raster whose cell value multiplies the cut rate there. Each flag given replaces
+    /// that part; a part not named is kept. With no flag, print them and change nothing. The stages
+    /// that read them go stale.
+    Constraints {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// No-go areas: a GeoJSON FeatureCollection of Polygons in the project CRS, each with the
+        /// properties `name` (unique) and `kind`. They replace the stored ones.
+        #[arg(long, value_name = "FILE")]
+        no_go: Option<String>,
+        /// Remove every no-go area.
+        #[arg(long, conflicts_with = "no_go")]
+        no_no_go: bool,
+        /// A cut-rate multiplier raster: a GeoTIFF in WGS84 or the project CRS, every cell zero or
+        /// more; no data means 1, and a cell at or above 1e6 is impassable to the re-route. It is
+        /// referenced by path and hash, like the DEM.
+        #[arg(long, value_name = "FILE")]
+        multiplier: Option<String>,
+        /// Remove the cut-rate multiplier.
+        #[arg(long, conflicts_with = "multiplier")]
+        no_multiplier: bool,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Set what the run aims at and must stay within, and the output level it aims to reach (spec
     /// 0017). Each flag given replaces that part; a part not named is kept. With no flag, print them
     /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
@@ -1182,6 +1207,24 @@ pub fn main() -> ExitCode {
         Command::Cost { doc, rates, out } => {
             crate::cost::cost(&doc, rates.as_deref(), &out.output, out.json)
         }
+        Command::Constraints {
+            doc,
+            no_go,
+            no_no_go,
+            multiplier,
+            no_multiplier,
+            out,
+        } => crate::constraints::constraints(
+            &doc,
+            &crate::constraints::ConstraintFlags {
+                no_go,
+                no_no_go,
+                multiplier,
+                no_multiplier,
+            },
+            &out.output,
+            out.json,
+        ),
         Command::RunInputs {
             doc,
             objective,

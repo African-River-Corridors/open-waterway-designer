@@ -176,7 +176,33 @@ fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
         }
     }
     load_rule_set_files(&mut session)?;
+    attach_multiplier(path, &mut session);
     Ok(session)
+}
+
+/// Attach the cut-rate multiplier raster the design names (spec 0017 ticket 13), from beside the
+/// document, when it is the file whose hash was recorded. Otherwise say so on stderr: the stages
+/// that read it then refuse by name; none reads it as 1.
+fn attach_multiplier(doc: &str, session: &mut Session) {
+    let Some(p) = session.multiplier_path().map(str::to_string) else {
+        return;
+    };
+    let warn = |w: String| {
+        if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!("owd: warning: {w}");
+        }
+    };
+    match std::fs::read(doc_dir(doc).join(&p)) {
+        Ok(bytes) => {
+            if let Err(e) = session.attach_multiplier(&bytes) {
+                warn(e.to_string());
+            }
+        }
+        Err(_) => warn(format!(
+            "the cut-rate multiplier raster `{p}` is missing: the re-route and the volumes will \
+             not run without it"
+        )),
+    }
 }
 
 /// Where a document's relative paths start: its own folder (the working folder for stdin).
@@ -185,6 +211,11 @@ pub(crate) fn doc_dir(doc: &str) -> std::path::PathBuf {
         Some(p) if doc != "-" && !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => std::path::PathBuf::from("."),
     }
+}
+
+/// A file's path as the document records it: relative to the document's folder, with `/`.
+pub(crate) fn relative_path(doc: &str, file: &str) -> String {
+    relative_dem_path(doc, file)
 }
 
 /// The DEM path as the document records it: relative to the document's folder, with `/`.

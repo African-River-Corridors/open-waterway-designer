@@ -27,8 +27,17 @@ fn constraints_are_stored_read_by_the_stages_and_a_missing_multiplier_is_refused
     let doc = dir.join("river-example.owd");
     std::fs::copy(web.join("river-example.owd"), &doc).unwrap();
     std::fs::copy(web.join("river-dem.tif"), dir.join("river-dem.tif")).unwrap();
-    // The example's own DEM stands in for a multiplier raster: every cell is a positive number.
-    std::fs::copy(web.join("river-dem.tif"), dir.join("weights.tif")).unwrap();
+    // A multiplier raster on the example DEM's grid: 2 in every cell.
+    let mut grid =
+        owd_format::geotiff::read_bytes(&std::fs::read(web.join("river-dem.tif")).unwrap())
+            .unwrap();
+    grid.data.iter_mut().for_each(|v| *v = 2.0);
+    grid.nodata = None;
+    std::fs::write(
+        dir.join("weights.tif"),
+        owd_format::design::dem_source::write_geotiff(&grid).unwrap(),
+    )
+    .unwrap();
     let d = read(&doc);
     let pts: Vec<[f64; 2]> =
         serde_json::from_value(d["stages"]["alignment"]["results"]["line"]["coordinates"].clone())
@@ -62,7 +71,7 @@ fn constraints_are_stored_read_by_the_stages_and_a_missing_multiplier_is_refused
     assert_eq!(c["cut_rate_multiplier"]["path"], "weights.tif");
 
     // The design line reports the area it touches; the volumes hold the weighted cut.
-    let o = owd(&["align", doc_s]);
+    let o = owd(&["align", doc_s, "--method", "rolling-circle"]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let o = owd(&["volumes", doc_s]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
@@ -79,7 +88,10 @@ fn constraints_are_stored_read_by_the_stages_and_a_missing_multiplier_is_refused
     let o = owd(&["volumes", doc_s]);
     assert_eq!(o.status.code(), Some(2));
     let err = String::from_utf8_lossy(&o.stderr);
-    assert!(err.contains("VOLUMES_NO_MULTIPLIER") && err.contains("weights.tif"), "{err}");
+    assert!(
+        err.contains("VOLUMES_NO_MULTIPLIER") && err.contains("weights.tif"),
+        "{err}"
+    );
 
     // Two areas of one name are refused, and the stored ones stay.
     std::fs::write(
@@ -90,7 +102,10 @@ fn constraints_are_stored_read_by_the_stages_and_a_missing_multiplier_is_refused
     let o = owd(&["constraints", doc_s, "--no-go", no_go.to_str().unwrap()]);
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("CONSTRAINTS_NAME_DUPLICATE"));
-    assert_eq!(read(&doc)["inputs"]["constraints"]["no_go"][0]["name"], "field");
+    assert_eq!(
+        read(&doc)["inputs"]["constraints"]["no_go"][0]["name"],
+        "field"
+    );
 
     // Clearing both parts removes the input.
     let o = owd(&["constraints", doc_s, "--no-no-go", "--no-multiplier"]);
