@@ -116,6 +116,24 @@ def test_golden_search_goes_round_a_hill_and_holds_r_min():
     assert rmin >= 0.99 * cfg.r_min_m
 
 
+def test_property_close_goal_reaches_the_rust_search():
+    # Issue #557: the Python lattice runs the Rust search, so close_goal acts here too: on, the
+    # line ends on the goal pose; off, it stops within the goal tolerance.
+    base = LineString([(0, 0), (600, 0)])
+    spec = SectionSpec(half_width=8.0, side_slope_h_per_v=2.0, rake_half_m=60.0,
+                       rake_step_m=4.0, ds_step_m=8.0)
+    errs = {}
+    for close in (True, False):
+        cfg = LatticeConfig(r_min_m=150.0, radius_multiples=(1.0, 2.0, 4.0), pitch_m=10.0,
+                            n_heading=24, close_goal=close)
+        pa = optimise_pool(base, _hill, FAR, 0.0, 600.0, water_level_m=3.0, depth_m=3.0,
+                           section=spec, cfg=cfg, corridor_half_m=150.0, cell_m=4.0)
+        assert pa.result.converged
+        errs[close] = pa.result.end_err_m
+    assert errs[True] < 1e-6
+    assert 1e-6 < errs[False] <= 5.0
+
+
 def test_property_admissible_heuristics_agree_with_dijkstra():
     base = LineString([(0, 0), (400, 0)])
     grid = build_terrain_grid(_hill, FAR, base.buffer(70.0), cell_m=5.0)
