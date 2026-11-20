@@ -1,0 +1,39 @@
+{
+  "label": "Label: snapshot",
+  "why": "A CEMT IV barge under PIANC WG 141 at survey quality C, with no marked reach. The numbers are what the sizing printed when the fixture was made; they show that the stage still agrees with itself, not that the Rules are right.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "C"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV"
+  },
+  "expect": {
+    "output": {
+      "rule_sets": "pianc-wg141@0.3.0 (se_quality C)",
+      "vessel_standard_id": "CEMT-IV",
+      "loa_m": 85.0,
+      "beam_m": 9.5,
+      "draught_m": 2.5,
+      "formation": "motor_vessel",
+      "bottom_width_straight_m": 28.5,
+      "min_bend_radius_m": 170.0,
+      "design_depth_m": 3.0,
+      "bend_widening_at_rmin_m": 21.25,
+      "bottom_width_at_rmin_m": 49.75,
+      "width_basis": "rule"
+    }
+  }
+}

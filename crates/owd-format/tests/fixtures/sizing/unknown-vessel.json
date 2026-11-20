@@ -1,0 +1,26 @@
+{
+  "label": "Label: property",
+  "why": "A class that is not in the catalogue: SIZING_UNKNOWN_VESSEL.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "C"
+      }
+    ],
+    "vessel_standard_id": "NOT_A_CLASS"
+  },
+  "expect": {
+    "error": "SIZING_UNKNOWN_VESSEL"
+  }
+}

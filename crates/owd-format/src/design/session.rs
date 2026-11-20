@@ -7,12 +7,12 @@
 use super::crs::{Crs, Utm};
 use super::geojson::{self, Role};
 use super::hash::{hash_value, sha256_hex};
+use super::river::{RiverGeometry, RiverIn, river};
 use super::rule_sets::default_settings;
 use super::schema;
-use crate::types::TerrainSampler;
+use crate::types::{Polyline, RiverPolygon, StageError, TerrainSampler};
 use arc_rules::load::Library;
 use owd_core::rules::engine;
-use owd_core::rules::rulesets::ChannelShape;
 use serde_json::{Value, json};
 
 /// The engine version written into documents and stages.
@@ -199,33 +199,6 @@ fn sizing_stage() -> Value {
     let mut st = empty_stage();
     st["settings"] = default_settings();
     st
-}
-
-/// The sizing results of a channel shape. `label` names the selection, such as
-/// `pianc-wg141@0.3.0 (se_quality B)`.
-fn shape_value(s: &ChannelShape, label: &str) -> Value {
-    let mut v = json!({
-        "rule_sets": label,
-        "vessel_standard_id": s.vessel_standard_id,
-        "loa_m": s.loa_m,
-        "beam_m": s.beam_m,
-        "draught_m": s.draught_m,
-        "formation": s.formation,
-        "bottom_width_straight_m": s.bottom_width_straight_m,
-        "min_bend_radius_m": s.min_bend_radius_m,
-        "design_depth_m": s.design_depth_m,
-        "bend_widening_at_rmin_m": s.bend_widening_at_rmin_m,
-        "bottom_width_at_rmin_m": s.bottom_width_at_rmin_m,
-        "width_basis": s.width_basis,
-        "source": s.source,
-        "warnings": s.warnings,
-    });
-    // A custom vessel has no class id; every output shows its label (spec 0015 T1).
-    if s.custom {
-        v["vessel_standard_id"] = Value::Null;
-        v["vessel_label"] = json!(s.vessel_standard_id);
-    }
-    v
 }
 
 impl Session {
@@ -521,15 +494,12 @@ impl Session {
     /// The sizing results of the sizing settings: the channel shape, and B, the design basis (spec
     /// 0007), each quantity with its governing Rule.
     fn sizing_results(&self) -> Result<Value, DesignError> {
-        let settings = self.sizing_settings();
-        let shape = self.shape_for_settings(&settings)?;
-        let mut results = shape_value(&shape, &Session::selection_label(&settings));
-        results["design_basis"] = self.design_basis_value()?;
-        results["rules_notice"] = json!(super::screening::UNVERIFIED_NOTICE);
-        Ok(results)
+        let size = super::sizing::size(&self.sizing_in(), &self.library)
+            .map_err(|e| DesignError::Input(e.message))?;
+        Ok(serde_json::to_value(&size).expect("a channel size is JSON"))
     }
 
-    fn run_sizing(&mut self) -> Result<(), DesignError> {
+    pub(super) fn run_sizing(&mut self) -> Result<(), DesignError> {
         self.doc["stages"]["sizing"]["results"] = self.sizing_results()?;
         self.doc["stages"]["sizing"]["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Sizing);
@@ -823,84 +793,58 @@ impl Session {
     }
 
     /// The bank checks on the document's two banks, as one line per failed check (none when the
-    /// document lacks a bank). The seed is the centreline, or the mid-line of the banks, at the
-    /// station step of `owd check-banks`. With `report_crossing`, banks that cross (the unchecked
-    /// import keeps them) are reported too, with the first crossing point.
+    /// document lacks a bank). They are the river stage's checks ([`super::river::river`]): the
+    /// import keeps no copy. With `report_crossing`, banks that cross (the unchecked import keeps
+    /// them) are reported too, with the first crossing point. When the checks cannot run on two
+    /// banks, that is a warning too, with the reason: it never reads as "no warnings".
     fn bank_check_warnings(&self, report_crossing: bool) -> Vec<String> {
-        use owd_core::banks::check::{CheckParams, assess, lines_cross};
-        use owd_core::banks::stations::arc;
-        const STATION_M: f64 = 20.0;
-        let inputs = &self.doc["inputs"];
-        let (Some(left), Some(right)) = (
-            line_points(&inputs[Role::LeftBank.name()]),
-            line_points(&inputs[Role::RightBank.name()]),
-        ) else {
-            return Vec::new();
-        };
-        if left.len() < 2 || right.len() < 2 {
-            return Vec::new();
-        }
-        let centre = line_points(&inputs[Role::Centreline.name()])
-            .filter(|c| c.len() >= 2)
-            .unwrap_or_else(|| super::bank_edit::centreline(&left, &right, STATION_M));
-        // The checks at every station (as `check_banks` gives the failing ones), so the share of
-        // stations that fail the side check is known.
-        let (reference, _, checks, _, _) = assess(
-            &left,
-            &right,
-            &centre,
-            &CheckParams::at_step(STATION_M),
-            &[],
-        );
-        let s = arc(&reference);
-        let failed: Vec<(f64, owd_core::banks::check::Checks)> = checks
+        let input = self.bank_check_input();
+        let two_banks = [&input.left_bank, &input.right_bank]
             .iter()
-            .enumerate()
-            .filter(|(_, c)| c.any())
-            .map(|(i, c)| (s[i], *c))
-            .collect();
-        let side_fails = failed.iter().filter(|(_, c)| c.side).count();
-        let mut out = Vec::new();
-        // One fact wrong (the direction or the names), not hundreds: one plain message first.
-        let wholesale = side_wholesale_message(side_fails, checks.len());
-        out.extend(wholesale.clone());
-        for name in [
-            "side",
-            "missing",
-            "jump",
-            "width-wide",
-            "width-narrow",
-            "excursion",
-            "crossing",
-        ] {
-            if name == "side" && wholesale.is_some() {
-                continue;
-            }
-            let at: Vec<f64> = failed
-                .iter()
-                .filter(|(_, c)| c.names().contains(&name))
-                .map(|(s, _)| *s)
-                .collect();
-            if let (Some(first), Some(last)) = (
-                at.iter().copied().reduce(f64::min),
-                at.iter().copied().reduce(f64::max),
-            ) {
-                let n = at.len();
-                out.push(format!(
-                    "the banks fail the `{name}` check at {n} station{} of {STATION_M} m, between \
-                     {first:.0} m and {last:.0} m: run `owd check-banks` for the list",
-                    if n == 1 { "" } else { "s" }
-                ));
-            }
+            .all(|b| b.as_ref().is_some_and(|l| l.len() >= 2));
+        match river(&input) {
+            Ok(g) => g.warnings(report_crossing),
+            // With one bank there is nothing to check yet: the other comes in a later import.
+            Err(_) if !two_banks => Vec::new(),
+            Err(e) => vec![format!("the bank checks could not run: {e}")],
         }
-        if report_crossing && let Some(x) = lines_cross(&left, &right) {
-            out.push(format!(
-                "the left bank and the right bank cross at ({:.1}, {:.1}): run `owd check-banks` \
-                 for the list",
-                x[0], x[1]
-            ));
+    }
+
+    /// What the bank checks read: the river stage's input without the polygon. The polygon is not
+    /// under test, and a bad one must not hide a bank warning. The import's warnings and
+    /// `owd check-banks` both use this, so they cannot differ.
+    pub fn bank_check_input(&self) -> RiverIn {
+        RiverIn {
+            river_polygon: None,
+            ..self.river_input()
         }
-        out
+    }
+
+    /// The bank checks of the document: the river stage on [`Session::bank_check_input`].
+    pub fn bank_check_geometry(&self) -> Result<RiverGeometry, StageError> {
+        river(&self.bank_check_input())
+    }
+
+    /// What the river stage reads, taken from the document.
+    pub fn river_input(&self) -> RiverIn {
+        let inputs = &self.doc["inputs"];
+        let line = |role: Role| line_points(&inputs[role.name()]).map(Polyline);
+        RiverIn {
+            left_bank: line(Role::LeftBank),
+            right_bank: line(Role::RightBank),
+            centreline: line(Role::Centreline),
+            river_polygon: RiverPolygon::from_geometry(&inputs[Role::RiverPolygon.name()]),
+            crs_epsg: self.doc["project"]["crs"]["epsg"]
+                .as_u64()
+                .map(|c| c as u32),
+            // The document does not record a mouth yet: its lines are taken as they are stored.
+            ..RiverIn::default()
+        }
+    }
+
+    /// The river stage on the document's inputs: the geometry, with the bank checks.
+    pub fn river_geometry(&self) -> Result<RiverGeometry, StageError> {
+        river(&self.river_input())
     }
 
     /// The banks after an import of `converted` (in the project CRS), as a sound pair; `None` when

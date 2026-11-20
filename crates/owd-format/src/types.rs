@@ -11,7 +11,8 @@ use std::fmt;
 
 pub use owd_core::types::{Refusal, SyncTerrainSampler, TerrainSampler};
 
-/// Distance along a river or a design line, in metres. Chainage 0 is at the river mouth (spec 0017).
+/// Distance along a river or a design line, in metres. Chainage 0 is at the river mouth when the river
+/// states one (spec 0017); with no mouth stated, it is at the start of the line as it was given.
 #[derive(
     Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize, JsonSchema,
 )]
@@ -73,6 +74,43 @@ fn ring_area(ring: &[[f64; 2]]) -> f64 {
 }
 
 impl RiverPolygon {
+    /// The polygon in a GeoJSON `Polygon` geometry: the first ring is the shell, the others are holes.
+    /// `None` for anything that is not a `Polygon`. A position that is not two numbers is skipped.
+    /// This is the one place the document's river polygon is read.
+    pub fn from_geometry(v: &serde_json::Value) -> Option<RiverPolygon> {
+        if v["type"] != "Polygon" {
+            return None;
+        }
+        let rings: Vec<Polyline> = v["coordinates"]
+            .as_array()?
+            .iter()
+            .map(|r| {
+                Polyline(
+                    r.as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+        let (shell, holes) = rings.split_first()?;
+        Some(RiverPolygon {
+            shell: shell.clone(),
+            holes: holes.to_vec(),
+        })
+    }
+
+    /// The polygon as the core's `Polygon`, holes kept.
+    pub fn to_polygon(&self) -> owd_core::geom::Polygon {
+        owd_core::geom::Polygon {
+            exterior: self.shell.0.clone(),
+            holes: self.holes.iter().map(|h| h.0.clone()).collect(),
+        }
+    }
+
     /// The water area in square metres: the shell less its holes.
     pub fn area_m2(&self) -> f64 {
         ring_area(&self.shell.0) - self.holes.iter().map(|h| ring_area(&h.0)).sum::<f64>()
@@ -183,12 +221,27 @@ impl WaterProfile {
 }
 
 /// A stretch of river or design line between two chainages.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// A reach is checked when it is made (`Reach::new`) and again when it is read from JSON.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, JsonSchema)]
 pub struct Reach {
     /// The chainage where the reach starts.
     pub from: Chainage,
-    /// The chainage where the reach ends. Not below `from`.
+    /// The chainage where the reach ends. Not below `from` (JSON Schema cannot state a relation
+    /// between two fields, so the reader checks it).
     pub to: Chainage,
+}
+
+impl<'de> Deserialize<'de> for Reach {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            from: Chainage,
+            to: Chainage,
+        }
+        let r = Raw::deserialize(d)?;
+        Reach::new(r.from, r.to).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Reach {
@@ -218,12 +271,27 @@ impl Reach {
 }
 
 /// An amount of money and its currency.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+///
+/// An amount is checked when it is made (`Money::new`) and again when it is read from JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct Money {
     /// The amount, in the currency's main unit.
     pub amount: f64,
     /// ISO 4217 code: three capital letters.
+    #[schemars(regex(pattern = r"^[A-Z]{3}$"))]
     pub currency: String,
+}
+
+impl<'de> Deserialize<'de> for Money {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            amount: f64,
+            currency: String,
+        }
+        let r = Raw::deserialize(d)?;
+        Money::new(r.amount, &r.currency).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Money {

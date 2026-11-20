@@ -148,7 +148,21 @@ fn read(dir: &Path, doc: &str) -> Value {
 
 /// One command on a failing design, without and with `--strict`.
 fn check_failing(tag: &str, setup: &[&[&str]], cmd: &str, rest: &[&str]) {
+    check_failing_edited(tag, &|_| {}, setup, cmd, rest);
+}
+
+/// [`check_failing`], with `edit` made to the failing design's document first.
+fn check_failing_edited(
+    tag: &str,
+    edit: &dyn Fn(&mut Value),
+    setup: &[&[&str]],
+    cmd: &str,
+    rest: &[&str],
+) {
     let dir = failing_design(tag);
+    let mut base = read(&dir, "base.owd");
+    edit(&mut base);
+    std::fs::write(dir.join("base.owd"), base.to_string()).unwrap();
     let (a, b) = (
         prepared(&dir, "plain.owd", setup),
         prepared(&dir, "strict.owd", setup),
@@ -213,8 +227,11 @@ fn align_centreline_follows_the_rule() {
 
 #[test]
 fn optimise_follows_the_rule() {
-    check_failing(
+    // The pool lattice holds R_min on the default chord here since its pools end on their goal
+    // pose (issue #6). Read on a 10 m chord, the corners between its line's vertices fail it.
+    check_failing_edited(
         "optimise",
+        &|doc| doc["stages"]["optimise"]["settings"]["check_chord_m"] = 10.0.into(),
         &[&["align", "--method", "centreline"]],
         "optimise",
         &["--sites", "1200"],

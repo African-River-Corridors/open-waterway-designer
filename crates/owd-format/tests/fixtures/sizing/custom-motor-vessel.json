@@ -1,0 +1,46 @@
+{
+  "label": "Label: snapshot",
+  "why": "A custom motor vessel replaces the class: it has no class id, and every output names it by its label. Its draught, length and beam are the user's.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "pianc-wg141",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "se_quality",
+        "value": "C"
+      }
+    ],
+    "custom_vessel": {
+      "name": "Test barge",
+      "loa_m": 85.0,
+      "beam_m": 9.5,
+      "draught_m": 2.5,
+      "formation": "motor"
+    }
+  },
+  "expect": {
+    "output": {
+      "rule_sets": "pianc-wg141@0.3.0 (se_quality C)",
+      "vessel_standard_id": null,
+      "loa_m": 85.0,
+      "beam_m": 9.5,
+      "draught_m": 2.5,
+      "formation": "motor_vessel",
+      "bottom_width_straight_m": 28.5,
+      "min_bend_radius_m": 170.0,
+      "design_depth_m": 3.0,
+      "bend_widening_at_rmin_m": 21.25,
+      "bottom_width_at_rmin_m": 49.75,
+      "width_basis": "rule",
+      "vessel_label": "Custom: Test barge, 85 \u00d7 9.5 \u00d7 2.5 m"
+    }
+  }
+}

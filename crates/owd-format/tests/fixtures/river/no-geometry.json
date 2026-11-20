@@ -1,0 +1,26 @@
+{
+  "label": "Label: property",
+  "why": "A polygon alone gives no line to design on: the stage refuses with RIVER_NO_GEOMETRY.",
+  "input": {
+    "river_polygon": {
+      "shell": [
+        [
+          0.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          50.0
+        ]
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "error": "RIVER_NO_GEOMETRY"
+  }
+}

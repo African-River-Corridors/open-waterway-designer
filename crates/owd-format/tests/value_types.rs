@@ -174,3 +174,42 @@ fn every_type_has_a_schema_that_names_its_fields() {
         assert!(s.get("$schema").is_some(), "{name}");
     }
 }
+
+// --- validation holds when a value is read, not only when it is built ------------------------------
+
+#[test]
+fn a_reach_that_ends_before_it_starts_is_refused_when_read() {
+    use owd_format::types::Reach;
+    assert!(serde_json::from_str::<Reach>(r#"{"from": 100.0, "to": 200.0}"#).is_ok());
+    let e = serde_json::from_str::<Reach>(r#"{"from": 200.0, "to": 100.0}"#)
+        .expect_err("a reach cannot end before it starts");
+    assert!(e.to_string().contains("before it starts"), "{e}");
+}
+
+#[test]
+fn money_with_a_bad_currency_code_is_refused_when_read() {
+    use owd_format::types::Money;
+    assert!(serde_json::from_str::<Money>(r#"{"amount": 5.0, "currency": "USD"}"#).is_ok());
+    for bad in ["usd", "US", "USDX", "U1D", ""] {
+        let text = format!(r#"{{"amount": 5.0, "currency": "{bad}"}}"#);
+        assert!(
+            serde_json::from_str::<Money>(&text).is_err(),
+            "`{bad}` is not a currency code"
+        );
+    }
+}
+
+#[test]
+fn the_schema_holds_the_bounds_the_language_can_say() {
+    use owd_format::types::{Money, Reach};
+    let money = serde_json::to_value(schemars::schema_for!(Money)).unwrap();
+    assert_eq!(
+        money["properties"]["currency"]["pattern"], "^[A-Z]{3}$",
+        "{money}"
+    );
+    // `to` not below `from` is a relation between two fields, which JSON Schema cannot state: the
+    // schema says it in words.
+    let reach = serde_json::to_value(schemars::schema_for!(Reach)).unwrap();
+    let text = reach.to_string();
+    assert!(text.contains("Not below"), "{text}");
+}

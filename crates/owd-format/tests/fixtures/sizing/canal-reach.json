@@ -1,0 +1,52 @@
+{
+  "label": "Label: snapshot",
+  "why": "The whole river marked as a canal with no reduced-radius claim: the size is the same as for the same vessel and Rule Sets on a free-flowing river (fixture gb50139-typed-class), because GB 50139-2014 has no Rule that reads the claim.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "gb50139",
+        "version": "0.3.0"
+      },
+      {
+        "id": "owd",
+        "version": "0.3.0"
+      }
+    ],
+    "set_inputs": [
+      {
+        "name": "range_end",
+        "value": "strict"
+      },
+      {
+        "name": "gb_class",
+        "value": "IV"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV",
+    "draught_m": 2.5,
+    "waterway_reaches": [
+      {
+        "start_m": 0.0,
+        "end_m": null,
+        "waterway": "canal",
+        "reduced_radius_claim": "no"
+      }
+    ]
+  },
+  "expect": {
+    "output": {
+      "rule_sets": "gb50139@0.3.0 (range_end strict, gb_class IV)",
+      "vessel_standard_id": "CEMT-IV",
+      "loa_m": 85.0,
+      "beam_m": 9.5,
+      "draught_m": 2.5,
+      "formation": "motor_vessel",
+      "bottom_width_straight_m": 25.10740130517041,
+      "min_bend_radius_m": 340.0,
+      "design_depth_m": 2.8,
+      "bend_widening_at_rmin_m": 10.478607686729514,
+      "bottom_width_at_rmin_m": 35.586008991899924,
+      "width_basis": "appendix-a"
+    }
+  }
+}

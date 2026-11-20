@@ -293,11 +293,11 @@ fn gb50139_finds_a_cemt_class_by_tonnage_and_a_typed_gb_class_overrides_it() {
     s.set_rule_sets(&["gb50139"], &[("range_end", "strict")])
         .unwrap();
     s.set_vessel("CEMT_IV", Some(2.5)).unwrap();
+    // The sizes themselves (class II by tonnage, draught + 0.4 m at the strict end; class IV when
+    // typed, draught + 0.3 m) are the fixtures `gb50139-strict-by-tonnage` and `gb50139-typed-class`
+    // in tests/fixtures/sizing, read by `sizing_stage.rs`. What stays here is the session's part:
+    // a typed input is kept, marked `typed`, and sizing runs on it.
     s.run_stage(Stage::Sizing).unwrap();
-    let r = &s.document()["stages"]["sizing"]["results"];
-    assert_eq!(r["width_basis"], "appendix-a");
-    // Class II by tonnage: draught + 0.4 m at the strict end.
-    assert_eq!(r["design_depth_m"], json!(2.5 + 0.4));
     s.set_rule_sets(&[], &[("gb_class", "IV")]).unwrap();
     s.run_stage(Stage::Sizing).unwrap();
     let r = &s.document()["stages"]["sizing"]["results"];

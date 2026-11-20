@@ -1,0 +1,78 @@
+{
+  "label": "Label: property",
+  "why": "The line runs +x and the mouth is stated at its far end (1000, 0): the stage turns the line round so that chainage 0 is at the mouth. The first point is the mouth and the length is unchanged.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ],
+      [
+        300.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        500.0,
+        0.0
+      ],
+      [
+        600.0,
+        0.0
+      ],
+      [
+        700.0,
+        0.0
+      ],
+      [
+        800.0,
+        0.0
+      ],
+      [
+        900.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "mouth": {
+      "point": [
+        1000.0,
+        0.0
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "reversed": true,
+      "mouth": [
+        1000.0,
+        0.0
+      ],
+      "length_m": 1000.0,
+      "bank_checks": []
+    },
+    "centreline_first": [
+      1000.0,
+      0.0
+    ],
+    "centreline_last": [
+      0.0,
+      0.0
+    ]
+  }
+}
