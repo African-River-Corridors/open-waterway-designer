@@ -276,6 +276,12 @@ fn run_inputs_set_once_read_back_typed_after_a_save() {
 #[test]
 fn setting_run_inputs_moves_no_stage() {
     let mut s = sized();
+    // A stage past sizing hashes the inputs it reads: the run inputs must not be among them.
+    s.run_stage(Stage::Alignment).unwrap();
+    assert_eq!(
+        s.stage_status(Stage::Alignment),
+        owd_format::design::StageStatus::Fresh
+    );
     let before: Vec<_> = Stage::ALL.iter().map(|st| s.stage_status(*st)).collect();
     let stages = s.document()["stages"].clone();
     s.edit_run_inputs(&RunInputsEdit {
