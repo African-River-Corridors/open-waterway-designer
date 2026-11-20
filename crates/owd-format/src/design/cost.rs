@@ -25,7 +25,10 @@
 //! it applies. Disposal and haul are priced on the plain volumes: the multiplier is a rate of
 //! cutting, not of moving the spoil. The cost says which it used ([`Cost::cut_volumes`]).
 //!
-//! Not yet: structures (ticket 14 adds them).
+//! **Structures** (ticket 14). When the run has given structures, each structure's cost (from the
+//! structures seam) is a `structures` item of the reach of the pool it holds, and of the totals; every
+//! reach then carries the item, zero where it holds no structure. With no structures the item is not
+//! written, so a cost reads and writes as before.
 
 use super::run_inputs::OutputLevel;
 use super::session::{DesignError, Session};
@@ -202,6 +205,19 @@ pub struct CostStation {
     pub weighted_excav_area_m2: Option<f64>,
 }
 
+/// One structure, as the cost reads it from the stored structure plan.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CostStructure {
+    /// The pool it holds: its index in the water stage's input, as the volumes by reach name it.
+    pub pool: usize,
+    /// Its design-line chainage.
+    pub chainage: Chainage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// What it costs.
+    pub cost: Money,
+}
+
 /// Which volumes dredge and dry cut were priced on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -227,6 +243,9 @@ pub struct CostIn {
     /// The rates table, if the run has one.
     #[serde(default)]
     pub rates: Option<RatesTable>,
+    /// The structures of the stored structure plan (ticket 14); empty without structures.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub structures: Vec<CostStructure>,
 }
 
 /// The cost of each item, and their sum.
@@ -236,7 +255,10 @@ pub struct CostItems {
     pub dry_cut: Money,
     pub disposal: Money,
     pub haul: Money,
-    /// The sum of the four.
+    /// The structures (ticket 14): present when the run has structures, zero in a reach with none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structures: Option<Money>,
+    /// The sum of the items.
     pub total: Money,
 }
 
@@ -280,13 +302,14 @@ fn money(amount: f64, currency: &str) -> Money {
     }
 }
 
-fn items(d: f64, x: f64, p: f64, h: f64, currency: &str) -> CostItems {
+fn items(d: f64, x: f64, p: f64, h: f64, s: Option<f64>, currency: &str) -> CostItems {
     CostItems {
         dredge: money(d, currency),
         dry_cut: money(x, currency),
         disposal: money(p, currency),
         haul: money(h, currency),
-        total: money(d + x + p + h, currency),
+        structures: s.map(|s| money(s, currency)),
+        total: money(d + x + p + h + s.unwrap_or(0.0), currency),
     }
 }
 
@@ -296,8 +319,10 @@ fn items(d: f64, x: f64, p: f64, h: f64, currency: &str) -> CostItems {
 /// `COST_VOLUMES_STALE` (the volumes were made from inputs that have changed), `COST_NO_VOLUMES` (no
 /// volumes by reach are stored), `COST_RATE_MISSING` (a rate, or a reach's haul distance, is not
 /// given), `COST_HAUL_UNCOVERED` (a station's chainage that no haul distance covers; at it),
-/// `COST_MIXED_CURRENCY`, `COST_RATE_INVALID`, and `COST_VOLUMES_INCONSISTENT` (the stations do not
-/// add up to the volumes by reach).
+/// `COST_MIXED_CURRENCY` (also a structure in another currency than the rates),
+/// `COST_RATE_INVALID`, `COST_VOLUMES_INCONSISTENT` (the stations do not add up to the volumes by
+/// reach), and `COST_STRUCTURE_UNPLACED` (a structure holds a pool no reach of the volumes is; at
+/// its chainage).
 pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
     let rates = input.rates.as_ref().ok_or_else(|| {
         refuse(
@@ -359,10 +384,43 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
             ),
         ));
     }
+    // Each structure's cost goes to the first reach of the pool it holds (ticket 14).
+    let mut structures_by_reach = vec![0.0; input.by_reach.len()];
+    for st in &input.structures {
+        if st.cost.currency != currency {
+            return Err(refuse(
+                "COST_MIXED_CURRENCY",
+                format!(
+                    "the rates are in {currency} but a structure costs in {}: one cost is in one \
+                     currency",
+                    st.cost.currency
+                ),
+            )
+            .at(st.chainage));
+        }
+        let k = input
+            .by_reach
+            .iter()
+            .position(|r| r.pool == Some(st.pool))
+            .ok_or_else(|| {
+                refuse(
+                    "COST_STRUCTURE_UNPLACED",
+                    format!(
+                        "the structure at {} m holds pool {}, but no reach of the volumes is that \
+                         pool: run the volumes stage again",
+                        st.chainage.0, st.pool
+                    ),
+                )
+                .at(st.chainage)
+            })?;
+        structures_by_reach[k] += st.cost.amount;
+    }
+    let has_structures = !input.structures.is_empty();
     let mut by_reach = Vec::with_capacity(input.by_reach.len());
     let mut sum = [0.0; 4];
+    let mut sum_structures = 0.0;
     let mut next = 0;
-    for r in &input.by_reach {
+    for (ri, r) in input.by_reach.iter().enumerate() {
         let stations = &input.stations[next..next + r.stations];
         next += r.stations;
         let mut cut_m3 = 0.0;
@@ -414,17 +472,26 @@ pub fn cost(input: &CostIn) -> Result<Cost, StageError> {
             *s += f;
         }
         let [d, x, p, h] = figures;
+        let s = has_structures.then_some(structures_by_reach[ri]);
+        sum_structures += structures_by_reach[ri];
         by_reach.push(ReachCost {
             from: r.from,
             to: r.to,
             haul_m3_km,
-            items: items(d, x, p, h, &currency),
+            items: items(d, x, p, h, s, &currency),
             level: None,
         });
     }
     let [d, x, p, h] = sum;
     Ok(Cost {
-        totals: items(d, x, p, h, &currency),
+        totals: items(
+            d,
+            x,
+            p,
+            h,
+            has_structures.then_some(sum_structures),
+            &currency,
+        ),
         currency,
         by_reach,
         level: None,
@@ -505,6 +572,21 @@ impl Session {
             volumes_fresh: self.stage_status(super::Stage::Volumes)
                 == super::session::StageStatus::Fresh,
             rates: self.rates()?,
+            structures: self
+                .structure_plan()
+                .map(|p| {
+                    p.structures
+                        .into_iter()
+                        .enumerate()
+                        .map(|(k, s)| CostStructure {
+                            pool: k,
+                            chainage: s.chainage,
+                            name: s.name,
+                            cost: s.cost,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
     }
 }

@@ -693,6 +693,16 @@ impl AppState {
         Ok(())
     }
 
+    /// Set the given weirs and locks (spec 0017, ticket 14) from JSON text, as `owd structures
+    /// --given` reads its file, through `Session::set_structures_text`. Empty text removes them. The
+    /// volumes go stale. A refusal changes nothing.
+    pub fn set_structures(&mut self, json: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session.set_structures_text(json).map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text, as `owd constraints --no-go`
     /// reads it, through `Session::set_constraints`. Empty text removes them. The stages that read
     /// them go stale. A refusal changes nothing.

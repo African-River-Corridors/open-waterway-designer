@@ -17,3 +17,4 @@ pub mod qa_overlay;
 pub mod reach_fetch;
 pub mod report;
 pub mod run_inputs;
+pub mod structures;

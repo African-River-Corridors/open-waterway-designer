@@ -76,6 +76,13 @@
             }
           ],
           "default": null
+        },
+        "structures": {
+          "description": "The structures of the stored structure plan (ticket 14); empty without structures.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CostStructure"
+          }
         }
       },
       "required": [
@@ -356,6 +363,37 @@
         "to"
       ]
     },
+    "CostStructure": {
+      "description": "One structure, as the cost reads it from the stored structure plan.",
+      "type": "object",
+      "properties": {
+        "pool": {
+          "description": "The pool it holds: its index in the water stage's input, as the volumes by reach name it.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "chainage": {
+          "description": "Its design-line chainage.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cost": {
+          "description": "What it costs.",
+          "$ref": "#/$defs/Money"
+        }
+      },
+      "required": [
+        "pool",
+        "chainage",
+        "cost"
+      ]
+    },
     "Cost": {
       "description": "What the cost stage returns.",
       "type": "object",
@@ -453,8 +491,19 @@
         "haul": {
           "$ref": "#/$defs/Money"
         },
+        "structures": {
+          "description": "The structures (ticket 14): present when the run has structures, zero in a reach with none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Money"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "total": {
-          "description": "The sum of the four.",
+          "description": "The sum of the items.",
           "$ref": "#/$defs/Money"
         }
       },

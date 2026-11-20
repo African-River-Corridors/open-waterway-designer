@@ -36,6 +36,7 @@ pub mod sections;
 pub mod session;
 pub mod sizing;
 pub mod stage_terrain;
+pub mod structures;
 pub mod table;
 pub mod terrain;
 pub mod volumes;

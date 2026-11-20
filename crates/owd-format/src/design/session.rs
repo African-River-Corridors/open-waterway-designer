@@ -405,6 +405,10 @@ impl Session {
         if let Err(e) = self.rates() {
             errors.push(format!("/inputs/rates: {e}"));
         }
+        // The given structures (ticket 14).
+        if let Err(e) = self.structures() {
+            errors.push(format!("/inputs/structures: {e}"));
+        }
         // And the constraints (ticket 13).
         if let Err(e) = self.constraints() {
             errors.push(format!("/inputs/constraints: {e}"));
@@ -505,6 +509,11 @@ impl Session {
                 inputs.remove(super::run_inputs::INPUT);
                 // Nor the rates table (ticket 12): only the cost reads it, and cost is not stored.
                 inputs.remove(super::cost::INPUT);
+                // The given structures (ticket 14) are read first by the volumes (their pools set
+                // the level the walk reads): the stages before them stay fresh.
+                if stage != Stage::Volumes {
+                    inputs.remove(super::structures::INPUT);
+                }
             }
             if stage == Stage::Volumes
                 && self.bed_model_value().is_some()

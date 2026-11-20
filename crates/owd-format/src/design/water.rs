@@ -180,26 +180,50 @@ impl Session {
     /// later stages read, the water profile of the inputs and the optimise stage's pools, read as
     /// the volumes stage has always read them (held flat beyond their ends). `None` without a design
     /// line or a river centreline.
+    ///
+    /// With given structures (ticket 14), the pools are theirs, not the optimise stage's: each is
+    /// held flat from its structure to the next, with its minimum and maximum level, and the river
+    /// is open below the lowest structure. `None` too when the structures cannot be placed on the
+    /// line ([`Session::try_water_input`] says why).
     pub fn water_input(&self) -> Option<WaterIn> {
-        let design_line = self.final_line()?.line;
-        let centreline = Polyline(self.river_centreline().ok()?);
-        Some(self.water_input_on(design_line, centreline))
+        self.try_water_input().ok().flatten()
+    }
+
+    /// [`Session::water_input`], with the reason when the given structures cannot be placed.
+    pub fn try_water_input(&self) -> Result<Option<WaterIn>, DesignError> {
+        let Some(design_line) = self.final_line().map(|d| d.line) else {
+            return Ok(None);
+        };
+        let Ok(centreline) = self.river_centreline() else {
+            return Ok(None);
+        };
+        self.water_input_on(design_line, Polyline(centreline))
+            .map(Some)
     }
 
     /// What the water stage reads for `design_line`: the same river, water and pools. The step is
     /// the volumes stage's station step, so each volumes station is a point of the answer.
-    pub(super) fn water_input_on(&self, design_line: Polyline, centreline: Polyline) -> WaterIn {
+    pub(super) fn water_input_on(
+        &self,
+        design_line: Polyline,
+        centreline: Polyline,
+    ) -> Result<WaterIn, DesignError> {
         let step_m = self
             .volumes_settings(&Value::Null)
             .map_or(DEFAULT_STEP_M, |v| v.station_m);
-        WaterIn {
+        let (pools, beyond_pools) =
+            match self.structure_plan_on(design_line.clone(), centreline.clone())? {
+                Some((_, plan)) => (plan.water_pools(), BeyondPools::OpenRiver),
+                None => (self.optimise_pools(), BeyondPools::HoldPoolLevel),
+            };
+        Ok(WaterIn {
             centreline,
             design_line,
             given: self.input_water_profile(),
-            pools: self.optimise_pools(),
-            beyond_pools: BeyondPools::HoldPoolLevel,
+            pools,
+            beyond_pools,
             step_m,
-        }
+        })
     }
 
     /// Where the stored water stands: not run, fresh, or stale. It is fresh while the hash of what
@@ -227,7 +251,7 @@ impl Session {
     /// its results, the hash of its input as `depends_on`. Not a stage of the chain: the volumes
     /// stage runs it, and no other stage's hash reads it.
     pub fn run_water(&mut self) -> Result<(), DesignError> {
-        let Some(input) = self.water_input() else {
+        let Some(input) = self.try_water_input()? else {
             return Err(DesignError::Input(if self.final_line().is_none() {
                 "the water stage needs a design line: run the alignment stage first".into()
             } else {

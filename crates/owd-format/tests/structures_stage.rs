@@ -124,7 +124,10 @@ fn a_pool_too_shallow_at_its_minimum_is_flagged_in_plain_words_with_chainage() {
     assert!(!c.navigation_depth.ok);
     assert_eq!(c.failed(), vec!["navigation_depth"]);
     let words = c.messages().join("\n");
-    assert!(words.contains("500 m") && words.contains("750 m"), "{words}");
+    assert!(
+        words.contains("500 m") && words.contains("750 m"),
+        "{words}"
+    );
     assert!(words.contains("0.50 m short"), "{words}");
     // Each check says what it reads and what it cannot know.
     assert!(!c.navigation_depth.note.is_empty());
@@ -146,8 +149,10 @@ fn a_pool_whose_maximum_tops_the_bank_is_flagged() {
 
 /// The structures the fixtures' first golden case places, for the seam and water tests.
 fn two_structures() -> StructuresIn {
-    serde_json::from_value(fixture("structures", "two-structures-given-by-chainage")["input"].clone())
-        .unwrap()
+    serde_json::from_value(
+        fixture("structures", "two-structures-given-by-chainage")["input"].clone(),
+    )
+    .unwrap()
 }
 
 /// A structures tool that is not the given input: it records what it was asked and prices each
@@ -269,9 +274,15 @@ fn the_plans_pools_feed_the_water_stage_and_fill_min_and_max() {
     assert_eq!(below.min_level_m, None);
     let p = at(500.0);
     assert_eq!(p.source, WaterSource::Pool);
-    assert_eq!((p.level_m, p.min_level_m, p.max_level_m), (10.0, Some(9.5), Some(11.0)));
+    assert_eq!(
+        (p.level_m, p.min_level_m, p.max_level_m),
+        (10.0, Some(9.5), Some(11.0))
+    );
     let p = at(750.0);
-    assert_eq!((p.level_m, p.min_level_m, p.max_level_m), (12.0, Some(11.5), Some(13.0)));
+    assert_eq!(
+        (p.level_m, p.min_level_m, p.max_level_m),
+        (12.0, Some(11.5), Some(13.0))
+    );
 }
 
 #[test]
@@ -295,7 +306,10 @@ fn the_input_reads_from_json_writes_its_allowances_and_refuses_by_code() {
 #[test]
 fn the_stage_and_its_input_have_schema_files() {
     let names: Vec<String> = contracts().iter().map(|c| c.file_name()).collect();
-    assert!(names.contains(&"structures.1.schema.json".to_string()), "{names:?}");
+    assert!(
+        names.contains(&"structures.1.schema.json".to_string()),
+        "{names:?}"
+    );
     assert!(
         names.contains(&"inputs.structures.1.schema.json".to_string()),
         "{names:?}"

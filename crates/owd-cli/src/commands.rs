@@ -1407,13 +1407,24 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
         let nfl = r["no_feasible_line"] == true;
         let ok = r["radius_ok"].as_bool().unwrap_or(false) && !nfl;
         all_ok &= ok;
-        let failed: Vec<&str> = [
+        let mut failed: Vec<&str> = [
             (nfl, "no_feasible_line"),
             (!r["radius_ok"].as_bool().unwrap_or(false), "R_min"),
         ]
         .into_iter()
         .filter_map(|(f, name)| f.then_some(name))
         .collect();
+        // The pool checks of given structures (spec 0017 ticket 14), saved with the volumes.
+        let pool_failed = owd_format::design::structures::failed_checks(r);
+        if !pool_failed.is_empty() {
+            all_ok = false;
+            let checks: Option<owd_format::design::structures::PoolChecks> =
+                serde_json::from_value(r["structure_checks"].clone()).ok();
+            for m in checks.iter().flat_map(|c| c.messages()) {
+                eprintln!("owd: {m}");
+            }
+        }
+        failed.extend(pool_failed.iter().copied());
         if !failed.is_empty() {
             fails.push(format!(
                 "{} ({})",

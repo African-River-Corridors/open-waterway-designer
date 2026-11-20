@@ -839,6 +839,26 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
+    /// Give the weirs and locks (spec 0017): an optional module. `--given FILE` (JSON: `mode`
+    /// `given`; `items`, each with `site` (`{"chainage": M}` from the mouth, or `{"point": [X, Y]}`
+    /// in the project CRS), `upstream_level_m`, `height_m`, `cost` (`{"amount", "currency"}`) and
+    /// optional `name` and `kind` (`weir`, `lock`, `weir_and_lock`); and optional `pool_levels`
+    /// (`below_m`, `above_m`: the allowances that give each pool's minimum and maximum level, 0.5 m
+    /// each when not given)) replaces them; `--clear` removes them. The volumes stage places them,
+    /// stores the plan, and checks navigation depth at each pool's minimum level and flood risk at
+    /// its maximum. Prints the structures, the plan and the checks.
+    Structures {
+        /// The channel design. `-` is stdin.
+        doc: String,
+        /// The given structures, as JSON.
+        #[arg(long, value_name = "FILE")]
+        given: Option<String>,
+        /// Remove the structures.
+        #[arg(long, conflicts_with = "given")]
+        clear: bool,
+        #[command(flatten)]
+        out: Out,
+    },
     /// Set what the run aims at and must stay within, and the output level it aims to reach (spec
     /// 0017). Each flag given replaces that part; a part not named is kept. With no flag, print them
     /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
@@ -1222,6 +1242,17 @@ pub fn main() -> ExitCode {
                 multiplier,
                 no_multiplier,
             },
+            &out.output,
+            out.json,
+        ),
+        Command::Structures {
+            doc,
+            given,
+            clear,
+            out,
+        } => crate::structures::structures(
+            &doc,
+            &crate::structures::StructureFlags { given, clear },
             &out.output,
             out.json,
         ),

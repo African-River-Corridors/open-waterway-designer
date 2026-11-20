@@ -79,7 +79,10 @@ fn volumes_run_again_without_structures_move_no_number() {
     ] {
         assert_eq!(row[k], before["stages"]["volumes"]["results"][k], "{k}");
     }
-    for p in d["stages"]["water"]["results"]["points"].as_array().unwrap() {
+    for p in d["stages"]["water"]["results"]["points"]
+        .as_array()
+        .unwrap()
+    {
         assert!(p.get("min_level_m").is_none() && p.get("max_level_m").is_none());
     }
 }
@@ -96,7 +99,10 @@ fn structures_are_set_by_one_function_and_refused_by_code_with_nothing_changed()
     let set = s.to_text();
 
     let refused = |s: &mut Session, v: Value, code: &str| {
-        let e = s.set_structures_text(&v.to_string()).unwrap_err().to_string();
+        let e = s
+            .set_structures_text(&v.to_string())
+            .unwrap_err()
+            .to_string();
         assert!(e.contains(code), "{code}: {e}");
         assert_eq!(s.to_text(), set, "{code}: nothing changed");
     };
@@ -149,7 +155,9 @@ fn the_volumes_run_places_the_structures_fills_min_and_max_and_saves_the_checks(
 
     let d = s.document();
     // The water stage read the plan's pools: levels and limits in the pool, open river below.
-    let pts = d["stages"]["water"]["results"]["points"].as_array().unwrap();
+    let pts = d["stages"]["water"]["results"]["points"]
+        .as_array()
+        .unwrap();
     let in_pool: Vec<&Value> = pts.iter().filter(|p| p["source"] == "pool").collect();
     assert!(!in_pool.is_empty());
     for p in &in_pool {
@@ -219,7 +227,10 @@ fn the_cost_has_a_structures_line_in_the_pool_it_holds_and_in_total() {
     // A change to the structures makes the volumes stale; the cost refuses stale volumes.
     s.set_structures_text(&one_weir(0.2).to_string()).unwrap();
     assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Stale);
-    assert_eq!(cost(&s.cost_input().unwrap()).unwrap_err().code, "COST_VOLUMES_STALE");
+    assert_eq!(
+        cost(&s.cost_input().unwrap()).unwrap_err().code,
+        "COST_VOLUMES_STALE"
+    );
 }
 
 #[test]
@@ -231,6 +242,10 @@ fn removing_the_structures_and_running_again_removes_the_plan() {
     run_volumes(&mut s);
     let d = s.document();
     assert!(d["stages"].get(structures::STAGE).is_none());
-    assert!(d["stages"]["volumes"]["results"].get("structure_checks").is_none());
+    assert!(
+        d["stages"]["volumes"]["results"]
+            .get("structure_checks")
+            .is_none()
+    );
     assert_eq!(s.structure_plan(), None);
 }

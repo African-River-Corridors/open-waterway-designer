@@ -326,6 +326,46 @@
             }
           }
         },
+        "structures": {
+          "description": "Spec 0017 ticket 14: given weirs and locks (`schema/stages/inputs.structures.1.schema.json`). `mode`: `given` (the search over candidate sites is ticket 15). `items`: each with a site (`{\"chainage\": river chainage from the mouth}` or `{\"point\": [x, y]}` in the project CRS), the mean water level it holds upstream, its height, its cost (an amount and a currency, one currency for all), and optionally a name and a kind (`weir`, `lock` or `weir_and_lock`; a weir when not given). `pool_levels`: the allowances below and above each pool's level that give its minimum level (navigation depth is checked there) and its maximum level (flood risk is checked there), written out in full. The volumes read the structures; no stage before them does. Absent: no weirs or locks.",
+          "type": "object",
+          "required": ["mode", "items"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["given"] },
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["site", "upstream_level_m", "height_m", "cost"],
+                "additionalProperties": false,
+                "properties": {
+                  "name": { "type": "string" },
+                  "kind": { "enum": ["weir", "lock", "weir_and_lock"] },
+                  "site": {
+                    "oneOf": [
+                      { "type": "object", "required": ["chainage"], "additionalProperties": false, "properties": { "chainage": { "type": "number" } } },
+                      { "type": "object", "required": ["point"], "additionalProperties": false, "properties": { "point": { "$ref": "#/$defs/position" } } }
+                    ]
+                  },
+                  "upstream_level_m": { "type": "number" },
+                  "height_m": { "type": "number", "exclusiveMinimum": 0 },
+                  "cost": { "$ref": "#/$defs/money" }
+                }
+              }
+            },
+            "pool_levels": {
+              "type": "object",
+              "required": ["below_m", "above_m"],
+              "additionalProperties": false,
+              "properties": {
+                "below_m": { "type": "number", "minimum": 0 },
+                "above_m": { "type": "number", "minimum": 0 }
+              }
+            }
+          }
+        },
         "fixed": {
           "description": "Spec 0005: pieces the joined line must hold exactly. A pose is a point and a heading in degrees counter-clockwise from the project CRS's +x (east) axis. Optional.",
           "type": "object",
@@ -349,6 +389,10 @@
         "volumes": { "$ref": "#/$defs/stage" },
         "reference_line": {
           "description": "Spec 0016 T1, spec 0017 ticket 7: the reference line, one smooth line in the water that belongs to no vessel, as a stage record (`schema/stages/reference_line.1.schema.json`): the parameters as `settings`, the line, its low-confidence and outside-water stretches and notes as `results` (chainage along the line from its start), and as `depends_on` the hash of its whole input and the project CRS. The results' `line_basis` is the hash of what shapes the line (the banks, the river polygon, the project CRS and the parameters; the formula used before it was a stage): the bed is centred on the line while it matches. Not a stage of the chain: never rerun by `run`, and no design stage reads it. A file that holds it as `inputs.reference_line` opens with it moved here, keeping its hash, so a fresh line stays fresh. Optional.",
+          "$ref": "#/$defs/stage"
+        },
+        "structures": {
+          "description": "Spec 0017 ticket 14: the given weirs and locks placed on the river and the design line, as a stage record (`schema/stages/structures.1.schema.json`): the pool-level allowances as `settings`; the structures (river and design-line chainage, site, upstream and downstream level, lift, and the height, footprint and cost the structures seam returned, with their source: given or seam) and the pools between them (river and design-line chainage, level, minimum and maximum level) as `results`; and as `depends_on` the hash of the input it read. Not a stage of the chain: the volumes stage runs it with the given structures, and removes it when there are none. Optional.",
           "$ref": "#/$defs/stage"
         },
         "water": {

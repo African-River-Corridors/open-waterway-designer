@@ -460,6 +460,12 @@ impl Session {
         self.edit(|s| s.set_run_inputs(objective, limits, target_level))
     }
 
+    /// Set the given weirs and locks (spec 0017, ticket 14) from JSON text, as `owd structures
+    /// --given` reads its file, through the same session call. Empty text removes them.
+    pub fn set_structures(&mut self, json: &str) -> Js<String> {
+        self.edit(|s| s.set_structures(json))
+    }
+
     /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text (a FeatureCollection of polygons
     /// in the project CRS, each with `name` and `kind`), as `owd constraints --no-go` reads it,
     /// through the same session call. Empty text removes them.

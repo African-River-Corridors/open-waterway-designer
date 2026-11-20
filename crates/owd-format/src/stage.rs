@@ -94,6 +94,7 @@ pub fn contracts() -> Vec<StageContract> {
     use crate::design::river::{self, RiverGeometry, RiverIn};
     use crate::design::run_inputs::{self, RunInputs};
     use crate::design::sizing::{self, ChannelSize, SizingIn};
+    use crate::design::structures::{self, StructurePlan, Structures, StructuresIn};
     use crate::design::volumes_stage::{self, Volumes, VolumesIn};
     use crate::design::water_stage::{self, DesignWater, WaterIn};
     vec![
@@ -111,6 +112,8 @@ pub fn contracts() -> Vec<StageContract> {
         StageContract::of::<StageRecord<CostIn, Cost>>(cost::STAGE, 1),
         StageContract::of::<RatesTable>(cost::RATES_CONTRACT, 1),
         StageContract::of::<Constraints>(constraints::CONTRACT, 1),
+        StageContract::of::<StageRecord<StructuresIn, StructurePlan>>(structures::STAGE, 1),
+        StageContract::of::<Structures>(structures::CONTRACT, 1),
     ]
 }
 

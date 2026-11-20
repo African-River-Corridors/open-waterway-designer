@@ -60,16 +60,18 @@ fn given_structures_are_stored_checked_by_the_volumes_and_cleared() {
 
     // A refusal exits 2 with its code; the stored structures stay.
     let mut two = weir(2.0, "USD");
-    two["items"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"site": {"chainage": 2500.0}, "upstream_level_m": 3.0, "height_m": 4.0,
-                     "cost": {"amount": 1.0, "currency": "EUR"}}));
+    two["items"].as_array_mut().unwrap().push(
+        json!({"site": {"chainage": 2500.0}, "upstream_level_m": 3.0, "height_m": 4.0,
+                     "cost": {"amount": 1.0, "currency": "EUR"}}),
+    );
     std::fs::write(&file, two.to_string()).unwrap();
     let o = owd(&["structures", doc_s, "--given", file_s]);
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("WEIRS_MIXED_CURRENCY"));
-    assert_eq!(read(&doc)["inputs"]["structures"], d["inputs"]["structures"]);
+    assert_eq!(
+        read(&doc)["inputs"]["structures"],
+        d["inputs"]["structures"]
+    );
 
     // The volumes place the weir and save the checks; strict exits 1 and names the check.
     let o = owd(&["--strict", "volumes", doc_s]);
@@ -77,7 +79,10 @@ fn given_structures_are_stored_checked_by_the_volumes_and_cleared() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(err.contains("navigation_depth"), "{err}");
     let d = read(&doc);
-    assert_eq!(d["stages"]["structures"]["results"]["structures"][0]["lift_m"], 2.0);
+    assert_eq!(
+        d["stages"]["structures"]["results"]["structures"][0]["lift_m"],
+        2.0
+    );
     assert_eq!(
         d["stages"]["volumes"]["results"]["structure_checks"]["navigation_depth"]["ok"],
         false

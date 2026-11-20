@@ -300,7 +300,8 @@ impl Session {
             },
             // A failed check stays with the line's numbers.
             "radius_ok": o["checks"]["radius_ok"],
-            "water_source": plan.water_source,
+            // Given structures set the pools the walk read (ticket 14).
+            "water_source": if self.structures()?.is_some() { "structures" } else { plan.water_source },
             // A, the verdict, and C, the constraint stretches (spec 0007).
             "screening": screening,
         });
@@ -337,12 +338,40 @@ impl Session {
         next.doc["stages"]["volumes"]["depends_on"] = json!(h);
         // The water along the line, stored for the drawings and the report (spec 0017 ticket 8),
         // after the settings, so its step is the stations' step. The walk read the same levels.
+        // The structure plan the walk's pools came from (ticket 14), stored for the drawings, the
+        // report and the cost; removed when the design gives no structures.
+        let line = crate::types::Polyline(all_positions(&o["line"]));
+        let centre = crate::types::Polyline(plan.centre.clone());
+        match next.structure_plan_on(line, centre)? {
+            Some((input, sp)) => {
+                next.doc["stages"][super::structures::STAGE] = json!({
+                    "settings": {"pool_levels": sp.pool_levels},
+                    "results": sp,
+                    "depends_on": super::hash::hash_value(&json!(input)),
+                    "engine_version": ENGINE_VERSION,
+                });
+            }
+            None => {
+                if let Some(st) = next.doc["stages"].as_object_mut() {
+                    st.shift_remove(super::structures::STAGE);
+                }
+            }
+        }
         next.run_water()?;
         let water = next.design_water().ok_or_else(|| {
             DesignError::Input("the water stage did not store the water level".into())
         })?;
-        next.doc["stages"]["volumes"]["results"]["sections"] =
-            json!(super::volumes_stage::summarise(&v, &water, &profile_at));
+        let sections = super::volumes_stage::summarise(&v, &water, &profile_at);
+        // The pool checks (ticket 14): navigation depth at each pool's minimum level, flood risk at
+        // its maximum, on the stored stations. Only with structures, so a design with none is
+        // stored as before.
+        if next.doc["stages"][super::structures::STAGE].is_object() {
+            let checks = super::structures::pool_checks(
+                &super::structures::PoolChecksIn::from_stored(&sections, &water),
+            );
+            next.doc["stages"]["volumes"]["results"]["structure_checks"] = json!(checks);
+        }
+        next.doc["stages"]["volumes"]["results"]["sections"] = json!(sections);
         *self = next;
         Ok(())
     }
@@ -483,7 +512,7 @@ impl Session {
         let water_in = self.water_input_on(
             crate::types::Polyline(line.clone()),
             crate::types::Polyline(plan.centre.clone()),
-        );
+        )?;
         let stage_level;
         let port_level;
         let wl: &dyn Fn(f64) -> f64 = match self.water_sampling {
