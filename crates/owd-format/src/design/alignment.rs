@@ -10,7 +10,7 @@
 
 use super::geojson::all_positions;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
-use crate::types::TerrainSampler;
+use crate::types::{RiverPolygon, TerrainSampler};
 use owd_core::alignment::centreline::build_centreline;
 use owd_core::alignment::fairway_fit::{Fixed, Pose};
 use owd_core::alignment::join::{JoinParams, join_legs};
@@ -380,8 +380,8 @@ impl Session {
         terrain: Option<TerrainSampler>,
     ) -> Result<(), DesignError> {
         self.upstream_ready()?;
-        let shape = self.doc["stages"]["sizing"]["results"].clone();
-        let r_min = shape["min_bend_radius_m"].as_f64().unwrap_or(f64::NAN);
+        let size = self.channel_size()?;
+        let r_min = size.min_bend_radius_m;
         let settings = self.method_settings(method, overrides)?;
         let option = match method {
             AlignMethod::RollingCircle => self.water_aware_rolling_circle(&settings, r_min)?,
@@ -390,30 +390,17 @@ impl Session {
                 let terrain = terrain.ok_or_else(|| {
                     DesignError::Input("the re-route needs terrain: give it a DEM".into())
                 })?;
-                let polygon = &self.doc["inputs"]["river_polygon"];
-                if polygon.is_null() {
-                    return Err(DesignError::Input(
+                let river = self.river_polygons().ok_or_else(|| {
+                    DesignError::Input(
                         "the re-route needs the river polygon: import it first".into(),
-                    ));
-                }
-                let ring: Vec<Pt> = polygon["coordinates"][0]
-                    .as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let river = [Polygon {
-                    exterior: ring,
-                    holes: vec![],
-                }];
+                    )
+                })?;
                 let profile = self.input_water_profile().ok_or_else(|| {
                     DesignError::Input(
                         "the re-route needs a water level: set one with `owd import --water-level LEVEL` (a constant), `--water-slope` or `--water-table FILE`".into(),
                     )
                 })?;
-                let depth = shape["design_depth_m"].as_f64().unwrap_or(f64::NAN);
+                let depth = size.design_depth_m;
                 // The line it starts from: the rolling-circle option's, if there is one.
                 let start = self.doc["options"]
                     .as_array()
@@ -426,9 +413,7 @@ impl Session {
                     .unwrap_or_default();
                 let widest = sweep.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                 let params = GridParams {
-                    bottom_width: shape["bottom_width_straight_m"]
-                        .as_f64()
-                        .unwrap_or(f64::NAN),
+                    bottom_width: size.bottom_width_straight_m,
                     depth,
                     side_slope: num(&settings, "side_slope")?,
                     corridor_half: widest,
@@ -563,30 +548,11 @@ fn pose_of(v: &Value) -> Option<Pose> {
 }
 
 impl Session {
-    /// The river polygon(s), with holes, when the inputs have one.
+    /// The river polygon(s), with holes, when the inputs have one. The one place the document's
+    /// polygon is read ([`RiverPolygon::from_geometry`]); every stage that needs it asks here.
     pub(super) fn river_polygons(&self) -> Option<Vec<Polygon>> {
-        let poly = &self.doc["inputs"]["river_polygon"];
-        if poly["type"] != "Polygon" {
-            return None;
-        }
-        let rings: Vec<Vec<Pt>> = poly["coordinates"]
-            .as_array()?
-            .iter()
-            .map(|r| {
-                r.as_array()
-                    .map(|a| {
-                        a.iter()
-                            .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            })
-            .collect();
-        let (shell, holes) = rings.split_first()?;
-        Some(vec![Polygon {
-            exterior: shell.clone(),
-            holes: holes.to_vec(),
-        }])
+        RiverPolygon::from_geometry(&self.doc["inputs"]["river_polygon"])
+            .map(|p| vec![p.to_polygon()])
     }
 
     /// The seed legs and fixed pieces of the inputs (spec 0005), when there are legs.
@@ -660,8 +626,8 @@ impl Session {
         };
         let clearance = opt_num(settings, "clearance_m")?.unwrap_or(0.0);
         let r_pref = opt_num(settings, "r_pref_m")?;
-        let shape = if use_water || self.seed_legs().is_some() {
-            Some(self.sized_shape()?)
+        let size = if use_water || self.seed_legs().is_some() {
+            Some(self.channel_size()?)
         } else {
             None
         };
@@ -680,7 +646,11 @@ impl Session {
         let base = match self.seed_legs() {
             None => self.base_line()?,
             Some((legs, fixed)) => {
-                let shape = shape.as_ref().expect("a shape when there are seed legs");
+                let shape = size
+                    .as_ref()
+                    .expect("a channel size when there are seed legs")
+                    .shape()
+                    .map_err(super::rule_sets::stage_error)?;
                 // Without water the legs are joined in open space: a box well round them.
                 let open = || {
                     let all: Vec<Pt> = legs.iter().flatten().copied().collect();
@@ -715,10 +685,10 @@ impl Session {
                 j.line
             }
         };
-        let wi = match (&water, &shape) {
+        let wi = match (&water, &size) {
             (Some(w), Some(sh)) => Some(WaterInput {
                 water: w,
-                shape: sh,
+                shape: sh.shape().map_err(super::rule_sets::stage_error)?,
                 clearance_m: clearance,
                 smooth_m: 0.0,
                 r_pref_m: r_pref,
@@ -784,7 +754,7 @@ impl Session {
 
 /// The design sanity check of an option's line (`owd_core::sanity`): `{"checked": true, "warnings":
 /// [...]}`. Warnings never fail a check.
-fn sanity_of(option: &Value) -> Value {
+pub(super) fn sanity_of(option: &Value) -> Value {
     let line = pts_of(&option["line"]).unwrap_or_default();
     let chord = option["checks"]["radius_check_chord_m"]
         .as_f64()

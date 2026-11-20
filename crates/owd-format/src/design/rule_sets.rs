@@ -6,10 +6,12 @@
 //! stored hash that the library does not hold is refused, never silently re-evaluated.
 
 use super::session::{DesignError, Session};
+use super::sizing::{self, ChannelSize, SizingIn};
+use crate::types::StageError;
 use arc_rules::load::Library;
 use owd_core::rules::custom::{CustomVessel, Formation};
 use owd_core::rules::engine::{self, ChannelDomain, Selection};
-use owd_core::rules::rulesets::{ChannelShape, channel_shape_for, channel_shape_for_custom};
+use owd_core::rules::rulesets::ChannelShape;
 use serde_json::{Value, json};
 
 /// The set a new design selects, with its inputs, all marked `default`.
@@ -190,6 +192,11 @@ pub fn custom_vessel_of(v: &Value) -> Option<CustomVessel> {
         air_draught_m: num("air_draught_m"),
         deadweight_t: num("deadweight_t"),
     })
+}
+
+/// A stage's refusal as the session reports it: the message, as an input error.
+pub(super) fn stage_error(e: StageError) -> DesignError {
+    DesignError::Input(e.message)
 }
 
 impl Session {
@@ -394,11 +401,15 @@ impl Session {
         Ok(())
     }
 
+    /// The sizing stage's input, from the document: the sizing settings and the marked reaches.
+    pub fn sizing_in(&self) -> SizingIn {
+        SizingIn::from_document(&self.sizing_settings(), &self.waterway_reaches())
+    }
+
     /// The engine selection of the sizing settings. A set the library does not hold, or holds with
     /// another content hash, is refused.
     pub fn selection(&self) -> Result<Selection, DesignError> {
-        let s = selection_of(&self.library, &self.sizing_settings())?
-            .with_reaches(waterway_reaches(&self.doc));
+        let s = sizing::selection(&self.library, &self.sizing_in()).map_err(stage_error)?;
         // A custom vessel's GB class is the `gb_class` set input (spec 0015 T1).
         Ok(match self.custom_vessel() {
             Some(c) => owd_core::rules::rulesets::custom_selection(&s, &c),
@@ -408,24 +419,33 @@ impl Session {
 
     /// The channel shape of the sizing settings.
     pub(super) fn shape_for_settings(&self, settings: &Value) -> Result<ChannelShape, DesignError> {
-        let selection =
-            selection_of(&self.library, settings)?.with_reaches(waterway_reaches(&self.doc));
-        if let Some(custom) = custom_vessel_of(&settings["custom_vessel"]) {
-            return channel_shape_for_custom(&selection, &custom)
-                .map_err(|e| DesignError::Input(e.raw_message().to_string()));
-        }
-        let Some(vessel) = settings["vessel_standard_id"].as_str() else {
-            return Err(DesignError::Input(
-                "the sizing stage has no vessel class: choose one first".into(),
-            ));
-        };
-        channel_shape_for(&selection, vessel, settings["draught_m"].as_f64())
-            .map_err(|e| DesignError::Input(e.raw_message().to_string()))
+        let input = SizingIn::from_document(settings, &self.waterway_reaches());
+        sizing::shape(&self.library, &input).map_err(stage_error)
     }
 
-    /// The channel shape the sizing stage chose.
-    pub(super) fn sized_shape(&self) -> Result<ChannelShape, DesignError> {
-        self.shape_for_settings(&self.sizing_settings())
+    /// The channel size the sizing stage stored: what every later stage reads. It refuses when sizing
+    /// has not been run or is stale, and says to run it. The size carries the engine's shape for the
+    /// bend widening at any radius ([`ChannelSize::shape`]).
+    pub fn channel_size(&self) -> Result<ChannelSize, DesignError> {
+        match self.stage_status(super::session::Stage::Sizing) {
+            super::session::StageStatus::NotRun => {
+                return Err(DesignError::Input(
+                    "the sizing stage has not been run: choose a ruleset and a vessel class first"
+                        .into(),
+                ));
+            }
+            super::session::StageStatus::Stale => {
+                return Err(DesignError::Input(
+                    "the sizing stage is stale: run it again first".into(),
+                ));
+            }
+            super::session::StageStatus::Fresh => {}
+        }
+        let stored = &self.doc["stages"]["sizing"]["results"];
+        let size: ChannelSize = serde_json::from_value(stored.clone()).map_err(|e| {
+            DesignError::Input(format!("the stored sizing result cannot be read: {e}"))
+        })?;
+        Ok(size.with_shape(self.shape_for_settings(&self.sizing_settings())?))
     }
 
     /// The content hash the library holds for each selected set, or null: part of every stage's
@@ -488,35 +508,6 @@ impl Session {
         }
         None
     }
-
-    /// The selection as words, for the results and the drawings: each set but `owd`, with the set
-    /// inputs, such as `pianc-wg141@0.3.0 (se_quality B)`.
-    pub(super) fn selection_label(settings: &Value) -> String {
-        let sets: Vec<String> = selected(settings)
-            .into_iter()
-            .filter(|(id, _)| id != engine::OWD_SET)
-            .map(|(id, v)| format!("{id}@{v}"))
-            .collect();
-        let inputs: Vec<String> = settings["set_inputs"]
-            .as_array()
-            .map(|l| {
-                l.iter()
-                    .map(|i| {
-                        format!(
-                            "{} {}",
-                            i["name"].as_str().unwrap_or(""),
-                            i["value"].as_str().unwrap_or("")
-                        )
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        if inputs.is_empty() {
-            sets.join(" + ")
-        } else {
-            format!("{} ({})", sets.join(" + "), inputs.join(", "))
-        }
-    }
 }
 
 /// The `(id, version)` of each stored set, in order.
@@ -536,54 +527,6 @@ fn selected(settings: &Value) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-fn selection_of(library: &Library, settings: &Value) -> Result<Selection, DesignError> {
-    let stored = settings["rule_sets"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    for s in &stored {
-        let (id, version) = (
-            s["id"].as_str().unwrap_or(""),
-            s["version"].as_str().unwrap_or(""),
-        );
-        let set = library.find(id, version).ok_or_else(|| {
-            DesignError::Input(format!(
-                "the design selects Rule Set {id}@{version}, which is not loaded: load its file \
-                 with --rule-set-file"
-            ))
-        })?;
-        if s["hash"].as_str() != Some(set.hash.as_str()) {
-            return Err(DesignError::Input(format!(
-                "the design selects Rule Set {id}@{version} with content hash {}, but the loaded \
-                 set has {}: the rules changed. Choose the set again (owd size --rule-set {id}) \
-                 and rerun",
-                s["hash"].as_str().unwrap_or("?"),
-                set.hash
-            )));
-        }
-    }
-    let chosen = selected(settings);
-    let refs: Vec<(&str, &str)> = chosen
-        .iter()
-        .map(|(a, b)| (a.as_str(), b.as_str()))
-        .collect();
-    let inputs = settings["set_inputs"]
-        .as_array()
-        .map(|l| {
-            l.iter()
-                .map(|i| {
-                    (
-                        i["name"].as_str().unwrap_or("").to_string(),
-                        i["value"].as_str().unwrap_or("").to_string(),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    Selection::from_library(library, &refs, inputs)
-        .map_err(|e| DesignError::Input(e.raw_message().to_string()))
-}
-
 /// The reaches of the river as the rules read them, each with its chainage range on the river
 /// centreline: the marked reaches in chainage order, with the chainage they leave uncovered as
 /// free-flowing reaches with no claim. No reach marked: the whole river is one free-flowing reach.
@@ -592,52 +535,7 @@ pub(super) fn reach_ranges(doc: &Value) -> Vec<(f64, f64, engine::WaterwayReach)
         .as_array()
         .cloned()
         .unwrap_or_default();
-    if marked.is_empty() {
-        return vec![(0.0, f64::INFINITY, engine::WaterwayReach::whole_river())];
-    }
-    let free = |label: String| engine::WaterwayReach {
-        label,
-        ..engine::WaterwayReach::whole_river()
-    };
-    let mut out = Vec::new();
-    let mut at = 0.0_f64;
-    for r in &marked {
-        let start = r["start_m"].as_f64().unwrap_or(0.0);
-        let end = r["end_m"].as_f64();
-        if start > at {
-            out.push((at, start, free(format!("{at} to {start} m"))));
-        }
-        let claim = r["reduced_radius_claim"]
-            .as_str()
-            .unwrap_or("no")
-            .to_string();
-        out.push((
-            start,
-            end.unwrap_or(f64::INFINITY),
-            engine::WaterwayReach {
-                label: match end {
-                    Some(e) => format!("{start} to {e} m"),
-                    None => format!("{start} m to the end"),
-                },
-                waterway: r["waterway"]
-                    .as_str()
-                    .unwrap_or("free-flowing-river")
-                    .to_string(),
-                claim_typed: claim == "yes",
-                claim,
-            },
-        ));
-        at = end.unwrap_or(f64::INFINITY);
-    }
-    if at.is_finite() {
-        out.push((at, f64::INFINITY, free(format!("{at} m to the end"))));
-    }
-    out
-}
-
-/// The reaches of the river as the rules read them, in chainage order.
-fn waterway_reaches(doc: &Value) -> Vec<engine::WaterwayReach> {
-    reach_ranges(doc).into_iter().map(|(_, _, r)| r).collect()
+    SizingIn::from_document(&Value::Null, &marked).reach_ranges()
 }
 
 impl Session {

@@ -296,6 +296,21 @@ fn volumes_measure_the_lattice_option_like_any_other_under_the_pool_levels() {
 }
 
 #[test]
+fn the_lattice_option_carries_a_sanity_entry_like_every_other_option() {
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    let o = s.document()["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert_eq!(o["sanity"]["checked"], json!(true), "{}", o["sanity"]);
+    assert!(o["sanity"]["warnings"].is_array());
+}
+
+#[test]
 fn the_stage_says_what_it_needs() {
     let mut s = design_with(false);
     let e = s

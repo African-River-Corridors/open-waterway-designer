@@ -247,7 +247,7 @@ impl Session {
                 "there are no design line options to export: run the alignment stage first".into(),
             ));
         }
-        let shape = self.sized_shape()?;
+        let size = self.channel_size()?;
         let point = |x: f64, y: f64| -> Result<Value, DesignError> {
             if wgs84 {
                 let u = utm.ok_or_else(|| {
@@ -273,7 +273,11 @@ impl Session {
                 })
                 .collect();
             let (_, xy, heading) = station_frame(&line, STATION_M).map_err(DesignError::Input)?;
-            let hb = widened_hb_from_shape(&xy, &shape, WIDEN_RMAX);
+            let hb = widened_hb_from_shape(
+                &xy,
+                size.shape().map_err(super::rule_sets::stage_error)?,
+                WIDEN_RMAX,
+            );
             let (mut left, mut right) = (Vec::new(), Vec::new());
             for ((p, th), h) in xy.iter().zip(&heading).zip(&hb) {
                 let (nx, ny) = (-libm::sin(*th), libm::cos(*th));

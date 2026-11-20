@@ -275,18 +275,11 @@ impl Session {
                 "cut_through_m3": v.cut_through_m3(),
                 "max_face_h_m": v.max_face_h_m(),
                 "stations": v.stations.len(),
-                // The design sanity check of the cut: stations far above their neighbours.
+                // The design sanity check of the cut: stations far above their neighbours, and
+                // stations whose cut is huge against the channel's own section.
                 "sanity": {
                     "checked": true,
-                    "warnings": owd_core::sanity::cut_spikes(
-                        &v.stations
-                            .iter()
-                            .map(|s| (s.chainage_m, s.dredge_area_m2 + s.excav_area_m2))
-                            .collect::<Vec<_>>(),
-                    )
-                    .iter()
-                    .map(owd_core::sanity::Finding::message)
-                    .collect::<Vec<_>>(),
+                    "warnings": cut_warnings(&v, plan.typed.wet_slope),
                 },
                 // A failed check stays with the option's numbers.
                 "radius_ok": o["checks"]["radius_ok"],
@@ -315,6 +308,33 @@ impl Session {
     }
 }
 
+/// The design sanity warnings of an option's cut: the spike check (relative) and the extreme check
+/// (absolute, against the design channel's own wetted section at each station).
+fn cut_warnings(v: &owd_core::volumes::sections::SectionVolumes, wet_slope: f64) -> Vec<String> {
+    use owd_core::sanity::{CutStation, cut_spikes, extreme_cuts};
+    let cuts: Vec<(f64, f64)> = v
+        .stations
+        .iter()
+        .map(|s| (s.chainage_m, s.dredge_area_m2 + s.excav_area_m2))
+        .collect();
+    let stations: Vec<CutStation> = v
+        .stations
+        .iter()
+        .map(|s| CutStation {
+            chainage_m: s.chainage_m,
+            cut_m2: s.dredge_area_m2 + s.excav_area_m2,
+            face_h_m: s.max_face_h_m,
+            channel_area_m2: owd_core::volumes::sections::trapezoid_area(s.hb, s.depth, wet_slope),
+            depth_m: s.depth,
+        })
+        .collect();
+    cut_spikes(&cuts)
+        .iter()
+        .chain(extreme_cuts(&stations).iter())
+        .map(owd_core::sanity::Finding::message)
+        .collect()
+}
+
 /// What every option's station walk shares: the settings, the water, the sizing and the river.
 pub(super) struct SectionPlan {
     pub(super) settings: Value,
@@ -323,7 +343,7 @@ pub(super) struct SectionPlan {
     pub(super) water_source: &'static str,
     pub(super) centre: Vec<Pt>,
     model: String,
-    shape: owd_core::rules::rulesets::ChannelShape,
+    shape: super::sizing::ChannelSize,
     depth: f64,
     pub(super) river: Vec<Polygon>,
     fixed_hb: Option<f64>,
@@ -352,26 +372,14 @@ impl Session {
         let centre = self.river_centreline()?;
         let model = typed.cut_model.clone();
 
-        let shape = self.sized_shape()?;
+        let shape = self.channel_size()?;
         let depth = shape.design_depth_m;
 
-        let polygon = &self.doc["inputs"]["river_polygon"];
-        let ring: Vec<Pt> = polygon["coordinates"][0]
-            .as_array()
-            .map(|a| {
-                a.iter()
-                    .filter_map(|p| Some([p[0].as_f64()?, p[1].as_f64()?]))
-                    .collect()
-            })
+        // A polygon with no outer ring is no river: there is no water to split the cut by.
+        let river: Vec<Polygon> = self
+            .river_polygons()
+            .map(|ps| ps.into_iter().filter(|p| !p.exterior.is_empty()).collect())
             .unwrap_or_default();
-        let river: Vec<Polygon> = if ring.is_empty() {
-            Vec::new()
-        } else {
-            vec![Polygon {
-                exterior: ring,
-                holes: vec![],
-            }]
-        };
 
         // The bottom half-width: widened in bends from the sizing, unless the settings fix one.
         let fixed_hb = typed.half_width_m;
@@ -420,8 +428,8 @@ impl Session {
         };
         let wl = self.water_level_along(&plan.profile, &line, &plan.centre);
         let level = Level::AtChainage(&wl);
-        let shape = &plan.shape;
-        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, shape, WIDEN_RMAX);
+        let engine_shape = plan.shape.shape().map_err(super::rule_sets::stage_error)?;
+        let from_shape = |xy: &[Pt]| widened_hb_from_shape(xy, engine_shape, WIDEN_RMAX);
         let half_width = match plan.fixed_hb {
             Some(h) => HalfWidth::Fixed(h),
             None => HalfWidth::FromStations(&from_shape),

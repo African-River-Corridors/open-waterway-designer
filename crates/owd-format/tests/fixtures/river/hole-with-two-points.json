@@ -1,0 +1,52 @@
+{
+  "label": "Label: property",
+  "why": "A hole is a ring too: two points do not enclose an island.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "river_polygon": {
+      "shell": [
+        [
+          0.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          -50.0
+        ],
+        [
+          1000.0,
+          50.0
+        ],
+        [
+          0.0,
+          50.0
+        ]
+      ],
+      "holes": [
+        [
+          [
+            1.0,
+            1.0
+          ],
+          [
+            2.0,
+            2.0
+          ]
+        ]
+      ]
+    },
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "error": "RIVER_POLYGON_INVALID"
+  }
+}

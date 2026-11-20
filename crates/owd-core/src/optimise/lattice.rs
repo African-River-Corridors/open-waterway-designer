@@ -18,8 +18,13 @@
 //!   the corridor; `"reverse_dijkstra"`: a relaxed 2-D cost-to-go from the goal (tighter, but an
 //!   8-connected grid can slightly over-estimate); `"none"`: plain Dijkstra.
 //! - **Endpoints**: pinned to the baseline's position and heading at both pool ends, so each
-//!   result splices back into the baseline. The goal is reached within `goal_pos_tol_m` (default
-//!   half a pitch) and one heading bin; `end_err_m` reports the miss.
+//!   result splices back into the baseline. The search ends on the goal pose EXACTLY (position and
+//!   heading): from each state it expands within `close_reach_m` of the goal it tries a closing
+//!   path, a Dubins curve of R_min (arc, straight, arc), costed like any edge, and the goal is a
+//!   state of its own reached only that way (issue #6). Two adjacent pools then share the pose at
+//!   their boundary and meet tangentially. Only when no closing path is found does the search fall
+//!   back to a goal within `goal_pos_tol_m` (default half a pitch) and one heading bin; the result
+//!   says so (`goal_closed` false) and `end_err_m` reports the miss.
 //!
 //! The search cost is a SEARCH objective. Re-measure the winner with
 //! [`crate::volumes::sections::section_volumes`] before you quote a quantity.
@@ -177,6 +182,11 @@ pub struct LatticeConfig {
     /// Default half a pitch.
     pub goal_pos_tol_m: Option<f64>,
     pub goal_head_tol_bins: f64,
+    /// End on the goal pose exactly, through a closing Dubins path of R_min (default true).
+    /// False gives the older search that stops within `goal_pos_tol_m` and one heading bin.
+    pub close_goal: bool,
+    /// Closing paths are tried from states this close to the goal. Default 3 x R_min.
+    pub close_reach_m: Option<f64>,
     /// `"c_min"`, `"reverse_dijkstra"` or `"none"`.
     pub heuristic: String,
     /// More than 1 is weighted A*: faster, not optimal.
@@ -199,6 +209,8 @@ impl LatticeConfig {
             arc_step_m: 10.0,
             goal_pos_tol_m: None,
             goal_head_tol_bins: 1.0,
+            close_goal: true,
+            close_reach_m: None,
             heuristic: "c_min".into(),
             heuristic_weight: 1.0,
             prune_bound: f64::INFINITY,
@@ -232,6 +244,9 @@ impl LatticeConfig {
         if self.goal_pos_tol_m.is_none() {
             self.goal_pos_tol_m = Some(0.5 * self.pitch_m);
         }
+        if self.close_reach_m.is_none() {
+            self.close_reach_m = Some(3.0 * self.r_min_m);
+        }
         Ok(self)
     }
 
@@ -241,6 +256,10 @@ impl LatticeConfig {
 
     fn goal_tol(&self) -> f64 {
         self.goal_pos_tol_m.unwrap_or(0.5 * self.pitch_m)
+    }
+
+    fn close_reach(&self) -> f64 {
+        self.close_reach_m.unwrap_or(3.0 * self.r_min_m)
     }
 }
 
@@ -865,7 +884,12 @@ pub struct LatticeResult {
     pub prim_seq: Vec<(Option<f64>, i8, f64)>,
     pub start_pose: Pose,
     pub goal_pose: Pose,
+    /// The line ends on `goal_pose` exactly (position and heading), through a closing path. False
+    /// when the search fell back to a goal within the tolerance, or did not converge.
+    pub goal_closed: bool,
     pub end_err_m: f64,
+    /// The heading miss at the end (rad, absolute); 0 when the goal is closed.
+    pub end_heading_err_rad: f64,
     pub expansions: usize,
     pub n_states: usize,
     pub hit_cap: bool,
@@ -937,6 +961,111 @@ fn arc_points(x0: f64, y0: f64, th0: f64, r: f64, sgn: i8, arc_len: f64, n: usiz
     out
 }
 
+/// One piece of a closing path: `(radius, sign, length)`; a straight has an infinite radius and
+/// sign 0.
+type Piece = (f64, i8, f64);
+
+/// The goal state: reached only through a closing path.
+const GOAL: Key = (i64::MIN, i64::MIN, usize::MAX, 0);
+
+/// Expansions the search goes on for, after it first meets the goal within the tolerance, to find
+/// a closing path before it falls back to that state.
+pub const CLOSE_GRACE_EXPANSIONS: i64 = 20_000;
+
+/// The shortest arc-straight-arc path (a Dubins CSC curve) of radius `r` from pose `a` to pose
+/// `b`, as three pieces. Its total turn is at most half a turn (no loops), and its first arc does
+/// not turn against `insign`, the turn the lattice arrived with (an arc never reverses straight
+/// into the opposite arc). `None` when no such path exists.
+fn closing_path(a: Pose, b: Pose, r: f64, insign: i8) -> Option<[Piece; 3]> {
+    let left = |th: f64| [-libm::sin(th), libm::cos(th)];
+    let mut best: Option<(f64, [Piece; 3])> = None;
+    for (s1, s2) in [(1_i8, 1_i8), (-1, -1), (1, -1), (-1, 1)] {
+        let (f1, f2) = (f64::from(s1), f64::from(s2));
+        let (n0, n1) = (left(a.2), left(b.2));
+        let c0 = [a.0 + f1 * r * n0[0], a.1 + f1 * r * n0[1]];
+        let c1 = [b.0 + f2 * r * n1[0], b.1 + f2 * r * n1[1]];
+        let d = [c1[0] - c0[0], c1[1] - c0[1]];
+        let dd = hypot(d[0], d[1]);
+        // The straight leaves the first circle and meets the second at heading `phi`: the outer
+        // tangent for two turns the same way, the inner one for two opposite turns.
+        let (len, phi) = if s1 == s2 {
+            if dd < 1e-9 {
+                continue;
+            }
+            (dd, libm::atan2(d[1], d[0]))
+        } else {
+            if dd < 2.0 * r {
+                continue;
+            }
+            let l = (dd * dd - 4.0 * r * r).max(0.0).sqrt();
+            (l, libm::atan2(d[1], d[0]) + libm::atan2(2.0 * f1 * r, l))
+        };
+        let turn = |x: f64| {
+            let t = py_mod(x, TAU);
+            if t > TAU - 1e-9 { 0.0 } else { t }
+        };
+        let (a1, a2) = (turn(f1 * (phi - a.2)), turn(f2 * (b.2 - phi)));
+        if a1 + a2 > core::f64::consts::PI + 1e-9 {
+            continue;
+        }
+        if insign != 0 && s1 == -insign && a1 > 1e-9 {
+            continue;
+        }
+        let total = r * (a1 + a2) + len;
+        if best.as_ref().is_none_or(|(t, _)| total < *t) {
+            best = Some((
+                total,
+                [(r, s1, r * a1), (f64::INFINITY, 0, len), (r, s2, r * a2)],
+            ));
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// A primitive of the given radius, sign and length (a straight when the sign is 0), sampled
+/// about every `step_m`, for costing.
+fn piece_prim(piece: Piece, step_m: f64) -> Prim {
+    let (r, sgn, len) = piece;
+    let n = std::cmp::max(2, (len / step_m).ceil() as i64) as usize;
+    if sgn == 0 {
+        return straight_prim(len, n);
+    }
+    let k = f64::from(sgn) / r;
+    let pts = (1..=n)
+        .map(|i| {
+            let s = len * i as f64 / n as f64;
+            [s, libm::sin(k * s) / k, (1.0 - libm::cos(k * s)) / k, k * s]
+        })
+        .collect();
+    Prim {
+        r,
+        sign: sgn,
+        pts,
+        end: (
+            libm::sin(k * len) / k,
+            (1.0 - libm::cos(k * len)) / k,
+            k * len,
+        ),
+        arc_len: len,
+    }
+}
+
+/// The poses `n` steps along each piece of `path` from `from` (pieces of no length are passed).
+fn path_poses(from: Pose, path: &[Piece], step_m: f64) -> Vec<Vec<Pose>> {
+    let mut cur = from;
+    let mut out = Vec::new();
+    for &(r, sgn, len) in path {
+        if len <= 1e-9 {
+            continue;
+        }
+        let n = std::cmp::max(2, (len / step_m).ceil() as i64) as usize;
+        let pts = arc_points(cur.0, cur.1, cur.2, r, sgn, len, n);
+        cur = pts[pts.len() - 1];
+        out.push(pts);
+    }
+    out
+}
+
 enum Heuristic {
     CMin { c_min: f64, gx: f64, gy: f64 },
     Reverse(ReverseDijkstra),
@@ -997,6 +1126,12 @@ pub fn solve_lattice_until(
         .map(|&hb| FieldScorer::new(grid, grade_m, hb, section))
         .collect();
     let straight_scorer = &scorers[prims.len() - 1];
+    let close_arc_scorer = FieldScorer::new(
+        grid,
+        grade_m,
+        section.half_width_at(cfg.r_min_m) + section.footprint_corr_m,
+        section,
+    );
 
     let (gx0, gy0, gth) = goal_pose;
     let mut c_min_per_m = None;
@@ -1050,6 +1185,46 @@ pub fn solve_lattice_until(
 
     let (xmin, ymin, xmax, ymax) = grid.bounds();
     let m = cfg.bounds_margin_m;
+    let in_bounds =
+        |x: f64, y: f64| xmin - m <= x && x <= xmax + m && ymin - m <= y && y <= ymax + m;
+    // The cost of a closing path from `from`; None when it leaves the grid or meets unknown ground.
+    let closing_cost = |from: Pose, path: &[Piece; 3]| -> Option<f64> {
+        let mut cur = from;
+        let mut total = 0.0;
+        for &piece in path {
+            if piece.2 <= 1e-9 {
+                continue;
+            }
+            let prim = piece_prim(piece, cfg.arc_step_m);
+            let sc = if piece.1 == 0 {
+                straight_scorer
+            } else {
+                &close_arc_scorer
+            };
+            let (c, ok) = sc.score(&prim, cur);
+            if !ok {
+                return None;
+            }
+            let (ct, st) = (libm::cos(cur.2), libm::sin(cur.2));
+            for q in &prim.pts {
+                if !in_bounds(cur.0 + ct * q[1] - st * q[2], cur.1 + st * q[1] + ct * q[2]) {
+                    return None;
+                }
+            }
+            total += c;
+            let (ex, ey, eth) = prim.end;
+            cur = (
+                cur.0 + ct * ex - st * ey,
+                cur.1 + st * ex + ct * ey,
+                cur.2 + eth,
+            );
+        }
+        Some(total)
+    };
+    let close = cfg.close_goal;
+    let reach = cfg.close_reach();
+    let mut closing: Option<[Piece; 3]> = None;
+    let mut fallback: Option<(Key, i64)> = None;
     let sk = key(start_pose.0, start_pose.1, start_pose.2, 0);
     let mut g: HashMap<Key, f64> = HashMap::new();
     let mut pose: HashMap<Key, Pose> = HashMap::new();
@@ -1070,7 +1245,9 @@ pub fn solve_lattice_until(
         prim_seq: Vec::new(),
         start_pose,
         goal_pose,
+        goal_closed: false,
         end_err_m: f64::INFINITY,
+        end_heading_err_rad: f64::INFINITY,
         expansions: 0,
         n_states: 0,
         hit_cap: false,
@@ -1084,9 +1261,19 @@ pub fn solve_lattice_until(
         if gc > g.get(&k).copied().unwrap_or(f64::INFINITY) + 1e-9 {
             continue;
         }
+        if k == GOAL {
+            best = Some(k);
+            break;
+        }
         let (x, y, th) = pose[&k];
         if is_goal(x, y, th) {
-            best = Some(k);
+            if !close {
+                best = Some(k);
+                break;
+            }
+            fallback.get_or_insert((k, expanded));
+        }
+        if fallback.is_some_and(|(_, at)| expanded - at >= CLOSE_GRACE_EXPANSIONS) {
             break;
         }
         expanded += 1;
@@ -1099,6 +1286,22 @@ pub fn solve_lattice_until(
             break;
         }
         let insign = k.3;
+        // A closing path to the goal pose, from a state within reach (issue #6).
+        if close && hypot(x - gx0, y - gy0) <= reach {
+            let g_goal = g.get(&GOAL).copied().unwrap_or(f64::INFINITY);
+            if gc < g_goal - 1e-6
+                && let Some(path) = closing_path((x, y, th), goal_pose, cfg.r_min_m, insign)
+                && let Some(c) = closing_cost((x, y, th), &path)
+                && gc + c < g_goal - 1e-6
+            {
+                g.insert(GOAL, gc + c);
+                pose.insert(GOAL, goal_pose);
+                prev.insert(GOAL, Some(k));
+                prev_prim.insert(GOAL, None);
+                closing = Some(path);
+                pq.push(Entry(gc + c, gc + c, GOAL));
+            }
+        }
         let (ct, st) = (libm::cos(th), libm::sin(th));
         for (pi, p) in prims.iter().enumerate() {
             let sgn = p.sign;
@@ -1108,7 +1311,7 @@ pub fn solve_lattice_until(
             let (ex, ey, eth) = p.end;
             let nx = x + ct * ex - st * ey;
             let ny = y + st * ex + ct * ey;
-            if !(xmin - m <= nx && nx <= xmax + m && ymin - m <= ny && ny <= ymax + m) {
+            if !in_bounds(nx, ny) {
                 continue;
             }
             let (c, ok) = scorers[pi].score(p, (x, y, th));
@@ -1133,11 +1336,15 @@ pub fn solve_lattice_until(
 
     res.expansions = expanded as usize;
     res.n_states = g.len();
+    if best.is_none() && !res.timed_out {
+        best = fallback.map(|(k, _)| k);
+    }
     let Some(best) = best else {
         return res;
     };
+    let closed = best == GOAL;
     let mut chain = Vec::new();
-    let mut cur = Some(best);
+    let mut cur = if closed { prev[&GOAL] } else { Some(best) };
     while let Some(k) = cur {
         chain.push(k);
         cur = prev[&k];
@@ -1157,7 +1364,16 @@ pub fn solve_lattice_until(
         dense.extend(pts.iter().map(|q| [q.0, q.1]));
         (cx, cy, cth) = pts[pts.len() - 1];
     }
+    let close_pieces: Vec<Piece> = match (closed, closing) {
+        (true, Some(path)) => path.into_iter().filter(|p| p.2 > 1e-9).collect(),
+        _ => Vec::new(),
+    };
+    for pts in path_poses((cx, cy, cth), &close_pieces, cfg.arc_step_m) {
+        dense.extend(pts.iter().map(|q| [q.0, q.1]));
+        (cx, cy, cth) = pts[pts.len() - 1];
+    }
     res.converged = true;
+    res.goal_closed = closed;
     res.cost = g[&best];
     if let Ok(m) = min_radius_on_chord(&dense, res.radius_check_chord_m) {
         res.measured_min_radius_m = m;
@@ -1174,8 +1390,15 @@ pub fn solve_lattice_until(
                 p.arc_len,
             )
         })
+        .chain(
+            close_pieces
+                .iter()
+                .map(|&(r, sgn, len)| (r.is_finite().then_some(r), sgn, len)),
+        )
         .collect();
     res.end_err_m = hypot(cx - gx0, cy - gy0);
+    res.end_heading_err_rad =
+        (py_mod(cth - gth + core::f64::consts::PI, TAU) - core::f64::consts::PI).abs();
     res
 }
 
@@ -1329,10 +1552,29 @@ pub fn optimise_pool(
     })
 }
 
+/// One join of the joined line: a point where a used pool's lattice line meets the next piece
+/// (another pool's line, or the baseline).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PoolJoin {
+    /// Chainage of the join on the baseline (the pool boundary).
+    pub at_m: f64,
+    /// How far the line arriving at the join ends from the pose the next piece starts on: position
+    /// (m) and heading (rad). Both 0 when the arriving pool's goal is closed.
+    pub position_gap_m: f64,
+    pub heading_gap_rad: f64,
+    /// The joined line's minimum radius on the check chord, read on the line one chord either
+    /// side of the join.
+    pub measured_min_radius_m: f64,
+    /// That reading holds R_min (within `RADIUS_TOL`).
+    pub radius_ok: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PoolsResult {
     pub line: Vec<Pt>,
     pub pools: Vec<PoolAlignment>,
+    /// Every join of a used pool's line inside the line, in order (issue #6).
+    pub joins: Vec<PoolJoin>,
     /// The joined line's minimum radius read on the chord (R_min/3).
     pub measured_min_radius_m: f64,
     pub radius_check_chord_m: f64,
@@ -1343,6 +1585,11 @@ impl PoolsResult {
     pub fn n_replaced(&self) -> usize {
         self.pools.iter().filter(|p| p.used).count()
     }
+
+    /// The joins that do not hold R_min.
+    pub fn failed_joins(&self) -> impl Iterator<Item = &PoolJoin> {
+        self.joins.iter().filter(|j| !j.radius_ok)
+    }
 }
 
 /// Run [`optimise_pool`] on each `(start_m, end_m, water_level_m)` and splice the results into
@@ -1350,8 +1597,10 @@ impl PoolsResult {
 /// (`keep_if_dearer`) when the result costs more than the baseline under the same scorer and the
 /// baseline holds R_min (or the lattice line does not).
 ///
-/// Each spliced segment joins the baseline within `cfg.goal_pos_tol_m` at its far end; the join
-/// is a straight step of at most that length.
+/// Each pool's line starts on the baseline's pose at its start and, when its goal is closed, ends
+/// on the baseline's pose at its end, so it meets the next piece tangentially. A pool whose search
+/// fell back to the goal tolerance joins with a straight step of at most `cfg.goal_pos_tol_m`.
+/// Every join is read for R_min on the joined line and reported (`joins`).
 #[allow(clippy::too_many_arguments)]
 pub fn optimise_pools(
     baseline: &[Pt],
@@ -1374,7 +1623,10 @@ pub fn optimise_pools(
     });
     let blen = linear::length(baseline);
     let mut out_pools = Vec::new();
-    let mut pieces: Vec<Vec<Pt>> = Vec::new();
+    // Each piece, with the baseline chainage it starts at and whether it is a pool's line.
+    let mut pieces: Vec<(Vec<Pt>, f64, bool)> = Vec::new();
+    // The miss (position, heading) of each used pool at its far end, by its end chainage.
+    let mut misses: Vec<(f64, f64, f64)> = Vec::new();
     let mut cursor = 0.0;
     for (a, b, wl) in sorted {
         let pa = optimise_pool(
@@ -1417,21 +1669,38 @@ pub fn optimise_pools(
         let mut pa = pa;
         pa.used = use_it;
         pa.kept_baseline_because = because;
+        if use_it {
+            misses.push((b, pa.result.end_err_m, pa.result.end_heading_err_rad));
+        }
         out_pools.push(pa);
         if !use_it {
             continue;
         }
         if a > cursor {
-            pieces.push(line_of(linear::substring(baseline, cursor, a))?);
+            pieces.push((
+                line_of(linear::substring(baseline, cursor, a))?,
+                cursor,
+                false,
+            ));
         }
-        pieces.push(line.unwrap_or_default());
+        pieces.push((line.unwrap_or_default(), a, true));
         cursor = b;
     }
     if cursor < blen {
-        pieces.push(line_of(linear::substring(baseline, cursor, blen))?);
+        pieces.push((
+            line_of(linear::substring(baseline, cursor, blen))?,
+            cursor,
+            false,
+        ));
     }
     let mut coords: Vec<Pt> = Vec::new();
-    for pc in &pieces {
+    // The index in `coords` where each piece after the first starts, when a pool's line is on
+    // either side of it.
+    let mut join_at: Vec<(usize, f64)> = Vec::new();
+    for (i, (pc, at, lattice)) in pieces.iter().enumerate() {
+        if i > 0 && (*lattice || pieces[i - 1].2) {
+            join_at.push((coords.len().saturating_sub(1), *at));
+        }
         for xy in pc {
             let far = coords
                 .last()
@@ -1443,11 +1712,38 @@ pub fn optimise_pools(
     }
     let chord = default_check_chord(cfg.r_min_m);
     let measured = min_radius_on_chord(&coords, chord).unwrap_or(f64::NAN);
+    let mut cum = vec![0.0];
+    for w in coords.windows(2) {
+        cum.push(cum[cum.len() - 1] + hypot(w[1][0] - w[0][0], w[1][1] - w[0][1]));
+    }
+    let total = cum[cum.len() - 1];
+    let mut joins = Vec::new();
+    for (idx, at) in join_at {
+        let s = cum[idx.min(cum.len() - 1)];
+        let window = line_of(linear::substring(
+            &coords,
+            crate::py_max(0.0, s - chord),
+            crate::py_min(total, s + chord),
+        ))?;
+        let r = min_radius_on_chord(&window, chord).unwrap_or(f64::NAN);
+        let (gap, head) = misses
+            .iter()
+            .find(|m| (m.0 - at).abs() <= 1e-9)
+            .map_or((0.0, 0.0), |m| (m.1, m.2));
+        joins.push(PoolJoin {
+            at_m: at,
+            position_gap_m: gap,
+            heading_gap_rad: head,
+            measured_min_radius_m: r,
+            radius_ok: radius_ok(r, cfg.r_min_m),
+        });
+    }
     Ok(PoolsResult {
         radius_ok: radius_ok(measured, cfg.r_min_m),
         measured_min_radius_m: measured,
         radius_check_chord_m: chord,
         line: coords,
         pools: out_pools,
+        joins,
     })
 }

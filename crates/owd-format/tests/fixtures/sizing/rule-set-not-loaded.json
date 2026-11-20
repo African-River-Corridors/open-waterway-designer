@@ -1,0 +1,16 @@
+{
+  "label": "Label: property",
+  "why": "A selected Rule Set the library does not hold: SIZING_RULE_SET_NOT_LOADED.",
+  "input": {
+    "rule_sets": [
+      {
+        "id": "no-such-set",
+        "version": "9.9.9"
+      }
+    ],
+    "vessel_standard_id": "CEMT_IV"
+  },
+  "expect": {
+    "error": "SIZING_RULE_SET_NOT_LOADED"
+  }
+}

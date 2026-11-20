@@ -475,10 +475,12 @@ impl Session {
                 }
                 // The radius is read on a third of the class's R_min, as `align` and the plan-only
                 // answer read it (#368).
-                let shape = sized.sized_shape()?;
+                // The scratch design is sized for this class, so the size is read as every stage reads it.
+                sized.run_sizing()?;
+                let size = sized.channel_size()?;
                 let mut option = option.clone();
                 option["checks"]["radius_check_chord_m"] = json!(
-                    owd_core::alignment::radius_check::default_check_chord(shape.min_bend_radius_m)
+                    owd_core::alignment::radius_check::default_check_chord(size.min_bend_radius_m)
                 );
                 let plan = sized.section_plan(&json!({}))?;
                 let walk = sized.option_sections(&plan, &option, terrain)?;
@@ -508,11 +510,11 @@ impl Session {
                         let fit = fairway_fit_in_water(
                             &plan.centre,
                             &plan.river,
-                            &shape,
+                            size.shape().map_err(super::rule_sets::stage_error)?,
                             0.0,
                             0.0,
                             &Fixed::default(),
-                            &FitParams::new(shape.min_bend_radius_m),
+                            &FitParams::new(size.min_bend_radius_m),
                         )
                         .map(|f| f.line)
                         .map_err(|e| e.message);

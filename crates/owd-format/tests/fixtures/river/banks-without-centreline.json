@@ -1,0 +1,111 @@
+{
+  "label": "Label: property",
+  "why": "Two straight banks 100 m apart, 1000 m long, are symmetric about y = 0, so the line midway between them is y = 0. The line is smoothed, which trims its ends a little, so its length is a little under the 1000 m of the banks. Both banks pass every check.",
+  "input": {
+    "left_bank": [
+      [
+        0.0,
+        50.0
+      ],
+      [
+        100.0,
+        50.0
+      ],
+      [
+        200.0,
+        50.0
+      ],
+      [
+        300.0,
+        50.0
+      ],
+      [
+        400.0,
+        50.0
+      ],
+      [
+        500.0,
+        50.0
+      ],
+      [
+        600.0,
+        50.0
+      ],
+      [
+        700.0,
+        50.0
+      ],
+      [
+        800.0,
+        50.0
+      ],
+      [
+        900.0,
+        50.0
+      ],
+      [
+        1000.0,
+        50.0
+      ]
+    ],
+    "right_bank": [
+      [
+        0.0,
+        -50.0
+      ],
+      [
+        100.0,
+        -50.0
+      ],
+      [
+        200.0,
+        -50.0
+      ],
+      [
+        300.0,
+        -50.0
+      ],
+      [
+        400.0,
+        -50.0
+      ],
+      [
+        500.0,
+        -50.0
+      ],
+      [
+        600.0,
+        -50.0
+      ],
+      [
+        700.0,
+        -50.0
+      ],
+      [
+        800.0,
+        -50.0
+      ],
+      [
+        900.0,
+        -50.0
+      ],
+      [
+        1000.0,
+        -50.0
+      ]
+    ],
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "bank_checks": [],
+      "side_fail_stations": 0,
+      "banks_cross": null
+    },
+    "centreline_y": 0.0,
+    "length_between": [
+      950.0,
+      1000.0
+    ]
+  }
+}

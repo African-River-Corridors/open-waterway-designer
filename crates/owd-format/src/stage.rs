@@ -84,10 +84,13 @@ pub fn file_name(stage: &str, version: u32) -> String {
 /// Every stage contract with a schema file. A stage joins this list in the ticket that gives it typed
 /// input and output.
 pub fn contracts() -> Vec<StageContract> {
-    vec![StageContract::of::<StageRecord<Value, Value>>(
-        "stage-record",
-        STAGE_CONTRACT_VERSION,
-    )]
+    use crate::design::river::{self, RiverGeometry, RiverIn};
+    use crate::design::sizing::{self, ChannelSize, SizingIn};
+    vec![
+        StageContract::of::<StageRecord<Value, Value>>("stage-record", STAGE_CONTRACT_VERSION),
+        StageContract::of::<StageRecord<RiverIn, RiverGeometry>>(river::STAGE, 1),
+        StageContract::of::<StageRecord<SizingIn, ChannelSize>>(sizing::STAGE, 1),
+    ]
 }
 
 /// Write the schema file of each contract into `dir`, making the folder if it is missing. A file

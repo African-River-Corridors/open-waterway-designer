@@ -1,0 +1,83 @@
+{
+  "label": "Label: property",
+  "why": "The mouth is the word downstream, and the water profile falls along the line from 10 m at the start to 5 m at the end: the end is lower, so it is the mouth. The line is turned, and the profile is turned with it: chainage 0 (the mouth) is at 5 m, chainage 1000 m at 10 m.",
+  "input": {
+    "centreline": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        100.0,
+        0.0
+      ],
+      [
+        200.0,
+        0.0
+      ],
+      [
+        300.0,
+        0.0
+      ],
+      [
+        400.0,
+        0.0
+      ],
+      [
+        500.0,
+        0.0
+      ],
+      [
+        600.0,
+        0.0
+      ],
+      [
+        700.0,
+        0.0
+      ],
+      [
+        800.0,
+        0.0
+      ],
+      [
+        900.0,
+        0.0
+      ],
+      [
+        1000.0,
+        0.0
+      ]
+    ],
+    "mouth": "downstream",
+    "water_profile": [
+      [
+        0.0,
+        10.0
+      ],
+      [
+        1000.0,
+        5.0
+      ]
+    ],
+    "crs_epsg": 32630
+  },
+  "expect": {
+    "output": {
+      "reversed": true,
+      "mouth": [
+        1000.0,
+        0.0
+      ],
+      "water_profile": [
+        [
+          0.0,
+          5.0
+        ],
+        [
+          1000.0,
+          10.0
+        ]
+      ]
+    }
+  }
+}
