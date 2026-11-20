@@ -9,7 +9,7 @@
 //! Label: property
 
 use owd_format::design::sections::{
-    StationSource, WALKED_FOR_PROFILE, WALKED_NO_STATIONS, WALKED_STATIONS_INCOMPLETE,
+    StationSource, Stations, WALKED_FOR_PROFILE, WALKED_NO_STATIONS, WALKED_STATIONS_INCOMPLETE,
 };
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{DesignError, Session, Stage};
@@ -302,4 +302,96 @@ fn stations_saved_without_the_top_of_cut_are_walked_again_and_say_so() {
     assert!(warned(&walked, SheetKind::Plan, WALKED_STATIONS_INCOMPLETE));
     let fresh = all_sheets(&new, &dem, &o);
     assert_same(&fresh, &walked, "top of cut walked again");
+}
+
+/// The stored example with two pools, so the water level steps along the line.
+fn stored_with_pools() -> (String, Vec<u8>) {
+    let (text, dem) = example();
+    let mut s = Session::open(&text).unwrap();
+    s.set_water_pools(&[[0.0, 0.0], [1610.0, -0.5]]).unwrap();
+    let grid = geotiff::read_bytes(&dem).unwrap();
+    let t = dem_sampler(&grid, Some(32630)).unwrap();
+    s.run_stage_with(Stage::Volumes, Some(&t as TerrainSampler))
+        .unwrap();
+    (s.to_text(), dem)
+}
+
+#[test]
+fn one_section_off_the_stored_profiles_costs_one_section_and_is_the_walks_section() {
+    // The fault: a cross section at a station with no stored profile walked the whole line again,
+    // which on a long design takes minutes. One station's section reads only its own samples, and
+    // it is the walk's section at that station, exactly.
+    let (new, dem) = stored_with_pools();
+    let s = Session::open(&new).unwrap();
+    let grid = geotiff::read_bytes(&dem).unwrap();
+    let t = dem_sampler(&grid, Some(32630)).unwrap();
+    let walk = s.option_section_walk(ID, &t as TerrainSampler).unwrap();
+    let st = s.section_stations(ID, &[], None).unwrap();
+    let n = st.walk.stations.len();
+    assert_eq!(n, walk.stations.len());
+    let bare: Vec<usize> = (0..n).filter(|&i| !st.has_profile(i)).collect();
+    let wl = |i: usize| st.walk.stations[i].wl;
+    // A station on the pool step: the water level differs from a neighbour's.
+    let step = *bare
+        .iter()
+        .find(|&&i| i > 0 && i + 1 < n && (wl(i) != wl(i - 1) || wl(i) != wl(i + 1)))
+        .expect("a bare station on the pool step");
+    // The station in the tightest bend: the largest turn of heading to its neighbours.
+    let turn = |i: usize| {
+        let h = |k: usize| st.walk.stations[k].heading_rad;
+        (h(i + 1) - h(i - 1)).sin().abs()
+    };
+    let bend = *bare
+        .iter()
+        .filter(|&&i| i > 0 && i + 1 < n)
+        .max_by(|&&a, &&b| turn(a).total_cmp(&turn(b)))
+        .unwrap();
+    assert!(turn(bend) > 0.0, "the example bends");
+    let picks = [
+        bare[0],
+        bare[bare.len() / 2],
+        *bare.last().unwrap(),
+        step,
+        bend,
+    ];
+    for &i in &picks {
+        let c = st.walk.stations[i].chainage_m;
+        let asked = Cell::new(0);
+        let counted = counting(&t, &asked);
+        let one = s
+            .section_stations(ID, &[c], Some(&counted as TerrainSampler))
+            .unwrap();
+        let samples = walk.stations[i].offsets.len();
+        assert_eq!(
+            asked.get(),
+            samples,
+            "the section at {c} m reads its own {samples} samples, not the line's"
+        );
+        assert!(one.has_profile(i));
+        assert_eq!(
+            format!("{:?}", one.walk.stations[i]),
+            format!("{:?}", walk.stations[i]),
+            "the section at {c} m is the walk's"
+        );
+        assert_eq!(
+            s.cross_section(&one, c).unwrap(),
+            s.cross_section(&Stations::from(walk.clone()), c).unwrap()
+        );
+        // The long section is the stored one: one section moves nothing else.
+        assert_eq!(
+            s.long_section(ID, &one).unwrap(),
+            s.long_section(ID, &st).unwrap()
+        );
+    }
+    // A station with a stored profile still reads no terrain.
+    let kept = (0..n).find(|&i| st.has_profile(i)).unwrap();
+    let asked = Cell::new(0);
+    let counted = counting(&t, &asked);
+    s.section_stations(
+        ID,
+        &[st.walk.stations[kept].chainage_m],
+        Some(&counted as TerrainSampler),
+    )
+    .unwrap();
+    assert_eq!(asked.get(), 0);
 }
