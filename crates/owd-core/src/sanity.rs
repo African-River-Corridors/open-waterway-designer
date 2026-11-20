@@ -280,6 +280,54 @@ pub fn cut_spikes(cuts: &[(f64, f64)]) -> Vec<Finding> {
 /// grouped into one finding. Unlike [`cut_spikes`] it does not compare a station with its
 /// neighbours, so a long high cut is found.
 pub fn extreme_cuts(stations: &[CutStation]) -> Vec<Finding> {
-    let _ = stations;
-    Vec::new()
+    // Per station: Some((area_ratio, face_ratio)) when it is beyond a bound, else None.
+    let beyond = |s: &CutStation| -> Option<(f64, f64)> {
+        let area_ratio =
+            if s.cut_m2.is_finite() && s.channel_area_m2.is_finite() && s.channel_area_m2 > 0.0 {
+                s.cut_m2 / s.channel_area_m2
+            } else {
+                0.0
+            };
+        let face_ratio = if s.face_h_m.is_finite() && s.depth_m.is_finite() && s.depth_m > 0.0 {
+            s.face_h_m / s.depth_m
+        } else {
+            0.0
+        };
+        (area_ratio > EXTREME_AREA_RATIO || face_ratio > EXTREME_FACE_RATIO)
+            .then_some((area_ratio, face_ratio))
+    };
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < stations.len() {
+        if beyond(&stations[k]).is_none() {
+            k += 1;
+            continue;
+        }
+        let mut e = k;
+        while e + 1 < stations.len() && beyond(&stations[e + 1]).is_some() {
+            e += 1;
+        }
+        let run = &stations[k..=e];
+        let max = |f: &dyn Fn(&CutStation) -> f64| {
+            run.iter()
+                .map(f)
+                .filter(|v| v.is_finite())
+                .fold(0.0, f64::max)
+        };
+        let ratios = run.iter().filter_map(beyond);
+        let (max_area_ratio, max_face_ratio) = ratios
+            .fold((0.0, 0.0), |(a, f): (f64, f64), (x, y)| {
+                (a.max(x), f.max(y))
+            });
+        out.push(Finding::CutExtreme {
+            from_m: run[0].chainage_m,
+            to_m: run[run.len() - 1].chainage_m,
+            max_cut_m2: max(&|s| s.cut_m2),
+            max_area_ratio,
+            max_face_h_m: max(&|s| s.face_h_m),
+            max_face_ratio,
+        });
+        k = e + 1;
+    }
+    out
 }
