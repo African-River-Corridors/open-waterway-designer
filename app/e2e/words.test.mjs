@@ -1,7 +1,7 @@
 // Plain-words helpers (no browser). Run: node --test e2e/words.test.mjs
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { bankValue, fileNameOf, plainWarning, roundedFall, sectionReason } from "../src/lib/words.ts";
+import { bankValue, demNotLoaded, fileNameOf, lineOnScreen, plainWarning, roundedFall, sectionReason } from "../src/lib/words.ts";
 
 const stages = (...s) => s.map((x) => ({ name: x.split(":")[0], status: x.split(":")[1] }));
 
@@ -48,4 +48,34 @@ describe("bankValue", () => {
 describe("roundedFall", () => {
   it("rounds to three significant figures", () => assert.equal(roundedFall("-0.0004925721857999721"), "-0.000493"));
   it("leaves empty alone", () => assert.equal(roundedFall(""), ""));
+});
+
+describe("lineOnScreen", () => {
+  const doc = (align, opt) => ({ stages: { alignment: { results: align }, optimise: { results: opt } } });
+  const line = { id: "x", method: "m" };
+  it("names the optimise line when that stage is fresh and holds one", () => {
+    const t = lineOnScreen(doc(line, { design_line: line }), stages("alignment:fresh", "optimise:fresh"), "Pool lattice");
+    assert.equal(t, "Pool lattice (from Optimise)");
+  });
+  it("falls back to the alignment line when optimise is stale", () => {
+    assert.equal(lineOnScreen(doc(line, { design_line: line }), stages("alignment:fresh", "optimise:stale"), "Rolling circle"), "Rolling circle (from Alignment)");
+  });
+  it("is null when there is no line", () => {
+    assert.equal(lineOnScreen(doc(null, null), stages("alignment:not_run", "optimise:not_run"), null), null);
+  });
+  it("uses the line id when the table has no name yet", () => {
+    assert.equal(lineOnScreen(doc(line, null), stages("alignment:fresh"), null), "x (from Alignment)");
+  });
+});
+
+describe("demNotLoaded", () => {
+  it("is true for a missing-DEM warning, either wording", () => {
+    assert.equal(demNotLoaded(["the DEM `a/t.tif` is missing: the volumes may no longer hold"]), true);
+    assert.equal(demNotLoaded(["the DEM `a/t.tif` is missing: the volumes stage cannot run without it"]), true);
+  });
+  it("is false for a changed DEM, other warnings or none", () => {
+    assert.equal(demNotLoaded(["the DEM `a/t.tif` has changed since its hash was recorded: the volumes may no longer hold"]), false);
+    assert.equal(demNotLoaded(["something else"]), false);
+    assert.equal(demNotLoaded(undefined), false);
+  });
 });

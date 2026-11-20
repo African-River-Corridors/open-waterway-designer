@@ -49,3 +49,33 @@ export function roundedFall(fall: string): string {
 /** What the sign of the fall means, in the document's own rule: level at chainage c = start level - fall x c. */
 export const FALL_HELP =
   "Positive: the water level drops as chainage grows. Negative: it rises as chainage grows (a river that falls towards its mouth, with the mouth set at chainage 0, shows a negative number).";
+
+/** The design line the screen draws, named with the stage that made it: the optimise stage's refined
+ * line while that stage is fresh, else the alignment's own (the engine's one rule, as the table and
+ * the map use it). `tableName` is the name the table gives the line. Null: no line yet. */
+export function lineOnScreen(
+  doc: { stages: { alignment: { results: unknown }; optimise: { results: unknown } } } | null | undefined,
+  stages: { name: string; status: string }[] | undefined,
+  tableName: string | null | undefined,
+): string | null {
+  if (!doc) return null;
+  const isObj = (x: unknown): x is { id?: string } => typeof x === "object" && x !== null;
+  const refined = (doc.stages.optimise.results as { design_line?: unknown } | null)?.design_line;
+  const optimiseFresh = (stages ?? []).some((s) => s.name === "optimise" && s.status === "fresh");
+  let line: { id?: string } | null = null;
+  let stage = "";
+  if (isObj(refined) && optimiseFresh) {
+    line = refined;
+    stage = "Optimise";
+  } else if (isObj(doc.stages.alignment.results)) {
+    line = doc.stages.alignment.results;
+    stage = "Alignment";
+  }
+  if (!line) return null;
+  return `${tableName ?? line.id ?? "design line"} (from ${stage})`;
+}
+
+/** True when the engine's warnings say the DEM file the design names was not found. */
+export function demNotLoaded(warnings: string[] | undefined): boolean {
+  return (warnings ?? []).some((w) => /^the DEM `.+` is missing:/.test(w));
+}

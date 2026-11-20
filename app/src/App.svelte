@@ -10,7 +10,7 @@
   import MapPanel from "./lib/MapPanel.svelte";
   import BankEditor from "./lib/BankEditor.svelte";
   import StartFromRiver from "./lib/StartFromRiver.svelte";
-  import { plainWarning, sectionReason } from "./lib/words";
+  import { lineOnScreen, plainWarning, sectionReason } from "./lib/words";
   import SheetsView from "./lib/SheetsView.svelte";
   import type * as maplibregl from "maplibre-gl";
   import LeftPanel from "./lib/LeftPanel.svelte";
@@ -132,6 +132,16 @@
   async function runInputs(objective: string, limits: string, level: string) {
     await fileAction(() => api.setRunInputs(objective, limits, level));
   }
+  async function optimiseLength(weight: string) {
+    const x = Number(weight);
+    if (weight.trim() === "" || !Number.isFinite(x) || x < 0) {
+      error = "The cost per metre of line must be a number, 0 or more.";
+      return;
+    }
+    await fileAction(() => api.setOptimiseSettings({ length_weight: x }));
+  }
+  /** The design line the screen draws, and the stage that made it. */
+  let lineName = $derived(lineOnScreen(snap?.document, snap?.stages, table?.rows[0]?.name));
   async function downstreamPoint(point: string) {
     await fileAction(() => api.setDownstreamPoint(point));
   }
@@ -499,7 +509,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} {lineName} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={drag("x")}></div>

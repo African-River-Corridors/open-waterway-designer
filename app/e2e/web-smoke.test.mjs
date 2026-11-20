@@ -563,6 +563,43 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "error"), false);
   });
 
+  it("names the line on screen with its stage, says a missing DEM plainly, clears the DEM banner on load, and sets the cost per metre of line", async () => {
+    const FILE = "river-rolling-circle.owd";
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), path.join(FIXTURES, FILE));
+    await until(b, "the file name", async () => (await text(b, "file-label")).includes(FILE));
+    // The DEM is not loaded: the banner says so, and the volumes note says so, not "stale".
+    await until(b, "the missing-DEM banner", async () => (await exists(b, "warning")) && (await text(b, "warning")).toLowerCase().includes("dem"));
+    await until(b, "the volumes note", async () => await exists(b, "volumes-note"));
+    assert.equal(await text(b, "volumes-note"), "Volumes cannot be checked: the elevation model is not loaded. Load the DEM.");
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the DEM", async () => (await text(b, "data-dem")).includes("river-dem.tif"));
+    await until(b, "the banner to go", async () => !(await exists(b, "warning")));
+    // A real stale stage keeps the stale wording.
+    await until(b, "the stale note", async () => (await exists(b, "volumes-note")) && (await text(b, "volumes-note")).startsWith("Volumes are stale"));
+    // Loading only a DEM leaves the title unsaved.
+    assert.match(await text(b, "file-label"), /\(unsaved\)/);
+    await (await b.$("button=Run stale")).click();
+    await until(b, "every stage fresh", async () => (await stageStatus(b)) === "sizing:fresh alignment:fresh optimise:fresh volumes:fresh", 240000);
+    // Optimise is fresh and holds the lattice's line: the screen draws it, and the label says so.
+    await until(b, "the optimise line named", async () => /^Line on screen: .+ \(from Optimise\)$/.test(await text(b, "line-on-screen")));
+    const onScreen = await text(b, "line-on-screen");
+    const tableName = await b.execute(() => document.querySelector("[data-testid=option-row] td.name").textContent.trim());
+    assert.equal(onScreen, `Line on screen: ${tableName} (from Optimise)`, "the label names the table's line");
+    // Set the cost per metre: the design holds it, the stored value shows, optimise goes stale, the alignment's line is on screen.
+    assert.equal(await text(b, "length-weight-stored"), "Stored: 0");
+    await (await tid(b, "length-weight")).setValue("2.5");
+    await (await tid(b, "set-length-weight")).click();
+    await until(b, "the setting stored", async () => (await pageDoc(b)).stages.optimise.settings?.length_weight === 2.5);
+    assert.equal(await text(b, "length-weight-stored"), "Stored: 2.5");
+    await until(b, "optimise stale", async () => (await stageStatus(b)).includes("optimise:stale"));
+    await until(b, "the alignment line named", async () => /\(from Alignment\)$/.test(await text(b, "line-on-screen")));
+    assert.match(await text(b, "length-weight-help"), /A high value shortens the line and raises the cut\./);
+    assert.equal(await exists(b, "error"), false);
+  });
+
   it("loads a Rule Set file through Load Rule Set file, sizes with it, and shows a bad file's refusal with the list unchanged (#499)", async () => {
     const b = await start();
     await b.url(`${origin}/owd/app`);
