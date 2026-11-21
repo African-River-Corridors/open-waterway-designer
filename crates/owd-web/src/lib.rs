@@ -578,6 +578,41 @@ impl Session {
         .map(|tile| tile.to_vec())
     }
 
+    /// The weirs, the locks and the pools of the design, for the map (MAP-4), as JSON: made now
+    /// from the water level along the design line. An empty list when the design has no pools.
+    pub fn map_structures(&self) -> Js<String> {
+        Ok(ok(self.state.map_structures())?.to_string())
+    }
+
+    /// The pool water (MAP-4), as JSON: the ground each pool floods, worked out here from the DEM
+    /// in memory. `null` with no DEM or no pools. `build_ms` is the time the flood mask took.
+    pub fn pool_water_info(&mut self) -> Js<String> {
+        let pools = ok(self.state.pool_water_input())?;
+        let start = js_sys::Date::now();
+        let mut info = ok(self.terrain.pool_water(self.state.dem(), pools))?;
+        if info.is_object() {
+            info["build_ms"] = json!(js_sys::Date::now() - start);
+        }
+        Ok(info.to_string())
+    }
+
+    /// The water of tile `z/x/y` of pool water `id`: a PNG coloured by depth, clear where dry.
+    pub fn pool_water_tile(&mut self, id: u32, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.pool_water_tile(id, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// The terrain of tile `z/x/y` with pool water `id` on it: the pool's level where there is
+    /// water, the ground elsewhere. A 256 px Terrarium PNG.
+    pub fn pool_surface_tile(&mut self, id: u32, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.pool_surface_tile(id, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// What a click reads on pool water `id`, as JSON: `{pool, water_level_m, ground_m,
+    /// depth_m}`, or `null` on dry ground.
+    pub fn pool_water_at(&mut self, id: u32, lon: f64, lat: f64) -> Js<String> {
+        ok(self.terrain.pool_water_at(id, lon, lat)).map(|v| v.to_string())
+    }
+
     /// The drawing sheets of an option (spec 0004, ticket 8) as JSON: `[{number, title, svg,
     /// warnings}]`, made by the same builder as `owd draw`.
     pub fn sheets(&self, option: &str) -> Js<String> {

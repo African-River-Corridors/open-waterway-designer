@@ -424,6 +424,20 @@ impl AppState {
         self.session.map_geometry().map_err(message)
     }
 
+    /// The weirs, the locks and the pools of the design, for the map (MAP-4): made now from the
+    /// water level along the design line, never stored. An empty list when the design has no pools.
+    pub fn map_structures(&self) -> Result<Value, String> {
+        let list = self.session.map_structures().map_err(message)?;
+        serde_json::to_value(list).map_err(|e| e.to_string())
+    }
+
+    /// What the pool water (the ground each pool floods) is made from. `None` with no pools.
+    pub fn pool_water_input(
+        &self,
+    ) -> Result<Option<owd_format::design::structures::PoolWaterIn>, String> {
+        self.session.pool_water_input().map_err(message)
+    }
+
     /// The DEM, to draw the offline hillshade from. `None` when there is none to read.
     pub fn dem(&self) -> Option<Arc<Dem>> {
         self.dem.clone()
