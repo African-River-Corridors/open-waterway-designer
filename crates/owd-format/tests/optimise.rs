@@ -463,6 +463,14 @@ fn with_the_new_settings_at_their_defaults_the_results_are_the_base_branchs_byte
     let mut with_defaults = example_settings();
     with_defaults["land_weight"] = json!(0.0);
     with_defaults["corridor_limit"] = json!(false);
+    // The settings of the joins (OPT-3) at their defaults: the same bytes again.
+    with_defaults["seams_on_straights"] = json!(false);
+    with_defaults["free_seams"] = json!(false);
+    with_defaults["seam_window_m"] = json!(1500.0);
+    with_defaults["seam_offset_m"] = Value::Null;
+    with_defaults["seam_heading_tol_deg"] = json!(30.0);
+    with_defaults["weir_straight_m"] = Value::Null;
+    with_defaults["min_straight_m"] = json!(0.0);
     named.run_optimise(&with_defaults, Some(&terrain)).unwrap();
     assert_eq!(named.to_text(), plain.to_text());
 }
@@ -677,4 +685,191 @@ fn with_the_corridor_limit_the_stages_line_stays_inside_the_corridor() {
             "{p}"
         );
     }
+}
+
+/// The settings of the joins (OPT-3: `seams_on_straights`, `free_seams`, `seam_window_m`,
+/// `seam_offset_m`, `seam_heading_tol_deg`, `weir_straight_m`, `min_straight_m`) are settings of
+/// the stage, all off or at their defaults. At its default none is written into the document; set,
+/// each is, and reads back from the saved text. A bad value is refused by name in plain words and
+/// changes nothing.
+///
+/// Label: property
+#[test]
+fn the_join_settings_are_off_by_default_round_trip_and_refuse_bad_values() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert!(!d.seams_on_straights && !d.free_seams);
+    assert_eq!(
+        (d.seam_window_m, d.seam_heading_tol_deg, d.min_straight_m),
+        (1500.0, 30.0, 0.0)
+    );
+    assert_eq!((d.seam_offset_m, d.weir_straight_m), (None, None));
+    let keys = [
+        "seams_on_straights",
+        "free_seams",
+        "seam_window_m",
+        "seam_offset_m",
+        "seam_heading_tol_deg",
+        "weir_straight_m",
+        "min_straight_m",
+    ];
+    for k in keys {
+        assert!(
+            d.to_value().get(k).is_none(),
+            "{k} is written at its default"
+        );
+    }
+    let set = json!({
+        "seams_on_straights": true,
+        "free_seams": true,
+        "seam_window_m": 900.0,
+        "seam_offset_m": 40.0,
+        "seam_heading_tol_deg": 20.0,
+        "weir_straight_m": 180.0,
+        "min_straight_m": 90.0,
+    });
+    let mut s = design();
+    s.set_optimise_settings(&set).unwrap();
+    let mut want = d.to_value();
+    for k in keys {
+        want[k] = set[k].clone();
+    }
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], want);
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(again.document()["stages"]["optimise"]["settings"], want);
+    let before = s.to_text();
+    for (bad, says) in [
+        (
+            json!({"free_seams": "yes"}),
+            "the setting `free_seams` must be true or false",
+        ),
+        (
+            json!({"seams_on_straights": 1}),
+            "the setting `seams_on_straights` must be true or false",
+        ),
+        (
+            json!({"min_straight_m": -90.0}),
+            "the setting `min_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_window_m": "wide"}),
+            "the setting `seam_window_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"weir_straight_m": -1.0}),
+            "the setting `weir_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_offset_m": -5.0}),
+            "the setting `seam_offset_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_heading_tol_deg": 120.0}),
+            "the setting `seam_heading_tol_deg` must be a number of degrees above 0 and below 90",
+        ),
+    ] {
+        let e = s.set_optimise_settings(&bad).unwrap_err().to_string();
+        assert!(e.starts_with(says), "{bad}: {e}");
+        assert_eq!(s.to_text(), before, "{bad} changed the design");
+    }
+    // Back at the defaults, nothing is left in the document.
+    s.set_optimise_settings(&json!({
+        "seams_on_straights": false, "free_seams": false, "seam_window_m": 1500.0,
+        "seam_offset_m": null, "seam_heading_tol_deg": 30.0, "weir_straight_m": null,
+        "min_straight_m": 0.0,
+    }))
+    .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// With `free_seams` on, the stage goes stale and runs again; the cascade (the weirs and their
+/// costs) does not change; the details name the setting, the straight asked for (two lengths of the
+/// sizing's vessel when `weir_straight_m` is not set) and every weir site between two pools: free
+/// with its straight measured on the line, or pinned with its reason, which is then a warning too.
+///
+/// Label: property
+#[test]
+fn free_seams_are_hashed_and_every_weir_site_is_free_or_says_why_not() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    s.set_optimise_settings(&json!({"free_seams": true, "seams_on_straights": true}))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Stale);
+    s.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    let (doc, base) = (s.document(), plain.document());
+    assert_eq!(
+        doc["stages"]["optimise"]["results"]["cascade"],
+        base["stages"]["optimise"]["results"]["cascade"]
+    );
+    let lattice = |d: &Value| {
+        owd_format::design::design_lines_of(d)
+            .into_iter()
+            .find(|o| o["method"] == "lattice")
+            .unwrap()
+            .clone()
+    };
+    let (opt, off) = (lattice(doc), lattice(base));
+    for k in [
+        "free_seams",
+        "seams_on_straights",
+        "seams",
+        "weirs",
+        "weir_straight_m",
+    ] {
+        assert!(
+            off["details"].get(k).is_none(),
+            "{k} is in the details when off"
+        );
+    }
+    assert_eq!(opt["details"]["free_seams"], json!(true));
+    assert_eq!(opt["details"]["seams_on_straights"], json!(true));
+    let loa = doc["stages"]["sizing"]["results"]["vessel"]["loa_m"]
+        .as_f64()
+        .or_else(|| doc["stages"]["sizing"]["results"]["loa_m"].as_f64());
+    let need = opt["details"]["weir_straight_m"].as_f64().unwrap();
+    if let Some(loa) = loa {
+        assert_eq!(need, 2.0 * loa);
+    }
+    assert!(need > 0.0);
+    // No pool of the example is longer than 6 km: no seams.
+    assert_eq!(opt["details"]["seams"], json!([]));
+    let weirs = opt["details"]["weirs"].as_array().unwrap();
+    let n_weirs = doc["stages"]["optimise"]["results"]["cascade"]["weirs"]
+        .as_array()
+        .unwrap()
+        .len();
+    println!("{} weir sites of {n_weirs} weirs: {weirs:?}", weirs.len());
+    assert!(!weirs.is_empty() && weirs.len() <= n_weirs);
+    let warnings = opt["sanity"]["warnings"].as_array().unwrap();
+    for w in weirs {
+        assert_eq!(w["straight_required_m"].as_f64(), Some(need));
+        let through = w["straight_through_m"].as_f64().unwrap();
+        if w["free"] == json!(true) {
+            assert_eq!(w["pinned_because"], Value::Null);
+            assert_eq!(w["straight_ok"], json!(true));
+            assert!(through >= need - 1e-6, "{w}");
+            let gate = w["gate_m"].as_array().unwrap();
+            let off = w["offset_m"].as_f64().unwrap();
+            assert!(gate[0].as_f64().unwrap() <= off && off <= gate[1].as_f64().unwrap());
+        } else {
+            let because = w["pinned_because"]
+                .as_str()
+                .expect("a pinned weir site says why");
+            let at = format!("the weir site at {:.0} m", w["at_m"].as_f64().unwrap());
+            assert!(
+                warnings.iter().any(|x| {
+                    let x = x.as_str().unwrap_or("");
+                    x.starts_with(&at) && x.contains(because)
+                }),
+                "no warning for {w}"
+            );
+        }
+    }
+    // The line is still a design line: R_min holds and it does not cross itself.
+    assert_eq!(opt["checks"]["no_self_crossing"]["ok"], json!(true));
 }

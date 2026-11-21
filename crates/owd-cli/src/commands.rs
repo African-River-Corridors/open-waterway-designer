@@ -1245,6 +1245,13 @@ pub struct OptimiseFlags {
     pub length_weight: Option<f64>,
     pub land_weight: Option<f64>,
     pub corridor_limit: Option<bool>,
+    pub seams_on_straights: Option<bool>,
+    pub free_seams: Option<bool>,
+    pub seam_window: Option<f64>,
+    pub seam_offset: Option<f64>,
+    pub seam_heading_tol: Option<f64>,
+    pub min_straight: Option<f64>,
+    pub weir_straight: Option<f64>,
     pub model: Option<String>,
 }
 
@@ -1269,13 +1276,24 @@ pub fn optimise(
         ("dry_weight", flags.dry_weight),
         ("length_weight", flags.length_weight),
         ("land_weight", flags.land_weight),
+        ("seam_window_m", flags.seam_window),
+        ("seam_offset_m", flags.seam_offset),
+        ("seam_heading_tol_deg", flags.seam_heading_tol),
+        ("min_straight_m", flags.min_straight),
+        ("weir_straight_m", flags.weir_straight),
     ] {
         if let Some(v) = v {
             overrides.insert(k.into(), json!(v));
         }
     }
-    if let Some(on) = flags.corridor_limit {
-        overrides.insert("corridor_limit".into(), json!(on));
+    for (k, on) in [
+        ("corridor_limit", flags.corridor_limit),
+        ("seams_on_straights", flags.seams_on_straights),
+        ("free_seams", flags.free_seams),
+    ] {
+        if let Some(on) = on {
+            overrides.insert(k.into(), json!(on));
+        }
     }
     if let Some(m) = &flags.model {
         overrides.insert("cut_model".into(), json!(m));
