@@ -667,7 +667,7 @@ fn with_the_corridor_limit_the_stages_line_stays_inside_the_corridor() {
                 owd_core::geom::linear::project(&baseline, *p),
             )
             .unwrap();
-            (p[0] - q[0]).hypot(p[1] - q[1])
+            libm::hypot(p[0] - q[0], p[1] - q[1])
         })
         .fold(0.0, f64::max);
     assert!(far <= 180.0 + 5.0, "{far}");
