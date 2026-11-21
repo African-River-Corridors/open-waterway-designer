@@ -68,6 +68,11 @@ pub struct OptimiseSettings {
     pub n_heading: i64,
     pub radius_multiples: Vec<f64>,
     pub corridor_half_m: f64,
+    /// Hold the pool search to the corridor: no point of the lattice's line may lie further than
+    /// `corridor_half_m` from the baseline (the alignment's design line, else the river centreline).
+    /// False (the default) is the search as it was, where the corridor only feeds the heuristic;
+    /// then it is not written into the document.
+    pub corridor_limit: bool,
     pub cell_m: f64,
     pub check_chord_m: Option<f64>,
 }
@@ -101,6 +106,7 @@ impl Default for OptimiseSettings {
             n_heading: 16,
             radius_multiples: vec![1.0, 1.5, 3.0],
             corridor_half_m: 350.0,
+            corridor_limit: false,
             cell_m: 2.0,
             check_chord_m: None,
         }
@@ -146,6 +152,9 @@ impl OptimiseSettings {
         }
         if self.land_weight != 0.0 {
             v["land_weight"] = json!(self.land_weight);
+        }
+        if self.corridor_limit {
+            v["corridor_limit"] = json!(true);
         }
         v
     }
@@ -231,6 +240,15 @@ impl OptimiseSettings {
                 "n_heading" => out.n_heading = whole(k)?,
                 "radius_multiples" => out.radius_multiples = list(k)?,
                 "corridor_half_m" => out.corridor_half_m = f(k)?,
+                "corridor_limit" => {
+                    out.corridor_limit = v.as_bool().ok_or_else(|| {
+                        DesignError::Input(
+                            "the setting `corridor_limit` must be true or false (true holds the \
+                             pool search inside the corridor)"
+                                .into(),
+                        )
+                    })?
+                }
                 "cell_m" => out.cell_m = f(k)?,
                 "check_chord_m" => out.check_chord_m = maybe(k)?,
                 other => {
@@ -438,6 +456,7 @@ impl Session {
         lattice.pitch_m = num(&settings, "pitch_m")?;
         lattice.n_heading = typed.n_heading;
         lattice.radius_multiples = nums(&settings, "radius_multiples")?;
+        lattice.corridor_limit = typed.corridor_limit;
         let lattice = lattice.validated().map_err(refuse)?;
         let out = optimise_pools(
             &baseline,
@@ -540,6 +559,11 @@ impl Session {
                 }
             }
         }
+        // With the corridor limit on, the details say so, with the half-width the line was held to.
+        if typed.corridor_limit {
+            details["corridor_limit"] = json!(true);
+            details["corridor_half_m"] = json!(typed.corridor_half_m);
+        }
         let river_geometry = self
             .river_geometry()
             .map_err(super::rule_sets::stage_error)?;
@@ -606,6 +630,10 @@ impl Session {
             }
             for p in out.moved_boundaries() {
                 w.push(json!(moved_warning(p)));
+            }
+            // A pool with no line inside the corridor keeps its baseline (`corridor_limit`).
+            for p in out.no_line_in_corridor_pools() {
+                w.push(json!(corridor_warning(p, typed.corridor_half_m)));
             }
             // A pool whose line crossed itself or the rest of the line keeps its baseline (#569).
             for p in out.looped_pools() {
@@ -696,13 +724,30 @@ fn pool_name(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
 /// The sanity warning for a pool whose search could not close on its end pose at any end tried, and
 /// whose line would have broken its join, so it keeps the baseline (issue #565).
 fn unclosed_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    let inside = if p.kept_baseline_because
+        == Some(owd_core::optimise::lattice::UNCLOSED_IN_CORRIDOR_REASON)
+    {
+        " inside the corridor"
+    } else {
+        ""
+    };
     format!(
-        "{} keeps the baseline: its search could not end on the pool's end pose, even with the end \
-         moved, and its line would have joined the next piece {:.1} m and {:.1}° off, breaking \
-         R_min or crossing itself",
+        "{} keeps the baseline: its search could not end on the pool's end pose{inside}, even with \
+         the end moved, and its line would have joined the next piece {:.1} m and {:.1}° off, \
+         breaking R_min or crossing itself",
         pool_name(p),
         p.result.end_err_m,
         p.result.end_heading_err_rad.to_degrees()
+    )
+}
+
+/// The sanity warning for a pool whose search, held to the corridor (`corridor_limit`), found no
+/// line inside it, so it keeps the baseline.
+fn corridor_warning(p: &owd_core::optimise::lattice::PoolAlignment, half_m: f64) -> String {
+    format!(
+        "{} keeps the baseline: the search found no line that stays within {half_m:.0} m of the \
+         baseline (`corridor_limit` is on). Widen `corridor_half_m`, or turn the limit off",
+        pool_name(p)
     )
 }
 

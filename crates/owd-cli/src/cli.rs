@@ -337,6 +337,12 @@ enum Command {
         length_weight: Option<f64>,
         #[arg(long, value_name = "M3_PER_M2", help = optimise_land_weight_help())]
         land_weight: Option<f64>,
+        /// Hold the pool search inside the corridor: no point of the lattice's line may lie
+        /// further than `corridor_half_m` from the baseline. A pool with no line inside it keeps
+        /// the baseline and says so. `--corridor-limit` turns it on; `--corridor-limit false`
+        /// turns it off again in a design that holds it (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        corridor_limit: Option<bool>,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
@@ -1315,6 +1321,7 @@ pub fn main() -> ExitCode {
             dry_weight,
             length_weight,
             land_weight,
+            corridor_limit,
             model,
             out,
         } => commands::optimise(
@@ -1328,6 +1335,7 @@ pub fn main() -> ExitCode {
                 dry_weight,
                 length_weight,
                 land_weight,
+                corridor_limit,
                 model,
             },
             &out.output,

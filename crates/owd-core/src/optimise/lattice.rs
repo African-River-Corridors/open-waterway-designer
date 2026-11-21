@@ -34,6 +34,13 @@
 //!   back to a goal within `goal_pos_tol_m` (default half a pitch) and one heading bin; the result
 //!   says so (`goal_closed` false) and `end_err_m` reports the miss.
 //!
+//! - **Corridor**: by default the corridor only says where the heuristic samples, and the search
+//!   may go anywhere on the grid (the corridor's bounding rectangle). With
+//!   `LatticeConfig::corridor_limit` the corridor is a real limit: no state, no point of a primitive
+//!   and no point of a closing path may lie outside it ([`TerrainGrid::in_corridor`]). A pool that
+//!   cannot be searched inside it fails as any other does: its end moves, or it keeps its baseline
+//!   with the reason recorded.
+//!
 //! The search cost is a SEARCH objective. Re-measure the winner with
 //! [`crate::volumes::sections::section_volumes`] before you quote a quantity.
 //!
@@ -242,6 +249,11 @@ pub struct LatticeConfig {
     /// at the same water level ([`pool_pieces`]), so one search never has to cover tens of km and
     /// hit `max_expand` (issue #559). Default [`DEFAULT_MAX_POOL_PIECE_M`]; infinity never splits.
     pub max_pool_piece_m: f64,
+    /// Hold the search to the corridor: no state, no point of a primitive and no point of a closing
+    /// path may lie outside it (read on the grid's corridor mask, so to the nearest cell). False
+    /// (the default) is the search as it was: bounded by the grid's rectangle only, the corridor
+    /// feeding the heuristic.
+    pub corridor_limit: bool,
 }
 
 /// The default `LatticeConfig::max_pool_piece_m`: 6 km. A pool of 6 to 7 km converges in seconds
@@ -275,6 +287,7 @@ impl LatticeConfig {
             max_expand: 4_000_000,
             bounds_margin_m: 20.0,
             max_pool_piece_m: DEFAULT_MAX_POOL_PIECE_M,
+            corridor_limit: false,
         }
     }
 
@@ -330,12 +343,16 @@ impl LatticeConfig {
 // =====================================================================================
 
 /// Terrain sampled on a regular north-up grid. `(x0, y0)` is the CENTRE of the top-left cell;
-/// row index grows southward. `valid` marks known ground inside the search corridor.
+/// row index grows southward. `valid` marks known ground inside the search corridor; `corridor`
+/// marks every cell inside the corridor, known ground or not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TerrainGrid {
     pub ground: Vec<Vec<f64>>,
     pub wet: Vec<Vec<bool>>,
     pub valid: Vec<Vec<bool>>,
+    /// The cells whose centre is inside the corridor: what `LatticeConfig::corridor_limit` holds
+    /// the search to.
+    pub corridor: Vec<Vec<bool>>,
     pub x0: f64,
     pub y0: f64,
     pub cell_m: f64,
@@ -386,6 +403,21 @@ impl TerrainGrid {
         let (r, c) = (libm::rint(row), libm::rint(col));
         if c >= 0.0 && r >= 0.0 && c < w && r < h {
             self.wet[r as usize][c as usize]
+        } else {
+            false
+        }
+    }
+
+    /// Whether the nearest cell is inside the corridor; false off the grid.
+    pub fn in_corridor(&self, x: f64, y: f64) -> bool {
+        let (row, col) = self.rc(x, y);
+        let (r, c) = (libm::rint(row), libm::rint(col));
+        if c >= 0.0 && r >= 0.0 {
+            self.corridor
+                .get(r as usize)
+                .and_then(|cells| cells.get(c as usize))
+                .copied()
+                .unwrap_or(false)
         } else {
             false
         }
@@ -479,23 +511,29 @@ pub fn build_terrain_grid(
     let mut ground = Vec::with_capacity(h);
     let mut wet = Vec::with_capacity(h);
     let mut valid = Vec::with_capacity(h);
+    let mut inside = Vec::with_capacity(h);
     for r in 0..h {
         let row = &z[r * w..(r + 1) * w];
         let mut wet_row = Vec::with_capacity(w);
         let mut valid_row = Vec::with_capacity(w);
+        let mut inside_row = Vec::with_capacity(w);
         for (c, &zc) in row.iter().enumerate() {
             let p = [px[r * w + c], py[r * w + c]];
             wet_row.push(contains_xy(river_polygon, p));
-            valid_row.push(zc.is_finite() && contains_xy(corridor, p));
+            let in_corridor = contains_xy(corridor, p);
+            valid_row.push(zc.is_finite() && in_corridor);
+            inside_row.push(in_corridor);
         }
         ground.push(row.to_vec());
         wet.push(wet_row);
         valid.push(valid_row);
+        inside.push(inside_row);
     }
     Ok(TerrainGrid {
         ground,
         wet,
         valid,
+        corridor: inside,
         x0: xmin,
         y0: ymax,
         cell_m,
@@ -1342,9 +1380,17 @@ pub fn solve_lattice_until(
 
     let (xmin, ymin, xmax, ymax) = grid.bounds();
     let m = cfg.bounds_margin_m;
-    let in_bounds =
-        |x: f64, y: f64| xmin - m <= x && x <= xmax + m && ymin - m <= y && y <= ymax + m;
-    // The cost of a closing path from `from`; None when it leaves the grid or meets unknown ground.
+    // With `corridor_limit`, a point must also be inside the corridor: a real limit of the search.
+    let limit = cfg.corridor_limit;
+    let in_bounds = |x: f64, y: f64| {
+        xmin - m <= x
+            && x <= xmax + m
+            && ymin - m <= y
+            && y <= ymax + m
+            && (!limit || grid.in_corridor(x, y))
+    };
+    // The cost of a closing path from `from`; None when it leaves the grid (or, with
+    // `corridor_limit`, the corridor) or meets unknown ground.
     let closing_cost = |from: Pose, path: &[Piece; 3]| -> Option<f64> {
         let mut cur = from;
         let mut total = 0.0;
@@ -1472,6 +1518,16 @@ pub fn solve_lattice_until(
             let nx = x + ct * ex - st * ey;
             let ny = y + st * ex + ct * ey;
             if !in_bounds(nx, ny) {
+                continue;
+            }
+            // With the limit, every point of the primitive stays inside too: a long arc must not
+            // bulge out of the corridor between two states inside it.
+            if limit
+                && !p
+                    .pts
+                    .iter()
+                    .all(|q| grid.in_corridor(x + ct * q[1] - st * q[2], y + st * q[1] + ct * q[2]))
+            {
                 continue;
             }
             let (c, ok) = scorers[pi].score(p, (x, y, th));
@@ -1703,6 +1759,18 @@ pub const HIT_CAP_REASON: &str = "the search hit its expansion limit";
 /// (issue #565).
 pub const UNCLOSED_REASON: &str = "the search could not end on the pool's end pose, even with the \
     end moved, and its line would join the next piece with a step that breaks R_min or crosses itself";
+
+/// Why a pool keeps its baseline when its search did not converge.
+pub const NOT_CONVERGED_REASON: &str = "the search did not converge";
+
+/// Why a pool keeps its baseline when, with `corridor_limit`, its search found no line inside the
+/// corridor: the line never leaves the corridor silently.
+pub const NO_LINE_IN_CORRIDOR_REASON: &str = "the search found no line inside the corridor";
+
+/// [`UNCLOSED_REASON`] with `corridor_limit` on: the closing path had to stay inside the corridor.
+pub const UNCLOSED_IN_CORRIDOR_REASON: &str = "the search could not end on the pool's end pose \
+    inside the corridor, even with the end moved, and its line would join the next piece with a \
+    step that breaks R_min or crosses itself";
 
 /// Why a pool keeps its baseline when its own line crosses itself at every search end tried
 /// (issue #569): a design line must never contain a loop.
@@ -1972,9 +2040,20 @@ impl PoolsResult {
     /// The pools (or pieces) that keep their baseline because their search could not close and
     /// their line would have broken the join ([`UNCLOSED_REASON`]).
     pub fn unclosed_pools(&self) -> impl Iterator<Item = &PoolAlignment> {
+        self.pools.iter().filter(|p| {
+            matches!(
+                p.kept_baseline_because,
+                Some(UNCLOSED_REASON | UNCLOSED_IN_CORRIDOR_REASON)
+            )
+        })
+    }
+
+    /// The pools (or pieces) that keep their baseline because, with `corridor_limit`, their search
+    /// found no line inside the corridor ([`NO_LINE_IN_CORRIDOR_REASON`]).
+    pub fn no_line_in_corridor_pools(&self) -> impl Iterator<Item = &PoolAlignment> {
         self.pools
             .iter()
-            .filter(|p| p.kept_baseline_because == Some(UNCLOSED_REASON))
+            .filter(|p| p.kept_baseline_because == Some(NO_LINE_IN_CORRIDOR_REASON))
     }
 
     /// The pools (or pieces) that keep their baseline because their line crossed itself
@@ -2025,6 +2104,13 @@ impl PoolsResult {
 /// does not cross itself there; otherwise the pool keeps its baseline ([`UNCLOSED_REASON`]). With
 /// `close_goal` false (the older search) fallback lines are spliced as they are, and joins that
 /// break R_min are reported.
+///
+/// With `cfg.corridor_limit` every search is held to its corridor (`opts.corridor_half_m` round the
+/// baseline segment, and round `corridor_line` when given). A pool whose closing path would leave
+/// the corridor is unclosed and goes the same way: moved ends first, then the baseline
+/// ([`UNCLOSED_IN_CORRIDOR_REASON`]). A pool with no line inside the corridor at all keeps its
+/// baseline ([`NO_LINE_IN_CORRIDOR_REASON`]). The baseline is the corridor's own axis, so the joined
+/// line never leaves the corridor.
 ///
 /// A design line must never contain a loop (issue #569). A pool whose own line crosses itself is
 /// searched again on moved ends in the same way, and keeps its baseline
@@ -2135,8 +2221,10 @@ pub fn optimise_pools(
         // breaks R_min is never kept in place of a lattice line that holds it.
         let (use_it, because) = if !converged && pa.result.hit_cap {
             (false, Some(HIT_CAP_REASON))
+        } else if !converged && cfg.corridor_limit && !pa.result.timed_out {
+            (false, Some(NO_LINE_IN_CORRIDOR_REASON))
         } else if !converged {
-            (false, Some("the search did not converge"))
+            (false, Some(NOT_CONVERGED_REASON))
         } else if crosses_itself(&pa.result) {
             (false, Some(SELF_CROSSING_REASON))
         } else if keep_if_dearer && dearer {
@@ -2187,7 +2275,11 @@ pub fn optimise_pools(
                 ))?;
                 if !j.radius_ok || crate::alignment::loops::is_self_intersecting(&window) {
                     p.used = false;
-                    p.kept_baseline_because = Some(UNCLOSED_REASON);
+                    p.kept_baseline_because = Some(if cfg.corridor_limit {
+                        UNCLOSED_IN_CORRIDOR_REASON
+                    } else {
+                        UNCLOSED_REASON
+                    });
                     dropped = true;
                 }
             }
