@@ -1,0 +1,1 @@
+- **`owd optimise`, and "Run stale" in the app, no longer refuse a design that has no DEM (OPT-1).** They run the optimise stage on plan area and say so. A design with optimise settings and no DEM is therefore due for a run where it was refused before.

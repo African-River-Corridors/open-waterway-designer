@@ -632,6 +632,31 @@ describe("OWD web smoke tests", () => {
     assert.equal((await pageDoc(b)).stages.optimise.settings.land_weight, 3.5);
   });
 
+  it("shows that a design with no DEM was optimised on plan area, not volume (OPT-1)", async () => {
+    // The synthetic example names no DEM. The command line optimises it on plan area; the app opens the result.
+    const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-plan-area-"));
+    const doc = path.join(dir, "synthetic-river.owd");
+    fs.copyFileSync(EXAMPLE, doc);
+    const said = execFileSync(CLI, ["optimise", doc, "--length-weight", "1"], { encoding: "utf8", stdio: "pipe" });
+    assert.match(said, /optimised on plan area, not volume \(no DEM\)/);
+    const native = JSON.parse(fs.readFileSync(doc, "utf8"));
+    assert.equal(native.stages.optimise.results.optimised_on, "plan_area");
+    assert.deepEqual(native.stages.optimise.results.pools, []);
+
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), doc);
+    await until(b, "the design", async () => (await text(b, "file-label")).includes("synthetic-river.owd"));
+    await until(b, "the plan-area note", async () => await exists(b, "plan-area-note"));
+    assert.equal(
+      await text(b, "plan-area-note"),
+      "Optimised on plan area, not volume: no elevation model is loaded. The search kept the channel inside the river polygon; it chose no weirs. Load a DEM and run Optimise again to optimise on volume.",
+    );
+    assert.equal(await exists(b, "error"), false);
+  });
+
   it("opens an older-format design with one quiet information row and the DEM warning; Details lists the notes, Dismiss removes a row, another design clears them (UI-3)", async () => {
     // A format 0.4 file whose stages were all up to date (a synthetic river; its DEM is not loaded).
     const OLD = path.resolve(here, "../../crates/owd-format/tests/data/format-0.4-lattice-only.owd");

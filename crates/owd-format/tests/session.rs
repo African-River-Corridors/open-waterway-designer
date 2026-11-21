@@ -226,8 +226,17 @@ fn a_zone_that_differs_from_the_designs_is_refused() {
 
 #[test]
 fn a_stage_that_cannot_run_yet_says_what_it_needs_a_dem() {
+    // The volumes stage needs a DEM. The optimise stage does not: with no DEM it runs on plan area
+    // (see `with_no_dem_the_stage_optimises_on_plan_area_and_says_so` in `optimise.rs`).
     let mut s = imported();
-    let e = s.run_stage(Stage::Optimise).unwrap_err();
+    s.align(
+        owd_format::design::AlignMethod::Centreline,
+        &Value::Null,
+        None,
+    )
+    .unwrap();
+    s.set_water_profile(&[[0.0, 0.0]]).unwrap();
+    let e = s.run_stage(Stage::Volumes).unwrap_err();
     assert!(
         matches!(&e, DesignError::Input(m) if m.contains("needs a DEM")),
         "{e}"
