@@ -137,3 +137,58 @@ fn a_negative_length_weight_is_refused_by_name() {
     assert!(err.contains("length_weight"), "{err}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
+
+/// The flood flags show the stage's own defaults, read from the shared settings: the flood cost is
+/// 0 (off), the distance 1500 m, and the limit above bank-full has none.
+#[test]
+fn the_help_of_the_flood_flags_shows_the_defaults_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default();
+    assert_eq!(d.flood_cost_per_ha, 0.0);
+    assert_eq!(d.max_above_bank_m, None);
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let cost = flag_help(&help, "--flood-cost-per-ha");
+    assert!(
+        cost.contains(&format!("(default {}: off)", d.flood_cost_per_ha)),
+        "{cost}"
+    );
+    assert!(cost.contains("3000"), "{cost}");
+    let limit = flag_help(&help, "--max-above-bank");
+    assert!(limit.contains("(default: no limit)"), "{limit}");
+    assert!(limit.contains("estimate"), "{limit}");
+    let dist = flag_help(&help, "--flood-distance");
+    assert!(
+        dist.contains(&format!("(default {})", d.flood_distance_m)),
+        "{dist}"
+    );
+    assert!(help.contains("--flood-report"), "{help}");
+}
+
+/// The flood flags go through the stage's own reading of its settings: a bad value is refused by
+/// the setting's name (exit 2) and the design is not written.
+#[test]
+fn a_bad_flood_flag_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-flood-flags");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Flood flags", "2026-11-21").to_text();
+    std::fs::write(&path, &text).unwrap();
+    for (flag, name) in [
+        ("--flood-cost-per-ha=-1", "flood_cost_per_ha"),
+        ("--max-above-bank=-0.5", "max_above_bank_m"),
+        ("--flood-distance=0", "flood_distance_m"),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+            .args(["optimise", path.to_str().unwrap(), flag])
+            .output()
+            .expect("owd runs");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{flag}: {err}");
+        assert!(err.contains(name), "{flag}: {err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+}

@@ -544,7 +544,15 @@ impl Session {
         }
         .map_err(refuse)?;
         let Some(best) = search.best() else {
-            if let (Some(terms), Some(limit)) = (flood_terms, typed.max_above_bank_m) {
+            // The limit is to blame only when the search reaches the top level without it.
+            let without_limit = || {
+                search_cascade(&cfg, &reach, &structure)
+                    .map(|s| s.best().is_some())
+                    .unwrap_or(false)
+            };
+            if let (Some(terms), Some(limit)) = (flood_terms, typed.max_above_bank_m)
+                && without_limit()
+            {
                 let mut kept: Vec<f64> = cfg
                     .candidate_sites_m
                     .iter()

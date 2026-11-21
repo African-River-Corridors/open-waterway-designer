@@ -335,6 +335,16 @@ enum Command {
         dry_weight: Option<f64>,
         #[arg(long, value_name = "COST_PER_M", help = optimise_length_weight_help())]
         length_weight: Option<f64>,
+        #[arg(long, value_name = "COST_PER_HA", help = optimise_flood_cost_help())]
+        flood_cost_per_ha: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_max_above_bank_help())]
+        max_above_bank: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_flood_distance_help())]
+        flood_distance: Option<f64>,
+        /// Report what each pool floods and how far it stands above bank-full, with no flood cost
+        /// and no limit: the search is unchanged. The flood cost and the limit report it too.
+        #[arg(long)]
+        flood_report: bool,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
@@ -1312,6 +1322,10 @@ pub fn main() -> ExitCode {
             wet_weight,
             dry_weight,
             length_weight,
+            flood_cost_per_ha,
+            max_above_bank,
+            flood_distance,
+            flood_report,
             model,
             out,
         } => commands::optimise(
@@ -1324,6 +1338,10 @@ pub fn main() -> ExitCode {
                 wet_weight,
                 dry_weight,
                 length_weight,
+                flood_cost_per_ha,
+                max_above_bank,
+                flood_distance,
+                flood_report,
                 model,
             },
             &out.output,
@@ -1535,6 +1553,38 @@ fn optimise_length_weight_help() -> String {
          m3 of cut at weight 1 costs 1. The pool lattice pays it for every metre of line, so length \
          through deep water is no longer free; a high value trades cut for a shorter line (default \
          {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --flood-cost-per-ha`, with the stage's own default.
+fn optimise_flood_cost_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_cost_per_ha;
+    format!(
+        "The cost of one hectare of land a pool floods outside the river polygon, in the units of \
+         the cut cost (money, when the weights are prices per m3). The weir search adds it to each \
+         pool, so it trades cut against flooded land and stops taking the largest lift everywhere. \
+         A starting value is 3000; the right value is the engineer's to set. Needs a DEM (default \
+         {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --max-above-bank`.
+fn optimise_max_above_bank_help() -> String {
+    "No pool may stand more than this many metres above bank-full anywhere in its reach. \
+     Bank-full is an estimate from the DEM: the 25th percentile of the ground beside the river \
+     polygon, the lower of the two sides, in each 500 m of line. With no cascade inside the limit \
+     the stage fails and says which reach blocks it. Needs a DEM (default: no limit)."
+        .to_string()
+}
+
+/// The help of `owd optimise --flood-distance`, with the stage's own default.
+fn optimise_flood_distance_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_distance_m;
+    format!(
+        "Flooded land is counted out to this distance from the design line, in metres. A pool \
+         whose water reaches it is flagged: its flooded land is then a lower bound (default {}).",
         shown_default(&serde_json::json!(d))
     )
 }

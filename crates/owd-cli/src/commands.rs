@@ -1243,6 +1243,10 @@ pub struct OptimiseFlags {
     pub wet_weight: Option<f64>,
     pub dry_weight: Option<f64>,
     pub length_weight: Option<f64>,
+    pub flood_cost_per_ha: Option<f64>,
+    pub max_above_bank: Option<f64>,
+    pub flood_distance: Option<f64>,
+    pub flood_report: bool,
     pub model: Option<String>,
 }
 
@@ -1266,10 +1270,16 @@ pub fn optimise(
         ("wet_weight", flags.wet_weight),
         ("dry_weight", flags.dry_weight),
         ("length_weight", flags.length_weight),
+        ("flood_cost_per_ha", flags.flood_cost_per_ha),
+        ("max_above_bank_m", flags.max_above_bank),
+        ("flood_distance_m", flags.flood_distance),
     ] {
         if let Some(v) = v {
             overrides.insert(k.into(), json!(v));
         }
+    }
+    if flags.flood_report {
+        overrides.insert("flood_report".into(), json!(true));
     }
     if let Some(m) = &flags.model {
         overrides.insert("cut_model".into(), json!(m));
@@ -1351,6 +1361,7 @@ pub fn optimise(
             "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
         ));
     }
+    human.push_str(&flood_text(&res["cascade"]["flood"]));
     human.push_str(&touched_text(&option));
     if !ok {
         human.push_str(&format!(
@@ -1365,6 +1376,54 @@ pub fn optimise(
         json!({"ok": ok, "failed_checks": failed, "cascade": res["cascade"], "pools": res["pools"], "design_line": option}),
     );
     option_checks_outcome(&failed.join(", "))
+}
+
+/// What the pools flood, as `owd optimise` prints it: nothing when the flood terms are off.
+fn flood_text(flood: &Value) -> String {
+    let Some(pools) = flood["pools"].as_array() else {
+        return String::new();
+    };
+    let n = |v: &Value, d: usize| match v.as_f64() {
+        Some(x) => format!("{x:.d$}"),
+        None => "-".to_string(),
+    };
+    let mut out = format!(
+        "\nflooded land outside the river polygon: {} ha, flood cost {} at {} per ha (cut cost {})",
+        n(&flood["flooded_ha"], 1),
+        n(&flood["flood_cost"], 0),
+        n(&flood["flood_cost_per_ha"], 0),
+        n(&flood["cut_cost"], 0),
+    );
+    if let Some(limit) = flood["max_above_bank_m"].as_f64() {
+        out.push_str(&format!("; no pool more than {limit} m above bank-full"));
+    }
+    out.push_str(&format!(
+        "\nbank-full is {}",
+        flood["bank_full"].as_str().unwrap_or("an estimate")
+    ));
+    out.push_str(
+        "\n  pool (m along the line) | level m | lift m | flooded ha | above bank-full m, lower / upper end | over the DEM river level m, lower / upper end",
+    );
+    for p in pools {
+        out.push_str(&format!(
+            "\n  {} to {} | {} | {} | {}{} | {} / {} | {} / {}",
+            n(&p["start_m"], 0),
+            n(&p["end_m"], 0),
+            n(&p["level_m"], 2),
+            n(&p["lift_m"], 2),
+            n(&p["flooded_ha"], 1),
+            if p["reaches_limit"] == json!(true) {
+                " or more (the water reaches the edge of the flood grid)"
+            } else {
+                ""
+            },
+            n(&p["above_bank_lower_m"], 2),
+            n(&p["above_bank_upper_m"], 2),
+            n(&p["depth_over_river_lower_m"], 2),
+            n(&p["depth_over_river_upper_m"], 2),
+        ));
+    }
+    out
 }
 
 /// The flags of `owd volumes`.
