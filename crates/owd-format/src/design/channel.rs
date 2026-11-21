@@ -177,13 +177,20 @@ pub struct CutAt {
 
 impl Session {
     /// A text that changes when the channel of the design line may have changed: what the volumes
-    /// stage depends on, what it depended on when it ran, and whether it is fresh.
+    /// stage depends on, what it depended on when it ran, whether it is fresh, and whether its
+    /// record holds the stations (a record saved before OWD stored them holds none, and a new run
+    /// on the same design adds them).
     pub fn channel_key(&self) -> String {
+        let res = &self.doc["stages"]["volumes"]["results"];
         format!(
-            "{}|{}|{:?}",
+            "{}|{}|{:?}|{}|{}",
             self.dependency_hash(Stage::Volumes),
             self.doc["stages"]["volumes"]["depends_on"],
-            self.stage_status(Stage::Volumes)
+            self.stage_status(Stage::Volumes),
+            res["sections"]["stations"]
+                .as_array()
+                .map_or(0, |stations| stations.len()),
+            res["total_m3"],
         )
     }
 
@@ -346,13 +353,14 @@ impl Session {
          -> Result<Edges, DesignError> {
             let mut e = Edges::default();
             for (a, b) in runs(keep) {
-                let side = |pick: &dyn Fn((f64, f64)) -> f64| -> Result<Vec<[f64; 2]>, DesignError> {
-                    let pts: Vec<Pt> = st[a..b]
-                        .iter()
-                        .map(|s| s.at_offset(pick(offsets(s))))
-                        .collect();
-                    utm.inverse_all(&pts).map_err(DesignError::Input)
-                };
+                let side =
+                    |pick: &dyn Fn((f64, f64)) -> f64| -> Result<Vec<[f64; 2]>, DesignError> {
+                        let pts: Vec<Pt> = st[a..b]
+                            .iter()
+                            .map(|s| s.at_offset(pick(offsets(s))))
+                            .collect();
+                        utm.inverse_all(&pts).map_err(DesignError::Input)
+                    };
                 let (left, right) = (side(&|o| o.0)?, side(&|o| o.1)?);
                 let mut ring = left.clone();
                 ring.extend(right.iter().rev());
@@ -512,7 +520,13 @@ impl CutSurface {
         let reach: Vec<(f64, f64)> = stations
             .iter()
             .map(|s| {
-                let side = |d: Option<f64>| if s.on_dem { d.map_or(0.0, f64::abs) } else { 0.0 };
+                let side = |d: Option<f64>| {
+                    if s.on_dem {
+                        d.map_or(0.0, f64::abs)
+                    } else {
+                        0.0
+                    }
+                };
                 (side(s.daylight_left_m), side(s.daylight_right_m))
             })
             .collect();
@@ -521,7 +535,11 @@ impl CutSurface {
         let mut corners: Vec<Pt> = Vec::new();
         for i in 0..stations.len().saturating_sub(1) {
             let (a, b) = (&stations[i], &stations[i + 1]);
-            let r = reach[i].0.max(reach[i].1).max(reach[i + 1].0).max(reach[i + 1].1);
+            let r = reach[i]
+                .0
+                .max(reach[i].1)
+                .max(reach[i + 1].0)
+                .max(reach[i + 1].1);
             if r <= 0.0 || ![a.x, a.y, b.x, b.y].iter().all(|v| v.is_finite()) {
                 continue;
             }
@@ -535,7 +553,12 @@ impl CutSurface {
             corners.extend([[x0, y0], [x0, y1], [x1, y0], [x1, y1]]);
         }
         let ll = utm.inverse_all(&corners).map_err(DesignError::Input)?;
-        let mut bounds = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        let mut bounds = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
         for p in ll {
             bounds = [
                 bounds[0].min(p[0]),
@@ -559,11 +582,7 @@ impl CutSurface {
     /// The bytes this surface holds, about: the stations and the index.
     pub fn memory_bytes(&self) -> usize {
         self.stations.len() * (core::mem::size_of::<ChannelStation>() + 16)
-            + self
-                .index
-                .values()
-                .map(|v| v.len() * 4 + 48)
-                .sum::<usize>()
+            + self.index.values().map(|v| v.len() * 4 + 48).sum::<usize>()
     }
 
     /// West, south, east and north of the cut, in degrees.
@@ -618,18 +637,18 @@ impl CutSurface {
             return None;
         }
         let near = if t < 0.5 { a } else { b };
-        let bench = if left { near.bench_left } else { near.bench_right };
+        let bench = if left {
+            near.bench_left
+        } else {
+            near.bench_right
+        };
         let (hb, wl, grade) = (
             mix(a.half_width_m, b.half_width_m),
             mix(a.water_level_m, b.water_level_m),
             mix(a.invert_m, b.invert_m),
         );
         let face = cut_model_a_face(dist, bench, hb, grade, wl, wl - grade, self.wet_slope);
-        let ground = self
-            .bed
-            .as_ref()
-            .and_then(|bed| bed(p))
-            .unwrap_or(ground_m);
+        let ground = self.bed.as_ref().and_then(|bed| bed(p)).unwrap_or(ground_m);
         let depth = ground - face;
         if !(depth.is_finite() && depth > 0.0) {
             return None;
@@ -640,7 +659,11 @@ impl CutSurface {
             ground_m: ground,
             after_m: face,
             depth_m: depth,
-            kind: if self.river.contains_xy(p) { "dredge" } else { "dry" },
+            kind: if self.river.contains_xy(p) {
+                "dredge"
+            } else {
+                "dry"
+            },
             station_chainage_m: near.chainage_m,
             dredge_area_m2: near.dredge_area_m2,
             excav_area_m2: near.excav_area_m2,
@@ -795,25 +818,27 @@ mod tests {
         let cut = CutSurface::new(&channel, utm, None, PolygonIndex::new(&[]), None).unwrap();
         let made = made.elapsed();
         // The stations and the index: under 3 MB, whatever the DEM.
-        assert!(cut.memory_bytes() < 3_000_000, "{} bytes", cut.memory_bytes());
+        assert!(
+            cut.memory_bytes() < 3_000_000,
+            "{} bytes",
+            cut.memory_bytes()
+        );
         // A tile's worth of points across the channel: every one answers, and the face is the rule's.
         let read = std::time::Instant::now();
         let mut hits = 0;
         for k in 0..65_536 {
-            let (s, o) = (
-                1_000.0 + (k / 256) as f64 * 4.0,
-                (k % 256) as f64 - 128.0,
-            );
-            let p = [
-                300_000.0 + s * 0.8 - o * 0.6,
-                600_000.0 + s * 0.6 + o * 0.8,
-            ];
+            let (s, o) = (1_000.0 + (k / 256) as f64 * 4.0, (k % 256) as f64 - 128.0);
+            let p = [300_000.0 + s * 0.8 - o * 0.6, 600_000.0 + s * 0.6 + o * 0.8];
             if let Some(c) = cut.at(p, 30.0) {
                 hits += 1;
                 assert!((c.offset_m - o).abs() < 1e-6 && (c.chainage_m - s).abs() < 1e-6);
-                assert_eq!(c.after_m, cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0));
+                let face = cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0);
+                assert!((c.after_m - face).abs() < 1e-6);
             } else {
-                assert!(o.abs() > 60.5 || cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0) >= 30.0);
+                assert!(
+                    o.abs() > 60.5
+                        || cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0) >= 30.0
+                );
             }
         }
         let read = read.elapsed();

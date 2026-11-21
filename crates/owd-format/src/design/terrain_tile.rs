@@ -15,6 +15,7 @@ use super::crs::Crs;
 use super::session::DesignError;
 use crate::geotiff::Dem;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// The side of a tile, in pixels.
@@ -80,7 +81,7 @@ pub struct TileMaker {
     clock: u64,
     capacity: usize,
     /// What is laid on the ground in each state other than Before (see [`TerrainState`]).
-    overlays: HashMap<TerrainState, Arc<dyn Overlay>>,
+    overlays: HashMap<TerrainState, Rc<dyn Overlay>>,
     /// The tiles of those states, kept apart from the tiles of the ground as it is: at most
     /// `capacity` more.
     state_cache: HashMap<(TerrainState, u8, u32, u32), Kept>,
@@ -474,7 +475,7 @@ pub trait Overlay {
 impl TileMaker {
     /// Lay `overlay` on the ground in `state` (`None`: take it off). The tiles kept for the state
     /// are forgotten. `Before` takes no overlay: it is the ground as it is.
-    pub fn set_overlay(&mut self, state: TerrainState, overlay: Option<Arc<dyn Overlay>>) {
+    pub fn set_overlay(&mut self, state: TerrainState, overlay: Option<Rc<dyn Overlay>>) {
         self.state_cache.retain(|k, _| k.0 != state);
         match overlay {
             Some(o) if state != TerrainState::Before => {
@@ -495,7 +496,7 @@ impl TileMaker {
         x: u32,
         y: u32,
         margin: usize,
-    ) -> Option<&Arc<dyn Overlay>> {
+    ) -> Option<&Rc<dyn Overlay>> {
         let overlay = self.overlays.get(&state)?;
         let [w, s, e, n] = tile_bounds(z, x, y);
         let grow = margin as f64 / TILE as f64;

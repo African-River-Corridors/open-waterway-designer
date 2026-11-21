@@ -557,6 +557,7 @@ impl Session {
 
     /// `terrain` as the walk reads it: with the bed model laid inside the water, when the document
     /// has one.
+    #[allow(clippy::type_complexity)]
     pub(super) fn plan_terrain<'a>(
         plan: &'a SectionPlan,
         terrain: TerrainSampler<'a>,

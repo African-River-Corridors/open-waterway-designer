@@ -3,14 +3,13 @@
 //! tell that every tile it holds is out of date. The contour tiles of the same DEM (MAP-3) are
 //! made from the same maker. Nothing here is written to the design.
 
-use owd_format::design::channel::{
-    CutSurface, DEPTH_CLASSES_M, DREDGE_COLOURS, DRY_COLOURS,
-};
+use owd_format::design::channel::{CutSurface, DEPTH_CLASSES_M, DREDGE_COLOURS, DRY_COLOURS};
 use owd_format::design::contours::ContourCache;
 use owd_format::design::terrain_tile::{TerrainState, TileMaker};
-use std::collections::HashMap;
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// The tile maker of the DEM in memory, if there is one.
@@ -29,16 +28,19 @@ pub struct TerrainTiles {
 /// The tiles of the cut-depth picture kept: each a PNG of at most about 30 kB.
 const CUT_TILES: usize = 256;
 
+/// A kept tile: when it was last asked for, and its bytes.
+type KeptTile = (u64, Arc<Vec<u8>>);
+
 /// The cut surface of the design line now, and the cut-depth tiles made from it.
 #[derive(Debug, Default)]
 struct CutTiles {
-    surface: Option<Arc<CutSurface>>,
+    surface: Option<Rc<CutSurface>>,
     /// The design the surface was made for: see [`TerrainTiles::cut_key`].
     key: String,
     /// Counts the cut surfaces seen: the `cut` in [`TerrainTiles::info`].
     rev: u32,
     /// By tile: when it was last asked for, and its PNG (no bytes: nothing is cut in it).
-    tiles: HashMap<(u8, u32, u32), (u64, Arc<Vec<u8>>)>,
+    tiles: HashMap<(u8, u32, u32), KeptTile>,
     clock: u64,
 }
 
@@ -93,14 +95,14 @@ impl TerrainTiles {
     pub fn set_cut(&mut self, key: String, surface: Option<CutSurface>) {
         self.drop_cut();
         self.cut.key = key;
-        self.cut.surface = surface.map(Arc::new);
+        self.cut.surface = surface.map(Rc::new);
         self.cut.rev += 1;
         if let Some(maker) = self.maker.as_mut() {
             let overlay = self
                 .cut
                 .surface
                 .clone()
-                .map(|s| s as Arc<dyn owd_format::design::terrain_tile::Overlay>);
+                .map(|s| s as Rc<dyn owd_format::design::terrain_tile::Overlay>);
             maker.set_overlay(TerrainState::After, overlay);
         }
     }

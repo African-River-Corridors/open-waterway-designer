@@ -886,7 +886,8 @@
   .state-button.on, .state-button.compare[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
   .state-button:disabled { color: var(--ink-3); cursor: not-allowed; }
   .state-button.compare { font-weight: 400; touch-action: none; }
-  .cut-readout { position: absolute; left: var(--sp-3); bottom: 56px; z-index: 3; min-width: 250px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); }
+  /* At the top of the map, in the middle: clear of the legend, the buttons and the floating panels. */
+  .cut-readout { position: absolute; left: 50%; top: var(--sp-3); transform: translateX(-50%); z-index: 3; min-width: 250px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); }
   .cut-readout header { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
   .cut-readout header button { padding: 0 var(--sp-1); background: none; border: 0; color: var(--ink); font-size: var(--fs-12); cursor: pointer; }
   .cut-readout dl { margin: var(--sp-1) 0 0; display: grid; grid-template-columns: auto auto; gap: 2px var(--sp-3); }

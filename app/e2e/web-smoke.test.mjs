@@ -1783,6 +1783,9 @@ describe("OWD web smoke tests", () => {
         daylight: m.getSource("cut-daylight") ? m.getStyle().sources["cut-daylight"].data.features.length : 0,
       };
     });
+    /** Tick a layer on or off. A floating panel may lie over the list after a station pick: the tick is pressed in
+     * the page, with a click event (`pick` below turns `click()` off for inputs). */
+    const tick = (id) => b.execute((i) => void document.querySelector(`[data-testid="layer-${i}"]`).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })), id);
     const savedText = async () => {
       await b.execute(() => window.__owdPlatform.call("snapshot"));
       await new Promise((r) => setTimeout(r, 300));
@@ -1833,7 +1836,7 @@ describe("OWD web smoke tests", () => {
     // The cut extent: a picture of the depth of cut, made by the engine one tile at a time, with a key.
     assert.equal(await mapAttr("data-cut"), "off");
     assert.equal(await exists(b, "legend-cut"), false);
-    await (await tid(b, "layer-cut")).click();
+    await tick("cut");
     await until(b, "the cut-depth layer", async () => (await mapAttr("data-cut")) === "on");
     m = await mapState();
     assert.match(m.cutTiles, /^owd-cut:\/\/\d+\/\d+\/\{z\}\/\{x\}\/\{y\}$/);
@@ -1966,9 +1969,9 @@ describe("OWD web smoke tests", () => {
     await until(b, "After again", async () => (await mapAttr("data-terrain-state")) === "after");
 
     // The shading and the contours follow the state.
-    await (await tid(b, "layer-terrain-shading")).click();
+    await tick("terrain-shading");
     await until(b, "the shading of the After ground", async () => (await mapState()).shadeFrom === "dem-after-shade");
-    await (await tid(b, "layer-contours")).click();
+    await tick("contours");
     await until(b, "the contours of the After ground", async () => /^owd-contour:\/\/\d+\/after\/\d+\/auto\//.test((await mapState()).contourTiles ?? ""));
     await beforeButton.click();
     await until(b, "the shading of the ground as it is", async () => (await mapState()).shadeFrom === "dem-shade");
@@ -1985,12 +1988,13 @@ describe("OWD web smoke tests", () => {
     await (await tid(b, "terrain-3d")).click();
     await until(b, "the terrain off", async () => (await mapAttr("data-terrain")) === "off");
     assert.equal(await exists(b, "terrain-state"), true);
-    await (await tid(b, "layer-terrain-shading")).click();
-    await (await tid(b, "layer-contours")).click();
+    await tick("terrain-shading");
+    await tick("contours");
     await until(b, "the control to go", async () => !(await exists(b, "terrain-state")));
 
     // The cross-section is drawn to the ground: the cut slopes stop at the daylight points.
-    await (await tid(b, "section-toggle")).click();
+    // The click on the cut may have picked a station too, which opens the panel.
+    if (!(await exists(b, "section-panel"))) await (await tid(b, "section-toggle")).click();
     await until(b, "a cross-section", async () => (await exists(b, "cs-chainage")), 120000);
     const drawn = await b.execute(async () => {
       const svg = document.querySelector('[data-testid="cross-section-svg"]');
@@ -2027,7 +2031,7 @@ describe("OWD web smoke tests", () => {
     await until(b, "the cut to come back with the DEM", async () => (await mapAttr("data-cut")) === "on", 60000);
     assert.equal(await mapAttr("data-terrain-state"), "after", "the state is remembered");
     // The channel tick off: its layers go, and the legend with them.
-    await (await tid(b, "layer-channel")).click();
+    await tick("channel");
     await until(b, "the channel to go", async () => !(await mapState()).channelVisible);
     assert.equal(await exists(b, "legend-channel"), false);
     assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["channel","cut"]');
