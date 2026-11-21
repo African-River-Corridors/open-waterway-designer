@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useWaterChoice } from "./api";
-  import type { RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
+  import type { CascadeFlood, FloodSetting, JoinSetting, RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
 
   let {
     snap,
@@ -12,6 +12,8 @@
     onOptimiseLength,
     onOptimiseLand,
     onCorridorLimit,
+    onOptimiseFlood,
+    onJoinSetting,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -30,8 +32,36 @@
     onOptimiseLand: (weight: string) => void;
     /** Hold the pool search inside the corridor, or not. */
     onCorridorLimit: (on: boolean) => void;
+    /** Set a flood setting of the weir search (a number as typed; an empty limit is no limit). */
+    onOptimiseFlood: (setting: FloodSetting, value: string) => void;
+    onJoinSetting: (key: JoinSetting, value: boolean | string) => void;
     lineName?: string | null;
   } = $props();
+  // The stored flood settings: the cost is 0 (off) and the limit is none until set, and neither is written then.
+  let floodSettings = $derived(
+    snap?.document.stages.optimise.settings as { flood_cost_per_ha?: number; max_above_bank_m?: number | null } | null,
+  );
+  let storedFloodCost = $derived(floodSettings?.flood_cost_per_ha ?? 0);
+  let storedBankLimit = $derived(floodSettings?.max_above_bank_m ?? null);
+  let floodCostText = $state("");
+  let bankLimitText = $state("");
+  let floodCostSeen: number | null = null;
+  let bankLimitSeen: number | null | undefined = undefined;
+  $effect(() => {
+    if (floodCostSeen !== storedFloodCost) {
+      floodCostSeen = storedFloodCost;
+      floodCostText = String(storedFloodCost);
+    }
+    if (bankLimitSeen !== storedBankLimit) {
+      bankLimitSeen = storedBankLimit;
+      bankLimitText = storedBankLimit == null ? "" : String(storedBankLimit);
+    }
+  });
+  // What the pools of the last run flood: there when a flood setting was on for that run.
+  let flood = $derived(
+    ((snap?.document.stages.optimise.results as { cascade?: { flood?: CascadeFlood } } | null)?.cascade?.flood ?? null) as CascadeFlood | null,
+  );
+  const fixed = (x: number | null | undefined, digits: number) => (x == null ? "–" : x.toFixed(digits));
   // The stored cost per metre of line; 0 (off) is not written into the design.
   let storedLength = $derived(
     (snap?.document.stages.optimise.settings as { length_weight?: number } | null)?.length_weight ?? 0,
@@ -64,6 +94,61 @@
   let onPlanArea = $derived(
     (snap?.document.stages.optimise.results as { optimised_on?: string } | null)?.optimised_on === "plan_area",
   );
+  // The join settings of the pool search (OPT-3); none is written into the design at its default.
+  type JoinStored = Partial<Record<JoinSetting, number | boolean | null>>;
+  let joins = $derived((snap?.document.stages.optimise.settings as JoinStored | null) ?? {});
+  const JOIN_TICKS: { key: JoinSetting; id: string; label: string; help: string }[] = [
+    {
+      key: "seams_on_straights",
+      id: "seams-on-straights",
+      label: "Put seams on straights",
+      help: "A long pool is searched in pieces; this puts each seam between two pieces where the river line is straightest and inside the river.",
+    },
+    {
+      key: "free_seams",
+      id: "free-seams",
+      label: "Free the line at seams and weirs",
+      help: "The line may pass a seam or a weir site anywhere across the river instead of on the river line's exact point and heading, and it runs straight through a weir site.",
+    },
+  ];
+  const JOIN_LENGTHS: { key: JoinSetting; id: string; label: string; help: string; unset: string }[] = [
+    {
+      key: "seam_window_m",
+      id: "seam-window",
+      label: "Seam search window (m)",
+      help: "How far a seam may move from the even split of a long pool to find a straight.",
+      unset: "1500",
+    },
+    {
+      key: "min_straight_m",
+      id: "min-straight",
+      label: "Straight between opposite curves (m; 0 = off)",
+      help: "The line runs straight for at least this length between a left curve and a right curve.",
+      unset: "0",
+    },
+    {
+      key: "weir_straight_m",
+      id: "weir-straight",
+      label: "Straight through a weir site (m; empty = two vessel lengths)",
+      help: "With the line freed at weirs, it runs straight for this length through each weir site, half upstream and half downstream.",
+      unset: "",
+    },
+  ];
+  const joinStored = (key: JoinSetting, unset: string) => {
+    const v = joins[key];
+    return v === undefined || v === null ? unset : String(v);
+  };
+  let joinText = $state<Record<string, string>>({});
+  let joinSeen: Record<string, string> = {};
+  $effect(() => {
+    for (const f of JOIN_LENGTHS) {
+      const now = joinStored(f.key, f.unset);
+      if (joinSeen[f.key] !== now) {
+        joinSeen[f.key] = now;
+        joinText[f.key] = now;
+      }
+    }
+  });
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
@@ -150,6 +235,64 @@
           </label>
           <span class="dim help" data-testid="corridor-limit-help">The pool search may not go further from the baseline than the corridor's half-width. A pool with no line inside the corridor keeps the baseline and says so.</span>
         </li>
+        {#each JOIN_TICKS as t (t.key)}
+          <li class="sub length" data-testid="{t.id}-row">
+            <label class="tick">
+              <input type="checkbox" data-testid={t.id} checked={joins[t.key] === true} disabled={busy !== null} onchange={(e) => onJoinSetting(t.key, e.currentTarget.checked)} />
+              {t.label}
+            </label>
+            <span class="dim help" data-testid="{t.id}-help">{t.help}</span>
+          </li>
+        {/each}
+        {#each JOIN_LENGTHS as f (f.key)}
+          <li class="sub length" data-testid="{f.id}-row">
+            <label class="name">
+              {f.label}
+              <input type="text" inputmode="decimal" data-testid={f.id} bind:value={joinText[f.key]} disabled={busy !== null} />
+            </label>
+            <button data-testid="set-{f.id}" disabled={busy !== null} onclick={() => onJoinSetting(f.key, joinText[f.key] ?? "")}>Set</button>
+            <span class="dim help" data-testid="{f.id}-help">{f.help}</span>
+            <span class="dim" data-testid="{f.id}-stored">Stored: {joinStored(f.key, f.unset)}</span>
+          </li>
+        {/each}
+        <li class="sub length" data-testid="flood-cost-row">
+          <label class="name">
+            Cost per hectare of flooded land (0 = off)
+            <input type="text" inputmode="decimal" data-testid="flood-cost" bind:value={floodCostText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-flood-cost" disabled={busy !== null} onclick={() => onOptimiseFlood("flood_cost_per_ha", floodCostText)}>Set</button>
+          <span class="dim help" data-testid="flood-cost-help">The weir search pays this for each hectare of land a pool floods outside the river, so it stops taking the highest lift at every weir. A starting value is 3000, in the money of the cut cost; the right value is yours to set.</span>
+          <span class="dim" data-testid="flood-cost-stored">Stored: {storedFloodCost}</span>
+        </li>
+        <li class="sub length" data-testid="bank-limit-row">
+          <label class="name">
+            Most a pool may stand above bank-full (m; empty = no limit)
+            <input type="text" inputmode="decimal" data-testid="bank-limit" bind:value={bankLimitText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-bank-limit" disabled={busy !== null} onclick={() => onOptimiseFlood("max_above_bank_m", bankLimitText)}>Set</button>
+          <span class="dim help" data-testid="bank-limit-help">No pool may stand higher than this above the banks anywhere along it. Bank-full is an estimate from the DEM beside the river, so check it against what you know of the banks.</span>
+          <span class="dim" data-testid="bank-limit-stored">Stored: {storedBankLimit ?? "no limit"}</span>
+        </li>
+        {#if flood}
+          <li class="sub length" data-testid="flood-pools-row">
+            <span data-testid="flood-total">Flooded land: {fixed(flood.flooded_ha, 1)} ha outside the river, flood cost {Math.round(flood.flood_cost).toLocaleString()}</span>
+            <table class="pools" data-testid="flood-pools">
+              <thead>
+                <tr><th>Pool level (m)</th><th>Lift (m)</th><th>Flooded (ha)</th><th>Above bank-full (m)</th></tr>
+              </thead>
+              <tbody>
+                {#each flood.pools as p}
+                  <tr data-testid="flood-pool">
+                    <td>{fixed(p.level_m, 2)}</td>
+                    <td>{fixed(p.lift_m, 2)}</td>
+                    <td>{fixed(p.flooded_ha, 1)}{p.reaches_limit ? " or more" : ""}</td>
+                    <td>{fixed(p.max_above_bank_m, 2)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </li>
+        {/if}
       {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}
         <li class="sub" data-testid="use-water-row">
@@ -192,6 +335,9 @@
   .length .help { flex-basis: 100%; }
   .length label.tick { flex-direction: row; align-items: center; gap: 0.4em; }
   .length label.tick input { width: auto; }
+  .pools { flex-basis: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .pools th, .pools td { text-align: right; padding: 2px 6px; border-bottom: var(--lw-thin) solid var(--rule); }
+  .pools th { font-weight: 600; color: var(--ink-3); }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
   .chip { font-size: var(--fs-11); font-weight: 600; padding: 1px 7px; border-radius: var(--radius); color: var(--ink-3); background: var(--surface-2); }

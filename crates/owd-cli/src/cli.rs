@@ -384,6 +384,45 @@ enum Command {
         /// turns it off again in a design that holds it (off unless the design says otherwise).
         #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
         corridor_limit: Option<bool>,
+        /// Put the seams of a long pool (it is searched in pieces of 6 km) where the baseline is
+        /// straightest and inside the river polygon, within `--seam-window` of the even split.
+        /// `--seams-on-straights` turns it on; `--seams-on-straights false` turns it off again
+        /// (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        seams_on_straights: Option<bool>,
+        /// Do not pin the line to the baseline's point and heading at a seam or at a weir site
+        /// between two pools: the line passes a gate on the cross-line there (inside the river,
+        /// within the heading tolerance) and the next search starts where it ended. At a weir
+        /// site the line is straight for `--weir-straight` through the gate. A seam or weir site
+        /// that cannot be freed is pinned as before and says why. `--free-seams false` turns it
+        /// off again (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        free_seams: Option<bool>,
+        #[arg(long, value_name = "METRES", help = optimise_join_help("seam_window_m", "How far a seam may move from the even split to find a straight, in metres (with --seams-on-straights)"))]
+        seam_window: Option<f64>,
+        /// The room of a gate either side of the baseline, in metres (with --free-seams). Default:
+        /// the river's width on the cross-line, no further than half the corridor's half-width.
+        #[arg(long, value_name = "METRES")]
+        seam_offset: Option<f64>,
+        #[arg(long, value_name = "DEGREES", help = optimise_join_help("seam_heading_tol_deg", "How far the line's heading at a gate may be from the baseline's, in degrees (with --free-seams)"))]
+        seam_heading_tol: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_join_help("min_straight_m", "The straight the line must have between a left curve and a right curve, in metres; 0 is off"))]
+        min_straight: Option<f64>,
+        /// The straight the line must have through a weir site between two pools, in metres (with
+        /// --free-seams): half upstream of the weir and half downstream. Default: two lengths of
+        /// the vessel the design is sized for.
+        #[arg(long, value_name = "METRES")]
+        weir_straight: Option<f64>,
+        #[arg(long, value_name = "COST_PER_HA", help = optimise_flood_cost_help())]
+        flood_cost_per_ha: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_max_above_bank_help())]
+        max_above_bank: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_flood_distance_help())]
+        flood_distance: Option<f64>,
+        /// Report what each pool floods and how far it stands above bank-full, with no flood cost
+        /// and no limit: the search is unchanged. The flood cost and the limit report it too.
+        #[arg(long)]
+        flood_report: bool,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
@@ -1389,6 +1428,17 @@ pub fn main() -> ExitCode {
             length_weight,
             land_weight,
             corridor_limit,
+            seams_on_straights,
+            free_seams,
+            seam_window,
+            seam_offset,
+            seam_heading_tol,
+            min_straight,
+            weir_straight,
+            flood_cost_per_ha,
+            max_above_bank,
+            flood_distance,
+            flood_report,
             model,
             out,
         } => commands::optimise(
@@ -1403,6 +1453,17 @@ pub fn main() -> ExitCode {
                 length_weight,
                 land_weight,
                 corridor_limit,
+                seams_on_straights,
+                free_seams,
+                seam_window,
+                seam_offset,
+                seam_heading_tol,
+                min_straight,
+                weir_straight,
+                flood_cost_per_ha,
+                max_above_bank,
+                flood_distance,
+                flood_report,
                 model,
             },
             &out.output,
@@ -1626,6 +1687,19 @@ fn optimise_length_weight_help() -> String {
     )
 }
 
+/// The help of a join flag of `owd optimise` (OPT-3), with the stage's own default for `key`, read
+/// from `OptimiseSettings::default()` (these settings are not written into a design at their
+/// defaults, so `optimise_help` cannot read them from the written settings).
+fn optimise_join_help(key: &str, text: &str) -> String {
+    let d = owd_format::design::OptimiseSettings::default();
+    let v = match key {
+        "seam_window_m" => d.seam_window_m,
+        "seam_heading_tol_deg" => d.seam_heading_tol_deg,
+        _ => d.min_straight_m,
+    };
+    format!("{text} (default {}).", shown_default(&serde_json::json!(v)))
+}
+
 /// The help of `owd optimise --land-weight`, with the stage's own default.
 fn optimise_land_weight_help() -> String {
     let d = owd_format::design::OptimiseSettings::default().land_weight;
@@ -1634,6 +1708,38 @@ fn optimise_land_weight_help() -> String {
          m2 of the channel's footprint at the water surface that lies outside the river polygon, \
          cut or no cut, so a line over drowned land beside the river is no longer free. A value \
          equal to the channel depth prices land like a cut of the full depth (default {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --flood-cost-per-ha`, with the stage's own default.
+fn optimise_flood_cost_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_cost_per_ha;
+    format!(
+        "The cost of one hectare of land a pool floods outside the river polygon, in the units of \
+         the cut cost (money, when the weights are prices per m3). The weir search adds it to each \
+         pool, so it trades cut against flooded land and stops taking the largest lift everywhere. \
+         A starting value is 3000; the right value is the engineer's to set. Needs a DEM (default \
+         {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --max-above-bank`.
+fn optimise_max_above_bank_help() -> String {
+    "No pool may stand more than this many metres above bank-full anywhere in its reach. \
+     Bank-full is an estimate from the DEM: the 25th percentile of the ground beside the river \
+     polygon, the lower of the two sides, in each 500 m of line. With no cascade inside the limit \
+     the stage fails and says which reach blocks it. Needs a DEM (default: no limit)."
+        .to_string()
+}
+
+/// The help of `owd optimise --flood-distance`, with the stage's own default.
+fn optimise_flood_distance_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_distance_m;
+    format!(
+        "Flooded land is counted out to this distance from the design line, in metres. A pool \
+         whose water reaches it is flagged: its flooded land is then a lower bound (default {}).",
         shown_default(&serde_json::json!(d))
     )
 }

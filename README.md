@@ -298,6 +298,85 @@ line and the app all say that the line was optimised on plan area, not on volume
 still needs a DEM. A design that names a DEM whose file is missing is refused as before: plan area
 is never a quiet fallback.
 
+**Paying for flooded land (`flood_cost_per_ha`, `max_above_bank_m`).** The weir search prices cut and
+structures. A higher pool always cuts less, so with nothing else in the cost it takes the largest
+lift you offer at every weir, and the pools can stand far above the banks. Two optimise settings
+give it the other side of the trade. Both need a DEM, and both are off by default: a design that
+sets neither gives the same weirs and numbers as before.
+
+- `flood_cost_per_ha` (`owd optimise --flood-cost-per-ha X`, or the Optimise row in the app) is the
+  cost of one hectare of land a pool floods outside the river polygon. It is in the units of the cut
+  cost: with `wet_weight` and `dry_weight` as prices per m3, it is money per hectare. A starting
+  value is 3,000. The right value is the engineer's to set: it stands for the land, crops, houses
+  and roads the water takes.
+- `max_above_bank_m` (`--max-above-bank X`) is a hard limit: no pool may stand more than X metres
+  above bank-full anywhere in its reach. When no cascade can reach the top level inside the limit,
+  the stage fails and names the reach that blocks it and what would unblock it (more candidate
+  sites, smaller lifts, or a higher limit). It never falls back to a cascade outside the limit.
+
+To compare the flood cost with the cut: 3,000 per hectare is 0.30 per m2, so at a cut price of 1 per
+m3 flooding one hectare costs the same as cutting 3,000 m3. A 60 m channel cuts about 60,000 m3 more
+per kilometre for each metre the pool is lowered, which is the price of 20 ha. So at 3,000 a metre of
+pool is worth lowering only where it floods more than about 200 m of width for each kilometre of
+river. With structures at their own prices the search may still prefer few, high weirs: read the
+per-pool table and raise the cost, or set the limit, until the pools are ones you would build.
+
+*What counts as flooded.* Ground on a grid of `flood_cell_m` cells (default 25 m), outside the river
+polygon, below the pool level, joined to the river through other ground below the level (a hollow
+away from the river stays dry), nearest to the pool's own length of the design line, and within
+`flood_distance_m` of the line (`--flood-distance`, default 1,500 m). Ground past that distance, or
+past the edge of the DEM, is not counted; a pool whose water reaches that edge is flagged, and its
+hectares are then a lower bound. No bund is assumed beside a weir: low ground near a weir that joins
+the river on the far side of it counts as flooded.
+
+*Bank-full is an estimate.* In each 500 m of line it is the 25th percentile of the DEM in the cells
+that touch the river polygon, on each side of the line, and the lower of the two sides. A coarse DEM
+or a river polygon drawn wide of the water moves it. Check it against what you know of the banks.
+
+*The report.* With either setting on, or with `--flood-report` (which leaves the search as it is),
+`results.cascade.flood` lists each pool: its level and lift, the hectares it floods and their cost,
+how far it stands above bank-full at its lower end, its upper end and at its worst place, and its
+depth over the DEM's river level at each end. `owd optimise` prints the table; the app shows it under
+the Optimise row.
+
+*A wider lift menu.* The default lifts are 0.5 and 1 m. Set your own with `--lifts`, for example
+`--lifts 1,2,3,4,5,6,7,8,9,10,11,12`, and candidate sites with `--sites` or the setting
+`site_step_m`. A menu of 1 to 12 m with a site every 500 m on a 240 km river is searched in under a
+second once the tables are built; building the cut table (one pass of the sections for each pool
+level) is the long part.
+
+**The joins: seams, weir sites and S-bends (`seams_on_straights`, `free_seams`, `min_straight_m`).**
+The lattice searches each pool on its own, and a pool longer than 6 km in pieces. By default every
+search starts and ends on the baseline's exact point and heading (the baseline is the alignment's
+design line, else the river centreline). A pinned point on a bend forces a curve of R_min beside
+it, and a pinned point off the river forces the line off the river there. Three settings change
+that. All are off by default, and a design that does not set them gives the same line as before.
+
+- `seams_on_straights` (`owd optimise --seams-on-straights`): the seam between two pieces of a long
+  pool goes where the baseline is straightest and inside the river polygon, within `seam_window_m`
+  (`--seam-window`, 1,500 m by default) of the even split. Straightness is the baseline's mean
+  radius over the weir straight either side of the point (two vessel lengths, and at least half of
+  R_min). The details list each seam: where the even split was, where the seam is, and why.
+- `free_seams` (`--free-seams`): at a seam the line passes a gate instead of a point. The gate is
+  the cross-line through the baseline's point, as wide as the river is there (set
+  `seam_offset_m`, `--seam-offset`, for a fixed room either side), and the heading may differ from
+  the baseline's by `seam_heading_tol_deg` (`--seam-heading-tol`, 30 degrees by default). The next
+  piece starts from the pose the line ended on, so there is no gap and no closing curve. At a weir
+  site between two pools the line passes a lock, so it must be straight there: the line runs
+  straight for `weir_straight_m` (`--weir-straight`; two lengths of the sized vessel by default)
+  through the gate, half upstream of the weir's cross-line and half downstream. Where the search
+  finds no such line (a weir on a tight bend in a narrow corridor, for one), the weir site is pinned
+  to the baseline as before, and the details and a warning say why by name. The ends of the whole
+  line stay pinned.
+- `min_straight_m` (`--min-straight`, 0 is off): between a left curve and a right curve the line
+  runs straight for at least this length. One ship length is a good first value. The search holds
+  it in its state, so it is a rule and not a cost; it is counted in whole lattice straights (twice
+  the pitch), so the length enforced is the next multiple at or above the setting.
+
+The details give every seam (`seams`) and every weir site (`weirs`): its chainage, whether it is
+free, the gate, where the line passed it, and the straight the line has there, measured on the
+line.
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

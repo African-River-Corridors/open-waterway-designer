@@ -467,6 +467,14 @@ fn with_the_new_settings_at_their_defaults_the_results_are_the_base_branchs_byte
     let mut with_defaults = example_settings();
     with_defaults["land_weight"] = json!(0.0);
     with_defaults["corridor_limit"] = json!(false);
+    // The settings of the joins (OPT-3) at their defaults: the same bytes again.
+    with_defaults["seams_on_straights"] = json!(false);
+    with_defaults["free_seams"] = json!(false);
+    with_defaults["seam_window_m"] = json!(1500.0);
+    with_defaults["seam_offset_m"] = Value::Null;
+    with_defaults["seam_heading_tol_deg"] = json!(30.0);
+    with_defaults["weir_straight_m"] = Value::Null;
+    with_defaults["min_straight_m"] = json!(0.0);
     named.run_optimise(&with_defaults, Some(&terrain)).unwrap();
     assert_eq!(named.to_text(), plain.to_text());
 }
@@ -854,4 +862,449 @@ fn a_named_dem_that_is_missing_is_still_refused() {
         .to_string();
     assert!(e.contains("dem.tif") && e.contains("missing"), "{e}");
     assert!(s.document()["stages"]["optimise"]["results"].is_null());
+}
+
+/// The flood settings (ticket OPT-2) are settings of the stage, each off or at its default until
+/// set, and then not written into the document. Set, each is written through the same reading as
+/// the flags of `owd optimise`. A bad value is refused by the setting's name and changes nothing.
+///
+/// Label: property
+#[test]
+fn the_flood_settings_are_off_by_default_round_trip_and_are_validated() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert_eq!(d.flood_cost_per_ha, 0.0);
+    assert_eq!(d.max_above_bank_m, None);
+    assert_eq!(d.flood_distance_m, 1500.0);
+    assert_eq!(d.flood_cell_m, 25.0);
+    assert!(!d.flood_report);
+    assert!(!d.flood_on());
+    let keys = [
+        "flood_cost_per_ha",
+        "max_above_bank_m",
+        "flood_distance_m",
+        "flood_cell_m",
+        "flood_report",
+    ];
+    for k in keys {
+        assert!(
+            d.to_value().get(k).is_none(),
+            "{k} is written at its default"
+        );
+    }
+    let mut s = design();
+    let set = json!({
+        "flood_cost_per_ha": 3000.0,
+        "max_above_bank_m": 1.5,
+        "flood_distance_m": 800.0,
+        "flood_cell_m": 10.0,
+        "flood_report": true,
+    });
+    s.set_optimise_settings(&set).unwrap();
+    let mut want = d.to_value();
+    for k in keys {
+        want[k] = set[k].clone();
+    }
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], want);
+    // Saved and opened again, the settings are the same.
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(again.document()["stages"]["optimise"]["settings"], want);
+
+    for (k, bad) in [
+        ("flood_cost_per_ha", json!(-1.0)),
+        ("flood_cost_per_ha", json!("3000")),
+        ("max_above_bank_m", json!(-0.1)),
+        ("max_above_bank_m", json!("high")),
+        ("flood_distance_m", json!(0.0)),
+        ("flood_cell_m", json!(-5.0)),
+        ("flood_report", json!(1)),
+    ] {
+        let before = s.to_text();
+        let e = s
+            .set_optimise_settings(&json!({ k: bad }))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains(k), "{e}");
+        assert_eq!(s.to_text(), before);
+    }
+    // Back to the defaults: the keys go, and the settings are the defaults again.
+    s.set_optimise_settings(&json!({
+        "flood_cost_per_ha": 0.0,
+        "max_above_bank_m": null,
+        "flood_distance_m": 1500.0,
+        "flood_cell_m": 25.0,
+        "flood_report": false,
+    }))
+    .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// With no DEM the optimise stage runs on plan area and chooses no weirs, so flooded land cannot be
+/// worked out: a flood cost above 0, a limit above bank-full or the flood report is refused in plain
+/// words, and the design is not changed. A
+/// named DEM whose file is missing keeps the stage's own refusal.
+///
+/// Label: property
+#[test]
+fn a_flood_cost_or_a_bank_limit_without_a_dem_is_refused() {
+    for (setting, word) in [
+        (
+            json!({"flood_cost_per_ha": 3000.0}),
+            "a flood cost (`flood_cost_per_ha`)",
+        ),
+        (
+            json!({"max_above_bank_m": 1.0}),
+            "a limit above bank-full (`max_above_bank_m`)",
+        ),
+        (
+            json!({"flood_report": true}),
+            "the flood report (`flood_report`)",
+        ),
+    ] {
+        let (mut s, _) = design_without_a_dem();
+        let before = s.to_text();
+        let e = s.run_optimise(&setting, None).unwrap_err().to_string();
+        assert!(
+            e.contains(word) && e.contains("cannot be worked out without a DEM"),
+            "{e}"
+        );
+        assert!(e.contains("runs on plan area"), "{e}");
+        assert_eq!(s.to_text(), before);
+        // The DEM named but not there to read: the stage's own message, before the flood one.
+        let mut named = design();
+        let e = named.run_optimise(&setting, None).unwrap_err().to_string();
+        assert!(e.contains("dem.tif") && e.contains("missing"), "{e}");
+    }
+}
+
+/// The flood terms in the stage, on the `optimise_pools` example. At flood cost 0 the stage writes
+/// the same document, byte for byte, as a run that never names it. With the report on, the cascade
+/// is the same and says what each pool floods and how it stands against the banks. A flood cost is
+/// part of the cascade's total, and a high one never floods more. A limit that cannot be held
+/// fails in plain words and changes nothing.
+///
+/// Label: property
+#[test]
+fn a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let mut zero = design();
+    let mut with_zero = example_settings();
+    with_zero["flood_cost_per_ha"] = json!(0.0);
+    with_zero["max_above_bank_m"] = Value::Null;
+    with_zero["flood_distance_m"] = json!(1500.0);
+    zero.run_optimise(&with_zero, Some(&terrain)).unwrap();
+    assert_eq!(zero.to_text(), plain.to_text());
+    let base = plain.document()["stages"]["optimise"]["results"].clone();
+    assert!(base["cascade"].get("flood").is_none());
+
+    // Lifts of 2 and 4 m to a top pool of 4 m: the example's banks stand about 3 m over the
+    // water, so these pools flood land. The report alone leaves the search as it is (the pools are
+    // those of the cut cost alone), and gives a row for each pool.
+    let mut high = example_settings();
+    high["lifts_m"] = json!([2.0, 4.0]);
+    high["terminal_min_level_m"] = json!(4.0);
+    high["flood_cell_m"] = json!(10.0);
+    let mut shown = design();
+    let mut settings = high.clone();
+    settings["flood_report"] = json!(true);
+    shown.run_optimise(&settings, Some(&terrain)).unwrap();
+    let res = shown.document()["stages"]["optimise"]["results"].clone();
+    let flood = res["cascade"]["flood"].clone();
+    assert!(
+        res["cascade"]["weirs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w["lift_m"] == json!(4.0))
+    );
+    let rows = flood["pools"].as_array().unwrap();
+    let pools = res["pools"].as_array().unwrap();
+    assert_eq!(rows.len(), pools.len());
+    let mut sum = 0.0;
+    for (i, (row, pool)) in rows.iter().zip(pools).enumerate() {
+        assert_eq!(row["start_m"], pool[0]);
+        assert_eq!(row["end_m"], pool[1]);
+        assert_eq!(row["level_m"], pool[2]);
+        if i == 0 {
+            assert!(row["lift_m"].is_null());
+        } else {
+            assert_eq!(row["lift_m"], res["cascade"]["weirs"][i - 1]["lift_m"]);
+        }
+        let ha = row["flooded_ha"].as_f64().unwrap();
+        assert!(ha >= 0.0);
+        sum += ha;
+        assert_eq!(row["flood_cost"], json!(0.0));
+        assert_eq!(row["reaches_limit"], json!(false));
+        for k in [
+            "above_bank_lower_m",
+            "above_bank_upper_m",
+            "max_above_bank_m",
+            "depth_over_river_lower_m",
+            "depth_over_river_upper_m",
+        ] {
+            assert!(row[k].is_f64(), "{k}: {row}");
+        }
+        // The most a pool stands above the banks is at least what it does at either end.
+        let most = row["max_above_bank_m"].as_f64().unwrap();
+        assert!(most >= row["above_bank_lower_m"].as_f64().unwrap() - 1e-9);
+        assert!(most >= row["above_bank_upper_m"].as_f64().unwrap() - 1e-9);
+    }
+    assert!((flood["flooded_ha"].as_f64().unwrap() - sum).abs() < 1e-9);
+    assert!(sum > 1.0, "the 4 m pools flood land: {sum} ha");
+    assert_eq!(flood["flood_cost"], json!(0.0));
+    assert_eq!(flood["cut_cost"], res["cascade"]["reach_cost"]);
+    assert_eq!(flood["distance_m"], json!(1500.0));
+    assert_eq!(flood["cell_m"], json!(10.0));
+    assert!(flood["bank_full"].as_str().unwrap().contains("estimate"));
+    println!("report: {flood}");
+
+    // A flood cost: a fresh stage goes stale, the cost is in the settings and in the total, and
+    // the pools flood no more than before.
+    assert_eq!(shown.stage_status(Stage::Optimise), StageStatus::Fresh);
+    shown
+        .set_optimise_settings(&json!({"flood_cost_per_ha": 1.0e7, "flood_report": false}))
+        .unwrap();
+    assert_eq!(shown.stage_status(Stage::Optimise), StageStatus::Stale);
+    shown.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    let doc = shown.document();
+    assert_eq!(
+        doc["stages"]["optimise"]["settings"]["flood_cost_per_ha"],
+        json!(1.0e7)
+    );
+    let c = &doc["stages"]["optimise"]["results"]["cascade"];
+    let f = &c["flood"];
+    println!("priced: {f}");
+    let ha = f["flooded_ha"].as_f64().unwrap();
+    assert!(ha < sum, "{ha} against {sum}");
+    assert!(
+        doc["stages"]["optimise"]["settings"]
+            .get("flood_report")
+            .is_none()
+    );
+    assert!((f["flood_cost"].as_f64().unwrap() - 1.0e7 * ha).abs() < 1e-3);
+    let total = c["total_cost"].as_f64().unwrap();
+    let parts = f["cut_cost"].as_f64().unwrap()
+        + f["flood_cost"].as_f64().unwrap()
+        + c["structure_cost"].as_f64().unwrap();
+    assert!(
+        (total - parts).abs() < 1e-6 * total.max(1.0),
+        "{total} against {parts}"
+    );
+
+    // A limit no cascade can hold: the top pool must stand at 4 m, about 1 m over the banks, and
+    // the limit allows 0.25 m. The stage fails in plain words and writes nothing.
+    let before = shown.to_text();
+    let e = shown
+        .run_optimise(
+            &json!({"flood_cost_per_ha": 0.0, "max_above_bank_m": 0.25}),
+            Some(&terrain),
+        )
+        .unwrap_err()
+        .to_string();
+    println!("{e}");
+    assert!(e.contains("No cascade reaches the top level of 4.00 m with every pool at most 0.25 m above bank-full"), "{e}");
+    assert!(
+        e.contains("blocks it") && e.contains("To unblock it"),
+        "{e}"
+    );
+    assert_eq!(shown.to_text(), before);
+    // A top level the lifts cannot reach at all is the search's own failure, not the limit's.
+    let e = shown
+        .run_optimise(
+            &json!({"max_above_bank_m": 0.25, "terminal_min_level_m": 50.0}),
+            Some(&terrain),
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("no cascade reaches the terminal level"), "{e}");
+}
+
+/// The settings of the joins (OPT-3: `seams_on_straights`, `free_seams`, `seam_window_m`,
+/// `seam_offset_m`, `seam_heading_tol_deg`, `weir_straight_m`, `min_straight_m`) are settings of
+/// the stage, all off or at their defaults. At its default none is written into the document; set,
+/// each is, and reads back from the saved text. A bad value is refused by name in plain words and
+/// changes nothing.
+///
+/// Label: property
+#[test]
+fn the_join_settings_are_off_by_default_round_trip_and_refuse_bad_values() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert!(!d.seams_on_straights && !d.free_seams);
+    assert_eq!(
+        (d.seam_window_m, d.seam_heading_tol_deg, d.min_straight_m),
+        (1500.0, 30.0, 0.0)
+    );
+    assert_eq!((d.seam_offset_m, d.weir_straight_m), (None, None));
+    let keys = [
+        "seams_on_straights",
+        "free_seams",
+        "seam_window_m",
+        "seam_offset_m",
+        "seam_heading_tol_deg",
+        "weir_straight_m",
+        "min_straight_m",
+    ];
+    for k in keys {
+        assert!(
+            d.to_value().get(k).is_none(),
+            "{k} is written at its default"
+        );
+    }
+    let set = json!({
+        "seams_on_straights": true,
+        "free_seams": true,
+        "seam_window_m": 900.0,
+        "seam_offset_m": 40.0,
+        "seam_heading_tol_deg": 20.0,
+        "weir_straight_m": 180.0,
+        "min_straight_m": 90.0,
+    });
+    let mut s = design();
+    s.set_optimise_settings(&set).unwrap();
+    let mut want = d.to_value();
+    for k in keys {
+        want[k] = set[k].clone();
+    }
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], want);
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(again.document()["stages"]["optimise"]["settings"], want);
+    let before = s.to_text();
+    for (bad, says) in [
+        (
+            json!({"free_seams": "yes"}),
+            "the setting `free_seams` must be true or false",
+        ),
+        (
+            json!({"seams_on_straights": 1}),
+            "the setting `seams_on_straights` must be true or false",
+        ),
+        (
+            json!({"min_straight_m": -90.0}),
+            "the setting `min_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_window_m": "wide"}),
+            "the setting `seam_window_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"weir_straight_m": -1.0}),
+            "the setting `weir_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_offset_m": -5.0}),
+            "the setting `seam_offset_m` must be a number of metres >= 0",
+        ),
+        (
+            json!({"seam_heading_tol_deg": 120.0}),
+            "the setting `seam_heading_tol_deg` must be a number of degrees above 0 and below 90",
+        ),
+    ] {
+        let e = s.set_optimise_settings(&bad).unwrap_err().to_string();
+        assert!(e.starts_with(says), "{bad}: {e}");
+        assert_eq!(s.to_text(), before, "{bad} changed the design");
+    }
+    // Back at the defaults, nothing is left in the document.
+    s.set_optimise_settings(&json!({
+        "seams_on_straights": false, "free_seams": false, "seam_window_m": 1500.0,
+        "seam_offset_m": null, "seam_heading_tol_deg": 30.0, "weir_straight_m": null,
+        "min_straight_m": 0.0,
+    }))
+    .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// With `free_seams` on, the stage goes stale and runs again; the cascade (the weirs and their
+/// costs) does not change; the details name the setting, the straight asked for (two lengths of the
+/// sizing's vessel when `weir_straight_m` is not set) and every weir site between two pools: free
+/// with its straight measured on the line, or pinned with its reason, which is then a warning too.
+///
+/// Label: property
+#[test]
+fn free_seams_are_hashed_and_every_weir_site_is_free_or_says_why_not() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    s.set_optimise_settings(&json!({"free_seams": true, "seams_on_straights": true}))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Stale);
+    s.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    let (doc, base) = (s.document(), plain.document());
+    assert_eq!(
+        doc["stages"]["optimise"]["results"]["cascade"],
+        base["stages"]["optimise"]["results"]["cascade"]
+    );
+    let lattice = |d: &Value| {
+        owd_format::design::design_lines_of(d)
+            .into_iter()
+            .find(|o| o["method"] == "lattice")
+            .unwrap()
+            .clone()
+    };
+    let (opt, off) = (lattice(doc), lattice(base));
+    for k in [
+        "free_seams",
+        "seams_on_straights",
+        "seams",
+        "weirs",
+        "weir_straight_m",
+    ] {
+        assert!(
+            off["details"].get(k).is_none(),
+            "{k} is in the details when off"
+        );
+    }
+    assert_eq!(opt["details"]["free_seams"], json!(true));
+    assert_eq!(opt["details"]["seams_on_straights"], json!(true));
+    let loa = doc["stages"]["sizing"]["results"]["vessel"]["loa_m"]
+        .as_f64()
+        .or_else(|| doc["stages"]["sizing"]["results"]["loa_m"].as_f64());
+    let need = opt["details"]["weir_straight_m"].as_f64().unwrap();
+    if let Some(loa) = loa {
+        assert_eq!(need, 2.0 * loa);
+    }
+    assert!(need > 0.0);
+    // No pool of the example is longer than 6 km: no seams.
+    assert_eq!(opt["details"]["seams"], json!([]));
+    let weirs = opt["details"]["weirs"].as_array().unwrap();
+    let n_weirs = doc["stages"]["optimise"]["results"]["cascade"]["weirs"]
+        .as_array()
+        .unwrap()
+        .len();
+    println!("{} weir sites of {n_weirs} weirs: {weirs:?}", weirs.len());
+    assert!(!weirs.is_empty() && weirs.len() <= n_weirs);
+    let warnings = opt["sanity"]["warnings"].as_array().unwrap();
+    for w in weirs {
+        assert_eq!(w["straight_required_m"].as_f64(), Some(need));
+        let through = w["straight_through_m"].as_f64().unwrap();
+        if w["free"] == json!(true) {
+            assert_eq!(w["pinned_because"], Value::Null);
+            assert_eq!(w["straight_ok"], json!(true));
+            assert!(through >= need - 1e-6, "{w}");
+            let gate = w["gate_m"].as_array().unwrap();
+            let off = w["offset_m"].as_f64().unwrap();
+            assert!(gate[0].as_f64().unwrap() <= off && off <= gate[1].as_f64().unwrap());
+        } else {
+            let because = w["pinned_because"]
+                .as_str()
+                .expect("a pinned weir site says why");
+            let at = format!("the weir site at {:.0} m", w["at_m"].as_f64().unwrap());
+            assert!(
+                warnings.iter().any(|x| {
+                    let x = x.as_str().unwrap_or("");
+                    x.starts_with(&at) && x.contains(because)
+                }),
+                "no warning for {w}"
+            );
+        }
+    }
+    // The line is still a design line: R_min holds and it does not cross itself.
+    assert_eq!(opt["checks"]["no_self_crossing"]["ok"], json!(true));
 }

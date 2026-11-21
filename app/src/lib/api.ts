@@ -535,12 +535,50 @@ export const useWaterChoice = (value: boolean | null | undefined): UseWater => (
 /** Set the rolling circle's water-aware mode in the design (`owd align --use-water`); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
 export const setUseWater = (choice: UseWater) =>
   invoke<Snapshot>("set_alignment_settings", { method: "rolling_circle", settings: { use_water: useWaterValue(choice) } });
-/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `land_weight`: the cost of one m² of channel footprint outside the river polygon, in m³ of cut per m² (0 is off). `corridor_limit`: hold the pool search inside the corridor (false is off). */
+/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `land_weight`: the cost of one m² of channel footprint outside the river polygon, in m³ of cut per m² (0 is off). `corridor_limit`: hold the pool search inside the corridor (false is off). `flood_cost_per_ha`: the cost of one hectare of land a pool floods outside the river polygon (0 is off). `max_above_bank_m`: the most a pool may stand above bank-full, in metres (null is no limit). */
 export interface OptimiseSettings {
   length_weight?: number;
   land_weight?: number;
   corridor_limit?: boolean;
+  flood_cost_per_ha?: number;
+  max_above_bank_m?: number | null;
+  /** Put the seams of a long pool on straights of the baseline (false is off). */
+  seams_on_straights?: boolean;
+  /** How far a seam may move from the even split, in metres (1,500 by default). */
+  seam_window_m?: number;
+  /** Let the line pass seams and weir sites through a gate, off the baseline's pose (false is off). */
+  free_seams?: boolean;
+  /** The straight between a left curve and a right curve, in metres (0 is off). */
+  min_straight_m?: number;
+  /** The straight through a weir site, in metres; null is two vessel lengths. */
+  weir_straight_m?: number | null;
 }
+/** A flood setting of the optimise stage the app may set. */
+export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m";
+/** What one pool of the weir cascade floods (`results.cascade.flood.pools`, written when a flood setting is on). */
+export interface PoolFlood {
+  start_m: number;
+  end_m: number;
+  level_m: number;
+  /** The lift of the weir at the pool's lower end; null below the first weir. */
+  lift_m: number | null;
+  /** Flooded land outside the river polygon, hectares. */
+  flooded_ha: number;
+  flood_cost: number;
+  /** The water reaches the edge of the flood grid: the hectares are a lower bound. */
+  reaches_limit: boolean;
+  /** The most the pool stands above bank-full in its reach, metres (bank-full is an estimate from the DEM). */
+  max_above_bank_m: number | null;
+}
+/** The flooded land of the cascade's pools, in total and for each pool. */
+export interface CascadeFlood {
+  flooded_ha: number;
+  flood_cost: number;
+  flood_cost_per_ha: number;
+  pools: PoolFlood[];
+}
+/** The join settings of the optimise stage that the app sets (OPT-3). */
+export type JoinSetting = "seams_on_straights" | "free_seams" | "seam_window_m" | "min_straight_m" | "weir_straight_m";
 /** Set optimise settings in the design, as `owd optimise --length-weight` does; nothing runs, and a fresh optimise stage goes stale. Rejects with the reason. */
 export const setOptimiseSettings = (settings: OptimiseSettings) => invoke<Snapshot>("set_optimise_settings", { settings });
 /** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
