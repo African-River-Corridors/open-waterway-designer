@@ -158,7 +158,10 @@ fn a_land_weight_keeps_the_line_in_the_river_on_a_drowned_plain() {
     let poly = river(&cl);
     let t0 = std::time::Instant::now();
     let off = run(0.0);
-    println!("land weight 0: searched in {:.2} s", t0.elapsed().as_secs_f64());
+    println!(
+        "land weight 0: searched in {:.2} s",
+        t0.elapsed().as_secs_f64()
+    );
     sound(&off, 0.0);
     let share_off = share_outside(&off.line, &poly);
     let far_off = furthest_from(&off.line, &cl);
@@ -172,7 +175,10 @@ fn a_land_weight_keeps_the_line_in_the_river_on_a_drowned_plain() {
     for w in [0.005, 0.02, 3.5] {
         let t0 = std::time::Instant::now();
         let r = run(w);
-        println!("land weight {w}: searched in {:.2} s", t0.elapsed().as_secs_f64());
+        println!(
+            "land weight {w}: searched in {:.2} s",
+            t0.elapsed().as_secs_f64()
+        );
         sound(&r, w);
         let share = share_outside(&r.line, &poly);
         let far = furthest_from(&r.line, &cl);
