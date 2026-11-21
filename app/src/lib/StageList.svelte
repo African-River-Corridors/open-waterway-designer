@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useWaterChoice } from "./api";
-  import type { RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
+  import type { CascadeFlood, FloodSetting, RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
 
   let {
     snap,
@@ -10,6 +10,7 @@
     onCancel,
     onUseWater,
     onOptimiseLength,
+    onOptimiseFlood,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -24,8 +25,35 @@
     /** What made the design line on the map and in the table (its name in the table), if there is one. */
     /** Set the cost of one metre of design line for the pool search (a number as typed). */
     onOptimiseLength: (weight: string) => void;
+    /** Set a flood setting of the weir search (a number as typed; an empty limit is no limit). */
+    onOptimiseFlood: (setting: FloodSetting, value: string) => void;
     lineName?: string | null;
   } = $props();
+  // The stored flood settings: the cost is 0 (off) and the limit is none until set, and neither is written then.
+  let floodSettings = $derived(
+    snap?.document.stages.optimise.settings as { flood_cost_per_ha?: number; max_above_bank_m?: number | null } | null,
+  );
+  let storedFloodCost = $derived(floodSettings?.flood_cost_per_ha ?? 0);
+  let storedBankLimit = $derived(floodSettings?.max_above_bank_m ?? null);
+  let floodCostText = $state("");
+  let bankLimitText = $state("");
+  let floodCostSeen: number | null = null;
+  let bankLimitSeen: number | null | undefined = undefined;
+  $effect(() => {
+    if (floodCostSeen !== storedFloodCost) {
+      floodCostSeen = storedFloodCost;
+      floodCostText = String(storedFloodCost);
+    }
+    if (bankLimitSeen !== storedBankLimit) {
+      bankLimitSeen = storedBankLimit;
+      bankLimitText = storedBankLimit == null ? "" : String(storedBankLimit);
+    }
+  });
+  // What the pools of the last run flood: there when a flood setting was on for that run.
+  let flood = $derived(
+    ((snap?.document.stages.optimise.results as { cascade?: { flood?: CascadeFlood } } | null)?.cascade?.flood ?? null) as CascadeFlood | null,
+  );
+  const fixed = (x: number | null | undefined, digits: number) => (x == null ? "–" : x.toFixed(digits));
   // The stored cost per metre of line; 0 (off) is not written into the design.
   let storedLength = $derived(
     (snap?.document.stages.optimise.settings as { length_weight?: number } | null)?.length_weight ?? 0,
@@ -103,6 +131,44 @@
           <span class="dim help" data-testid="length-weight-help">The pool search pays this for every metre of line, so a longer line through deep water is not free. A high value shortens the line and raises the cut.</span>
           <span class="dim" data-testid="length-weight-stored">Stored: {storedLength}</span>
         </li>
+        <li class="sub length" data-testid="flood-cost-row">
+          <label class="name">
+            Cost per hectare of flooded land (0 = off)
+            <input type="text" inputmode="decimal" data-testid="flood-cost" bind:value={floodCostText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-flood-cost" disabled={busy !== null} onclick={() => onOptimiseFlood("flood_cost_per_ha", floodCostText)}>Set</button>
+          <span class="dim help" data-testid="flood-cost-help">The weir search pays this for each hectare of land a pool floods outside the river, so it stops taking the highest lift at every weir. A starting value is 3000, in the money of the cut cost; the right value is yours to set.</span>
+          <span class="dim" data-testid="flood-cost-stored">Stored: {storedFloodCost}</span>
+        </li>
+        <li class="sub length" data-testid="bank-limit-row">
+          <label class="name">
+            Most a pool may stand above bank-full (m; empty = no limit)
+            <input type="text" inputmode="decimal" data-testid="bank-limit" bind:value={bankLimitText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-bank-limit" disabled={busy !== null} onclick={() => onOptimiseFlood("max_above_bank_m", bankLimitText)}>Set</button>
+          <span class="dim help" data-testid="bank-limit-help">No pool may stand higher than this above the banks anywhere along it. Bank-full is an estimate from the DEM beside the river, so check it against what you know of the banks.</span>
+          <span class="dim" data-testid="bank-limit-stored">Stored: {storedBankLimit ?? "no limit"}</span>
+        </li>
+        {#if flood}
+          <li class="sub length" data-testid="flood-pools-row">
+            <span data-testid="flood-total">Flooded land: {fixed(flood.flooded_ha, 1)} ha outside the river, flood cost {Math.round(flood.flood_cost).toLocaleString()}</span>
+            <table class="pools" data-testid="flood-pools">
+              <thead>
+                <tr><th>Pool level (m)</th><th>Lift (m)</th><th>Flooded (ha)</th><th>Above bank-full (m)</th></tr>
+              </thead>
+              <tbody>
+                {#each flood.pools as p}
+                  <tr data-testid="flood-pool">
+                    <td>{fixed(p.level_m, 2)}</td>
+                    <td>{fixed(p.lift_m, 2)}</td>
+                    <td>{fixed(p.flooded_ha, 1)}{p.reaches_limit ? " or more" : ""}</td>
+                    <td>{fixed(p.max_above_bank_m, 2)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </li>
+        {/if}
       {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}
         <li class="sub" data-testid="use-water-row">
@@ -143,6 +209,9 @@
   .length label { flex-direction: column; align-items: flex-start; }
   .length input { width: 7em; font-size: var(--fs-12); }
   .length .help { flex-basis: 100%; }
+  .pools { flex-basis: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .pools th, .pools td { text-align: right; padding: 2px 6px; border-bottom: var(--lw-thin) solid var(--rule); }
+  .pools th { font-weight: 600; color: var(--ink-3); }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
   .chip { font-size: var(--fs-11); font-weight: 600; padding: 1px 7px; border-radius: var(--radius); color: var(--ink-3); background: var(--surface-2); }

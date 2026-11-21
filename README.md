@@ -230,6 +230,53 @@ that (a few, up to a few tens) only stops the line wandering through free water.
 or above makes the search cut corners and meander necks to save length. That is a trade of cut for
 length, and it can drive large cuts. The default is 0 (off). The weir cascade does not read it.
 
+**Paying for flooded land (`flood_cost_per_ha`, `max_above_bank_m`).** The weir search prices cut and
+structures. A higher pool always cuts less, so with nothing else in the cost it takes the largest
+lift you offer at every weir, and the pools can stand far above the banks. Two optimise settings
+give it the other side of the trade. Both need a DEM, and both are off by default: a design that
+sets neither gives the same weirs and numbers as before.
+
+- `flood_cost_per_ha` (`owd optimise --flood-cost-per-ha X`, or the Optimise row in the app) is the
+  cost of one hectare of land a pool floods outside the river polygon. It is in the units of the cut
+  cost: with `wet_weight` and `dry_weight` as prices per m3, it is money per hectare. A starting
+  value is 3,000. The right value is the engineer's to set: it stands for the land, crops, houses
+  and roads the water takes.
+- `max_above_bank_m` (`--max-above-bank X`) is a hard limit: no pool may stand more than X metres
+  above bank-full anywhere in its reach. When no cascade can reach the top level inside the limit,
+  the stage fails and names the reach that blocks it and what would unblock it (more candidate
+  sites, smaller lifts, or a higher limit). It never falls back to a cascade outside the limit.
+
+To compare the flood cost with the cut: 3,000 per hectare is 0.30 per m2, so at a cut price of 1 per
+m3 flooding one hectare costs the same as cutting 3,000 m3. A 60 m channel cuts about 60,000 m3 more
+per kilometre for each metre the pool is lowered, which is the price of 20 ha. So at 3,000 a metre of
+pool is worth lowering only where it floods more than about 200 m of width for each kilometre of
+river. With structures at their own prices the search may still prefer few, high weirs: read the
+per-pool table and raise the cost, or set the limit, until the pools are ones you would build.
+
+*What counts as flooded.* Ground on a grid of `flood_cell_m` cells (default 25 m), outside the river
+polygon, below the pool level, joined to the river through other ground below the level (a hollow
+away from the river stays dry), nearest to the pool's own length of the design line, and within
+`flood_distance_m` of the line (`--flood-distance`, default 1,500 m). Ground past that distance, or
+past the edge of the DEM, is not counted; a pool whose water reaches that edge is flagged, and its
+hectares are then a lower bound. No bund is assumed beside a weir: low ground near a weir that joins
+the river on the far side of it counts as flooded.
+
+*Bank-full is an estimate.* In each 500 m of line it is the 25th percentile of the DEM in the cells
+that touch the river polygon, on each side of the line, and the lower of the two sides. A coarse DEM
+or a river polygon drawn wide of the water moves it. Check it against what you know of the banks.
+
+*The report.* With either setting on, or with `--flood-report` (which leaves the search as it is),
+`results.cascade.flood` lists each pool: its level and lift, the hectares it floods and their cost,
+how far it stands above bank-full at its lower end, its upper end and at its worst place, and its
+depth over the DEM's river level at each end. `owd optimise` prints the table; the app shows it under
+the Optimise row.
+
+*A wider lift menu.* The default lifts are 0.5 and 1 m. Set your own with `--lifts`, for example
+`--lifts 1,2,3,4,5,6,7,8,9,10,11,12`, and candidate sites with `--sites` or the setting
+`site_step_m`. A menu of 1 to 12 m with a site every 500 m on a 240 km river is searched in under a
+second once the tables are built; building the cut table (one pass of the sections for each pool
+level) is the long part.
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

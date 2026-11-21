@@ -601,6 +601,42 @@ describe("OWD web smoke tests", () => {
     await until(b, "the alignment line named", async () => /\(from Alignment\)$/.test(await text(b, "line-on-screen")));
     assert.match(await text(b, "length-weight-help"), /A high value shortens the line and raises the cut\./);
     assert.equal(await exists(b, "error"), false);
+    // The flood settings (OPT-2): off until set, each with its help; a bad value is refused in words and stores nothing.
+    assert.equal(await text(b, "flood-cost-stored"), "Stored: 0");
+    assert.equal(await text(b, "bank-limit-stored"), "Stored: no limit");
+    assert.match(await text(b, "flood-cost-help"), /A starting value is 3000, in the money of the cut cost; the right value is yours to set\./);
+    assert.match(await text(b, "bank-limit-help"), /Bank-full is an estimate from the DEM beside the river/);
+    assert.equal(await exists(b, "flood-pools"), false, "no flood table before a run with a flood setting");
+    await (await tid(b, "flood-cost")).setValue("-5");
+    await (await tid(b, "set-flood-cost")).click();
+    await until(b, "the refusal", async () => (await exists(b, "error")) && /cost per hectare of flooded land must be a number, 0 or more/.test(await text(b, "error")));
+    assert.equal((await pageDoc(b)).stages.optimise.settings?.flood_cost_per_ha, undefined);
+    await (await tid(b, "flood-cost")).setValue("3000");
+    await (await tid(b, "set-flood-cost")).click();
+    await until(b, "the flood cost stored", async () => (await pageDoc(b)).stages.optimise.settings?.flood_cost_per_ha === 3000);
+    assert.equal(await text(b, "flood-cost-stored"), "Stored: 3000");
+    await (await tid(b, "bank-limit")).setValue("2.5");
+    await (await tid(b, "set-bank-limit")).click();
+    await until(b, "the limit stored", async () => (await pageDoc(b)).stages.optimise.settings?.max_above_bank_m === 2.5);
+    assert.equal(await text(b, "bank-limit-stored"), "Stored: 2.5");
+    // Run optimise with them: the table has a row for each pool, with its level, lift, flooded hectares and height above bank-full.
+    await (await tid(b, "run-optimise")).click();
+    await until(b, "optimise fresh", async () => (await stageStatus(b)).includes("optimise:fresh"), 240000);
+    const flood = (await pageDoc(b)).stages.optimise.results.cascade.flood;
+    assert.equal(flood.flood_cost_per_ha, 3000);
+    assert.equal(flood.max_above_bank_m, 2.5);
+    assert.ok(flood.pools.every((p) => p.max_above_bank_m <= 2.5 + 1e-9), "no pool stands above the limit");
+    await until(b, "the flood table", async () => await exists(b, "flood-pools"));
+    const rows = await b.execute(() => [...document.querySelectorAll("[data-testid=flood-pool]")].map((r) => [...r.querySelectorAll("td")].map((c) => c.textContent.trim())));
+    assert.equal(rows.length, flood.pools.length);
+    assert.deepEqual(rows[0], [flood.pools[0].level_m.toFixed(2), "–", flood.pools[0].flooded_ha.toFixed(1), flood.pools[0].max_above_bank_m.toFixed(2)]);
+    assert.deepEqual(await b.execute(() => [...document.querySelectorAll("[data-testid=flood-pools] th")].map((c) => c.textContent.trim())), ["Pool level (m)", "Lift (m)", "Flooded (ha)", "Above bank-full (m)"]);
+    assert.match(await text(b, "flood-total"), /^Flooded land: \d+\.\d ha outside the river, flood cost /);
+    // An empty limit is no limit: the key leaves the design.
+    await (await tid(b, "bank-limit")).setValue("");
+    await (await tid(b, "set-bank-limit")).click();
+    await until(b, "the limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.max_above_bank_m === undefined);
+    assert.equal(await text(b, "bank-limit-stored"), "Stored: no limit");
   });
 
   it("opens an older-format design with one quiet information row and the DEM warning; Details lists the notes, Dismiss removes a row, another design clears them (UI-3)", async () => {

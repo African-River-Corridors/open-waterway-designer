@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import * as api from "./lib/api";
-  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
+  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, FloodSetting, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
   import CrossSection from "./lib/CrossSection.svelte";
   import LongSection from "./lib/LongSection.svelte";
   import FloatPanel from "./lib/FloatPanel.svelte";
@@ -146,6 +146,23 @@
       return;
     }
     await fileAction(() => api.setOptimiseSettings({ length_weight: x }));
+  }
+  /** Set a flood setting of the weir search: the cost per hectare of flooded land, or the limit above bank-full (empty: no limit). */
+  async function optimiseFlood(setting: FloodSetting, value: string) {
+    const text = value.trim();
+    if (setting === "max_above_bank_m" && text === "") {
+      await fileAction(() => api.setOptimiseSettings({ max_above_bank_m: null }));
+      return;
+    }
+    const x = Number(text);
+    if (text === "" || !Number.isFinite(x) || x < 0) {
+      error =
+        setting === "flood_cost_per_ha"
+          ? "The cost per hectare of flooded land must be a number, 0 or more."
+          : "The limit above bank-full must be a number of metres, 0 or more, or empty for no limit.";
+      return;
+    }
+    await fileAction(() => api.setOptimiseSettings({ [setting]: x }));
   }
   /** The design line the screen draws, and the stage that made it. */
   let lineName = $derived(lineOnScreen(snap?.document, snap?.stages, table?.rows[0]?.name));
@@ -633,7 +650,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>

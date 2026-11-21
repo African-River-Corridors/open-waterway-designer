@@ -47,7 +47,8 @@ not (
     (binary_id(owd-format::lattice_self_crossing) & test(=a_self_crossing_lattice_line_never_passes)) |
     (binary_id(owd-core::lattice_length_weight) & test(=a_length_weight_makes_the_searchs_own_line_simple)) |
     (binary_id(owd-core::lattice_length_weight) & test(=at_weight_zero_the_search_is_unchanged)) |
-    (binary_id(owd-format::optimise) & test(=a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown))
+    (binary_id(owd-format::optimise) & test(=a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown)) |
+    (binary_id(owd-format::optimise) & test(=a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported))
 )
 '''
 
