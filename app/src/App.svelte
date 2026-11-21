@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import * as api from "./lib/api";
+  import type { ChannelView } from "./lib/channel";
   import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, ProjectLook, ProjectStatus, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
   import ProjectDialog from "./lib/ProjectDialog.svelte";
   import CrossSection from "./lib/CrossSection.svelte";
@@ -37,6 +38,7 @@
   let offline = $state(false);
   let hillshade = $state<Hillshade | null>(null);
   let terrain = $state<TerrainInfo | null>(null);
+  let channel = $state<ChannelView | null>(null);
   let tiles = $state<string | null>(null);
   let imagery = $state<ImageryLayer>(layerFor(DEFAULT_IMAGERY));
   let imageryNote = $state<string | null>(null);
@@ -566,6 +568,20 @@
     );
   });
 
+  // The channel and its cut for the map (MAP-5): derived by the engine from the design, asked for after
+  // every snapshot (the engine keeps its answer until the design changes), and given to the map only
+  // when it changes. The desktop app has no path for it yet: its ticks say so.
+  $effect(() => {
+    void snap;
+    if (!isWeb || !snap) return;
+    api.channelGeometry().then(
+      (c) => {
+        if (c?.key !== untrack(() => channel)?.key) channel = c;
+      },
+      () => {},
+    );
+  });
+
   onMount(() => {
     const undo: (() => void)[] = [];
     // Outside the Tauri window (a browser test of the desktop build) these have nothing to listen to.
@@ -738,7 +754,7 @@
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
       <div class="maparea" data-testid="map-area">
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} {channel} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">

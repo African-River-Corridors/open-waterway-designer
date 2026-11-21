@@ -1,6 +1,7 @@
 // The only door to the Rust side. Every function forwards to a command (a Tauri command on the desktop,
 // the WebAssembly session in a browser, see lib/platform); none computes.
 import { platform } from "./platform";
+import type { ChannelView, CutAt } from "./channel";
 
 const invoke = <T>(command: string, args?: Record<string, unknown>) => platform().call<T>(command, args);
 
@@ -418,13 +419,23 @@ export interface TerrainInfo {
   max_zoom: number;
   tile_size: number;
   encoding: "terrarium";
+  /** The cut of the channel over this DEM (MAP-5): a number that changes with it, or null for none. */
+  cut?: number | null;
 }
 export const terrainInfo = () => invoke<TerrainInfo | null>("terrain_info");
-/** One terrain tile of the DEM, a PNG, made in this browser from the DEM in memory. */
-export const terrainTile = (z: number, x: number, y: number) => invoke<Uint8Array>("terrain_tile", { z, x, y });
+/** One terrain tile of the ground in a terrain state ("before": the DEM; "after": the DEM with the channel
+ * cut into it, MAP-5), a PNG, made in this browser from the DEM in memory. */
+export const terrainTile = (z: number, x: number, y: number, state = "before") => invoke<Uint8Array>("terrain_tile", { z, x, y, state });
 /** The contour lines of one map tile of the DEM, every `interval` metres (MAP-3): a vector tile, made in
  * this browser from the DEM in memory. No bytes when the tile has no line. */
-export const contourTile = (z: number, x: number, y: number, interval: number) => invoke<Uint8Array>("contour_tile", { z, x, y, interval });
+export const contourTile = (z: number, x: number, y: number, interval: number, state = "before") => invoke<Uint8Array>("contour_tile", { z, x, y, interval, state });
+/** The channel of the design line for the map (MAP-5): its edges, or why there are none yet. Derived by
+ * the engine from the design; nothing is stored. */
+export const channelGeometry = () => invoke<ChannelView | null>("channel_geometry");
+/** The cut-depth picture of one map tile (MAP-5): a PNG; no bytes when nothing is cut in the tile. */
+export const cutTile = (z: number, x: number, y: number) => invoke<Uint8Array>("cut_tile", { z, x, y });
+/** What the cut reads out at a point of the map (MAP-5); null where nothing is cut. */
+export const cutAt = (lon: number, lat: number) => invoke<CutAt | null>("cut_at", { lon, lat });
 /** The sizes of the placeholder lock and weir (MAP-4), and the rules they come from. A placeholder model, not a design. */
 export interface LockModel {
   note: string;
@@ -493,7 +504,7 @@ export const poolWaterInfo = () => invoke<PoolWaterInfo | null>("pool_water_info
 /** The water of one map tile, a PNG coloured by depth and clear where dry. */
 export const poolWaterTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_water_tile", { id, z, x, y });
 /** One terrain tile with the water on it: the pool's level where there is water, the ground elsewhere. */
-export const poolSurfaceTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_surface_tile", { id, z, x, y });
+export const poolSurfaceTile = (id: number, z: number, x: number, y: number, state = "before") => invoke<Uint8Array>("pool_surface_tile", { id, z, x, y, state });
 /** What a click on the water reads. Null on dry ground. */
 export interface WaterAt {
   pool: number;

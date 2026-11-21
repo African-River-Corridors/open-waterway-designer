@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CrossSection } from "./api";
+  import { faceView } from "./crossSectionView";
 
   // `busy`: a section is being fetched. `note`: why the last one was refused.
   let { section, colour, busy = false, note = null }: { section: CrossSection | null; colour: string; busy?: boolean; note?: string | null } = $props();
@@ -14,11 +15,10 @@
   let view = $derived.by(() => {
     if (!section) return null;
     const off = section.offsets_m;
-    const z = section.terrain_m.filter(finite);
-    const face = section.cut_face_m.filter(finite);
-    const all = [...z, ...face, section.water_level_m, section.design_invert_m];
-    const lo = Math.min(...all);
-    const hi = Math.max(...all);
+    // The cut face is drawn only as far as the cut goes, and the plot is scaled to the ground and the
+    // channel: the stored template runs on far above the ground (see `faceView`).
+    const face = faceView(section);
+    const { lo, hi } = face;
     const pad = Math.max((hi - lo) * 0.08, 0.5);
     const [xmin, xmax] = [off[0], off[off.length - 1]];
     const x = (o: number) => PAD.l + ((o - xmin) / (xmax - xmin)) * (W - PAD.l - PAD.r);
@@ -41,7 +41,9 @@
       const step = (b - a) / n;
       return Array.from({ length: n + 1 }, (_, i) => a + i * step);
     };
-    return { x, y, terrain: path(section.terrain_m), face: path(section.cut_face_m), xticks: ticks(xmin, xmax, 4), yticks: ticks(lo - pad, hi + pad, 4) };
+    const facePath = face.points.map((p, i) => `${i ? "L" : "M"}${x(p.offset_m).toFixed(1)},${y(p.level_m).toFixed(1)}`).join("");
+    const daylight = [face.daylight.left, face.daylight.right].filter((p) => p != null);
+    return { x, y, lo, hi, terrain: path(section.terrain_m), face: facePath, daylight, xticks: ticks(xmin, xmax, 4), yticks: ticks(lo - pad, hi + pad, 4) };
   });
 
   const km = (m: number) => `${Math.floor(m / 1000)}+${String(Math.round(m % 1000)).padStart(3, "0")}`;
@@ -54,7 +56,7 @@
   {#if note && !busy}
     <p class="refusal" role="alert" data-testid="cross-refusal">{note}</p>
   {:else if section && view}
-    <svg viewBox="0 0 {W} {H}" role="img" aria-label="Cross-section at chainage {km(section.chainage_m)}" data-testid="cross-section-svg">
+    <svg viewBox="0 0 {W} {H}" role="img" aria-label="Cross-section at chainage {km(section.chainage_m)}" data-testid="cross-section-svg" data-lo={view.lo.toFixed(2)} data-hi={view.hi.toFixed(2)}>
       {#each view.yticks as t}
         <line x1={PAD.l} x2={W - PAD.r} y1={view.y(t)} y2={view.y(t)} class="grid" />
         <text x={PAD.l - 4} y={view.y(t) + 3} class="tick end">{t.toFixed(1)}</text>
@@ -65,6 +67,9 @@
       <line x1={PAD.l} x2={W - PAD.r} y1={view.y(section.water_level_m)} y2={view.y(section.water_level_m)} class="water" />
       <path d={view.terrain} class="terrain" data-testid="cs-terrain" />
       <path d={view.face} class="face" style:stroke={colour} data-testid="cs-face" />
+      {#each view.daylight as d}
+        <circle cx={view.x(d.offset_m)} cy={view.y(d.level_m)} r="3" class="daylight" style:stroke={colour} data-testid="cs-daylight" data-offset={d.offset_m.toFixed(2)} data-level={d.level_m.toFixed(2)}><title>Daylight point: the cut meets the ground {Math.abs(d.offset_m).toFixed(1)} m {d.offset_m < 0 ? "left" : "right"} of the line, at {d.level_m.toFixed(2)} m</title></circle>
+      {/each}
       <line
         x1={view.x(-section.half_width_m)}
         x2={view.x(section.half_width_m)}
@@ -98,6 +103,7 @@
   .terrain { fill: none; stroke: var(--ink); stroke-width: var(--lw-thick); }
   .face { fill: none; stroke-width: var(--lw-thick); stroke-dasharray: 6 3; }
   .invert { stroke-width: var(--lw-design); }
+  .daylight { fill: var(--surface); stroke-width: var(--lw-thick); }
   .water { stroke: var(--ink); stroke-width: var(--lw-thin); stroke-dasharray: 8 4; }
   .facts { margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px var(--sp-2); font-size: var(--fs-11); align-content: start; }
   dt { color: var(--ink-3); }

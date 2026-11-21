@@ -5,6 +5,7 @@ pub mod bank_edit;
 pub mod bank_pair;
 pub mod banks;
 pub mod bed;
+pub mod channel;
 pub mod constraints;
 pub mod contours;
 pub mod cost;

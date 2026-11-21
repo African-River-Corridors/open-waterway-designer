@@ -15,6 +15,7 @@ use super::crs::Crs;
 use super::session::DesignError;
 use crate::geotiff::Dem;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 /// The side of a tile, in pixels.
@@ -79,6 +80,11 @@ pub struct TileMaker {
     cache: HashMap<(u8, u32, u32), Kept>,
     clock: u64,
     capacity: usize,
+    /// What is laid on the ground in each state other than Before (see [`TerrainState`]).
+    overlays: HashMap<TerrainState, Rc<dyn Overlay>>,
+    /// The tiles of those states, kept apart from the tiles of the ground as it is: at most
+    /// `capacity` more.
+    state_cache: HashMap<(TerrainState, u8, u32, u32), Kept>,
 }
 
 impl core::fmt::Debug for TileMaker {
@@ -250,6 +256,8 @@ impl TileMaker {
             cache: HashMap::new(),
             clock: 0,
             capacity: capacity.max(1),
+            overlays: HashMap::new(),
+            state_cache: HashMap::new(),
         })
     }
 
@@ -431,6 +439,173 @@ impl TileMaker {
             self.cache.remove(&oldest);
         }
         self.cache.insert((z, x, y), (self.clock, png.clone()));
+        Ok(png)
+    }
+}
+
+/// The ground a terrain tile shows (MAP-5). `Before` is the DEM as it is. Each other state is the
+/// DEM with one [`Overlay`] laid on it ([`TileMaker::set_overlay`]); a state with no overlay shows
+/// the DEM. A new variant is one more arm here, with its name: the tile maker is the same.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum TerrainState {
+    /// The existing ground.
+    #[default]
+    Before,
+    /// The ground with the channel cut into it.
+    After,
+}
+
+impl TerrainState {
+    /// The state's name in a tile address.
+    pub fn name(self) -> &'static str {
+        match self {
+            TerrainState::Before => "before",
+            TerrainState::After => "after",
+        }
+    }
+
+    /// The state a tile address names.
+    pub fn from_name(name: &str) -> Option<TerrainState> {
+        [TerrainState::Before, TerrainState::After]
+            .into_iter()
+            .find(|s| s.name() == name)
+    }
+}
+
+/// A surface laid on the DEM's ground in one [`TerrainState`].
+pub trait Overlay {
+    /// West, south, east and north, in degrees, of the ground it may change. A tile that misses
+    /// this box is the tile of the ground as it is.
+    fn bounds(&self) -> [f64; 4];
+    /// The level at a point of the DEM's CRS where the DEM's own ground is `ground` (finite).
+    fn level(&self, x: f64, y: f64, ground: f64) -> f64;
+}
+
+impl TileMaker {
+    /// Lay `overlay` on the ground in `state` (`None`: take it off). The tiles kept for the state
+    /// are forgotten. `Before` takes no overlay: it is the ground as it is.
+    pub fn set_overlay(&mut self, state: TerrainState, overlay: Option<Rc<dyn Overlay>>) {
+        self.state_cache.retain(|k, _| k.0 != state);
+        match overlay {
+            Some(o) if state != TerrainState::Before => {
+                self.overlays.insert(state, o);
+            }
+            _ => {
+                self.overlays.remove(&state);
+            }
+        }
+    }
+
+    /// The overlay of `state` when tile `z/x/y`, with `margin` pixels around it, holds any of its
+    /// box.
+    fn overlay_on(
+        &self,
+        state: TerrainState,
+        z: u8,
+        x: u32,
+        y: u32,
+        margin: usize,
+    ) -> Option<&Rc<dyn Overlay>> {
+        let overlay = self.overlays.get(&state)?;
+        let [w, s, e, n] = tile_bounds(z, x, y);
+        let grow = margin as f64 / TILE as f64;
+        let (dx, dy) = ((e - w) * grow, (n - s) * grow);
+        let [ow, os, oe, on] = overlay.bounds();
+        (w - dx < oe && e + dx > ow && s - dy < on && n + dy > os).then_some(overlay)
+    }
+
+    /// [`TileMaker::heights`] of the ground in `state`.
+    pub fn heights_in(
+        &self,
+        state: TerrainState,
+        z: u8,
+        x: u32,
+        y: u32,
+    ) -> Result<Vec<f32>, DesignError> {
+        let Some(overlay) = self.overlay_on(state, z, x, y, 0) else {
+            return self.heights(z, x, y);
+        };
+        check(z, x, y)?;
+        let base = self.info.base_m as f32;
+        Ok(self.at_pixels(z, x, y, 0, base, |px, py| {
+            let ground = self.dem.sample_bilinear(px, py);
+            if ground.is_finite() {
+                overlay.level(px, py, ground)
+            } else {
+                self.height_at(px, py)
+            }
+        }))
+    }
+
+    /// [`TileMaker::ground`] in `state`: the overlay's level where the DEM has a height, NaN
+    /// where it has none.
+    pub fn ground_in(
+        &self,
+        state: TerrainState,
+        z: u8,
+        x: u32,
+        y: u32,
+        margin: usize,
+    ) -> Result<Vec<f32>, DesignError> {
+        let Some(overlay) = self.overlay_on(state, z, x, y, margin) else {
+            return self.ground(z, x, y, margin);
+        };
+        check(z, x, y)?;
+        Ok(self.at_pixels(z, x, y, margin, f32::NAN, |px, py| {
+            let ground = self.dem.sample_bilinear(px, py);
+            if ground.is_finite() {
+                overlay.level(px, py, ground)
+            } else {
+                ground
+            }
+        }))
+    }
+
+    /// `value(px, py)` at every pixel centre of tile `z/x/y` and of `margin` pixels around it,
+    /// the point given in the DEM's CRS: for a picture laid on the terrain (the depth of cut).
+    /// A pixel the projection refuses is `unplaced`.
+    pub fn at_pixels(
+        &self,
+        z: u8,
+        x: u32,
+        y: u32,
+        margin: usize,
+        unplaced: f32,
+        value: impl Fn(f64, f64) -> f64,
+    ) -> Vec<f32> {
+        self.sampled(z, x, y, margin, unplaced, |px, py| value(px, py) as f32)
+    }
+
+    /// [`TileMaker::tile`] of the ground in `state`. A tile the state's overlay does not reach is
+    /// the tile of the ground as it is, kept once.
+    pub fn tile_in(
+        &mut self,
+        state: TerrainState,
+        z: u8,
+        x: u32,
+        y: u32,
+    ) -> Result<Arc<Vec<u8>>, DesignError> {
+        check(z, x, y)?;
+        if self.overlay_on(state, z, x, y, 0).is_none() {
+            return self.tile(z, x, y);
+        }
+        self.clock += 1;
+        if let Some(hit) = self.state_cache.get_mut(&(state, z, x, y)) {
+            hit.0 = self.clock;
+            return Ok(hit.1.clone());
+        }
+        let png = Arc::new(encode_png(&self.heights_in(state, z, x, y)?)?);
+        if self.state_cache.len() >= self.capacity
+            && let Some(oldest) = self
+                .state_cache
+                .iter()
+                .min_by_key(|(_, (used, _))| *used)
+                .map(|(k, _)| *k)
+        {
+            self.state_cache.remove(&oldest);
+        }
+        self.state_cache
+            .insert((state, z, x, y), (self.clock, png.clone()));
         Ok(png)
     }
 }
