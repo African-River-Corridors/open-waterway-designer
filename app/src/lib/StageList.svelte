@@ -11,6 +11,7 @@
     onUseWater,
     onOptimiseLength,
     onOptimiseLand,
+    onCorridorLimit,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -27,6 +28,8 @@
     onOptimiseLength: (weight: string) => void;
     /** Set the cost of one m² of land taken for the pool search (a number as typed). */
     onOptimiseLand: (weight: string) => void;
+    /** Hold the pool search inside the corridor, or not. */
+    onCorridorLimit: (on: boolean) => void;
     lineName?: string | null;
   } = $props();
   // The stored cost per metre of line; 0 (off) is not written into the design.
@@ -53,6 +56,10 @@
       landText = String(storedLand);
     }
   });
+  // Whether the pool search is held to the corridor; off is not written into the design.
+  let storedCorridorLimit = $derived(
+    (snap?.document.stages.optimise.settings as { corridor_limit?: boolean } | null)?.corridor_limit ?? false,
+  );
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
@@ -127,6 +134,13 @@
           <span class="dim help" data-testid="land-weight-help">The pool search pays this for every m² of channel outside the river polygon, even where nothing is cut, so the line keeps to the river. A value equal to the channel depth prices land like a full-depth cut.</span>
           <span class="dim" data-testid="land-weight-stored">Stored: {storedLand}</span>
         </li>
+        <li class="sub length" data-testid="corridor-limit-row">
+          <label class="tick">
+            <input type="checkbox" data-testid="corridor-limit" checked={storedCorridorLimit} disabled={busy !== null} onchange={(e) => onCorridorLimit(e.currentTarget.checked)} />
+            Keep the line inside the corridor
+          </label>
+          <span class="dim help" data-testid="corridor-limit-help">The pool search may not go further from the baseline than the corridor's half-width. A pool with no line inside the corridor keeps the baseline and says so.</span>
+        </li>
       {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}
         <li class="sub" data-testid="use-water-row">
@@ -167,6 +181,8 @@
   .length label { flex-direction: column; align-items: flex-start; }
   .length input { width: 7em; font-size: var(--fs-12); }
   .length .help { flex-basis: 100%; }
+  .length label.tick { flex-direction: row; align-items: center; gap: 0.4em; }
+  .length label.tick input { width: auto; }
   select { font-size: var(--fs-12); padding: 3px 6px; max-width: 120px; }
   /* A word and a shape on every chip; the shape comes from CSS so the word stays the only text. */
   .chip { font-size: var(--fs-11); font-weight: 600; padding: 1px 7px; border-radius: var(--radius); color: var(--ink-3); background: var(--surface-2); }

@@ -178,3 +178,48 @@ fn a_negative_land_weight_is_refused_by_name() {
     );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
+
+/// `--corridor-limit` goes through the stage's own reading of its settings. Its help says what it
+/// does; a value that is not true or false is refused before anything runs (exit 2) and the design
+/// is not written.
+#[test]
+fn the_corridor_limit_flag_is_documented_and_refuses_a_value_that_is_not_true_or_false() {
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--corridor-limit");
+    assert!(text.contains("corridor_half_m"), "{text}");
+    assert!(text.contains("keeps the baseline"), "{text}");
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-corridor-limit");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Corridor limit", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args([
+            "optimise",
+            path.to_str().unwrap(),
+            "--corridor-limit",
+            "maybe",
+        ])
+        .output()
+        .expect("owd runs");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    // The flag alone, and with a value, are both read: the run then stops at what the bare design
+    // lacks (its sizing), not at the flag.
+    for args in [vec!["--corridor-limit"], vec!["--corridor-limit", "false"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+            .arg("optimise")
+            .arg(path.to_str().unwrap())
+            .args(&args)
+            .output()
+            .expect("owd runs");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("sizing"), "{args:?}: {err}");
+    }
+}

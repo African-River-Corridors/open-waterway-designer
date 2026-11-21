@@ -611,6 +611,19 @@ describe("OWD web smoke tests", () => {
       await text(b, "land-weight-help"),
       "The pool search pays this for every m² of channel outside the river polygon, even where nothing is cut, so the line keeps to the river. A value equal to the channel depth prices land like a full-depth cut.",
     );
+    // The corridor tick box: off and not in the design; ticked, the design holds it; unticked, it goes.
+    assert.equal(await (await tid(b, "corridor-limit")).isSelected(), false);
+    assert.equal((await pageDoc(b)).stages.optimise.settings.corridor_limit, undefined);
+    await (await tid(b, "corridor-limit")).click();
+    await until(b, "the corridor limit stored", async () => (await pageDoc(b)).stages.optimise.settings?.corridor_limit === true);
+    await until(b, "the box ticked", async () => await (await tid(b, "corridor-limit")).isSelected());
+    assert.equal(
+      await text(b, "corridor-limit-help"),
+      "The pool search may not go further from the baseline than the corridor's half-width. A pool with no line inside the corridor keeps the baseline and says so.",
+    );
+    await (await tid(b, "corridor-limit")).click();
+    await until(b, "the corridor limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.corridor_limit === undefined);
+    assert.equal((await pageDoc(b)).stages.optimise.settings.land_weight, 3.5, "the land cost is kept");
     assert.equal(await exists(b, "error"), false);
     // A value below 0 is refused in plain words, and the design keeps what it held.
     await (await tid(b, "land-weight")).setValue("-1");

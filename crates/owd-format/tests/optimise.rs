@@ -462,6 +462,7 @@ fn with_the_new_settings_at_their_defaults_the_results_are_the_base_branchs_byte
     let mut named = design();
     let mut with_defaults = example_settings();
     with_defaults["land_weight"] = json!(0.0);
+    with_defaults["corridor_limit"] = json!(false);
     named.run_optimise(&with_defaults, Some(&terrain)).unwrap();
     assert_eq!(named.to_text(), plain.to_text());
 }
@@ -593,3 +594,87 @@ fn a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes() {
 
 const BASE_SETTINGS: (usize, u64) = (551, 0xd587_925a_739f_6b8a);
 const BASE_RESULTS: (usize, u64) = (48188, 0x5036_5f19_a431_3451);
+
+/// The corridor limit is a setting of the stage, off (false) by default and then not written. On,
+/// it is written, read back from the saved text, and makes a fresh stage stale. A value that is not
+/// true or false is refused by name in plain words and changes nothing.
+///
+/// Label: property
+#[test]
+fn the_corridor_limit_is_a_setting_off_by_default() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert!(!d.corridor_limit);
+    assert!(d.to_value().get("corridor_limit").is_none());
+    let mut s = design();
+    s.set_optimise_settings(&json!({"corridor_limit": true}))
+        .unwrap();
+    let mut want = d.to_value();
+    want["corridor_limit"] = json!(true);
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], want);
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(
+        again.document()["stages"]["optimise"]["settings"]["corridor_limit"],
+        json!(true)
+    );
+    let before = s.to_text();
+    for bad in [json!(1.0), json!("yes")] {
+        let e = s
+            .set_optimise_settings(&json!({ "corridor_limit": bad }))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            e,
+            "the setting `corridor_limit` must be true or false (true holds the pool search \
+             inside the corridor)"
+        );
+        assert_eq!(s.to_text(), before);
+    }
+    s.set_optimise_settings(&json!({"corridor_limit": false}))
+        .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// With the limit on, the lattice's line stays within `corridor_half_m` of the baseline (to within
+/// a grid cell), the details say the limit was on and how wide, and every pool is either used or
+/// keeps its baseline with a reason. The example's corridor is 180 m.
+///
+/// Label: property
+#[test]
+fn with_the_corridor_limit_the_stages_line_stays_inside_the_corridor() {
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    s.set_optimise_settings(&json!({"corridor_limit": true}))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Stale);
+    s.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    let doc = s.document();
+    let res = &doc["stages"]["optimise"]["results"];
+    let opt = owd_format::design::design_lines_of(doc)
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert_eq!(opt["details"]["corridor_limit"], json!(true));
+    assert_eq!(opt["details"]["corridor_half_m"], json!(180.0));
+    let (line, baseline) = (pts(&opt["line"]), pts(&res["baseline"]));
+    let far = line
+        .iter()
+        .map(|p| {
+            let q = owd_core::geom::linear::interpolate(
+                &baseline,
+                owd_core::geom::linear::project(&baseline, *p),
+            )
+            .unwrap();
+            (p[0] - q[0]).hypot(p[1] - q[1])
+        })
+        .fold(0.0, f64::max);
+    assert!(far <= 180.0 + 5.0, "{far}");
+    for p in opt["details"]["pools"].as_array().unwrap() {
+        assert!(
+            p["used"] == json!(true) || p["kept_baseline_because"].is_string(),
+            "{p}"
+        );
+    }
+}
