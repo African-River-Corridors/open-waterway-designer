@@ -190,6 +190,9 @@ const answer: Record<string, () => unknown> = {
   station_near: () => 9000, hillshade: relief,
   // The mock has no engine to cut terrain tiles: the 3D button says there is no DEM.
   terrain_info: () => null,
+  // The mock design has no pools: no weirs to draw, and no pool water.
+  map_structures: () => ({ model: { note: "placeholder model, not a design", vessel_length_m: null, vessel_beam_m: null, chamber_length_m: null, chamber_width_m: null, wall_thickness_m: 3, wall_freeboard_m: 1.5, default_weir_length_m: 100, rules: "" }, pools: [], weirs: [] }),
+  pool_water_info: () => null,
   export_sheets: () => "/tmp/owd-sheets",
   export_report: () => "/tmp/owd-reports",
   sheets: () => [{ number: "OWD-MOCK-PL-001", title: "PLAN OVERVIEW", warnings: [],

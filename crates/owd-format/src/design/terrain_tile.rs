@@ -309,7 +309,7 @@ impl TileMaker {
         if !self.touches(z, x, y) {
             return Ok(vec![base; TILE * TILE]);
         }
-        Ok(self.sampled(z, x, y, 0, base, |px, py| self.height_at(px, py)))
+        Ok(self.sampled(z, x, y, 0, base, |px, py| self.height_at(px, py) as f32))
     }
 
     /// The DEM's own heights on the grid of tile `z/x/y`, with `margin` more pixels on every
@@ -319,7 +319,7 @@ impl TileMaker {
     pub fn ground(&self, z: u8, x: u32, y: u32, margin: usize) -> Result<Vec<f32>, DesignError> {
         check(z, x, y)?;
         Ok(self.sampled(z, x, y, margin, f32::NAN, |px, py| {
-            self.dem.sample_bilinear(px, py)
+            self.dem.sample_bilinear(px, py) as f32
         }))
     }
 
@@ -330,17 +330,26 @@ impl TileMaker {
         w < de && e > dw && s < dn && n > ds
     }
 
+    /// A point given as longitude and latitude in degrees, in the DEM's CRS. `None` where the
+    /// projection refuses it.
+    pub(crate) fn to_dem(&self, lon_lat: [f64; 2]) -> Option<[f64; 2]> {
+        match &self.forward {
+            None => Some(lon_lat),
+            Some(f) => f(lon_lat),
+        }
+    }
+
     /// `height(px, py)` in the DEM's CRS at every pixel centre of tile `z/x/y` and of `margin`
     /// pixels around it. A pixel the projection refuses is `unplaced`.
-    fn sampled(
+    pub(crate) fn sampled<T: Copy>(
         &self,
         z: u8,
         x: u32,
         y: u32,
         margin: usize,
-        unplaced: f32,
-        height: impl Fn(f64, f64) -> f64,
-    ) -> Vec<f32> {
+        unplaced: T,
+        height: impl Fn(f64, f64) -> T,
+    ) -> Vec<T> {
         let side = TILE + 2 * margin;
         let mut out = vec![unplaced; side * side];
         // Projecting every pixel is most of the work. A tile is small beside the projection's
@@ -393,7 +402,7 @@ impl TileMaker {
                     }
                 });
                 if let Some([px, py]) = at {
-                    out[j * side + i] = height(px, py) as f32;
+                    out[j * side + i] = height(px, py);
                 }
             }
         }
@@ -426,7 +435,7 @@ impl TileMaker {
     }
 }
 
-fn check(z: u8, x: u32, y: u32) -> Result<(), DesignError> {
+pub(crate) fn check(z: u8, x: u32, y: u32) -> Result<(), DesignError> {
     if z > 24 || x >= (1u32 << z) || y >= (1u32 << z) {
         return Err(input(format!("there is no map tile {z}/{x}/{y}")));
     }

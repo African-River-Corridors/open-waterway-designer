@@ -503,6 +503,12 @@ fn map_geometry(state: State<Shared>) -> Reply {
     lock(&state)?.map_geometry()
 }
 
+/// The weirs, the locks and the pools of the design, for the map (MAP-4): made on demand, never stored.
+#[tauri::command]
+fn map_structures(state: State<Shared>) -> Reply {
+    lock(&state)?.map_structures()
+}
+
 /// The offline map fallback: a hillshade of the DEM as a PNG data URL with the four corners it goes
 /// on, or `null` when the design has no DEM that can be read. Drawn on a worker thread, with the
 /// state unlocked while it is.
@@ -1252,6 +1258,7 @@ pub fn run() {
             stretches_geojson,
             run_stale,
             map_geometry,
+            map_structures,
             option_table,
             export_file,
             sheets,

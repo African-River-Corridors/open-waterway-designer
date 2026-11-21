@@ -1054,7 +1054,8 @@ describe("OWD web smoke tests", () => {
     await button.click();
     assert.equal(await button.getAttribute("aria-expanded"), "true");
     // The seven layers of MAP-1, and the terrain shading (MAP-2) and the contours (MAP-3), which have tests of their own below.
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 2);
+    // And the weirs and locks, the pool levels and the pool water (MAP-4), tested below too.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 5);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);
@@ -1752,6 +1753,258 @@ describe("OWD web smoke tests", () => {
     assert.equal(await exists(b, "legend-contours"), false);
     assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), null);
     assert.equal(await b.execute(() => localStorage.getItem("owd-map-contours")), "5", "the interval is kept for the next time");
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("weirs, locks and pools (MAP-4): the layers are greyed without pools or a DEM, a weir has its label and its card, the pool water is a map layer with a read-out and a land table, the 3D view stands on the water, the ticks are remembered, and the design does not change", async () => {
+    // The synthetic example with three pools: 1.0 m from 0 m, 2.5 m from 1000 m and 4.0 m from 2000 m of river.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-pools-"));
+    const doc = path.join(dir, "river-pools.owd");
+    fs.copyFileSync(path.join(FIXTURES, "river-example.owd"), doc);
+    fs.writeFileSync(path.join(dir, "pools.csv"), "chainage_m,level_m\n0,1.0\n1000,2.5\n2000,4.0\n");
+    execFileSync(CLI, ["import", doc, "--water-pools", path.join(dir, "pools.csv")], { encoding: "utf8" });
+    // The map needs WebGL: headless Chrome gets it from SwiftShader, in software.
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const mapAttr = async (name) => (await tid(b, "plan-map")).getAttribute(name);
+    const box = (id) => b.execute((i) => {
+      const c = document.querySelector(`[data-testid="layer-${i}"]`);
+      return { checked: c.checked, disabled: c.disabled, row: c.closest("label").textContent.replace(/\s+/g, " ").trim() };
+    }, id);
+    const savedText = async () => {
+      await b.execute(() => window.__owdPlatform.call("snapshot"));
+      await new Promise((r) => setTimeout(r, 300));
+      return b.execute(() => JSON.parse(localStorage.getItem("owd.lastDesign")).text);
+    };
+    const mapState = () => b.execute(() => {
+      const m = window.__owdMap;
+      const t = m.getTerrain();
+      const layers = m.getStyle().layers.map((l) => l.id);
+      return { terrain: t ? t.source : null, sources: ["pool-water", "dem-water"].filter((id) => m.getSource(id)), tiles: m.getSource("pool-water") ? m.getStyle().sources["pool-water"].tiles : null, order: ["basemap", "pool-water", "polygon", "options", "structures-weir", "structures-3d"].map((id) => layers.indexOf(id)), blocks: m.getLayer("structures-3d") ? m.getLayoutProperty("structures-3d", "visibility") : "absent" };
+    });
+    await until(b, "the map", () => b.execute(() => !!window.__owdMap));
+
+    // No design: the three layers are greyed and say "none". The pool water starts unticked.
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box("structures"), { checked: true, disabled: true, row: "Weirs and locks none" });
+    assert.deepEqual(await box("pool-levels"), { checked: true, disabled: true, row: "Pool levels none" });
+    assert.deepEqual(await box("pool-water"), { checked: false, disabled: true, row: "Pool water none" });
+    // The example has a DEM and one flat water level: no pools, so still none, and an empty list from the engine.
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the example's DEM on the map", () => (async () => !(await (await tid(b, "terrain-3d")).getAttribute("disabled")))());
+    const none = await b.execute(() => window.__owdPlatform.call("map_structures"));
+    assert.deepEqual([none.pools, none.weirs], [[], []]);
+    assert.equal(none.model.note, "placeholder model, not a design");
+    assert.equal(await b.execute(() => window.__owdPlatform.call("pool_water_info")), null);
+    assert.equal((await box("structures")).disabled, true);
+    assert.deepEqual(await box("pool-water"), { checked: false, disabled: true, row: "Pool water none" });
+    assert.equal(await mapAttr("data-structures"), "0");
+    assert.equal(await exists(b, "legend-structures"), false);
+
+    // The design with three pools, opened without its DEM: two weirs and three pools on the map.
+    await (await tid(b, "layers-button")).click();
+    await pick(b, async () => (await openButton(b)).click(), doc);
+    await until(b, "the file name", async () => (await text(b, "file-label")).includes("river-pools.owd"));
+    await until(b, "the weirs on the map", async () => (await mapAttr("data-structures")) === "2");
+    const list = await b.execute(() => window.__owdPlatform.call("map_structures"));
+    assert.deepEqual(list.pools.map((p) => [p.number, p.level_m]), [[1, 1], [2, 2.5], [3, 4]]);
+    assert.deepEqual(list.weirs.map((w) => [w.number, w.upstream_level_m, w.downstream_level_m, w.lift_m, w.upstream_pool]), [[1, 2.5, 1, 1.5, 2], [2, 4, 2.5, 1.5, 3]]);
+    for (const w of list.weirs) {
+      assert.ok(w.clipped_to_river && w.weir_length_m > 20 && w.weir_length_m < 80, `the weir is as long as the river is wide: ${w.weir_length_m}`);
+      assert.deepEqual([...new Set(w.parts.map((p) => p.kind))].sort(), ["lock_chamber", "lock_gate", "lock_wall", "weir"]);
+    }
+    const km = (w) => (w.chainage_m / 1000).toFixed(1);
+    const labels = await b.execute(() => [...document.querySelectorAll('[data-testid="weir-marker"]')].map((e) => [e.querySelector(".weir-mark").textContent, e.querySelector(".weir-text").textContent, e.title]));
+    assert.deepEqual(labels.map((l) => l.slice(0, 2)), [["1", `Weir 1 · km ${km(list.weirs[0])} · pool 2.5 m · lift 1.5 m`], ["2", `Weir 2 · km ${km(list.weirs[1])} · pool 4.0 m · lift 1.5 m`]]);
+    assert.match(labels[0][2], /placeholder model, not a design/);
+    assert.deepEqual(await b.execute(() => [...document.querySelectorAll('[data-testid="pool-label"]')].map((e) => e.textContent)), ["Pool 1 · 1.0 m", "Pool 2 · 2.5 m", "Pool 3 · 4.0 m"]);
+    assert.match(await text(b, "legend-structures"), /weir and lock: placeholder model, not a design/);
+    assert.equal(await exists(b, "legend-pool-levels"), true);
+    assert.equal(await exists(b, "legend-pool-water"), false);
+    // The blocks are map shapes over the design line; in the flat view the 3D blocks are hidden.
+    let state = await mapState();
+    assert.ok(state.order[4] > state.order[3] && state.order[3] > state.order[2], `the weirs are drawn over the design: ${state.order}`);
+    assert.equal(state.blocks, "none");
+    assert.equal(await b.execute(() => window.__owdMap.getSource("structures").serialize().data.features.length), list.weirs.reduce((n, w) => n + w.parts.length, 0));
+    // With pools and no DEM the pool water says what it waits for.
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box("structures"), { checked: true, disabled: false, row: "Weirs and locks" });
+    assert.deepEqual(await box("pool-levels"), { checked: true, disabled: false, row: "Pool levels" });
+    assert.deepEqual(await box("pool-water"), { checked: false, disabled: true, row: "Pool water load a DEM" });
+
+    // A weir's card: the levels, the lift and the chamber the placeholder uses.
+    await b.execute(() => document.querySelector('[data-testid="weir-marker"][data-weir="1"]').click());
+    await until(b, "the weir card", () => exists(b, "weir-card"));
+    assert.equal(await text(b, "weir-card-note"), "placeholder model, not a design");
+    assert.equal((await text(b, "weir-card-chainage")).replace(/\s+/g, " "), `km ${km(list.weirs[0])} (${Math.round(list.weirs[0].chainage_m)} m)`);
+    assert.match((await text(b, "weir-card-upstream")).replace(/\s+/g, " "), /^2\.5 m ?the minimum level this weir holds, pool 2$/);
+    assert.match((await text(b, "weir-card-downstream")).replace(/\s+/g, " "), /^1\.0 m ?pool 1$/);
+    assert.equal(await text(b, "weir-card-lift"), "1.5 m");
+    assert.equal(await text(b, "weir-card-chamber"), `${list.model.chamber_length_m.toFixed(1)} m × ${list.model.chamber_width_m.toFixed(1)} m`);
+    assert.equal(list.model.chamber_length_m, 1.2 * list.model.vessel_length_m);
+    assert.equal(list.model.chamber_width_m, list.model.vessel_beam_m + 2);
+    assert.match(await text(b, "weir-card-rules"), /chamber length = 1\.2 x vessel length; chamber width = vessel beam \+ 2 m; walls, gates and weir 3 m thick; top of walls 1\.5 m above the upstream pool level/);
+    assert.match(await text(b, "weir-card-land"), /tick Pool water/);
+    await (await tid(b, "weir-card-close")).click();
+    await until(b, "the card to close", async () => !(await exists(b, "weir-card")));
+    const before = await savedText();
+
+    // The DEM arrives: the pool water can be ticked. Until it is, the map has asked the engine for nothing.
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the DEM", async () => (await text(b, "data-dem")).includes("river-dem.tif"));
+    await until(b, "the pool water tick to come on", async () => !(await box("pool-water")).disabled);
+    const beforeDem = await savedText();
+    assert.deepEqual(await box("pool-water"), { checked: false, disabled: false, row: "Pool water" });
+    assert.equal(await mapAttr("data-pool-water"), "off");
+    assert.deepEqual((await mapState()).sources, []);
+    await b.execute(() => {
+      window.__mapErrors = [];
+      window.__owdMap.on("error", (e) => window.__mapErrors.push(`${e.sourceId ?? ""}: ${e.error?.message ?? e.error}`));
+    });
+    await (await tid(b, "layer-pool-water")).click();
+    await until(b, "the pool water on the map", async () => (await mapAttr("data-pool-water")) === "on", 120000);
+    const info = await b.execute(() => window.__owdPlatform.call("pool_water_info"));
+    state = await mapState();
+    assert.deepEqual(state.sources, ["pool-water", "dem-water"]);
+    assert.deepEqual(state.tiles, [`owd-pool://${info.id}/{z}/{x}/{y}`]);
+    assert.ok(state.order[1] > state.order[0] && state.order[1] < state.order[2], `the water is over the imagery and under the design: ${state.order}`);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["pool-water"]');
+    // Each pool floods ground, and the land outside the river polygon is counted in hectares.
+    assert.deepEqual(info.pools.map((p) => [p.number, p.level_m]), [[1, 1], [2, 2.5], [3, 4]]);
+    for (const p of info.pools) assert.ok(p.flooded_ha > 1 && p.outside_river_ha >= 0 && p.outside_river_ha < p.flooded_ha, JSON.stringify(p));
+    assert.ok(info.pools[2].outside_river_ha > 1, "the highest pool drowns land outside the river");
+    assert.equal(info.mask.factor, 1, "a small DEM: a mask cell for each DEM cell");
+    await until(b, "the legend", () => exists(b, "legend-pool-water"));
+    assert.match(await text(b, "legend-pool-water"), /pool water by depth: 0 m to 10 m and deeper/);
+    await (await tid(b, "pool-land-button")).click();
+    const rows = await b.execute(() => [...document.querySelectorAll('[data-testid="pool-land-row"]')].map((r) => [...r.children].map((c) => c.textContent)));
+    assert.deepEqual(rows, info.pools.map((p) => [String(p.number), p.level_m.toFixed(1), p.flooded_ha.toFixed(1), p.outside_river_ha.toFixed(1)]));
+    assert.match(await text(b, "pool-land-table"), /A study figure, not a survey/);
+    await (await tid(b, "pool-land-button")).click();
+    // The weir card now has the land its pool drowns.
+    await b.execute(() => document.querySelector('[data-testid="weir-marker"][data-weir="2"]').click());
+    await until(b, "the weir card", () => exists(b, "weir-card"));
+    assert.equal((await text(b, "weir-card-land")).replace(/\s+/g, " "), `${info.pools[2].outside_river_ha.toFixed(1)} ha outside the river polygon by pool 3 at 4.0 m`.replace("polygon by", "polygon by"));
+    await (await tid(b, "weir-card-close")).click();
+
+    // A water tile is a PNG made in the browser, kept after the first ask; the surface tile too. How long each takes.
+    const tile = await b.execute(async (id, mid) => {
+      const z = 14;
+      const x = Math.floor(((mid[0] + 180) / 360) * 2 ** z);
+      const lat = (mid[1] * Math.PI) / 180;
+      const y = Math.floor(((1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2) * 2 ** z);
+      const time = async (command) => {
+        const t0 = performance.now();
+        const bytes = await window.__owdPlatform.call(command, { id, z, x, y });
+        const first = performance.now() - t0;
+        const t1 = performance.now();
+        await window.__owdPlatform.call(command, { id, z, x, y });
+        return { first, again: performance.now() - t1, length: bytes.length, magic: [...bytes.slice(0, 4)] };
+      };
+      // A zoom level the map has not asked for, so the first ask makes the tile.
+      const water = await time("pool_water_tile");
+      const surface = await time("pool_surface_tile");
+      const old = await window.__owdPlatform.call("pool_water_tile", { id: id + 7, z, x, y }).then(() => "", (e) => String(e));
+      const at = await window.__owdPlatform.call("pool_water_at", { id, lon: mid[0], lat: mid[1] });
+      return { water, surface, old, at };
+    }, info.id, list.pools[1].mid);
+    assert.deepEqual(tile.water.magic, [0x89, 0x50, 0x4e, 0x47]);
+    assert.deepEqual(tile.surface.magic, [0x89, 0x50, 0x4e, 0x47]);
+    assert.match(tile.old, /out of date/);
+    assert.equal(tile.at.pool, 2);
+    assert.equal(tile.at.water_level_m, 2.5);
+    assert.ok(Math.abs(tile.at.depth_m - (2.5 - tile.at.ground_m)) < 1e-9 && tile.at.depth_m > 0);
+    console.log(`pool water in the browser (wasm, SwiftShader run): flood mask ${info.build_ms.toFixed(0)} ms (${info.mask.width} x ${info.mask.height} cells), water tile first ${tile.water.first.toFixed(1)} ms, cached ${tile.water.again.toFixed(1)} ms, surface tile first ${tile.surface.first.toFixed(1)} ms, cached ${tile.surface.again.toFixed(1)} ms`);
+
+    // A click on the water reads it: the level, the ground, the depth and the pool.
+    await (await tid(b, "layers-button")).click();
+    await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()), 120000);
+    const at = await b.execute((p) => {
+      const q = window.__owdMap.project(p);
+      const r = window.__owdMap.getCanvas().getBoundingClientRect();
+      return [Math.round(q.x + r.left), Math.round(q.y + r.top)];
+    }, list.pools[1].mid);
+    await b.performActions([{ type: "pointer", id: "mouse", parameters: { pointerType: "mouse" }, actions: [{ type: "pointerMove", x: at[0], y: at[1] }, { type: "pointerDown", button: 0 }, { type: "pointerUp", button: 0 }] }]);
+    await until(b, "the read-out", () => exists(b, "pool-water-readout"));
+    assert.match(await text(b, "pool-water-readout"), /^water level 2\.5 m, ground -?\d+\.\d m, depth \d+\.\d m, pool 2/);
+
+    // In 3D the map stands on the terrain with the water on it, and the weirs and locks stand up as blocks.
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the water terrain", async () => (await mapAttr("data-water-terrain")) === "on");
+    state = await mapState();
+    assert.equal(state.terrain, "dem-water");
+    assert.equal(state.blocks, "visible");
+    await until(b, "the map to settle in 3D", () => b.execute(() => window.__owdMap.loaded() && !window.__owdMap.isMoving()), 180000);
+    await until(b, "the water terrain's tiles", () => b.execute(() => window.__owdMap.isSourceLoaded("dem-water")), 120000);
+    // The 3D surface at the middle of pool 2 is the pool's level, not the drowned ground under it.
+    const surface = await b.execute((p) => window.__owdMap.queryTerrainElevation(p) / window.__owdMap.getTerrain().exaggeration, list.pools[1].mid);
+    assert.ok(Math.abs(surface - 2.5) < 0.05, `the water is flat at 2.5 m in 3D: ${surface}`);
+    if (SHOTS) await b.saveScreenshot(path.join(SHOTS, "web-pool-water-3d.png"));
+    // Without the pool water the map stands on the ground again, and each block's top is at its level: the
+    // map measures a block from the drawn terrain at its middle, so top = (terrain there + height) / exaggeration.
+    await (await tid(b, "layers-button")).click();
+    await (await tid(b, "layer-pool-water")).click();
+    await until(b, "the ground terrain", async () => (await mapAttr("data-water-terrain")) === "off");
+    assert.equal((await mapState()).terrain, "dem");
+    assert.equal(await mapAttr("data-pool-water"), "off");
+    assert.deepEqual((await mapState()).sources, []);
+    assert.equal(await exists(b, "pool-water-readout"), false);
+    await until(b, "the map to settle on the ground", () => b.execute(() => window.__owdMap.loaded() && !window.__owdMap.isMoving()), 180000);
+    const tops = () => b.execute(() => {
+      const m = window.__owdMap;
+      const e = m.getTerrain().exaggeration;
+      return m.getSource("structures-3d").serialize().data.features.map((f) => {
+        const ring = f.geometry.coordinates[0].slice(0, -1);
+        const mid = [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
+        return { kind: f.properties.kind, top: f.properties.top_m, height: f.properties.height, drawn: (m.queryTerrainElevation(mid) + f.properties.height) / e };
+      });
+    });
+    await until(b, "the blocks to stand at their levels", async () => {
+      const t = await tops();
+      return t.length > 0 && t.every((x) => Math.abs(x.drawn - x.top) < 0.05);
+    }, 120000);
+    const blocks = await tops();
+    assert.equal(blocks.length, list.weirs.reduce((n, w) => n + w.parts.length, 0));
+    assert.deepEqual([...new Set(blocks.filter((x) => x.kind === "weir").map((x) => x.top))], [2.5, 4], "each weir's crest is at its upstream pool level");
+    assert.deepEqual([...new Set(blocks.filter((x) => x.kind === "lock_wall").map((x) => x.top))], [4, 5.5], "the walls stand 1.5 m over it");
+    assert.deepEqual([...new Set(blocks.filter((x) => x.kind === "lock_chamber").map((x) => x.top))], [1, 2.5], "the chamber is at the lower pool level");
+    assert.ok(blocks.every((x) => x.height > 0), "every block stands above the ground");
+    assert.deepEqual(await b.execute(() => window.__mapErrors.filter((m) => /^(pool-water|dem-water|dem)/.test(m))), [], "no pool water or terrain tile failed");
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the terrain off", async () => (await mapAttr("data-terrain")) === "off");
+    assert.equal((await mapState()).blocks, "none");
+
+    // Unticked, the weirs and the pool labels leave the map and the legend; ticked again they are back.
+    await (await tid(b, "layer-structures")).click();
+    await (await tid(b, "layer-pool-levels")).click();
+    await until(b, "the legend without the weirs", async () => !(await exists(b, "legend-structures")));
+    assert.equal(await exists(b, "legend-pool-levels"), false);
+    assert.deepEqual(await b.execute(() => [...document.querySelectorAll('[data-testid="weir-marker"], [data-testid="pool-label"]')].map((e) => e.style.display)), ["none", "none", "none", "none", "none"]);
+    assert.equal(await b.execute(() => window.__owdMap.getLayoutProperty("structures-weir", "visibility")), "none");
+    assert.equal(await mapAttr("data-layers-off"), "structures pool-levels");
+    await (await tid(b, "layer-structures")).click();
+    await (await tid(b, "layer-pool-levels")).click();
+    await until(b, "the weirs in the legend again", () => exists(b, "legend-structures"));
+    await (await tid(b, "layer-pool-water")).click();
+    await until(b, "the pool water again", async () => (await mapAttr("data-pool-water")) === "on", 120000);
+
+    // Nothing of this is in the design: the saved text is the same, byte for byte.
+    const after = await savedText();
+    assert.equal(after, beforeDem, "the design file is byte-identical after the weirs, the pool water and the 3D view");
+    assert.equal(JSON.stringify(JSON.parse(after).stages), JSON.stringify(JSON.parse(before).stages), "and the stages are as they were before the DEM came");
+    assert.doesNotMatch(after, /weir_length|placeholder|pool-water|flooded/);
+
+    // Remembered on this machine. A reload has the design and not the DEM: the pool water tick waits for it.
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the design after a reload", async () => (await text(b, "file-label")).includes("river-pools.owd"));
+    await until(b, "the weirs again", async () => (await mapAttr("data-structures")) === "2");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["pool-water"]');
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box("pool-water"), { checked: true, disabled: true, row: "Pool water load a DEM" });
+    assert.equal(await mapAttr("data-pool-water"), "off");
     assert.equal(await exists(b, "error"), false);
   });
 
