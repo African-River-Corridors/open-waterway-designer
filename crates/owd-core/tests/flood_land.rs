@@ -744,7 +744,16 @@ fn a_240_km_river_with_lifts_of_1_to_12_m() {
         Ok(cum[(b / 25.0) as usize][k] - cum[(a / 25.0) as usize][k])
     };
     let structure = |lift: f64| 2.5e6 + 6.5e5 * lift;
-    for (cost, limit) in [(0.0, None), (3000.0, None), (3000.0, Some(1.0))] {
+    for (cost, limit) in [
+        (0.0, None),
+        (100.0, None),
+        (300.0, None),
+        (1000.0, None),
+        (3000.0, None),
+        (10_000.0, None),
+        (30_000.0, None),
+        (3000.0, Some(1.0)),
+    ] {
         let terms = FloodTerms {
             field: &field,
             table: &table,

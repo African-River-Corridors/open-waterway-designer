@@ -633,7 +633,11 @@ describe("OWD web smoke tests", () => {
     assert.deepEqual(await b.execute(() => [...document.querySelectorAll("[data-testid=flood-pools] th")].map((c) => c.textContent.trim())), ["Pool level (m)", "Lift (m)", "Flooded (ha)", "Above bank-full (m)"]);
     assert.match(await text(b, "flood-total"), /^Flooded land: \d+\.\d ha outside the river, flood cost /);
     // An empty limit is no limit: the key leaves the design.
-    await (await tid(b, "bank-limit")).setValue("");
+    await b.execute(() => {
+      const box = document.querySelector('[data-testid="bank-limit"]');
+      box.value = "";
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     await (await tid(b, "set-bank-limit")).click();
     await until(b, "the limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.max_above_bank_m === undefined);
     assert.equal(await text(b, "bank-limit-stored"), "Stored: no limit");
