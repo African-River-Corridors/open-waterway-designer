@@ -600,7 +600,36 @@ describe("OWD web smoke tests", () => {
     await until(b, "optimise stale", async () => (await stageStatus(b)).includes("optimise:stale"));
     await until(b, "the alignment line named", async () => /\(from Alignment\)$/.test(await text(b, "line-on-screen")));
     assert.match(await text(b, "length-weight-help"), /A high value shortens the line and raises the cut\./);
+    // The cost per m² of land, the box under it: the design holds it beside the length cost, and the help is two plain sentences.
+    assert.equal(await text(b, "land-weight-stored"), "Stored: 0");
+    await (await tid(b, "land-weight")).setValue("3.5");
+    await (await tid(b, "set-land-weight")).click();
+    await until(b, "the land weight stored", async () => (await pageDoc(b)).stages.optimise.settings?.land_weight === 3.5);
+    assert.equal(await text(b, "land-weight-stored"), "Stored: 3.5");
+    assert.equal((await pageDoc(b)).stages.optimise.settings.length_weight, 2.5, "the length cost is kept");
+    assert.equal(
+      await text(b, "land-weight-help"),
+      "The pool search pays this for every m² of channel outside the river polygon, even where nothing is cut, so the line keeps to the river. A value equal to the channel depth prices land like a full-depth cut.",
+    );
+    // The corridor tick box: off and not in the design; ticked, the design holds it; unticked, it goes.
+    assert.equal(await (await tid(b, "corridor-limit")).isSelected(), false);
+    assert.equal((await pageDoc(b)).stages.optimise.settings.corridor_limit, undefined);
+    await (await tid(b, "corridor-limit")).click();
+    await until(b, "the corridor limit stored", async () => (await pageDoc(b)).stages.optimise.settings?.corridor_limit === true);
+    await until(b, "the box ticked", async () => await (await tid(b, "corridor-limit")).isSelected());
+    assert.equal(
+      await text(b, "corridor-limit-help"),
+      "The pool search may not go further from the baseline than the corridor's half-width. A pool with no line inside the corridor keeps the baseline and says so.",
+    );
+    await (await tid(b, "corridor-limit")).click();
+    await until(b, "the corridor limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.corridor_limit === undefined);
+    assert.equal((await pageDoc(b)).stages.optimise.settings.land_weight, 3.5, "the land cost is kept");
     assert.equal(await exists(b, "error"), false);
+    // A value below 0 is refused in plain words, and the design keeps what it held.
+    await (await tid(b, "land-weight")).setValue("-1");
+    await (await tid(b, "set-land-weight")).click();
+    await until(b, "the refusal", async () => (await exists(b, "error")) && (await text(b, "error")).includes("The cost per m² of land must be a number, 0 or more."));
+    assert.equal((await pageDoc(b)).stages.optimise.settings.land_weight, 3.5);
   });
 
   it("opens an older-format design with one quiet information row and the DEM warning; Details lists the notes, Dismiss removes a row, another design clears them (UI-3)", async () => {

@@ -150,6 +150,17 @@
     }
     await fileAction(() => api.setOptimiseSettings({ length_weight: x }));
   }
+  async function optimiseLand(weight: string) {
+    const x = Number(weight);
+    if (weight.trim() === "" || !Number.isFinite(x) || x < 0) {
+      error = "The cost per m² of land must be a number, 0 or more.";
+      return;
+    }
+    await fileAction(() => api.setOptimiseSettings({ land_weight: x }));
+  }
+  async function corridorLimit(on: boolean) {
+    await fileAction(() => api.setOptimiseSettings({ corridor_limit: on }));
+  }
   /** The design line the screen draws, and the stage that made it. */
   let lineName = $derived(lineOnScreen(snap?.document, snap?.stages, table?.rows[0]?.name));
   async function downstreamPoint(point: string) {
@@ -735,7 +746,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>
