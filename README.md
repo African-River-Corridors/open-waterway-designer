@@ -78,6 +78,37 @@ owd fits study.owd
 
 Then size and design for the vessel you choose (below): `owd size`, `owd align`, `owd volumes`.
 
+### Project folders
+
+Keep one study in one folder, so the design and its DEM open in one step:
+
+```
+<project folder>/
+  owd-project.json        the small text file that says what is here
+  design/<name>.owd       the design file(s)
+  terrain/<name>.tif      the DEM (GeoTIFF)
+  inputs/                 source data: centreline, river polygon, bank lines, water levels by pool
+  exports/                what OWD writes out: GeoJSON, CSV, sheets, reports
+```
+
+```
+owd project init reach-a --title "Reach A screening"
+owd project status reach-a
+owd run reach-a
+```
+
+- `owd project init` makes the folders and `owd-project.json`. It never overwrites one.
+- `owd project status` lists what the text file names, says whether each file is there, and checks the DEM
+  against the hash the design recorded.
+- Every command that takes a design file takes the project folder in its place.
+- In the web app, **Open project** asks for the folder, opens the design and loads the DEM in one step. Save
+  writes back into the folder, and exports go into `exports/`. Chrome and Edge have the folder dialog; in
+  Firefox and Safari use Open and Load… as before. Nothing is uploaded.
+
+Paths in `owd-project.json` are from the folder, with forward slashes, and may not leave it. The design still
+names its DEM from its own folder (`../terrain/<name>.tif`). The full description is in
+[docs/project-folder.md](docs/project-folder.md).
+
 ### Channel rules
 
 `owd size` sizes the channel to the Rule Sets you select (`--rule-set pianc-wg141 --set-input se_quality=B`); with

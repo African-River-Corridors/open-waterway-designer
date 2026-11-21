@@ -5,6 +5,7 @@ pub mod design_line;
 pub mod import;
 pub mod input;
 pub mod plan_cut;
+pub mod project;
 pub mod projects;
 pub mod qa;
 pub mod reach;

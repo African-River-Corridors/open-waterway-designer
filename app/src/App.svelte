@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, tick, untrack } from "svelte";
   import * as api from "./lib/api";
-  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, FloodSetting, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
+  import type { Choices, CrossSection as CrossSectionData, CustomFields, FitsSelection, FloodSetting, Hillshade, InputRole, LongSection as LongSectionData, MapGeometry, OptionTable, ProjectLook, ProjectStatus, RunMethod, Snapshot, StageName, StretchCollection, TerrainInfo } from "./lib/api";
+  import ProjectDialog from "./lib/ProjectDialog.svelte";
   import CrossSection from "./lib/CrossSection.svelte";
   import LongSection from "./lib/LongSection.svelte";
   import FloatPanel from "./lib/FloatPanel.svelte";
@@ -285,8 +286,79 @@
   /** A header Save or Save as: let go of the button first (Enter would press it again), then run. */
   async function saveButton(e: MouseEvent | null, action: () => Promise<Snapshot | null>) {
     (e?.currentTarget as HTMLElement | null | undefined)?.blur();
+    const inProject = action === api.save ? project : null;
     const saved = await fileAction(action);
-    if (saved && isWeb) notice = canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
+    if (saved && isWeb) notice = inProject?.design ? `Saved ${inProject.design} in the project folder "${inProject.folder}".` : canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
+  }
+
+  // --- the project folder (PROJ-1): the design and its DEM from one folder, in one step ---------------
+  /** The open project, as the Project panel shows it; null: none. Asked again after every change. */
+  let project = $state<ProjectStatus | null>(null);
+  /** A folder the user chose that has no owd-project.json yet: the dialog shows what was found. */
+  let projectLook = $state<ProjectLook | null>(null);
+  /** What opening the project, or loading one of its items, is doing now. */
+  let projectProgress = $state<string | null>(null);
+  /** The project folder remembered from last time, offered once at the start. */
+  let lastProject = $state<{ title: string; folder: string } | null>(null);
+  /** Chrome and Edge can open a folder; Firefox and Safari cannot. */
+  const canProject = isWeb && typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";
+  const NO_PROJECT = "This browser cannot open a folder: Chrome and Edge can. Use Open for the design and Load… for the DEM.";
+  $effect(() => {
+    void snap;
+    if (!isWeb || !snap) return;
+    api.projectStatus().then(
+      (p) => (project = p),
+      () => (project = null),
+    );
+  });
+
+  /** Open project, or Reopen: look into the folder, then open it, or show what was found. */
+  async function chooseProject(look: () => Promise<ProjectLook | null>) {
+    if (fileRunning) return;
+    await flush();
+    notice = null;
+    const chosen = await guard(look);
+    if (!chosen) return;
+    lastProject = null;
+    if (chosen.found) projectLook = chosen;
+    else await loadProject();
+  }
+  /** Open the chosen project: its design and its DEM in one step, with a line of progress. */
+  async function loadProject() {
+    projectLook = null;
+    await openDoc(async () => {
+      projectProgress = "Opening the project…";
+      try {
+        const next = await api.projectOpen((line) => (projectProgress = line));
+        if (next.project_note) notice = next.project_note;
+        return next;
+      } finally {
+        projectProgress = null;
+      }
+    });
+  }
+  /** "Use these and write owd-project.json". */
+  async function adoptProject(design: string | null, dem: string | null) {
+    const written = await guard(async () => {
+      await api.projectAdopt(design, dem);
+      return true;
+    });
+    if (!written) {
+      projectLook = null;
+      return;
+    }
+    await loadProject();
+    if (!error) notice = [`Wrote owd-project.json into the project folder.`, notice].filter(Boolean).join(" ");
+  }
+  /** A Load button of the Project panel. */
+  async function loadProjectItem(key: string) {
+    await fileAction(async () => {
+      try {
+        return await api.projectLoad(key, (line) => (projectProgress = line));
+      } finally {
+        projectProgress = null;
+      }
+    });
   }
 
   /** The warnings the user dismissed, and whether the older-format row is dismissed or open. A
@@ -527,6 +599,8 @@
       choices = await api.sizingChoices();
       snap = await api.snapshot();
     });
+    // The project folder of last time, if this browser kept it: offered, never opened by itself.
+    if (canProject) api.projectRemembered().then((last) => (lastProject = last)).catch(() => {});
     return () => undo.forEach((u) => u());
   });
 
@@ -579,6 +653,7 @@
     <button onclick={() => openDoc(api.newFile)}>New</button>
     {#if isWeb}<button onclick={() => openDoc(api.openExample)} data-testid="open-example" title="A short synthetic river with its DEM">Open the example</button>{/if}
     <button onclick={() => openDoc(api.openFile)}>Open</button>
+    {#if isWeb}<button data-testid="open-project" disabled={fileBusy} aria-disabled={!canProject} title={canProject ? "Open a project folder: OWD reads its owd-project.json, opens the design and loads the DEM in one step. Nothing is uploaded." : NO_PROJECT} onclick={() => (canProject ? chooseProject(api.projectPick) : (notice = NO_PROJECT))}>{canProject ? "Open project" : "Open project (Chrome or Edge only)"}</button>{/if}
     <button class:on={reachView} data-testid="start-from-river" aria-pressed={reachView} onclick={() => (reachView = !reachView)} title="Make a study's inputs from open data for a river reach">Start from a river</button>
     <button disabled={fileBusy} data-testid="save" title={SAVE_TITLE} onclick={(e) => saveButton(e, api.save)}>Save</button>
     <button disabled={fileBusy} data-testid="save-as" title={SAVE_AS_TITLE} onclick={(e) => saveButton(e, api.saveAs)}>Save as</button>
@@ -620,6 +695,17 @@
       <button onclick={() => (notice = null)}>Dismiss</button>
     </div>
   {/if}
+  {#if projectProgress}
+    <div class="banner info" role="status" data-testid="project-progress">{projectProgress}</div>
+  {/if}
+  {#if lastProject && !project}
+    <div class="banner info" role="status" data-testid="reopen-banner">
+      <span>Your last project folder: {lastProject.folder}/. Your browser will ask you to allow it again.</span>
+      <button data-testid="reopen-project" disabled={fileBusy} onclick={() => chooseProject(api.projectReopen)}>Reopen {lastProject.title}</button>
+      <button data-testid="reopen-dismiss" onclick={() => (lastProject = null)}>Not now</button>
+      <button data-testid="reopen-forget" onclick={() => api.projectForget().catch(() => {}).finally(() => (lastProject = null))} title="OWD will not offer this folder again">Forget it</button>
+    </div>
+  {/if}
   {#if imageryNote}
     <div class="banner warn" role="status" data-testid="imagery-note">
       {imageryNote}
@@ -650,7 +736,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>
@@ -708,6 +794,8 @@
       {/if}
     </section>
   </div>
+
+  {#if projectLook}<ProjectDialog look={projectLook} busy={fileBusy} onUse={adoptProject} onClose={() => (projectLook = null)} />{/if}
 
   <footer data-testid="status-line">Screening — not for construction</footer>
 </div>
