@@ -744,3 +744,93 @@ impl Overlay for CutSurface {
         self.at_dem(x, y, ground).map_or(ground, |c| c.after_m)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Label: property
+    use super::*;
+
+    /// A straight channel of `n` stations 25 m apart, cut 60 m each side.
+    fn long_channel(n: usize) -> Channel {
+        let stations = (0..n)
+            .map(|i| ChannelStation {
+                chainage_m: i as f64 * 25.0,
+                x: 300_000.0 + i as f64 * 25.0 * 0.8,
+                y: 600_000.0 + i as f64 * 25.0 * 0.6,
+                heading_rad: libm::atan2(0.6, 0.8),
+                half_width_m: 20.0,
+                water_level_m: 10.0,
+                invert_m: 7.0,
+                bench_left: true,
+                bench_right: true,
+                top_of_cut_left_m: Some(-60.0),
+                top_of_cut_right_m: Some(60.0),
+                daylight_left_m: Some(-60.5),
+                daylight_right_m: Some(60.5),
+                dredge_area_m2: 100.0,
+                excav_area_m2: 900.0,
+                max_face_h_m: 12.0,
+                on_dem: true,
+            })
+            .collect();
+        Channel {
+            option_id: "line".into(),
+            stations,
+            wet_slope: 3.0,
+            dx_m: 1.0,
+            maxw_m: 200.0,
+            from_volumes: true,
+            has_ground: true,
+        }
+    }
+
+    #[test]
+    fn the_cut_surface_of_a_200_km_river_is_small_and_quick_to_make_and_to_read() {
+        let utm = Utm {
+            zone: 30,
+            south: false,
+        };
+        let channel = long_channel(8_000);
+        let made = std::time::Instant::now();
+        let cut = CutSurface::new(&channel, utm, None, PolygonIndex::new(&[]), None).unwrap();
+        let made = made.elapsed();
+        // The stations and the index: under 3 MB, whatever the DEM.
+        assert!(cut.memory_bytes() < 3_000_000, "{} bytes", cut.memory_bytes());
+        // A tile's worth of points across the channel: every one answers, and the face is the rule's.
+        let read = std::time::Instant::now();
+        let mut hits = 0;
+        for k in 0..65_536 {
+            let (s, o) = (
+                1_000.0 + (k / 256) as f64 * 4.0,
+                (k % 256) as f64 - 128.0,
+            );
+            let p = [
+                300_000.0 + s * 0.8 - o * 0.6,
+                600_000.0 + s * 0.6 + o * 0.8,
+            ];
+            if let Some(c) = cut.at(p, 30.0) {
+                hits += 1;
+                assert!((c.offset_m - o).abs() < 1e-6 && (c.chainage_m - s).abs() < 1e-6);
+                assert_eq!(c.after_m, cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0));
+            } else {
+                assert!(o.abs() > 60.5 || cut_model_a_face(o.abs(), true, 20.0, 7.0, 10.0, 3.0, 3.0) >= 30.0);
+            }
+        }
+        let read = read.elapsed();
+        assert!(hits > 20_000, "{hits}");
+        println!(
+            "cut surface of 8,000 stations: {} bytes, made in {made:?}; 65,536 points read in {read:?}",
+            cut.memory_bytes()
+        );
+    }
+
+    #[test]
+    fn the_depth_classes_are_in_order_and_each_has_two_colours() {
+        assert!(DEPTH_CLASSES_M.windows(2).all(|w| w[0] < w[1]));
+        assert_eq!(depth_class(0.0), 0);
+        assert_eq!(depth_class(1.0), 1);
+        assert_eq!(depth_class(19.99), 4);
+        assert_eq!(depth_class(20.0), 5);
+        assert_ne!(DREDGE_COLOURS[5], DRY_COLOURS[5]);
+    }
+}

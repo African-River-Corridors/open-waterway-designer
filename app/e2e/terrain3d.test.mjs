@@ -43,7 +43,7 @@ describe("the terrain tile address", () => {
     assert.doesNotMatch(tileTemplate(1), /^https?:/);
   });
   it("is read back to its DEM number and tile, and anything else is refused", () => {
-    assert.deepEqual(parseTileUrl("owd-dem://3/14/8101/7958"), { id: 3, z: 14, x: 8101, y: 7958 });
+    assert.deepEqual(parseTileUrl("owd-dem://3/14/8101/7958"), { id: 3, state: "before", z: 14, x: 8101, y: 7958 });
     for (const url of ["https://example.org/14/1/2", "owd-dem://3/14/8101", "owd-dem://a/1/2/3", "owd-dem://3/14/8101/7958.png", "owd-dem://3/-1/0/0"]) assert.equal(parseTileUrl(url), null, url);
   });
 });
