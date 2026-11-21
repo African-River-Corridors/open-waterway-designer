@@ -193,6 +193,74 @@ impl Session {
         Ok(self.snapshot())
     }
 
+    /// Open a design of a project folder (PROJ-1) with the DEM the project names, in one step.
+    /// `design` and `dem_path` are paths from the project folder. The snapshot has `project_note`:
+    /// what opening changed in the design (its DEM named, or pointed at the project's), or null.
+    pub fn open_project(
+        &mut self,
+        design: &str,
+        text: &str,
+        dem_path: Option<String>,
+        dem: Option<Vec<u8>>,
+    ) -> Js<String> {
+        let dem = match (&dem_path, dem) {
+            (Some(p), Some(bytes)) => Some((Path::new(p.as_str()), bytes)),
+            _ => None,
+        };
+        let (opened, note) = ok(AppState::open_in_project(
+            Path::new(design),
+            text,
+            dem,
+            &today(),
+        ))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        let mut snap: Value = self.state.snapshot();
+        snap["project_note"] = json!(note);
+        Ok(snap.to_string())
+    }
+
+    /// Read and check the text of a project folder's `owd-project.json` (PROJ-1), as JSON.
+    pub fn project_read(&self, text: &str) -> Js<String> {
+        ok(owd_shell::project::read(text)).map(|v| v.to_string())
+    }
+
+    /// What a project folder with no text file holds in the standard places. `listing` is JSON,
+    /// see `owd_shell::project::find`.
+    pub fn project_find(&self, listing: &str) -> Js<String> {
+        let listing: Value =
+            ok(serde_json::from_str(listing).map_err(|e| format!("not a folder listing: {e}")))?;
+        Ok(owd_shell::project::find(&listing).to_string())
+    }
+
+    /// The text of a new `owd-project.json` for a folder that has none.
+    pub fn project_adopt(
+        &self,
+        listing: &str,
+        title: &str,
+        design: Option<String>,
+        dem: Option<String>,
+    ) -> Js<String> {
+        let listing: Value =
+            ok(serde_json::from_str(listing).map_err(|e| format!("not a folder listing: {e}")))?;
+        ok(owd_shell::project::adopt(
+            &listing,
+            title,
+            design.as_deref(),
+            dem.as_deref(),
+        ))
+    }
+
+    /// Where a file OWD writes out goes in a project folder: `exports/<name>`.
+    pub fn project_export_path(&self, name: &str) -> Js<String> {
+        ok(owd_shell::project::export_path(name))
+    }
+
+    /// Set the water level from a pool table (`chainage_m,level_m` a line), as `owd import
+    /// --water-pools FILE` does, through the same session call.
+    pub fn set_water_pools(&mut self, table: &str) -> Js<String> {
+        self.edit(|s| s.set_water_pools(table))
+    }
+
     /// The `.owd` text to save as `name` (the DEM path is said from there).
     pub fn save_text(&mut self, name: &str) -> String {
         self.state.save_text_for(Path::new(name))

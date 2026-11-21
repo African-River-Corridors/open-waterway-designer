@@ -1,0 +1,350 @@
+// The project folder in the web app (PROJ-1): the built web app in headless Chrome. Run by e2e/run-web.sh.
+// Headless Chrome cannot show the native folder dialog, so each test makes a real folder in the Origin
+// Private File System (real directory handles, no dialog) and has `showDirectoryPicker` answer with it.
+// Everything after the dialog is the app's own path: reading owd-project.json, opening the design and the
+// DEM in one step, Save back into the folder, exports into exports/, the folder remembered for Reopen.
+// The data is the synthetic web example.
+import { after, before, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { remote } from "webdriverio";
+import { serve } from "./web-server.mjs";
+
+const here = import.meta.dirname;
+const FIXTURES = path.resolve(here, "../../examples/web");
+const DIST = path.resolve(here, "../dist-web-test");
+const DESIGN = fs.readFileSync(path.join(FIXTURES, "river-example.owd"), "utf8");
+const DEM = fs.readFileSync(path.join(FIXTURES, "river-dem.tif"));
+/** A name no design or export may hold: the folder is never written into either. */
+const FOLDER = "zz-project-folder-reach-a";
+const POOLS = "chainage_m,level_m\n0,31.5\n600,31.25\n";
+const STANDARD = {
+  owd_project: 1,
+  title: "Reach A screening",
+  design: "design/reach-a.owd",
+  dem: "terrain/reach-a-dem.tif",
+  inputs: { centreline: null, river_polygon: null, left_bank: null, right_bank: null, water_pools: "inputs/pools.csv" },
+  notes: "",
+  client_ref: "kept as it is",
+};
+
+const chrome = (args = []) => ({
+  browserName: "chrome",
+  "wdio:enforceWebDriverClassic": true,
+  "goog:chromeOptions": {
+    ...(process.env.CHROME_BINARY ? { binary: process.env.CHROME_BINARY } : fs.existsSync("/Applications/Google Chrome.app") ? { binary: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" } : {}),
+    args: ["--headless=new", "--no-sandbox", "--disable-gpu", "--window-size=1500,950", ...args],
+  },
+});
+
+let origin, server;
+const sessions = [];
+async function start(args) {
+  const b = await remote({ logLevel: "warn", strictSelectors: false, capabilities: chrome(args) });
+  sessions.push(b);
+  await b.url(`${origin}/owd/app`);
+  await until(b, "the app", async () => (await exists(b, "file-label")) && (await exists(b, "web-label")));
+  return b;
+}
+const until = (b, what, check, timeout = 60000) => b.waitUntil(check, { timeout, interval: 150, timeoutMsg: `timed out waiting for: ${what}` });
+const tid = (b, id) => b.$(`[data-testid="${id}"]`);
+const text = async (b, id) => (await tid(b, id)).getText();
+const exists = async (b, id) => (await tid(b, id)).isExisting();
+const state = async (b, key) => (await tid(b, `project-item-${key}`)).getAttribute("data-state");
+const snapshot = (b) => b.execute(async () => await window.__owdPlatform.call("snapshot"));
+
+/** Make the folder in the Origin Private File System, and have the folder dialog answer with it.
+ * `files` maps a path to text, or to `{ base64 }` for bytes. Also notes every progress line shown. */
+async function folder(b, files, name = FOLDER) {
+  await b.execute(
+    async (name, files) => {
+      const root = await navigator.storage.getDirectory();
+      await root.removeEntry(name, { recursive: true }).catch(() => {});
+      const dir = await root.getDirectoryHandle(name, { create: true });
+      for (const [p, data] of Object.entries(files)) {
+        const names = p.split("/");
+        const file = names.pop();
+        let at = dir;
+        for (const n of names) at = await at.getDirectoryHandle(n, { create: true });
+        const w = await (await at.getFileHandle(file, { create: true })).createWritable();
+        await w.write(typeof data === "string" ? data : Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0)));
+        await w.close();
+      }
+      window.__pickerAsked = [];
+      window.showDirectoryPicker = async (options) => {
+        window.__pickerAsked.push(options);
+        return dir;
+      };
+      window.__progress = [];
+      new MutationObserver(() => {
+        const line = document.querySelector("[data-testid=project-progress]")?.textContent;
+        if (line && window.__progress.at(-1) !== line) window.__progress.push(line);
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    },
+    name,
+    files,
+  );
+}
+/** A file of the folder as text, or null when it is not there. */
+const fileText = (b, p, name = FOLDER) =>
+  b.execute(
+    async (name, p) => {
+      try {
+        let at = await (await navigator.storage.getDirectory()).getDirectoryHandle(name);
+        const names = p.split("/");
+        const file = names.pop();
+        for (const n of names) at = await at.getDirectoryHandle(n);
+        return await (await (await at.getFileHandle(file)).getFile()).text();
+      } catch {
+        return null;
+      }
+    },
+    name,
+    p,
+  );
+const dem = (bytes = DEM) => ({ base64: Buffer.from(bytes).toString("base64") });
+const standardFiles = (extra = {}) => ({
+  "owd-project.json": JSON.stringify(STANDARD, null, 2),
+  "design/reach-a.owd": DESIGN,
+  "terrain/reach-a-dem.tif": dem(),
+  "inputs/pools.csv": POOLS,
+  ...extra,
+});
+const openProject = async (b) => (await tid(b, "open-project")).click();
+const opened = (b) => until(b, "the project's design", async () => (await text(b, "file-label")).includes("reach-a.owd") && (await exists(b, "project-panel")));
+
+before(async () => {
+  ({ server, origin } = await serve(DIST));
+});
+after(async () => {
+  for (const b of sessions) await b.deleteSession().catch(() => {});
+  server?.close();
+});
+
+describe("OWD web: the project folder", () => {
+  it("Open project loads the design and its DEM in one step; Save writes back into the folder; exports land in exports/", async () => {
+    const b = await start();
+    assert.equal(await text(b, "open-project"), "Open project");
+    await folder(b, standardFiles());
+    await openProject(b);
+    await opened(b);
+    assert.deepEqual(await b.execute(() => window.__pickerAsked), [{ mode: "readwrite", id: "owd-project" }], "the folder is asked for once, to read and write");
+
+    // One step: the design is open and its DEM is in memory, with no Load… and no warning.
+    const snap = await snapshot(b);
+    assert.equal(snap.file_name, "reach-a.owd");
+    assert.equal(snap.document.project.title, JSON.parse(DESIGN).project.title);
+    assert.deepEqual(snap.warnings, [], "the DEM is the one the design recorded");
+    assert.equal(snap.stages.map((s) => `${s.name}:${s.status}`).join(" "), "sizing:fresh alignment:fresh optimise:not_run volumes:fresh");
+    assert.notEqual(await b.execute(async () => await window.__owdPlatform.call("terrain_info")), null, "the DEM is in memory");
+    const progress = await b.execute(() => window.__progress);
+    assert.ok(progress.some((l) => /Reading the DEM/.test(l)), `a progress line for the DEM read: ${JSON.stringify(progress)}`);
+    assert.equal(await exists(b, "project-progress"), false, "the progress line goes when the project is open");
+    assert.equal(await exists(b, "error"), false);
+
+    // The Project panel: the title, and each listed item with its state.
+    assert.equal(await text(b, "project-title"), "Reach A screening");
+    assert.match(await text(b, "project-folder"), new RegExp(FOLDER));
+    assert.equal(await state(b, "design"), "loaded");
+    assert.equal(await state(b, "dem"), "loaded");
+    assert.equal(await state(b, "centreline"), "none");
+    assert.match(await text(b, "project-state-dem"), /^loaded$/);
+
+    // The design names its DEM from its own folder, as the command line reads it: it said `river-dem.tif`
+    // (beside itself), so it is pointed at the project's and is unsaved until Save.
+    assert.equal(snap.document.inputs.dem.path, "../terrain/reach-a-dem.tif");
+    assert.match(await text(b, "file-label"), /unsaved/);
+    assert.match(await text(b, "notice"), /named its DEM as `river-dem\.tif`.*`\.\.\/terrain\/reach-a-dem\.tif`.*Save/);
+
+    // Save writes back to the design file in the folder, with no dialog.
+    await (await tid(b, "save")).click();
+    await until(b, "the save notice", async () => (await exists(b, "notice")) && /Saved design\/reach-a\.owd in the project folder/.test(await text(b, "notice")));
+    assert.doesNotMatch(await text(b, "file-label"), /unsaved/);
+    const saved = await fileText(b, "design/reach-a.owd");
+    assert.equal(JSON.parse(saved).inputs.dem.path, "../terrain/reach-a-dem.tif");
+    assert.equal(JSON.parse(saved).inputs.dem.sha256, JSON.parse(DESIGN).inputs.dem.sha256);
+    // Nothing about the folder goes into the design file.
+    assert.equal(saved.includes(FOLDER), false, "the design does not name the project folder");
+    assert.equal(saved.includes("owd-project"), false);
+    // The text file is the user's: opening and saving do not rewrite it.
+    assert.equal(await fileText(b, "owd-project.json"), JSON.stringify(STANDARD, null, 2));
+
+    // An export lands in exports/ (made here: the folder had none), and one notice says where.
+    assert.equal(await fileText(b, "exports/reach-a.csv"), null);
+    await (await b.$("button=Export CSV")).click();
+    await until(b, "the CSV notice", async () => (await exists(b, "notice")) && /Exported to exports\/reach-a\.csv in the project folder/.test(await text(b, "notice")));
+    const csv = await fileText(b, "exports/reach-a.csv");
+    assert.ok(csv && csv.split("\n").length > 2, "the CSV is in exports/");
+    await (await b.$("button=Export GeoJSON")).click();
+    await until(b, "the GeoJSON notice", async () => /Exported to exports\/reach-a\.geojson in the project folder/.test(await text(b, "notice")));
+    const geojson = await fileText(b, "exports/reach-a.geojson");
+    assert.equal(JSON.parse(geojson).type, "FeatureCollection");
+    for (const out of [csv, geojson]) assert.equal(out.includes(FOLDER), false, "an export does not name the project folder");
+    // The sheets go there too.
+    await (await tid(b, "sheets-toggle")).click();
+    await until(b, "the sheets", async () => (await exists(b, "export-sheets")) && (await tid(b, "export-sheets")).isEnabled());
+    await (await tid(b, "export-sheets")).click();
+    await until(b, "the sheets notice", async () => /Sheets exported as PDF: \d+ PDFs? in exports\/ in the project folder/.test(await text(b, "notice")), 240000);
+    const pdfs = await b.execute(async (name) => {
+      const dir = await (await (await navigator.storage.getDirectory()).getDirectoryHandle(name)).getDirectoryHandle("exports");
+      const names = [];
+      for await (const [n] of dir.entries()) names.push(n);
+      return names.filter((n) => n.endsWith(".pdf"));
+    }, FOLDER);
+    assert.ok(pdfs.length >= 1, `the sheet PDFs are in exports/: ${pdfs}`);
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("a folder with no text file shows what it found and offers to write owd-project.json", async () => {
+    const b = await start();
+    const files = standardFiles();
+    delete files["owd-project.json"];
+    await folder(b, files);
+    await openProject(b);
+    await until(b, "the dialog", async () => exists(b, "project-dialog"));
+    assert.equal(await text(b, "project-found-design"), "design/reach-a.owd");
+    assert.equal(await text(b, "project-found-dem"), "terrain/reach-a-dem.tif");
+    assert.equal(await text(b, "project-found-water_pools"), "inputs/pools.csv");
+    assert.equal(await text(b, "project-adopt"), "Use these and write owd-project.json");
+    assert.equal(await fileText(b, "owd-project.json"), null, "nothing is written before the user says so");
+    await (await tid(b, "project-adopt")).click();
+    await opened(b);
+    const written = JSON.parse(await fileText(b, "owd-project.json"));
+    assert.deepEqual(written, {
+      owd_project: 1,
+      title: FOLDER,
+      design: "design/reach-a.owd",
+      dem: "terrain/reach-a-dem.tif",
+      inputs: { centreline: null, river_polygon: null, left_bank: null, right_bank: null, water_pools: "inputs/pools.csv" },
+      notes: "",
+    });
+    assert.equal(await state(b, "dem"), "loaded");
+    assert.match(await text(b, "notice"), /Wrote owd-project\.json/);
+    assert.deepEqual((await snapshot(b)).warnings, []);
+    assert.equal(await exists(b, "error"), false);
+
+    // A listed input that is in the folder loads through the panel, by the same call as the import.
+    assert.equal(await state(b, "water_pools"), "set");
+    await (await tid(b, "project-load-water_pools")).click();
+    await until(b, "the pool levels", async () => JSON.stringify((await snapshot(b)).document.inputs.water_level?.points?.[0]) === "[0,31.5]");
+  });
+
+  it("more than one design: the user picks; nothing found: a plain line says what a project folder holds", async () => {
+    const b = await start();
+    await folder(b, { "design/reach-a.owd": DESIGN, "design/reach-b.owd": DESIGN, "terrain/reach-a-dem.tif": dem() });
+    await openProject(b);
+    await until(b, "the dialog", async () => exists(b, "project-dialog"));
+    assert.equal(await (await tid(b, "project-adopt")).isEnabled(), false, "nothing to use until a design is picked");
+    await (await tid(b, "project-pick-design")).selectByVisibleText("design/reach-b.owd");
+    await until(b, "the button", async () => (await tid(b, "project-adopt")).isEnabled());
+    await (await tid(b, "project-adopt")).click();
+    await until(b, "the picked design", async () => (await text(b, "file-label")).includes("reach-b.owd") && (await exists(b, "project-panel")));
+    assert.equal(JSON.parse(await fileText(b, "owd-project.json")).design, "design/reach-b.owd");
+    // Its DEM was pointed at the project's, so it is unsaved: save it, or the next Open project asks first.
+    await (await tid(b, "save")).click();
+    await until(b, "saved", async () => !/unsaved/.test(await text(b, "file-label")));
+    assert.equal(JSON.parse(await fileText(b, "design/reach-b.owd")).inputs.dem.path, "../terrain/reach-a-dem.tif");
+
+    // A folder with nothing OWD knows: a plain line, and nothing is written or opened.
+    await folder(b, { "readme.txt": "hello" }, "zz-empty");
+    await openProject(b);
+    await until(b, "the dialog", async () => exists(b, "project-nothing"));
+    assert.match(await text(b, "project-nothing"), /no design file \(\.owd\) and no DEM \(\.tif\).*owd-project\.json.*design\/.*terrain\/.*inputs\/.*exports\//s);
+    assert.equal(await exists(b, "project-adopt"), false);
+    await (await tid(b, "project-dialog-close")).click();
+    assert.equal(await fileText(b, "owd-project.json", "zz-empty"), null);
+    assert.match(await text(b, "file-label"), /reach-b\.owd/, "the open design stays");
+  });
+
+  it("a missing DEM shows as missing; another DEM than the design recorded shows the warning and can be taken", async () => {
+    const b = await start();
+    const files = standardFiles();
+    delete files["terrain/reach-a-dem.tif"];
+    await folder(b, files);
+    await openProject(b);
+    await opened(b);
+    assert.equal(await state(b, "dem"), "missing");
+    assert.equal(await text(b, "project-state-dem"), "missing");
+    assert.equal(await exists(b, "project-load-dem"), false, "nothing to load");
+    assert.equal(await state(b, "design"), "loaded");
+    assert.ok((await snapshot(b)).warnings.some((w) => /DEM .* is missing/.test(w)), "the design's own warning shows too");
+    assert.equal(await b.execute(async () => await window.__owdPlatform.call("terrain_info")), null);
+
+    // The same name, another file: the existing warning, the item says so, and the design is not changed.
+    const other = Buffer.from(DEM);
+    other[other.length - 1] ^= 0xff;
+    await folder(b, standardFiles({ "terrain/reach-a-dem.tif": dem(other) }));
+    await openProject(b);
+    await until(b, "the changed DEM", async () => (await exists(b, "project-panel")) && (await state(b, "dem")) === "changed");
+    const snap = await snapshot(b);
+    assert.ok(snap.warnings.some((w) => /has changed since its hash was recorded/.test(w)), JSON.stringify(snap.warnings));
+    assert.match(await text(b, "warning"), /DEM/);
+    assert.equal(snap.document.inputs.dem.path, "river-dem.tif", "the design is left as it was");
+    assert.equal(snap.dirty, false);
+    // "Use this DEM" records it, as Load… does.
+    await (await tid(b, "project-load-dem")).click();
+    await until(b, "the DEM taken", async () => (await state(b, "dem")) === "loaded");
+    const taken = await snapshot(b);
+    assert.equal(taken.document.inputs.dem.path, "../terrain/reach-a-dem.tif");
+    assert.notEqual(taken.document.inputs.dem.sha256, JSON.parse(DESIGN).inputs.dem.sha256);
+    assert.deepEqual(taken.warnings, []);
+  });
+
+  it("a text file OWD cannot read is refused in plain words, and the open design stays", async () => {
+    const b = await start();
+    await folder(b, standardFiles({ "owd-project.json": JSON.stringify({ ...STANDARD, dem: "../elsewhere/dem.tif" }) }));
+    await openProject(b);
+    await until(b, "the refusal", async () => exists(b, "error"));
+    assert.match(await text(b, "error"), /`dem` is `\.\.\/elsewhere\/dem\.tif`: a path may not leave the project folder/);
+    assert.equal(await exists(b, "project-panel"), false);
+    assert.match(await text(b, "file-label"), /Untitled/);
+  });
+
+  it("remembers the folder and offers Reopen on the next start", async () => {
+    const b = await start();
+    assert.equal(await exists(b, "reopen-banner"), false, "nothing to offer the first time");
+    await folder(b, standardFiles());
+    await openProject(b);
+    await opened(b);
+    await (await tid(b, "save")).click();
+    await until(b, "saved", async () => !/unsaved/.test(await text(b, "file-label")));
+    // A new start: the folder is offered by its title, and one press opens the design with its DEM again.
+    await b.url(`${origin}/owd/app`);
+    await until(b, "the offer", async () => exists(b, "reopen-project"));
+    assert.equal(await text(b, "reopen-project"), "Reopen Reach A screening");
+    assert.equal(await exists(b, "project-panel"), false, "the folder is offered, not opened by itself");
+    // Nothing about the folder is in the browser's plain storage: the handle is in IndexedDB.
+    assert.equal(await b.execute((name) => JSON.stringify({ ...localStorage }).includes(name), FOLDER), false);
+    await (await tid(b, "reopen-project")).click();
+    await opened(b);
+    assert.equal(await state(b, "dem"), "loaded");
+    assert.deepEqual((await snapshot(b)).warnings, []);
+    assert.doesNotMatch(await text(b, "file-label"), /unsaved/, "the saved design names its DEM as the project does");
+    assert.equal(await exists(b, "reopen-banner"), false);
+    // Open (a single file) leaves the project: the panel goes.
+    await b.execute(async () => await window.__owdPlatform.call("new_file"));
+    await b.url(`${origin}/owd/app`);
+    await until(b, "the offer again", async () => exists(b, "reopen-project"));
+    await (await tid(b, "reopen-forget")).click();
+    // The offer goes when the folder is forgotten (the store has answered).
+    await until(b, "the folder forgotten", async () => !(await exists(b, "reopen-banner")));
+    await b.url(`${origin}/owd/app`);
+    await until(b, "the app", async () => exists(b, "file-label"));
+    await new Promise((r) => setTimeout(r, 500));
+    assert.equal(await exists(b, "reopen-banner"), false, "a forgotten folder is not offered");
+  });
+
+  it("where the browser has no folder dialog the button says so, and Open and Load… stay", async () => {
+    // Chrome without the File System Access dialogs is what Firefox and Safari give the page.
+    const b = await start(["--disable-blink-features=FileSystemAccessLocal"]);
+    assert.equal(await b.execute(() => typeof window.showDirectoryPicker), "undefined");
+    assert.equal(await text(b, "open-project"), "Open project (Chrome or Edge only)");
+    await (await tid(b, "open-project")).click();
+    await until(b, "the plain notice", async () => exists(b, "notice"));
+    assert.match(await text(b, "notice"), /This browser cannot open a folder: Chrome and Edge can\. Use Open for the design and Load… for the DEM\./);
+    assert.equal(await (await b.$("button=Open")).isExisting(), true);
+    assert.equal(await exists(b, "load-dem"), true);
+    assert.equal(await exists(b, "error"), false);
+  });
+});

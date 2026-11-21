@@ -23,7 +23,14 @@ fn align_help(method: &str, key: &str, text: &str, after: &str) -> String {
 
 /// Screening-level design of navigation channels in inland rivers.
 #[derive(Parser)]
-#[command(name = "owd", bin_name = "owd", version, about, long_about = None)]
+#[command(
+    name = "owd",
+    bin_name = "owd",
+    version,
+    about,
+    long_about = None,
+    after_help = "Every command that takes a channel design also takes a project folder in its place: a folder with an owd-project.json that names the design (`owd project init FOLDER`)."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -90,6 +97,7 @@ enum WaterwaySub {
     /// Mark a reach. Reaches may not overlap; chainage not marked is a free-flowing river.
     Add {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Where the reach starts, metres of river chainage.
         #[arg(long, value_name = "M")]
@@ -109,6 +117,7 @@ enum WaterwaySub {
     /// List the marked reaches.
     List {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -117,12 +126,40 @@ enum WaterwaySub {
     /// Remove the reach that starts at a chainage.
     Remove {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The chainage the reach starts at, metres.
         #[arg(long, value_name = "M")]
         from: f64,
         #[command(flatten)]
         out: Out,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectSub {
+    /// Make a project folder: `owd-project.json` and the folders `design/`, `terrain/`, `inputs/`
+    /// and `exports/`. A text file that is there is never overwritten. A design and a DEM already
+    /// in the standard places are named in the new text file.
+    Init {
+        /// The project folder (made if it is not there).
+        folder: String,
+        /// The project's title (default: the folder's name).
+        #[arg(long)]
+        title: Option<String>,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List what `owd-project.json` names and whether each file is there, and check the DEM
+    /// against the hash the design recorded. Exits 1 when a named file is missing or the DEM
+    /// is another file.
+    Status {
+        /// The project folder.
+        folder: String,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -155,6 +192,7 @@ enum Command {
     /// WGS84 / UTM). Name a GeoPackage layer as FILE#LAYER.
     Import {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The left bank, as a GeoJSON line. `-` is stdin.
         #[arg(long, value_name = "FILE")]
@@ -221,6 +259,7 @@ enum Command {
     /// Choose the Rule Sets, a vessel class and a draught, and size the channel.
     Size {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A Rule Set to size to, by id or id@version (repeat for more than one; see `owd rules`).
         /// Every selected Rule applies and the strictest governs. `owd` is always selected.
@@ -279,6 +318,7 @@ enum Command {
     /// A design has one design line: it replaces the one any method made before.
     Align {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The method: rolling-circle, reroute (from the river centreline), or centreline (the river
         /// centreline as it is, with no repair). It is stored as the alignment's method, and
@@ -318,6 +358,7 @@ enum Command {
     /// The refined line is the one the volumes then read.
     Optimise {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A GeoTIFF DEM to record as the document's DEM and use.
         #[arg(long, value_name = "FILE")]
@@ -344,6 +385,7 @@ enum Command {
     /// Work out dredge, dry cut and tallest face of the design line, on the DEM.
     Volumes {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A GeoTIFF DEM to record as the document's DEM and use. Needed the first time, or to
         /// accept a DEM file that has changed.
@@ -370,6 +412,7 @@ enum Command {
     /// two commands that use the network.
     FetchDem {
         /// The channel design. `-` is not allowed: files are written next to it.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Metres to add around the river on every side (default 1000).
         #[arg(long, value_name = "METRES", default_value_t = 1000.0)]
@@ -493,6 +536,7 @@ enum Command {
     #[command(group(clap::ArgGroup::new("wgs84_target").args(["geojson", "banks"]).multiple(false)))]
     Export {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// GeoJSON: the design line, in the project CRS (or WGS84 with --wgs84).
         #[arg(long, conflicts_with = "csv")]
@@ -527,6 +571,7 @@ enum Command {
         #[command(subcommand)]
         sub: Option<DrawSub>,
         /// The channel design (after the volumes stage). `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: Option<String>,
         /// Write the drawings into this folder.
         #[arg(long, value_name = "DIR", required_unless_present = "document")]
@@ -585,6 +630,7 @@ enum Command {
     /// and a "Data and limits" box. Files are named after the document number, in lower case.
     Report {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The kind of report: `screening`, `quantities`, `sections`, `run`, or `all`.
         #[arg(long, value_name = "KIND", default_value = "screening")]
@@ -630,6 +676,7 @@ enum Command {
     /// output says so. Nothing else in the document changes.
     Bed {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// One depth in metres, for the whole river.
         #[arg(long, value_name = "METRES")]
@@ -652,6 +699,7 @@ enum Command {
     /// exits 1 if anything does; changes nothing.
     CheckBanks {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -662,6 +710,7 @@ enum Command {
     /// by eye (spec 0013). Needs the network. At most 30 km across: draw a long reach in parts.
     QaOverlay {
         /// The channel design.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The PNG to write.
         #[arg(long, value_name = "FILE")]
@@ -692,6 +741,7 @@ enum Command {
     /// reruns by itself.
     Fits {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A Rule Set to answer under, as `owd size` names it: pianc-wg141 or gb50139, with its
         /// --set-input (se_quality=A|B|C, range_end=permissive|strict). Repeat for more answers
@@ -733,6 +783,7 @@ enum Command {
     /// stale when the banks change; never reruns by itself.
     Envelope {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The series, as `LENGTHxBEAM` in metres (default: 10x2,20x4,30x6,40x8,50x10).
         #[arg(long, value_name = "SIZES")]
@@ -765,6 +816,7 @@ enum Command {
     /// polygon. Plan only: it needs no terrain and no water level. Kept in the document.
     PlanCut {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The smallest piece that counts as a cut, in square metres (the document's, or the
         /// stage's own default when absent).
@@ -787,6 +839,7 @@ enum Command {
     /// radius check every design line gets; a line under the minimum radius is kept and reported.
     DesignLine {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The line: GeoJSON, or a GeoPackage layer as `FILE#LAYER`.
         #[arg(long, value_name = "FILE")]
@@ -809,6 +862,7 @@ enum Command {
     /// `{"amount", "currency"}`; `haul_km`; and optional `haul_by_reach`). Prints; stores no cost.
     Cost {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A rates table to store in the design before the cost is worked out.
         #[arg(long, value_name = "FILE")]
@@ -822,6 +876,7 @@ enum Command {
     /// that read them go stale.
     Constraints {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// No-go areas: a GeoJSON FeatureCollection of Polygons in the project CRS, each with the
         /// properties `name` (unique) and `kind`. They replace the stored ones.
@@ -846,6 +901,7 @@ enum Command {
     /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
     RunInputs {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The objective: `SENSE:MEASURE`, for example `minimise:cost` or `minimise:total_cut`.
         /// `none` (or empty) states none. Measures: cost, total_cut, dredge, dry_cut, land_take,
@@ -885,6 +941,7 @@ enum Command {
     /// the river is under 100 m wide. Reads the SWORD reaches near the river from Zenodo.
     WaterLevel {
         /// The channel design (with its river centreline or banks, and a DEM for the fallback).
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Another percentile of the SWOT levels (default 10, provisional). The level is then yours.
         #[arg(long, value_name = "P")]
@@ -909,6 +966,7 @@ enum Command {
     /// document, never stored; refused when a stored set hash differs from the engine's.
     Trace {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The design line, by id: read the station Rules at its stations (default: one per reach).
         #[arg(long)]
@@ -923,6 +981,7 @@ enum Command {
     /// Rerun every stale stage, in order.
     Run {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         #[command(flatten)]
         out: Out,
@@ -930,6 +989,7 @@ enum Command {
     /// Check a channel design against the schema and its own rules.
     Validate {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -938,6 +998,7 @@ enum Command {
     /// Show each stage as not run, fresh or stale.
     Status {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -945,6 +1006,12 @@ enum Command {
     },
     /// Print the JSON Schema of the `.owd` format.
     Schema,
+    /// A standard project folder: the design, its DEM, the source data and the exports in one
+    /// place, listed in a small text file, `owd-project.json` (docs/project-folder.md).
+    Project {
+        #[command(subcommand)]
+        sub: ProjectSub,
+    },
 }
 
 /// Parse the arguments, run the command and give the exit code. The `owd` binary calls this.
@@ -1486,6 +1553,14 @@ pub fn main() -> ExitCode {
         Command::Validate { doc, json } => commands::validate(&doc, json),
         Command::Status { doc, json } => commands::status(&doc, json),
         Command::Schema => commands::schema(),
+        Command::Project { sub } => match sub {
+            ProjectSub::Init {
+                folder,
+                title,
+                json,
+            } => crate::project::init(&folder, title.as_deref(), json),
+            ProjectSub::Status { folder, json } => crate::project::status(&folder, json),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,

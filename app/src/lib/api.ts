@@ -574,6 +574,56 @@ export const exportReport = (option: string | null, ask: ReportAsk) => invoke<st
 export const exportQaOverlay = (fromKm?: number, toKm?: number) =>
   invoke<string | null>("export_qa_overlay", { fromKm: fromKm ?? null, toKm: toKm ?? null });
 
+// --- the project folder (PROJ-1, web app) -----------------------------------------------------------
+/** How one item of a project stands: see `lib/project.ts`. */
+export type ProjectItemState = "loaded" | "found" | "changed" | "set" | "missing" | "none";
+export interface ProjectItem {
+  key: string;
+  label: string;
+  /** The path from the project folder; null: the text file does not name it. */
+  path: string | null;
+  state: ProjectItemState;
+}
+/** The open project folder, for the Project panel. */
+export interface ProjectStatus {
+  title: string;
+  /** The folder's own name (the browser never tells where it is). */
+  folder: string;
+  design: string | null;
+  items: ProjectItem[];
+}
+/** What a folder with no `owd-project.json` holds in the standard places. */
+export interface ProjectFound {
+  designs: string[];
+  dems: string[];
+  inputs: { key: string; label: string; path: string }[];
+  /** True when there is no choice to make: at most one design and one DEM, and at least one. */
+  clear: boolean;
+}
+/** A folder the user chose. `found` is null when it has its text file; else what was found. */
+export interface ProjectLook {
+  folder: string;
+  title: string | null;
+  found: ProjectFound | null;
+}
+/** Whether this browser can open a folder (Chrome and Edge can). */
+export const projectSupported = () => invoke<boolean>("project_supported");
+/** Ask for a project folder. null when the user cancels. */
+export const projectPick = () => invoke<ProjectLook | null>("project_pick");
+/** The project folder remembered on this machine from last time, if any. */
+export const projectRemembered = () => invoke<{ title: string; folder: string } | null>("project_remembered");
+/** Go back to the remembered folder; the browser asks for leave again. */
+export const projectReopen = () => invoke<ProjectLook | null>("project_reopen");
+export const projectForget = () => invoke<void>("project_forget");
+/** Write `owd-project.json` into the chosen folder, naming the design and the DEM taken. */
+export const projectAdopt = (design: string | null, dem: string | null) => invoke<void>("project_adopt", { design, dem });
+/** Open the chosen project: the design and its DEM in one step. `onProgress` gets a line to show.
+ * `project_note` says what opening changed in the design, if anything. */
+export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null }>("project_open", { onProgress });
+export const projectStatus = () => invoke<ProjectStatus | null>("project_status");
+/** Load one listed item of the project into the design. */
+export const projectLoad = (key: string, onProgress: (line: string) => void) => invoke<Snapshot>("project_load", { key, onProgress });
+
 /** Web only: open the bundled example (a short synthetic river with its DEM). null when the user cancels. */
 export const openExample = () => invoke<Snapshot | null>("open_example");
 
