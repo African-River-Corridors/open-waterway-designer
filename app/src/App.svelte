@@ -159,6 +159,23 @@
   async function corridorLimit(on: boolean) {
     await fileAction(() => api.setOptimiseSettings({ corridor_limit: on }));
   }
+  /** A join setting of the pool search (OPT-3): a tick box, or a length in metres. An empty straight through a weir site means two vessel lengths. */
+  async function joinSetting(key: api.JoinSetting, value: boolean | string) {
+    if (typeof value === "boolean") {
+      await fileAction(() => api.setOptimiseSettings({ [key]: value }));
+      return;
+    }
+    if (key === "weir_straight_m" && value.trim() === "") {
+      await fileAction(() => api.setOptimiseSettings({ weir_straight_m: null }));
+      return;
+    }
+    const x = Number(value);
+    if (value.trim() === "" || !Number.isFinite(x) || x < 0) {
+      error = "The length must be a number of metres, 0 or more.";
+      return;
+    }
+    await fileAction(() => api.setOptimiseSettings({ [key]: x }));
+  }
   /** The design line the screen draws, and the stage that made it. */
   let lineName = $derived(lineOnScreen(snap?.document, snap?.stages, table?.rows[0]?.name));
   async function downstreamPoint(point: string) {
@@ -730,7 +747,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} onJoinSetting={joinSetting} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>

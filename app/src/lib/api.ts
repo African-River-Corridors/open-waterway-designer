@@ -529,7 +529,19 @@ export interface OptimiseSettings {
   length_weight?: number;
   land_weight?: number;
   corridor_limit?: boolean;
+  /** Put the seams of a long pool on straights of the baseline (false is off). */
+  seams_on_straights?: boolean;
+  /** How far a seam may move from the even split, in metres (1,500 by default). */
+  seam_window_m?: number;
+  /** Let the line pass seams and weir sites through a gate, off the baseline's pose (false is off). */
+  free_seams?: boolean;
+  /** The straight between a left curve and a right curve, in metres (0 is off). */
+  min_straight_m?: number;
+  /** The straight through a weir site, in metres; null is two vessel lengths. */
+  weir_straight_m?: number | null;
 }
+/** The join settings of the optimise stage that the app sets (OPT-3). */
+export type JoinSetting = "seams_on_straights" | "free_seams" | "seam_window_m" | "min_straight_m" | "weir_straight_m";
 /** Set optimise settings in the design, as `owd optimise --length-weight` does; nothing runs, and a fresh optimise stage goes stale. Rejects with the reason. */
 export const setOptimiseSettings = (settings: OptimiseSettings) => invoke<Snapshot>("set_optimise_settings", { settings });
 /** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
