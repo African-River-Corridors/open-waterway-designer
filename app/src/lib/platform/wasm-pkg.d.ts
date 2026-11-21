@@ -8,6 +8,12 @@ declare module "*/wasm-pkg/owd_web.js" {
     load_rule_set_text(text: string): string;
     new_design(): string;
     open_text(name: string, text: string, dem?: Uint8Array): string;
+    open_project(design: string, text: string, dem_path?: string, dem?: Uint8Array): string;
+    project_read(text: string): string;
+    project_find(listing: string): string;
+    project_adopt(listing: string, title: string, design?: string, dem?: string): string;
+    project_export_path(name: string): string;
+    set_water_pools(table: string): string;
     save_text(name: string): string;
     saved(name: string): string;
     is_dirty(): boolean;
@@ -36,6 +42,11 @@ declare module "*/wasm-pkg/owd_web.js" {
     channel_geometry(): string;
     cut_tile(z: number, x: number, y: number): Uint8Array;
     cut_at(lon: number, lat: number): string;
+    map_structures(): string;
+    pool_water_info(): string;
+    pool_water_tile(id: number, z: number, x: number, y: number): Uint8Array;
+    pool_surface_tile(id: number, state: string, z: number, x: number, y: number): Uint8Array;
+    pool_water_at(id: number, lon: number, lat: number): string;
     long_section(option: string): string;
     cross_section(option: string, chainage: number): string;
     station_near(option: string, lon: number, lat: number): number;

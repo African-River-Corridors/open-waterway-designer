@@ -7,6 +7,7 @@ import { parseTileUrl, stateTileTemplate, tileTemplate } from "../src/lib/terrai
 import { contourTemplate, parseContourUrl } from "../src/lib/contours.ts";
 import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, defaultTicks, parseTicks, serialiseTicks } from "../src/lib/mapLayers.ts";
 import { faceView } from "../src/lib/crossSectionView.ts";
+import { parsePoolUrl, poolSurfaceTemplate } from "../src/lib/structures.ts";
 
 describe("the ground the map shows", () => {
   it("is Before or After, starts Before, and stored text that is not ours reads as Before", () => {
@@ -53,6 +54,15 @@ describe("the tile addresses with a terrain state", () => {
     assert.deepEqual(parseContourUrl("owd-contour://3/after/7/5/14/8101/7958"), { id: 3, choice: 5, z: 14, x: 8101, y: 7958, state: "after" });
     assert.deepEqual(parseContourUrl("owd-contour://3/after/7/auto/14/8101/7958"), { id: 3, choice: "auto", z: 14, x: 8101, y: 7958, state: "after" });
     assert.equal(parseContourUrl("owd-contour://3/after/7/3/14/8101/7958"), null, "3 m is not an interval");
+  });
+  it("let the terrain with the pool water on it stand on the After ground (MAP-4 with MAP-5)", () => {
+    assert.equal(poolSurfaceTemplate(4), "owd-pool-dem://4/{z}/{x}/{y}");
+    assert.equal(poolSurfaceTemplate(4, "before", 7), "owd-pool-dem://4/{z}/{x}/{y}");
+    assert.equal(poolSurfaceTemplate(4, "after", 7), "owd-pool-dem://4/after/7/{z}/{x}/{y}");
+    assert.deepEqual(parsePoolUrl("owd-pool-dem://4/after/7/14/8101/7958"), { surface: true, id: 4, z: 14, x: 8101, y: 7958, state: "after" });
+    assert.deepEqual(parsePoolUrl("owd-pool-dem://4/14/8101/7958"), { surface: true, id: 4, z: 14, x: 8101, y: 7958 });
+    assert.deepEqual(parsePoolUrl("owd-pool://4/14/8101/7958"), { surface: false, id: 4, z: 14, x: 8101, y: 7958 });
+    assert.equal(parsePoolUrl("owd-pool://4/after/7/14/8101/7958"), null, "the picture of the water has no state");
   });
   it("give the cut-depth picture a scheme of its own, so the map asks the page and never the network", () => {
     assert.equal(cutTemplate(3, 7), "owd-cut://3/7/{z}/{x}/{y}");

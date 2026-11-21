@@ -350,6 +350,33 @@ fn a_point_of_the_cut_reads_out_its_levels_kind_and_station() {
 }
 
 #[test]
+fn the_cut_filled_with_water_is_flat_at_the_water_level_and_the_face_above_it() {
+    let dem = dem_of(|_, _| 20.0);
+    let (s, channel) = with_volumes(&dem);
+    let cut = surface(&s, &channel, &dem);
+    let st = station(&channel, 500.0);
+    let wl = st.water_level_m;
+    // In the bed and on the slope below water: the water level. On the berm: the water level too.
+    for o in [
+        0.0,
+        st.half_width_m + 2.0,
+        st.water_edge_m(channel.wet_slope) + 1.0,
+    ] {
+        assert_eq!(cut.filled_level(X0 + 500.0, Y0 + o, 20.0), wl, "offset {o}");
+        assert_eq!(
+            cut.at([X0 + 500.0, Y0 + o], 20.0).unwrap().water_level_m,
+            wl
+        );
+    }
+    // On the dry slope: the face, above the water and below the ground.
+    let o = st.water_edge_m(channel.wet_slope) + 8.0;
+    let high = cut.filled_level(X0 + 500.0, Y0 + o, 20.0);
+    assert!((high - st.face_m(o, channel.wet_slope)).abs() < 1e-9 && high > wl && high < 20.0);
+    // Outside the cut: the ground.
+    assert_eq!(cut.filled_level(X0 + 500.0, Y0 + 150.0, 20.0), 20.0);
+}
+
+#[test]
 fn with_no_dem_there_are_bed_and_water_surface_edges_only() {
     let dem = dem_of(|_, _| 20.0);
     // Before the volumes have run: the walk's frame, with no terrain read.

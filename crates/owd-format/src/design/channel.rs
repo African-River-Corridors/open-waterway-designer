@@ -166,6 +166,8 @@ pub struct CutAt {
     /// The level after the cut: the cut face.
     pub after_m: f64,
     pub depth_m: f64,
+    /// The design water level there: the pool's level.
+    pub water_level_m: f64,
     /// `dredge` inside the river polygon, else `dry`.
     pub kind: &'static str,
     /// The nearer station and its stored cut areas.
@@ -659,6 +661,7 @@ impl CutSurface {
             ground_m: ground,
             after_m: face,
             depth_m: depth,
+            water_level_m: wl,
             kind: if self.river.contains_xy(p) {
                 "dredge"
             } else {
@@ -685,6 +688,14 @@ impl CutSurface {
             }
         };
         self.at(p, ground_m)
+    }
+
+    /// The level at a point of the DEM's CRS with the cut made and filled with water: the design
+    /// water level where the cut face is below it, the face where it is above, and `ground` where
+    /// nothing is cut. For the terrain the 3D view stands on while the pool water is shown.
+    pub fn filled_level(&self, x: f64, y: f64, ground: f64) -> f64 {
+        self.at_dem(x, y, ground)
+            .map_or(ground, |c| c.after_m.max(c.water_level_m))
     }
 
     /// The cut at a place given in longitude and latitude, read on the maker's DEM.
