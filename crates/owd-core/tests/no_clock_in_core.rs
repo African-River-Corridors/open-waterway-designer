@@ -66,6 +66,7 @@ fn flat_ground() -> TerrainGrid {
         ground: vec![vec![5.0; cols]; rows],
         wet: vec![vec![false; cols]; rows],
         valid: vec![vec![true; cols]; rows],
+        corridor: vec![vec![true; cols]; rows],
         x0: 0.0,
         y0: 240.0,
         cell_m: 4.0,

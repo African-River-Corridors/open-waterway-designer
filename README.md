@@ -261,6 +261,34 @@ that (a few, up to a few tens) only stops the line wandering through free water.
 or above makes the search cut corners and meander necks to save length. That is a trade of cut for
 length, and it can drive large cuts. The default is 0 (off). The weir cascade does not read it.
 
+**Paying for land (`land_weight`).** Ground that the pool drowns deeper than the channel bed needs
+no cut, whether it is river or floodplain. So without a land cost a line over drowned land beside
+the river costs the same as a line in the river, and the search can leave the river for hundreds of
+metres. The setting `land_weight` (`owd optimise --land-weight X`, or "Cost per m² of land" in the
+app) charges every m2 of the channel's footprint that lies outside the river polygon, cut or no
+cut. The footprint is the channel's plan width at the water surface: the bottom width plus the side
+slopes up through the design depth. Its unit is m3 of cut per m2.
+
+To choose it, compare it with the channel depth. A weight equal to the design depth prices a m2 of
+land like a cut of the full depth over that m2: a good first value. A tenth of the depth still keeps
+the line in the river where it can turn inside it. A weight much smaller than `length_weight`
+divided by the footprint's width lets the line cut across bends to save length. The line still
+leaves the river where the river bends tighter than R_min and is too narrow to turn in: no weight
+can change that. The lattice's details give each pool's land area (`land_area_m2`) and land cost
+(`land_cost`), and the baseline's land area beside them. The default is 0 (off). The cost steers
+the search only: the volumes stage reports the m3 it measures and never the land cost. The weir
+cascade does not read it.
+
+**The corridor as a limit (`corridor_limit`).** The corridor is `corridor_half_m` (350 m by
+default) either side of the baseline: the alignment's design line, or the river centreline when
+there is none. By default it only tells the search where to sample its estimate of the cost to go;
+the search itself may go anywhere in the rectangle round the corridor. With `corridor_limit` on
+(`owd optimise --corridor-limit`, or "Keep the line inside the corridor" in the app) no point of the
+lattice's line may lie outside the corridor, to within one grid cell (`cell_m`). A pool that cannot
+end on its end pose inside the corridor is searched again with its end moved, as any pool that
+cannot close. A pool with no line inside the corridor keeps the baseline; the details and a warning
+say so. The limit never fails silently. Turn it off again with `--corridor-limit false`.
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

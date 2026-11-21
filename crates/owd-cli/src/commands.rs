@@ -1243,6 +1243,8 @@ pub struct OptimiseFlags {
     pub wet_weight: Option<f64>,
     pub dry_weight: Option<f64>,
     pub length_weight: Option<f64>,
+    pub land_weight: Option<f64>,
+    pub corridor_limit: Option<bool>,
     pub model: Option<String>,
 }
 
@@ -1266,10 +1268,14 @@ pub fn optimise(
         ("wet_weight", flags.wet_weight),
         ("dry_weight", flags.dry_weight),
         ("length_weight", flags.length_weight),
+        ("land_weight", flags.land_weight),
     ] {
         if let Some(v) = v {
             overrides.insert(k.into(), json!(v));
         }
+    }
+    if let Some(on) = flags.corridor_limit {
+        overrides.insert("corridor_limit".into(), json!(on));
     }
     if let Some(m) = &flags.model {
         overrides.insert("cut_model".into(), json!(m));
