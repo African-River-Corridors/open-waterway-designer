@@ -17,7 +17,7 @@ use owd_core::optimise::cascade::{
 };
 use owd_core::optimise::lattice::{
     DEFAULT_SEAM_HEADING_TOL_DEG, DEFAULT_SEAM_WINDOW_M, HalfWidthSpec, Joint, JointKind,
-    LatticeConfig, PoolOptions, SectionSpec, optimise_pools, seam_span_m,
+    LatticeConfig, NO_CORRIDOR_REASON, PoolOptions, SectionSpec, optimise_pools, seam_span_m,
 };
 use owd_core::volumes::sections::HalfWidth;
 use serde_json::{Value, json};
@@ -803,6 +803,19 @@ impl Session {
                 if let Some(text) = joint_warning(j) {
                     w.push(json!(text));
                 }
+            }
+            // A pool whose corridor could not be built was not searched: named, never silent.
+            for p in out
+                .pools
+                .iter()
+                .filter(|p| p.kept_baseline_because == Some(NO_CORRIDOR_REASON))
+            {
+                w.push(json!(format!(
+                    "{} keeps the baseline: {NO_CORRIDOR_REASON} ({:.0} m either side), so it was \
+                     not searched",
+                    pool_name(p),
+                    typed.corridor_half_m
+                )));
             }
             // A pool with no line inside the corridor keeps its baseline (`corridor_limit`).
             for p in out.no_line_in_corridor_pools() {

@@ -2313,6 +2313,52 @@ pub struct PoolAlignment {
     pub free_start: bool,
     /// The search ended on a gate at `end_m` (`free_seams`), not on the baseline's pose there.
     pub free_end: bool,
+    /// The corridor round the baseline holds the whole baseline segment ([`line_corridor`]). False
+    /// when it could not be built: the pool then keeps its baseline ([`NO_CORRIDOR_REASON`]).
+    pub corridor_ok: bool,
+}
+
+/// Why a pool keeps its baseline when the corridor round its baseline could not be built, so there
+/// was nothing to search in.
+pub const NO_CORRIDOR_REASON: &str = "the corridor round the baseline could not be built";
+
+/// The corridor of a line: every point within `half_m` of it, and whether it holds the line.
+///
+/// It is the buffer of the line. Where the buffer comes out empty or does not hold the line's own
+/// vertices (it did for some lines with a corridor wider than the line's tightest bend: the raw
+/// offset curve then crosses itself, resolving it can give nothing, and the pool was left with no
+/// ground to search), the corridor is built again as
+/// what it is by definition: the union of the buffers of short straight stretches of the line (each
+/// `half_m / 4` long at most, so the union is within about 1 % of `half_m` of the true buffer on a
+/// bend as tight as `half_m / 2`). The flag is false only when that union does not hold the line
+/// either.
+pub fn line_corridor(line: &[Pt], half_m: f64) -> Result<(Vec<Polygon>, bool), Refusal> {
+    let geo = |e: crate::geom::GeomError| e.to_string();
+    let holds =
+        |polys: &[Polygon]| !polys.is_empty() && line.iter().all(|p| contains_xy(polys, *p));
+    let whole = polygons_of(buffer_line(line, half_m, 16, Cap::Round).map_err(geo)?)?;
+    if holds(&whole) {
+        return Ok((whole, true));
+    }
+    let len = linear::length(line);
+    let n = std::cmp::max(1, (len / (0.25 * half_m)).ceil() as usize);
+    let mut union: Vec<Polygon> = Vec::new();
+    let mut prev = line[0];
+    for k in 1..=n {
+        let next = linear::interpolate(line, len * k as f64 / n as f64).unwrap_or(prev);
+        if hypot(next[0] - prev[0], next[1] - prev[1]) <= 1e-9 {
+            continue;
+        }
+        let part = polygons_of(buffer_line(&[prev, next], half_m, 16, Cap::Round).map_err(geo)?)?;
+        union = if union.is_empty() {
+            part
+        } else {
+            overlay(&union, &part, Op::Union)
+        };
+        prev = next;
+    }
+    let ok = holds(&union);
+    Ok((union, ok))
 }
 
 /// Where a piece sits in the pool it was cut from.
@@ -2779,9 +2825,7 @@ pub fn optimise_pool_ends(
     }
     section.check_weights()?;
     let seg = line_of(linear::substring(baseline, start_m, end_m))?;
-    let geo = |e: crate::geom::GeomError| e.to_string();
-    let mut corridor =
-        polygons_of(buffer_line(&seg, opts.corridor_half_m, 16, Cap::Round).map_err(geo)?)?;
+    let (mut corridor, corridor_ok) = line_corridor(&seg, opts.corridor_half_m)?;
     if let Some(cl) = corridor_line {
         let a = linear::project(cl, seg[0]);
         let b = linear::project(cl, seg[seg.len() - 1]);
@@ -2790,8 +2834,7 @@ pub fn optimise_pool_ends(
             crate::py_min(a, b),
             crate::py_max(a, b),
         ))?;
-        let other =
-            polygons_of(buffer_line(&part, opts.corridor_half_m, 16, Cap::Round).map_err(geo)?)?;
+        let (other, _) = line_corridor(&part, opts.corridor_half_m)?;
         corridor = overlay(&corridor, &other, Op::Union);
     }
     let grid = build_terrain_grid(terrain, river_polygon, &corridor, opts.cell_m, 20.0)?;
@@ -2827,6 +2870,7 @@ pub fn optimise_pool_ends(
             hypot(s.pose.0 - start.0, s.pose.1 - start.1) > 0.0 || s.pose.2 != start.2
         }),
         free_end: ends.gate.is_some(),
+        corridor_ok,
     })
 }
 
@@ -3424,6 +3468,9 @@ fn adopt(
     cfg: &LatticeConfig,
     keep_if_dearer: bool,
 ) -> (bool, Option<&'static str>) {
+    if !pa.corridor_ok {
+        return (false, Some(NO_CORRIDOR_REASON));
+    }
     let converged = pa.result.converged;
     let dearer = pa.result.cost > pa.baseline_cost;
     // The baseline is kept when the search did not converge, or when it is cheaper and either
