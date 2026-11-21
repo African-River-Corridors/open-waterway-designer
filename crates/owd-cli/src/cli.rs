@@ -335,6 +335,8 @@ enum Command {
         dry_weight: Option<f64>,
         #[arg(long, value_name = "COST_PER_M", help = optimise_length_weight_help())]
         length_weight: Option<f64>,
+        #[arg(long, value_name = "M3_PER_M2", help = optimise_land_weight_help())]
+        land_weight: Option<f64>,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
@@ -1312,6 +1314,7 @@ pub fn main() -> ExitCode {
             wet_weight,
             dry_weight,
             length_weight,
+            land_weight,
             model,
             out,
         } => commands::optimise(
@@ -1324,6 +1327,7 @@ pub fn main() -> ExitCode {
                 wet_weight,
                 dry_weight,
                 length_weight,
+                land_weight,
                 model,
             },
             &out.output,
@@ -1535,6 +1539,18 @@ fn optimise_length_weight_help() -> String {
          m3 of cut at weight 1 costs 1. The pool lattice pays it for every metre of line, so length \
          through deep water is no longer free; a high value trades cut for a shorter line (default \
          {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --land-weight`, with the stage's own default.
+fn optimise_land_weight_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().land_weight;
+    format!(
+        "The cost of one m2 of land taken, in m3 of cut per m2. The pool lattice pays it for every \
+         m2 of the channel's footprint at the water surface that lies outside the river polygon, \
+         cut or no cut, so a line over drowned land beside the river is no longer free. A value \
+         equal to the channel depth prices land like a cut of the full depth (default {}: off).",
         shown_default(&serde_json::json!(d))
     )
 }

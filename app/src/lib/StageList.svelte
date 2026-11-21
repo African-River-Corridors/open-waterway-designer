@@ -10,6 +10,7 @@
     onCancel,
     onUseWater,
     onOptimiseLength,
+    onOptimiseLand,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -24,6 +25,8 @@
     /** What made the design line on the map and in the table (its name in the table), if there is one. */
     /** Set the cost of one metre of design line for the pool search (a number as typed). */
     onOptimiseLength: (weight: string) => void;
+    /** Set the cost of one m² of land taken for the pool search (a number as typed). */
+    onOptimiseLand: (weight: string) => void;
     lineName?: string | null;
   } = $props();
   // The stored cost per metre of line; 0 (off) is not written into the design.
@@ -36,6 +39,18 @@
     if (lengthSeen !== storedLength) {
       lengthSeen = storedLength;
       lengthText = String(storedLength);
+    }
+  });
+  // The stored cost per m² of land; 0 (off) is not written into the design.
+  let storedLand = $derived(
+    (snap?.document.stages.optimise.settings as { land_weight?: number } | null)?.land_weight ?? 0,
+  );
+  let landText = $state("");
+  let landSeen: number | null = null;
+  $effect(() => {
+    if (landSeen !== storedLand) {
+      landSeen = storedLand;
+      landText = String(storedLand);
     }
   });
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
@@ -102,6 +117,15 @@
           <button data-testid="set-length-weight" disabled={busy !== null} onclick={() => onOptimiseLength(lengthText)}>Set</button>
           <span class="dim help" data-testid="length-weight-help">The pool search pays this for every metre of line, so a longer line through deep water is not free. A high value shortens the line and raises the cut.</span>
           <span class="dim" data-testid="length-weight-stored">Stored: {storedLength}</span>
+        </li>
+        <li class="sub length" data-testid="land-weight-row">
+          <label class="name">
+            Cost per m² of land (m³ of cut per m²; 0 = off)
+            <input type="text" inputmode="decimal" data-testid="land-weight" bind:value={landText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-land-weight" disabled={busy !== null} onclick={() => onOptimiseLand(landText)}>Set</button>
+          <span class="dim help" data-testid="land-weight-help">The pool search pays this for every m² of channel outside the river polygon, even where nothing is cut, so the line keeps to the river. A value equal to the channel depth prices land like a full-depth cut.</span>
+          <span class="dim" data-testid="land-weight-stored">Stored: {storedLand}</span>
         </li>
       {/if}
       {#if s.name === "alignment" && method === "rolling_circle"}

@@ -47,6 +47,12 @@ pub struct OptimiseSettings {
     /// the baseline it compares with. 0 (the default) is off; then it is not written into the
     /// document, so a design run without it reads, hashes and saves as before.
     pub length_weight: f64,
+    /// The cost of one m2 of land taken, in m3 of cut per m2: the pool lattice pays it for every m2
+    /// of the channel's footprint at the water surface that lies outside the river polygon, cut or
+    /// no cut, on its line and on the baseline it compares with. A value equal to the channel depth
+    /// prices land like a cut of the full depth. 0 (the default) is off; then it is not written into
+    /// the document, so a design run without it reads, hashes and saves as before.
+    pub land_weight: f64,
     pub structure_fixed: f64,
     pub structure_per_lift: f64,
     pub structure_power: f64,
@@ -79,6 +85,7 @@ impl Default for OptimiseSettings {
             wet_weight: 1.0,
             dry_weight: 1.0,
             length_weight: 0.0,
+            land_weight: 0.0,
             structure_fixed: 1.0e5,
             structure_per_lift: 2.0e5,
             structure_power: 1.0,
@@ -137,6 +144,9 @@ impl OptimiseSettings {
         if self.length_weight != 0.0 {
             v["length_weight"] = json!(self.length_weight);
         }
+        if self.land_weight != 0.0 {
+            v["land_weight"] = json!(self.land_weight);
+        }
         v
     }
 
@@ -186,6 +196,18 @@ impl OptimiseSettings {
                         ));
                     }
                     out.length_weight = w;
+                }
+                "land_weight" => {
+                    let w = f(k)?;
+                    if !(w.is_finite() && w >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `land_weight` must be a number >= 0 (a cost per m2 of \
+                             channel footprint outside the river polygon, in m3 of cut per m2; 0 \
+                             is off)"
+                                .into(),
+                        ));
+                    }
+                    out.land_weight = w;
                 }
                 "structure_fixed" => out.structure_fixed = f(k)?,
                 "structure_per_lift" => out.structure_per_lift = f(k)?,
@@ -406,6 +428,12 @@ impl Session {
         // weight x length to each and change no choice of weirs. It stays out of the cascade, whose
         // numbers are then the same with the weight on or off.
         spec.length_weight = typed.length_weight;
+        // The land cost is the lattice's only as well: the cascade prices every candidate reach
+        // along the same baseline, whose land take does not depend on the pool level in this
+        // measure. Its footprint is the channel's plan width at the water surface: the bottom width
+        // plus the side slopes (`side_slope`) up through the design depth.
+        spec.land_weight = typed.land_weight;
+        spec.land_depth_m = depth;
         let mut lattice = LatticeConfig::new(r_min);
         lattice.pitch_m = num(&settings, "pitch_m")?;
         lattice.n_heading = typed.n_heading;
@@ -489,6 +517,25 @@ impl Session {
                     if p.result.converged {
                         d["line_length_m"] = json!(len);
                         d["length_cost"] = json!(typed.length_weight * len);
+                    }
+                }
+            }
+        }
+        // With a land weight on, the same: the footprint's width, and each pool's land area and
+        // land cost (its line's, and its baseline's for comparison). The cut part of a pool's cost
+        // is cost - length_cost - land_cost.
+        if typed.land_weight != 0.0 {
+            details["land_weight"] = json!(typed.land_weight);
+            details["land_footprint_width_m"] =
+                json!(2.0 * (half_width + spec.side_slope_h_per_v * depth));
+            if let Some(ps) = details["pools"].as_array_mut() {
+                for (d, p) in ps.iter_mut().zip(&out.pools) {
+                    if let Some(a) = p.result.land_area_m2 {
+                        d["land_area_m2"] = json!(a);
+                        d["land_cost"] = json!(typed.land_weight * a);
+                    }
+                    if let Some(a) = p.baseline_land_area_m2 {
+                        d["baseline_land_area_m2"] = json!(a);
                     }
                 }
             }

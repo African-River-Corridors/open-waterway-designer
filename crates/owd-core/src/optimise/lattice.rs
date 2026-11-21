@@ -16,7 +16,11 @@
 //!   optional deep-cut multiplier on dry cut. Weights, not prices. Plus, when
 //!   `SectionSpec::length_weight` is above 0, that weight per metre of the primitive's length:
 //!   water deeper than the bed costs nothing to cut, so without it length in deep water is free
-//!   and a looped line can be the cheapest.
+//!   and a looped line can be the cheapest. Plus, when `SectionSpec::land_weight` is above 0, that
+//!   weight per m2 of the channel's footprint at the water surface that lies outside the river
+//!   polygon ([`FieldScorer::land_area`]), cut or no cut: ground the pool drowns deeper than the bed
+//!   costs nothing to cut, so without it a line over drowned land beside the river costs the same
+//!   as a line in the river.
 //! - **Heuristic**: `"c_min"`: straight-line distance x the cheapest per-metre cost anywhere in
 //!   the corridor (the length weight included: see [`min_cost_per_metre`]);
 //!   `"reverse_dijkstra"`: a relaxed 2-D cost-to-go from the goal (tighter, but an 8-connected
@@ -149,6 +153,19 @@ pub struct SectionSpec {
     /// for its length, so length through deep water, where cut is free, is no longer free. 0 (the
     /// default) is off and gives exactly the search without it. Must be finite and >= 0.
     pub length_weight: f64,
+    /// The cost of one m2 of land taken, in the units of the cut cost (so m3 of cut per m2): every
+    /// lattice edge, closing path and baseline segment pays it for the part of the channel's
+    /// footprint that lies outside the river polygon ([`FieldScorer::land_area`]), whether or not
+    /// any cut is needed there. A value equal to the channel depth prices land like a cut of the
+    /// full depth. 0 (the default) is off and gives exactly the search without it. Must be finite
+    /// and >= 0.
+    pub land_weight: f64,
+    /// The depth the footprint's side slopes rise through, from the bed to the water surface: the
+    /// footprint's half-width is the scorer's half-width + `side_slope_h_per_v` x this (and no more
+    /// than `rake_half_m`). The caller sets it to the design depth (pool level less the bed). 0 (the
+    /// default) charges the bottom width only. Read only when `land_weight` is above 0. Must be
+    /// finite and >= 0.
+    pub land_depth_m: f64,
 }
 
 impl SectionSpec {
@@ -167,7 +184,23 @@ impl SectionSpec {
             ds_step_m: 8.0,
             min_valid_fraction: 0.6,
             length_weight: 0.0,
+            land_weight: 0.0,
+            land_depth_m: 0.0,
         }
+    }
+
+    /// Refuse a weight (or the footprint depth) that is not a finite number >= 0.
+    pub fn check_weights(&self) -> Result<(), Refusal> {
+        for (name, v) in [
+            ("length_weight", self.length_weight),
+            ("land_weight", self.land_weight),
+            ("land_depth_m", self.land_depth_m),
+        ] {
+            if !(v.is_finite() && v >= 0.0) {
+                return Err(format!("{name} must be a finite number >= 0"));
+            }
+        }
+        Ok(())
     }
 
     pub fn half_width_at(&self, radius_m: f64) -> f64 {
@@ -564,6 +597,28 @@ pub struct FieldScorer<'a> {
     offs: Vec<f64>,
     tmpl: Vec<f64>,
     in_fairway: Vec<bool>,
+    /// The offsets inside the footprint at the water surface: the land cost's width.
+    in_footprint: Vec<bool>,
+    land_half_m: f64,
+}
+
+/// The cross-sections of a primitive the scorer reads: every `stride`-th point, and the last.
+fn sections_of(prim: &Prim, ds_step_m: f64) -> Vec<&[f64; 4]> {
+    let pts = &prim.pts;
+    let ds_native = prim.arc_len / pts.len() as f64;
+    let stride = if ds_native > 0.0 {
+        std::cmp::max(1, round_i(ds_step_m / ds_native)) as usize
+    } else {
+        1
+    };
+    let mut sel: Vec<&[f64; 4]> = pts.iter().step_by(stride).collect();
+    if !core::ptr::eq(
+        *sel.last().expect("a primitive has points"),
+        &pts[pts.len() - 1],
+    ) {
+        sel.push(&pts[pts.len() - 1]);
+    }
+    sel
 }
 
 impl<'a> FieldScorer<'a> {
@@ -574,6 +629,8 @@ impl<'a> FieldScorer<'a> {
             .map(|o| grade_m + crate::py_max(0.0, o.abs() - hb_m) / spec.side_slope_h_per_v)
             .collect();
         let in_fairway = offs.iter().map(|o| o.abs() <= hb_m).collect();
+        let land_half = hb_m + spec.side_slope_h_per_v * spec.land_depth_m;
+        let in_footprint = offs.iter().map(|o| o.abs() <= land_half).collect();
         Self {
             grid,
             grade: grade_m,
@@ -581,26 +638,47 @@ impl<'a> FieldScorer<'a> {
             offs,
             tmpl,
             in_fairway,
+            in_footprint,
+            land_half_m: land_half,
         }
+    }
+
+    /// The half-width of the footprint the land cost is charged on (m): the channel's plan
+    /// half-width at the water surface, the scorer's half-width (the bottom half-width, widened on
+    /// an arc, plus `footprint_corr_m`) + `side_slope_h_per_v` x `land_depth_m`.
+    pub fn land_half_width_m(&self) -> f64 {
+        self.land_half_m
+    }
+
+    /// The plan area (m2) of the channel's footprint along `prim` from `pose` that lies outside the
+    /// river polygon: the rake samples within the footprint's half-width whose nearest grid cell is
+    /// not wet, each `rake_step_m` wide and one section spacing long. Ground level plays no part: a
+    /// sample on drowned land, on unknown ground or off the grid counts as land; a sample inside the
+    /// river polygon never does. It is what `score` charges `land_weight` on.
+    pub fn land_area(&self, prim: &Prim, pose: Pose) -> f64 {
+        let (x0, y0, th0) = pose;
+        let sel = sections_of(prim, self.spec.ds_step_m);
+        let ds = prim.arc_len / sel.len() as f64;
+        let (ct, st) = (libm::cos(th0), libm::sin(th0));
+        let mut n = 0usize;
+        for p in &sel {
+            let wx = x0 + ct * p[1] - st * p[2];
+            let wy = y0 + st * p[1] + ct * p[2];
+            let hth = th0 + p[3];
+            let (nx, ny) = (-libm::sin(hth), libm::cos(hth));
+            for (j, &o) in self.offs.iter().enumerate() {
+                if self.in_footprint[j] && !self.grid.sample_wet_at(wx + o * nx, wy + o * ny) {
+                    n += 1;
+                }
+            }
+        }
+        n as f64 * self.spec.rake_step_m * ds
     }
 
     pub fn score(&self, prim: &Prim, pose: Pose) -> (f64, bool) {
         let (x0, y0, th0) = pose;
         let sp = self.spec;
-        let pts = &prim.pts;
-        let ds_native = prim.arc_len / pts.len() as f64;
-        let stride = if ds_native > 0.0 {
-            std::cmp::max(1, round_i(sp.ds_step_m / ds_native)) as usize
-        } else {
-            1
-        };
-        let mut sel: Vec<&[f64; 4]> = pts.iter().step_by(stride).collect();
-        if !core::ptr::eq(
-            *sel.last().expect("a primitive has points"),
-            &pts[pts.len() - 1],
-        ) {
-            sel.push(&pts[pts.len() - 1]);
-        }
+        let sel = sections_of(prim, sp.ds_step_m);
         let n_sec = sel.len();
         let ds = prim.arc_len / n_sec as f64;
         let m = self.offs.len();
@@ -686,6 +764,19 @@ impl<'a> FieldScorer<'a> {
         if sp.length_weight != 0.0 {
             total += sp.length_weight * prim.arc_len;
         }
+        // The land cost, off at 0 in the same way: every footprint sample outside the river polygon
+        // pays, cut or no cut (the same count as `land_area`).
+        if sp.land_weight != 0.0 {
+            let mut n = 0usize;
+            for i in 0..n_sec {
+                for j in 0..m {
+                    if self.in_footprint[j] && !wet[i * m + j] {
+                        n += 1;
+                    }
+                }
+            }
+            total += sp.land_weight * (n as f64 * cell);
+        }
         (total, true)
     }
 }
@@ -743,6 +834,11 @@ fn valid_points(grid: &TerrainGrid, stride_m: f64, max_samples: Option<usize>) -
 /// and any path to the goal is at least the straight-line distance long, so the added term
 /// (weight x distance) is a lower bound of the length cost still to pay and never over-estimates.
 /// The cut part is the cheapest cut per metre, as before.
+///
+/// The land cost (`land_weight`) is part of the straight's cost in the same way as its cut: this is
+/// the cheapest cut plus land per metre found in the corridor, and it is 0 for the land part as soon
+/// as one sampled straight has its whole footprint inside the river polygon. It bounds the land
+/// still to pay as it bounds the cut still to pay: the cheapest metre found, times the distance.
 pub fn min_cost_per_metre(
     grid: &TerrainGrid,
     scorer: &FieldScorer,
@@ -946,6 +1042,11 @@ pub struct LatticeResult {
     pub radius_check_chord_m: f64,
     /// The chord reading holds R_min (within `RADIUS_TOL`); false when there is no line.
     pub radius_ok: bool,
+    /// The plan area (m2) of the line's footprint outside the river polygon
+    /// ([`FieldScorer::land_area`], summed over its primitives and closing path), measured when
+    /// `SectionSpec::land_weight` is above 0 and there is a line; else `None`. The land part of
+    /// `cost` is `land_weight` x this.
+    pub land_area_m2: Option<f64>,
 }
 
 type Key = (i64, i64, usize, i8);
@@ -1313,6 +1414,7 @@ pub fn solve_lattice_until(
         measured_min_radius_m: f64::NAN,
         radius_check_chord_m: default_check_chord(cfg.r_min_m),
         radius_ok: false,
+        land_area_m2: None,
     };
     while let Some(Entry(_, gc, k)) = pq.pop() {
         if gc > g.get(&k).copied().unwrap_or(f64::INFINITY) + 1e-9 {
@@ -1474,6 +1576,35 @@ pub fn solve_lattice_until(
         (true, Some(path)) => path.into_iter().filter(|p| p.2 > 1e-9).collect(),
         _ => Vec::new(),
     };
+    // The land the line takes, read along the line as it is built (the chain from the true start,
+    // then the closing path), with the scorer of each piece: what the land cost was charged on.
+    if section.land_weight != 0.0 {
+        let advance = |p: Pose, e: (f64, f64, f64)| -> Pose {
+            let (ct, st) = (libm::cos(p.2), libm::sin(p.2));
+            (
+                p.0 + ct * e.0 - st * e.1,
+                p.1 + st * e.0 + ct * e.1,
+                p.2 + e.2,
+            )
+        };
+        let mut at = start_pose;
+        let mut area = 0.0;
+        for &pi in &seq {
+            area += scorers[pi].land_area(&prims[pi], at);
+            at = advance(at, prims[pi].end);
+        }
+        for &piece in &close_pieces {
+            let prim = piece_prim(piece, cfg.arc_step_m);
+            let sc = if piece.1 == 0 {
+                straight_scorer
+            } else {
+                &close_arc_scorer
+            };
+            area += sc.land_area(&prim, at);
+            at = advance(at, prim.end);
+        }
+        res.land_area_m2 = Some(area);
+    }
     for pts in path_poses((cx, cy, cth), &close_pieces) {
         dense.extend(pts.iter().map(|q| [q.0, q.1]));
         (cx, cy, cth) = pts[pts.len() - 1];
@@ -1531,6 +1662,10 @@ pub struct PoolAlignment {
     pub result: LatticeResult,
     /// The baseline segment under the same scorer (straight width).
     pub baseline_cost: f64,
+    /// The plan area (m2) of the baseline segment's footprint outside the river polygon, under the
+    /// same scorer, measured when `SectionSpec::land_weight` is above 0; else `None`. The land part
+    /// of `baseline_cost` is `land_weight` x this.
+    pub baseline_land_area_m2: Option<f64>,
     /// Whether the lattice line is in the joined line (set by [`optimise_pools`]; a pool that
     /// converged but kept its baseline is not used).
     pub used: bool,
@@ -1643,10 +1778,13 @@ pub fn pool_pieces(
     out
 }
 
-fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpec) -> f64 {
+/// The cost of the baseline segment under the straight scorer, and the land its footprint takes
+/// (m2; 0 when `land_weight` is 0, where it is not measured).
+fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpec) -> (f64, f64) {
     let hb = section.half_width_at(f64::INFINITY) + section.footprint_corr_m;
     let sc = FieldScorer::new(grid, grade, hb, section);
     let mut total = 0.0;
+    let mut land = 0.0;
     for w in seg.windows(2) {
         let ([x0, y0], [x1, y1]) = (w[0], w[1]);
         let l = hypot(x1 - x0, y1 - y0);
@@ -1666,17 +1804,28 @@ fn segment_cost(seg: &[Pt], grid: &TerrainGrid, grade: f64, section: &SectionSpe
             end: (l, 0.0, 0.0),
             arc_len: l,
         };
-        let (c, ok) = sc.score(&prim, (x0, y0, libm::atan2(y1 - y0, x1 - x0)));
-        // A segment on unknown ground still pays for its length, as every lattice edge does.
-        total += if ok {
-            c
-        } else if section.length_weight != 0.0 {
-            section.length_weight * l
+        let pose = (x0, y0, libm::atan2(y1 - y0, x1 - x0));
+        let (c, ok) = sc.score(&prim, pose);
+        let area = if section.land_weight != 0.0 {
+            sc.land_area(&prim, pose)
         } else {
             0.0
         };
+        land += area;
+        // A segment on unknown ground still pays for its length and for the land it takes, as
+        // every lattice edge does.
+        if ok {
+            total += c;
+        } else {
+            if section.length_weight != 0.0 {
+                total += section.length_weight * l;
+            }
+            if section.land_weight != 0.0 {
+                total += section.land_weight * area;
+            }
+        }
     }
-    total
+    (total, land)
 }
 
 fn polygons_of(g: Geometry) -> Result<Vec<Polygon>, Refusal> {
@@ -1736,9 +1885,7 @@ pub fn optimise_pool(
     if !(0.0 <= start_m && start_m < end_m && end_m <= blen) {
         return Err("need 0 <= start_m < end_m <= baseline.length".into());
     }
-    if !(section.length_weight.is_finite() && section.length_weight >= 0.0) {
-        return Err("length_weight must be a finite number >= 0".into());
-    }
+    section.check_weights()?;
     let seg = line_of(linear::substring(baseline, start_m, end_m))?;
     let geo = |e: crate::geom::GeomError| e.to_string();
     let mut corridor =
@@ -1762,13 +1909,15 @@ pub fn optimise_pool(
     let start = (p0[0], p0[1], heading_at(baseline, start_m, 20.0));
     let goal = (p1[0], p1[1], heading_at(baseline, end_m, 20.0));
     let result = solve_lattice(&grid, start, goal, grade, section, cfg);
+    let (baseline_cost, baseline_land) = segment_cost(&seg, &grid, grade, section);
     Ok(PoolAlignment {
         start_m,
         end_m,
         water_level_m,
         grade_m: grade,
         result,
-        baseline_cost: segment_cost(&seg, &grid, grade, section),
+        baseline_cost,
+        baseline_land_area_m2: (section.land_weight != 0.0).then_some(baseline_land),
         used: false,
         kept_baseline_because: None,
         piece: None,

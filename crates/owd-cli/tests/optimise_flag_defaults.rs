@@ -137,3 +137,44 @@ fn a_negative_length_weight_is_refused_by_name() {
     assert!(err.contains("length_weight"), "{err}");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
 }
+
+/// `--land-weight` (a cost per m2 of channel footprint outside the river polygon) shows the stage's
+/// own default, 0 (off), and its unit, read from the shared settings.
+#[test]
+fn the_help_of_land_weight_shows_the_default_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default().land_weight;
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--land-weight");
+    assert!(text.contains("<M3_PER_M2>"), "{text}");
+    assert!(
+        text.contains(&format!("(default {d}: off)")),
+        "the help of `--land-weight` does not show the default {d}: {text}"
+    );
+}
+
+/// `owd optimise --land-weight` goes through the stage's own reading of its settings: a negative
+/// weight is refused by name (exit 2) and the design is not written.
+#[test]
+fn a_negative_land_weight_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-land-weight");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Land weight", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", path.to_str().unwrap(), "--land-weight=-1"])
+        .output()
+        .expect("owd runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(
+        err.contains("the setting `land_weight` must be a number >= 0"),
+        "{err}"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}

@@ -26,6 +26,7 @@
     onMouth,
     onRunInputs,
     onOptimiseLength,
+    onOptimiseLand,
     lineName = null,
     table,
     indexOf,
@@ -53,6 +54,7 @@
     onMouth: (mouth: string) => void;
     onRunInputs: (objective: string, limits: string, level: string) => void;
     onOptimiseLength: (weight: string) => void;
+    onOptimiseLand: (weight: string) => void;
     lineName?: string | null;
     /** The design line and its checks, as the session tables them. */
     table: OptionTable | null;
@@ -65,7 +67,7 @@
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {lineName} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseLand} {lineName} />
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
   <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} />

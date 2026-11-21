@@ -447,9 +447,10 @@ export const useWaterChoice = (value: boolean | null | undefined): UseWater => (
 /** Set the rolling circle's water-aware mode in the design (`owd align --use-water`); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
 export const setUseWater = (choice: UseWater) =>
   invoke<Snapshot>("set_alignment_settings", { method: "rolling_circle", settings: { use_water: useWaterValue(choice) } });
-/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). */
+/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `land_weight`: the cost of one m² of channel footprint outside the river polygon, in m³ of cut per m² (0 is off). */
 export interface OptimiseSettings {
   length_weight?: number;
+  land_weight?: number;
 }
 /** Set optimise settings in the design, as `owd optimise --length-weight` does; nothing runs, and a fresh optimise stage goes stale. Rejects with the reason. */
 export const setOptimiseSettings = (settings: OptimiseSettings) => invoke<Snapshot>("set_optimise_settings", { settings });
