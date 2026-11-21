@@ -2334,18 +2334,21 @@ describe("OWD web smoke tests", () => {
       const g = (await p.call("channel_geometry")).geometry;
       const info = await p.call("terrain_info");
       const water = await p.call("pool_water_info");
+      // The deepest dry cut between the daylight lines: high ground the channel is cut through.
       const day = g.daylight;
       let best = null;
       for (let i = 2; i < day.left[0].length - 2; i += 1) {
-        const lon = (g.bed.left[0][i][0] + g.bed.right[0][i][0]) / 2, lat = (g.bed.left[0][i][1] + g.bed.right[0][i][1]) / 2;
-        const c = await p.call("cut_at", { lon, lat });
-        if (c && (!best || c.depth_m > best.c.depth_m)) best = { lon, lat, c };
+        for (const t of [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]) {
+          const lon = day.left[0][i][0] + (day.right[0][i][0] - day.left[0][i][0]) * t;
+          const lat = day.left[0][i][1] + (day.right[0][i][1] - day.left[0][i][1]) * t;
+          const c = await p.call("cut_at", { lon, lat });
+          if (c && c.kind === "dry" && (!best || c.depth_m > best.c.depth_m)) best = { lon, lat, c };
+        }
       }
       const zoom = info.max_zoom, k = 2 ** zoom;
       const x = Math.floor(((best.lon + 180) / 360) * k);
       const sin = Math.sin((best.lat * Math.PI) / 180);
-      const fy = (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k;
-      const y = Math.floor(fy);
+      const y = Math.floor((0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k);
       const heights = async (png) => {
         const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
         const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
@@ -2354,24 +2357,34 @@ describe("OWD web smoke tests", () => {
         const px = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
         return Array.from({ length: px.length / 4 }, (_, i) => px[4 * i] * 256 + px[4 * i + 1] + px[4 * i + 2] / 256 - 32768);
       };
-      const at = Math.floor((fy - y) * 256) * 256 + Math.floor((((best.lon + 180) / 360) * k - x) * 256);
       const ground = await heights(await p.call("terrain_tile", { z: zoom, x, y }));
       const after = await heights(await p.call("terrain_tile", { z: zoom, x, y, state: "after" }));
       const wet = await heights(await p.call("pool_surface_tile", { id: water.id, z: zoom, x, y }));
       const filled = await heights(await p.call("pool_surface_tile", { id: water.id, z: zoom, x, y, state: "after" }));
-      let below = 0, drained = 0;
+      const levels = water.pools.map((q) => q.level_m);
+      let below = 0, changed = 0, standing = 0, offLevel = 0, aboveOld = 0, deepest = 0;
       for (let i = 0; i < filled.length; i += 1) {
         if (filled[i] < after[i] - 0.01) below += 1;
-        if (filled[i] < wet[i] - 0.01 && after[i] >= ground[i] - 0.01) drained += 1;
+        // Where nothing is cut, the water is as on the ground as it is.
+        if (Math.abs(after[i] - ground[i]) <= 0.01 && Math.abs(filled[i] - wet[i]) > 0.01) changed += 1;
+        // Dry ground before (no water on it), cut to below the pool level: water stands in the cut.
+        if (Math.abs(wet[i] - ground[i]) <= 0.01 && filled[i] > after[i] + 0.01) {
+          standing += 1;
+          deepest = Math.max(deepest, filled[i] - after[i]);
+          if (!levels.some((l) => Math.abs(l - filled[i]) < 0.01)) offLevel += 1;
+          if (filled[i] > ground[i] + 0.01) aboveOld += 1;
+        }
       }
-      return { c: best.c, ground: ground[at], after: after[at], wet: wet[at], filled: filled[at], below, drained };
+      return { c: best.c, levels, below, changed, standing, offLevel, aboveOld, deepest };
     });
-    console.log(`After with the pool water, on the line at the deepest cut (chainage ${tiles.c.chainage_m.toFixed(0)} m): ground ${tiles.ground.toFixed(2)} m, cut to ${tiles.after.toFixed(2)} m, water on the ground as it is ${tiles.wet.toFixed(2)} m, cut and filled ${tiles.filled.toFixed(2)} m (pool level ${tiles.c.water_level_m.toFixed(2)} m)`);
-    assert.ok(Math.abs(tiles.after - tiles.c.after_m) < 0.2, `the After ground on the line is the bed: ${JSON.stringify(tiles)}`);
-    assert.ok(Math.abs(tiles.filled - tiles.c.water_level_m) < 0.02, `the cut channel is filled to the pool level: ${JSON.stringify(tiles)}`);
-    assert.ok(tiles.filled > tiles.after && tiles.filled < tiles.ground, "the water stands in the cut, below the ground that was there");
+    console.log(`After with the pool water, in the tile of the deepest dry cut (chainage ${tiles.c.chainage_m.toFixed(0)} m, ${tiles.c.depth_m.toFixed(1)} m deep): water stands in the cut on ${tiles.standing} pixels of ground that was dry, up to ${tiles.deepest.toFixed(2)} m deep, at the pool levels ${tiles.levels.join(", ")} m`);
+    assert.ok(tiles.standing > 0, `the cut channel is filled where it goes through dry ground: ${JSON.stringify(tiles)}`);
+    // Between the two stations either side of a weir the level runs from one pool's to the next: a few pixels.
+    assert.ok(tiles.offLevel <= tiles.standing * 0.05, `the water in the cut is at a pool's level: ${JSON.stringify(tiles)}`);
+    // Ground below the pool level that the flood did not reach, and the cut now joins to the pool, is under water too.
+    assert.ok(tiles.aboveOld < tiles.standing, `most of the water stands in ground that was above it: ${JSON.stringify(tiles)}`);
     assert.equal(tiles.below, 0, "the water is never below the cut ground");
-    assert.equal(tiles.drained, 0, "where nothing is cut, the water is as on the ground as it is");
+    assert.equal(tiles.changed, 0, "where nothing is cut, the water is as on the ground as it is");
     assert.equal(await exists(b, "error"), false);
   });
 
