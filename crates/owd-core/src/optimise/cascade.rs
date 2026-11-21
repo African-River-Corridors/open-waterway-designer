@@ -278,6 +278,17 @@ pub fn search_cascade(
     dp[0][li[&key(base)]] = 0.0;
     let lifts = &cfg.lifts_m;
     let s_cost: Vec<f64> = lifts.iter().map(|&l| structure_cost(l)).collect();
+    // The level each lift leads to from each level, worked out once (the same rounding and the
+    // same lookup as before, not once for every pair of sites).
+    let up: Vec<Vec<Option<usize>>> = lvls
+        .iter()
+        .map(|&h| {
+            lifts
+                .iter()
+                .map(|&l| li.get(&key(round_to(h + l, LEVEL_DECIMALS))).copied())
+                .collect()
+        })
+        .collect();
     for j in 1..s.len() {
         for i in 0..j {
             if s[j].0 - s[i].0 < cfg.min_spacing_m {
@@ -288,9 +299,8 @@ pub fn search_cascade(
                     continue;
                 }
                 let b = dp[i][hi] + reach_cost(s[i].0, s[j].0, h)?;
-                for (lix, &l) in lifts.iter().enumerate() {
-                    let h2 = round_to(h + l, LEVEL_DECIMALS);
-                    let Some(&k) = li.get(&key(h2)) else {
+                for (lix, to) in up[hi].iter().enumerate() {
+                    let Some(k) = *to else {
                         continue;
                     };
                     let c = b + s_cost[lix];

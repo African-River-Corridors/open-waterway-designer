@@ -1051,71 +1051,86 @@ pub fn explain_blocked(
             unblock(above)
         );
     }
-    // B. No weir can hold a pool that high. The highest pool the search can reach, and the next
-    //    pool up that is nearest to the limit.
+    // B. No weir can hold a pool that high. The highest pool that stays inside the limit over the
+    //    shortest reach it could have, and where the top pool would stand least above the banks.
     let mut high: Option<(usize, usize)> = None;
     for (j, row) in reach.iter().enumerate() {
         for (k, &r) in row.iter().enumerate() {
-            if r && high.is_none_or(|h| k > h.1 || (k == h.1 && j > h.0)) {
+            if r
+                && ok(s[j], next(j), levels_m[k])
+                && high.is_none_or(|h| k > h.1 || (k == h.1 && j > h.0))
+            {
                 high = Some((j, k));
             }
         }
     }
-    let Some((hj, hk)) = high else {
-        return format!(
-            "{head} The base level {} m is not a level the search can start from.",
-            m(base_level_m)
-        );
-    };
     let min_lift = lifts_m.iter().copied().fold(f64::INFINITY, f64::min);
-    if hj == 0 {
-        // Nothing above the source: the base reach itself, or no site at all.
-        if sites_m.is_empty() {
-            return format!(
-                "{head} There is no candidate site between {} m and {} m. {}",
-                ch(start_m),
-                ch(terminal_m),
-                unblock(limit_m)
-            );
-        }
-        let b = s[1];
-        let above = banks.max_above_bank(start_m, b, base_level_m);
+    if sites_m.is_empty() {
         return format!(
-            "{head} The first reach, from {} m to {} m at the base level {} m, blocks it: it stands \
-             {} m above bank-full (about {} m). A lower base level or a limit of at least {} m \
-             would unblock it.",
+            "{head} There is no candidate site between {} m and {} m, so no weir can lift the \
+             water. Give candidate sites (`--sites`, or a smaller `site_step_m`).",
             ch(start_m),
-            ch(b),
-            m(base_level_m),
-            m(above),
-            m(banks.min_bank(start_m, b)),
-            m(above)
+            ch(terminal_m)
         );
     }
-    let want = levels_m[hk] + min_lift;
-    // The site, from the highest weir up, where the next pool would stand least above the banks
-    // over the shortest reach it could have.
+    let Some((hj, hk)) = high else {
+        // Not even the water below the first weir is inside the limit.
+        let above = banks.max_above_bank(start_m, s[1], base_level_m);
+        return format!(
+            "{head} The reach from {} m to {} m blocks it: the water below the first weir, at the \
+             base level {} m, stands {} m above bank-full there (about {} m). A lower base level, \
+             or a limit of at least {} m, would unblock it.",
+            ch(start_m),
+            ch(s[1]),
+            m(base_level_m),
+            m(above),
+            m(banks.min_bank(start_m, s[1])),
+            m(above)
+        );
+    };
+    // Where a pool at the top level would stand least above the banks, over the shortest reach it
+    // could have.
     let mut best: Option<(usize, f64)> = None;
-    for j in hj..s.len() {
-        let above = banks.max_above_bank(s[j], next(j), want);
+    for j in 1..s.len() {
+        let above = banks.max_above_bank(s[j], next(j), terminal_min_level_m);
         if best.is_none_or(|b| above < b.1) {
             best = Some((j, above));
         }
     }
     let (bj, above) = best.unwrap_or((hj, f64::NAN));
-    format!(
+    let held = format!(
         "{head} The highest pool the weirs can hold inside the limit is {} m, above the site at {} \
-         m. The next pool up needs at least {} m (the smallest lift is {} m). The reach from {} m \
-         to {} m blocks it: that pool would stand {} m above bank-full there (about {} m), and \
-         every other site is worse. {}",
+         m.",
         m(levels_m[hk]),
-        ch(s[hj]),
+        ch(s[hj])
+    );
+    if above > limit_m + 1e-9 {
+        return format!(
+            "{held} The reach from {} m to {} m blocks it: a pool at the top level would stand {} \
+             m above bank-full there (about {} m), and at every other site it would stand higher. \
+             {}",
+            ch(s[bj]),
+            ch(next(bj)),
+            m(above),
+            m(banks.min_bank(s[bj], next(bj))),
+            unblock(above)
+        );
+    }
+    // The banks allow the top level somewhere, but the steps cannot get there: the next step up
+    // from the highest pool.
+    let want = levels_m[hk] + min_lift;
+    let step = banks.max_above_bank(s[hj], next(hj), want);
+    format!(
+        "{held} The next pool up needs at least {} m (the smallest lift is {} m). The reach from \
+         {} m to {} m blocks it: that pool would stand {} m above bank-full there (about {} m). \
+         The banks allow the top level only from {} m up. {}",
         m(want),
         m(min_lift),
+        ch(s[hj]),
+        ch(next(hj)),
+        m(step),
+        m(banks.min_bank(s[hj], next(hj))),
         ch(s[bj]),
-        ch(next(bj)),
-        m(above),
-        m(banks.min_bank(s[bj], next(bj))),
-        unblock(above)
+        unblock(step)
     )
 }
