@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { Choices, CustomFields, InputRole, OptionTable, RunMethod, Snapshot, StageName, UseWater } from "./api";
+  import type { Choices, CustomFields, InputRole, OptionTable, ProjectStatus, RunMethod, Snapshot, StageName, UseWater } from "./api";
+  import ProjectPanel from "./ProjectPanel.svelte";
   import ChecksList from "./ChecksList.svelte";
   import DesignLineCard from "./DesignLineCard.svelte";
   import DataSummary from "./DataSummary.svelte";
@@ -35,6 +36,8 @@
     onSelect,
     stretchesOpen,
     onStretches,
+    project = null,
+    onProjectLoad = () => {},
   }: {
     snap: Snapshot | null;
     choices: Choices | null;
@@ -65,6 +68,9 @@
     onSelect: (id: string) => void;
     stretchesOpen: boolean;
     onStretches: () => void;
+    /** The open project folder (PROJ-1, web app), if any: shown above the Data section. */
+    project?: ProjectStatus | null;
+    onProjectLoad?: (key: string) => void;
   } = $props();
 </script>
 
@@ -72,6 +78,7 @@
   <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseLand} {onCorridorLimit} {lineName} />
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
+  {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}
   <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>

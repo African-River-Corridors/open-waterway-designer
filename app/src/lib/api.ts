@@ -425,6 +425,83 @@ export const terrainTile = (z: number, x: number, y: number) => invoke<Uint8Arra
 /** The contour lines of one map tile of the DEM, every `interval` metres (MAP-3): a vector tile, made in
  * this browser from the DEM in memory. No bytes when the tile has no line. */
 export const contourTile = (z: number, x: number, y: number, interval: number) => invoke<Uint8Array>("contour_tile", { z, x, y, interval });
+/** The sizes of the placeholder lock and weir (MAP-4), and the rules they come from. A placeholder model, not a design. */
+export interface LockModel {
+  note: string;
+  vessel_length_m: number | null;
+  vessel_beam_m: number | null;
+  chamber_length_m: number | null;
+  chamber_width_m: number | null;
+  wall_thickness_m: number;
+  wall_freeboard_m: number;
+  default_weir_length_m: number;
+  rules: string;
+}
+/** One pool: a stretch of the design line at one water level. */
+export interface PoolReach {
+  number: number;
+  from_m: number;
+  to_m: number;
+  level_m: number;
+  line: LonLat[];
+  mid: LonLat;
+}
+/** One block of the placeholder model: a flat-topped shape. */
+export interface ModelPart {
+  kind: "weir" | "lock_wall" | "lock_gate" | "lock_chamber";
+  ring: LonLat[];
+  top_m: number;
+}
+/** One weir site: where one pool ends and the next begins. Upstream is the higher chainage. */
+export interface WeirSite {
+  number: number;
+  chainage_m: number;
+  position: LonLat;
+  bearing_deg: number;
+  upstream_level_m: number;
+  downstream_level_m: number;
+  lift_m: number;
+  upstream_pool: number | null;
+  downstream_pool: number | null;
+  weir_length_m: number;
+  clipped_to_river: boolean;
+  parts: ModelPart[];
+}
+/** The weirs, the locks and the pools of the design, for the map. Empty lists when the design has no pools. */
+export interface MapStructures {
+  model: LockModel;
+  pools: PoolReach[];
+  weirs: WeirSite[];
+}
+/** Made by the session on demand from the water level along the design line: nothing of it is in the design file. */
+export const mapStructures = () => invoke<MapStructures>("map_structures");
+/** The pool water (MAP-4): the ground each pool floods, worked out in this browser from the DEM in memory. */
+export interface PoolWaterInfo {
+  /** A number that changes with the flood mask: tiles of another number are out of date. */
+  id: number;
+  /** The time the flood mask took, in milliseconds (0 when it was already made). */
+  build_ms: number;
+  made: boolean;
+  mask: { factor: number; width: number; height: number; cell_m: number; bytes: number; peak_bytes: number; flooded_cells: number };
+  /** Each pool's flooded ground, and the part of it outside the river polygon (null with no polygon), in hectares. */
+  pools: { number: number; level_m: number; flooded_ha: number; outside_river_ha: number | null }[];
+  /** The colour of the water by its depth: `[depth in metres, [red, green, blue, alpha]]`. */
+  depth_stops: [number, [number, number, number, number]][];
+}
+/** Null with no DEM in memory or no pools. The first call for a DEM and its pools makes the flood mask. */
+export const poolWaterInfo = () => invoke<PoolWaterInfo | null>("pool_water_info");
+/** The water of one map tile, a PNG coloured by depth and clear where dry. */
+export const poolWaterTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_water_tile", { id, z, x, y });
+/** One terrain tile with the water on it: the pool's level where there is water, the ground elsewhere. */
+export const poolSurfaceTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_surface_tile", { id, z, x, y });
+/** What a click on the water reads. Null on dry ground. */
+export interface WaterAt {
+  pool: number;
+  water_level_m: number;
+  ground_m: number;
+  depth_m: number;
+}
+export const poolWaterAt = (id: number, lon: number, lat: number) => invoke<WaterAt | null>("pool_water_at", { id, lon, lat });
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 
@@ -575,6 +652,56 @@ export const exportReport = (option: string | null, ask: ReportAsk) => invoke<st
  * folder the user picks (desktop) or as downloads (web). `fromKm`/`toKm` cut the stretch. null on cancel. */
 export const exportQaOverlay = (fromKm?: number, toKm?: number) =>
   invoke<string | null>("export_qa_overlay", { fromKm: fromKm ?? null, toKm: toKm ?? null });
+
+// --- the project folder (PROJ-1, web app) -----------------------------------------------------------
+/** How one item of a project stands: see `lib/project.ts`. */
+export type ProjectItemState = "loaded" | "found" | "changed" | "set" | "missing" | "none";
+export interface ProjectItem {
+  key: string;
+  label: string;
+  /** The path from the project folder; null: the text file does not name it. */
+  path: string | null;
+  state: ProjectItemState;
+}
+/** The open project folder, for the Project panel. */
+export interface ProjectStatus {
+  title: string;
+  /** The folder's own name (the browser never tells where it is). */
+  folder: string;
+  design: string | null;
+  items: ProjectItem[];
+}
+/** What a folder with no `owd-project.json` holds in the standard places. */
+export interface ProjectFound {
+  designs: string[];
+  dems: string[];
+  inputs: { key: string; label: string; path: string }[];
+  /** True when there is no choice to make: at most one design and one DEM, and at least one. */
+  clear: boolean;
+}
+/** A folder the user chose. `found` is null when it has its text file; else what was found. */
+export interface ProjectLook {
+  folder: string;
+  title: string | null;
+  found: ProjectFound | null;
+}
+/** Whether this browser can open a folder (Chrome and Edge can). */
+export const projectSupported = () => invoke<boolean>("project_supported");
+/** Ask for a project folder. null when the user cancels. */
+export const projectPick = () => invoke<ProjectLook | null>("project_pick");
+/** The project folder remembered on this machine from last time, if any. */
+export const projectRemembered = () => invoke<{ title: string; folder: string } | null>("project_remembered");
+/** Go back to the remembered folder; the browser asks for leave again. */
+export const projectReopen = () => invoke<ProjectLook | null>("project_reopen");
+export const projectForget = () => invoke<void>("project_forget");
+/** Write `owd-project.json` into the chosen folder, naming the design and the DEM taken. */
+export const projectAdopt = (design: string | null, dem: string | null) => invoke<void>("project_adopt", { design, dem });
+/** Open the chosen project: the design and its DEM in one step. `onProgress` gets a line to show.
+ * `project_note` says what opening changed in the design, if anything. */
+export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null }>("project_open", { onProgress });
+export const projectStatus = () => invoke<ProjectStatus | null>("project_status");
+/** Load one listed item of the project into the design. */
+export const projectLoad = (key: string, onProgress: (line: string) => void) => invoke<Snapshot>("project_load", { key, onProgress });
 
 /** Web only: open the bundled example (a short synthetic river with its DEM). null when the user cancels. */
 export const openExample = () => invoke<Snapshot | null>("open_example");

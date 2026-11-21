@@ -117,7 +117,10 @@ fn relative_to(base: &Path, target: &Path) -> String {
         Some(folder.join(target.file_name()?))
     });
     let (Ok(b), Some(t)) = (std::fs::canonicalize(base), resolved) else {
-        return target.to_string_lossy().replace('\\', "/");
+        // No disk to ask (the browser), or a folder that is not there: two relative paths are
+        // compared by their names.
+        return lexical_relative(base, target)
+            .unwrap_or_else(|| target.to_string_lossy().replace('\\', "/"));
     };
     let (bc, tc): (Vec<_>, Vec<_>) = (b.components().collect(), t.components().collect());
     let common = bc.iter().zip(&tc).take_while(|(x, y)| x == y).count();
@@ -128,6 +131,31 @@ fn relative_to(base: &Path, target: &Path) -> String {
             .map(|c| c.as_os_str().to_string_lossy().into_owned()),
     );
     parts.join("/")
+}
+
+/// `target` from the folder `base`, by the names alone: both relative, from the same place. `None`
+/// when either is absolute or climbs above that place.
+fn lexical_relative(base: &Path, target: &Path) -> Option<String> {
+    use std::path::Component;
+    let names = |p: &Path| -> Option<Vec<String>> {
+        let mut out: Vec<String> = Vec::new();
+        for c in p.components() {
+            match c {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    out.pop()?;
+                }
+                Component::Normal(n) => out.push(n.to_string_lossy().into_owned()),
+                Component::RootDir | Component::Prefix(_) => return None,
+            }
+        }
+        Some(out)
+    };
+    let (b, t) = (names(base)?, names(target)?);
+    let common = b.iter().zip(&t).take_while(|(x, y)| x == y).count();
+    let mut parts: Vec<String> = vec!["..".to_string(); b.len() - common];
+    parts.extend(t[common..].iter().cloned());
+    Some(parts.join("/"))
 }
 
 /// A custom vessel from the form's fields: each a number or the text typed (empty for none). A
@@ -226,6 +254,13 @@ impl AppState {
     /// names, if the shell found it next to the document.
     /// A path with the old file extension is refused with a message to rename it (spec 0006).
     pub fn open(path: &Path, text: &str, dem_bytes: Option<&[u8]>) -> Result<AppState, String> {
+        AppState::open_owned(path, text, dem_bytes.map(<[u8]>::to_vec))
+    }
+
+    /// [`AppState::open`] for a caller that owns the DEM file's bytes: they are kept as they are,
+    /// not copied (a large DEM in the browser, where memory is short).
+    pub fn open_owned(path: &Path, text: &str, dem: Option<Vec<u8>>) -> Result<AppState, String> {
+        let dem_bytes = dem.as_deref();
         owd_format::design::check_file_name(&path.to_string_lossy()).map_err(message)?;
         let mut session = Session::open(text).map_err(message)?;
         // A file from format 0.4 records no mouth: with no water level to tell, its DEM tells, when
@@ -265,7 +300,7 @@ impl AppState {
             warnings,
             open_notes,
             dem: dem_bytes.and_then(|b| read_bytes(b).ok()).map(Arc::new),
-            dem_bytes: dem_bytes.map(|b| Arc::new(b.to_vec())),
+            dem_bytes: dem.map(Arc::new),
             dem_file,
             running: None,
             walk: None,
@@ -275,6 +310,57 @@ impl AppState {
             rule_set_texts: Vec::new(),
             downstream: None,
         })
+    }
+
+    /// Open a design of a project folder (PROJ-1). `design` is the design file and `dem` the DEM
+    /// the project names with its bytes, both by their paths from the project folder. The design
+    /// records its DEM from its own folder (`../terrain/x.tif`), never the project folder itself.
+    ///
+    /// A design that records no DEM takes the project's, as Load does. A design that records the
+    /// same DEM (by its hash) under another path is pointed at the project's, and is unsaved until
+    /// the user saves it. A DEM whose hash differs gives the usual warning, and nothing is changed.
+    /// The second value says what was changed, in words for the user.
+    pub fn open_in_project(
+        design: &Path,
+        text: &str,
+        dem: Option<(&Path, Vec<u8>)>,
+        date: &str,
+    ) -> Result<(AppState, Option<String>), String> {
+        let Some((dem_file, bytes)) = dem else {
+            return Ok((AppState::open_owned(design, text, None)?, None));
+        };
+        if AppState::dem_path(text).is_none() {
+            let mut state = AppState::open_owned(design, text, None)?;
+            state.load_dem(dem_file, bytes, date)?;
+            let note = format!(
+                "The design did not name a DEM: it now names the project's, `{}`. Save to keep that.",
+                state.session.dem_path().unwrap_or("?")
+            );
+            return Ok((state, Some(note)));
+        }
+        let mut state = AppState::open_owned(design, text, Some(bytes))?;
+        // The terrain rule's one reader says whether this is the file the design recorded.
+        let same_file = owd_format::design::stage_terrain(
+            &state.session,
+            state.dem_bytes.as_deref().map(|b| b.as_slice()),
+        )
+        .is_ok();
+        let mut note = None;
+        if same_file {
+            let before = state.session.dem_path().map(str::to_string);
+            state.dem_file = Some(dem_file.to_path_buf());
+            state.point_dem_from(design);
+            let after = state.session.dem_path().map(str::to_string);
+            if before != after {
+                state.dirty = true;
+                note = Some(format!(
+                    "The design named its DEM as `{}`. In this project it is `{}`: Save to keep that, so the command line finds the DEM too.",
+                    before.as_deref().unwrap_or("?"),
+                    after.as_deref().unwrap_or("?")
+                ));
+            }
+        }
+        Ok((state, note))
     }
 
     /// The DEM path the document names, relative to the document, if any.
@@ -422,6 +508,20 @@ impl AppState {
     /// The plan map's geometry in WGS84, from the session.
     pub fn map_geometry(&self) -> Result<Value, String> {
         self.session.map_geometry().map_err(message)
+    }
+
+    /// The weirs, the locks and the pools of the design, for the map (MAP-4): made now from the
+    /// water level along the design line, never stored. An empty list when the design has no pools.
+    pub fn map_structures(&self) -> Result<Value, String> {
+        let list = self.session.map_structures().map_err(message)?;
+        serde_json::to_value(list).map_err(|e| e.to_string())
+    }
+
+    /// What the pool water (the ground each pool floods) is made from. `None` with no pools.
+    pub fn pool_water_input(
+        &self,
+    ) -> Result<Option<owd_format::design::structures::PoolWaterIn>, String> {
+        self.session.pool_water_input().map_err(message)
     }
 
     /// The DEM, to draw the offline hillshade from. `None` when there is none to read.
@@ -1854,6 +1954,100 @@ mod tests {
         )
         .unwrap();
         assert_eq!(stage_status(&s, "alignment"), "stale");
+    }
+
+    #[test]
+    fn a_design_of_a_project_names_its_dem_from_its_own_folder_with_no_disk_to_ask() {
+        // The browser has no disk: the paths are compared by their names (PROJ-1).
+        assert_eq!(
+            lexical_relative(Path::new("design"), Path::new("terrain/d.tif")).as_deref(),
+            Some("../terrain/d.tif")
+        );
+        assert_eq!(
+            lexical_relative(Path::new("design"), Path::new("design/../terrain/d.tif")).as_deref(),
+            Some("../terrain/d.tif")
+        );
+        assert_eq!(
+            lexical_relative(Path::new(""), Path::new("d.tif")).as_deref(),
+            Some("d.tif")
+        );
+        assert_eq!(lexical_relative(Path::new("/a"), Path::new("d.tif")), None);
+        assert_eq!(
+            lexical_relative(Path::new("a"), Path::new("../../d.tif")),
+            None
+        );
+
+        let design = Path::new("no-such-project/design/reach-a.owd");
+        let dem = Path::new("no-such-project/terrain/reach-a-dem.tif");
+        // A design with no DEM takes the project's, named from the design's own folder.
+        let empty = AppState::new_design("T", "2026-11-20").save_text();
+        let (mut s, note) =
+            AppState::open_in_project(design, &empty, Some((dem, dem_bytes())), "2026-11-20")
+                .unwrap();
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "../terrain/reach-a-dem.tif"
+        );
+        assert!(s.is_dirty());
+        assert!(note.unwrap().contains("../terrain/reach-a-dem.tif"));
+        assert!(s.dem().is_some(), "the DEM is held for the stages");
+        let saved = s.save_text_for(design);
+        assert!(
+            !saved.contains("no-such-project"),
+            "no folder in the design"
+        );
+
+        // A design that names the same DEM beside itself is pointed at the project's, unsaved.
+        let mut beside = AppState::new_design("T", "2026-11-20");
+        beside
+            .load_dem(Path::new("reach-a-dem.tif"), dem_bytes(), "2026-11-20")
+            .unwrap();
+        let text = beside.save_text();
+        assert_eq!(
+            AppState::dem_path(&text).as_deref(),
+            Some("reach-a-dem.tif")
+        );
+        let (s, note) =
+            AppState::open_in_project(design, &text, Some((dem, dem_bytes())), "2026-11-20")
+                .unwrap();
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "../terrain/reach-a-dem.tif"
+        );
+        assert!(s.is_dirty());
+        assert!(note.unwrap().contains("Save"));
+        assert!(s.snapshot()["warnings"].as_array().unwrap().is_empty());
+
+        // The relation already right: nothing changes, nothing to save.
+        let right = s.save_text();
+        let (s, note) =
+            AppState::open_in_project(design, &right, Some((dem, dem_bytes())), "2026-11-20")
+                .unwrap();
+        assert!(!s.is_dirty());
+        assert_eq!(note, None);
+
+        // Another DEM than the one recorded: the usual warning, and the design is left alone.
+        let mut other = dem_bytes();
+        let n = other.len();
+        other[n - 1] ^= 0xff;
+        let (s, note) =
+            AppState::open_in_project(design, &text, Some((dem, other)), "2026-11-20").unwrap();
+        assert_eq!(note, None);
+        assert!(!s.is_dirty());
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "reach-a-dem.tif"
+        );
+        let warnings = s.snapshot()["warnings"].to_string();
+        assert!(
+            warnings.contains("has changed since its hash was recorded"),
+            "{warnings}"
+        );
+
+        // No DEM in the project: the design opens as Open opens it.
+        let (s, note) = AppState::open_in_project(design, &text, None, "2026-11-20").unwrap();
+        assert_eq!(note, None);
+        assert!(s.snapshot()["warnings"].to_string().contains("is missing"));
     }
 
     #[test]
