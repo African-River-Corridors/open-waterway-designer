@@ -6,6 +6,8 @@ export const MAP_LAYERS = [
   { id: "centreline", label: "Centreline" },
   { id: "bank-lines", label: "Bank lines" },
   { id: "design-line", label: "Design line" },
+  { id: "channel", label: "Channel" },
+  { id: "cut", label: "Cut extent" },
   { id: "constraint-stretches", label: "Constraint stretches" },
   { id: "station-marks", label: "Station marks" },
   { id: "terrain-shading", label: "Terrain shading" },
@@ -19,9 +21,10 @@ export type LayerTicks = Record<MapLayerId, boolean>;
 
 export const LAYERS_KEY = "owd-map-layers";
 
-/** The layers that start unticked. Terrain shading darkens the imagery, and contours lay lines over
- * everything, so the user asks for them (MAP-2, MAP-3). */
-export const STARTS_OFF: readonly MapLayerId[] = ["terrain-shading", "contours"];
+/** The layers that start unticked. Terrain shading darkens the imagery, contours lay lines over
+ * everything, and the cut extent colours the ground over the imagery, so the user asks for them
+ * (MAP-2, MAP-3, MAP-5). */
+export const STARTS_OFF: readonly MapLayerId[] = ["cut", "terrain-shading", "contours"];
 
 /** The default ticks: every layer on but those in STARTS_OFF. */
 export const defaultTicks = (): LayerTicks => Object.fromEntries(MAP_LAYERS.map((l) => [l.id, !STARTS_OFF.includes(l.id)])) as LayerTicks;
@@ -74,6 +77,8 @@ export const STYLE_LAYERS: Record<MapLayerId, string[]> = {
   centreline: ["centre"],
   "bank-lines": ["banks"],
   "design-line": ["options-casing", "options"],
+  channel: ["channel-bed", "channel-bed-casing", "channel-bed-edges", "channel-water"],
+  cut: ["cut-depth", "cut-daylight-casing", "cut-daylight"],
   "constraint-stretches": ["stretches-casing", "stretches"],
   "station-marks": ["ticks"],
   "terrain-shading": ["terrain-tint", "terrain-shading"],

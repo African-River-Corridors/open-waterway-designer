@@ -190,6 +190,8 @@ const answer: Record<string, () => unknown> = {
   station_near: () => 9000, hillshade: relief,
   // The mock has no engine to cut terrain tiles: the 3D button says there is no DEM.
   terrain_info: () => null,
+  // Nor to derive the channel: the Channel and Cut extent ticks say there is none.
+  channel_geometry: () => null,
   export_sheets: () => "/tmp/owd-sheets",
   export_report: () => "/tmp/owd-reports",
   sheets: () => [{ number: "OWD-MOCK-PL-001", title: "PLAN OVERVIEW", warnings: [],

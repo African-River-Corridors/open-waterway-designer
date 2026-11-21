@@ -31,8 +31,11 @@ declare module "*/wasm-pkg/owd_web.js" {
     map_geometry(): string;
     hillshade(): string;
     terrain_info(): string;
-    terrain_tile(z: number, x: number, y: number): Uint8Array;
-    contour_tile(z: number, x: number, y: number, interval_m: number): Uint8Array;
+    terrain_tile(state: string, z: number, x: number, y: number): Uint8Array;
+    contour_tile(state: string, z: number, x: number, y: number, interval_m: number): Uint8Array;
+    channel_geometry(): string;
+    cut_tile(z: number, x: number, y: number): Uint8Array;
+    cut_at(lon: number, lat: number): string;
     long_section(option: string): string;
     cross_section(option: string, chainage: number): string;
     station_near(option: string, lon: number, lat: number): number;

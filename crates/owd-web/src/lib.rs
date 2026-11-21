@@ -133,6 +133,9 @@ pub struct Session {
     state: AppState,
     /// The terrain tiles of the DEM, for the map's 3D view: made on demand, never stored.
     terrain: terrain::TerrainTiles,
+    /// The channel of the design line as the map draws it (MAP-5), as JSON, for the design named
+    /// by the terrain's cut key: made when the design changes, never stored.
+    channel: String,
 }
 
 impl Session {
@@ -155,6 +158,32 @@ impl Session {
     }
 }
 
+impl Session {
+    /// Make the channel's geometry and its cut surface again when the design has changed since
+    /// they were made (MAP-5). The geometry is `{key, geometry, note, legend}`: `geometry` is null with
+    /// `note` saying why when the channel cannot be drawn yet.
+    fn sync_channel(&mut self) {
+        let key = self.state.channel_key();
+        if !self.channel.is_empty() && self.terrain.cut_key() == key {
+            return;
+        }
+        let (geometry, note, cut) = match self.state.channel() {
+            Ok((g, cut)) => (json!(g), serde_json::Value::Null, cut),
+            Err(why) => (serde_json::Value::Null, json!(why), None),
+        };
+        self.channel = json!({
+            "key": key,
+            "geometry": geometry,
+            "note": note,
+            "legend": terrain::TerrainTiles::cut_legend(),
+        })
+        .to_string();
+        // The maker of the DEM in memory first, so the cut is laid on it.
+        let _ = self.terrain.info(self.state.dem());
+        self.terrain.set_cut(key, cut);
+    }
+}
+
 #[wasm_bindgen]
 impl Session {
     /// A new, empty channel design.
@@ -163,6 +192,7 @@ impl Session {
         Session {
             state: new_design(),
             terrain: terrain::TerrainTiles::default(),
+            channel: String::new(),
         }
     }
 
@@ -561,20 +591,47 @@ impl Session {
     /// memory, else the DEM's box in degrees, its lowest and highest height, the deepest zoom
     /// worth asking for, and a number that changes with the DEM.
     pub fn terrain_info(&mut self) -> Js<String> {
+        self.sync_channel();
         ok(self.terrain.info(self.state.dem())).map(|v| v.to_string())
     }
 
-    /// Terrain tile `z/x/y` of the DEM: a 256 px Terrarium PNG, made here from the DEM in memory.
-    pub fn terrain_tile(&mut self, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
-        ok(self.terrain.tile(self.state.dem(), z, x, y)).map(|png| png.to_vec())
+    /// Terrain tile `z/x/y` of the ground in `state` (`before`: the DEM; `after`: the DEM with
+    /// the channel cut into it, MAP-5): a 256 px Terrarium PNG, made here from the DEM in memory.
+    pub fn terrain_tile(&mut self, state: &str, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.tile_in(self.state.dem(), state, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// The channel of the design line for the map (MAP-5), as JSON `{key, geometry, note, legend}`:
+    /// the bed edges, the water-surface edges and the daylight lines in longitude and latitude.
+    /// Derived here; nothing is written to the design.
+    pub fn channel_geometry(&mut self) -> String {
+        self.sync_channel();
+        self.channel.clone()
+    }
+
+    /// The cut-depth picture of tile `z/x/y` (MAP-5): an RGBA PNG; no bytes when nothing is cut.
+    pub fn cut_tile(&mut self, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.cut_tile(self.state.dem(), z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// What the cut reads out at a point of the map (MAP-5), as JSON; `null` where nothing is cut.
+    pub fn cut_at(&mut self, lon: f64, lat: f64) -> Js<String> {
+        ok(self.terrain.cut_at(self.state.dem(), lon, lat)).map(|v| v.to_string())
     }
 
     /// The contour lines of tile `z/x/y` of the DEM, every `interval_m` metres: a Mapbox Vector
     /// Tile, made here from the DEM in memory (no bytes when the tile has no line).
-    pub fn contour_tile(&mut self, z: u32, x: u32, y: u32, interval_m: f64) -> Js<Vec<u8>> {
+    pub fn contour_tile(
+        &mut self,
+        state: &str,
+        z: u32,
+        x: u32,
+        y: u32,
+        interval_m: f64,
+    ) -> Js<Vec<u8>> {
         ok(self
             .terrain
-            .contour_tile(self.state.dem(), z, x, y, interval_m))
+            .contour_tile_in(self.state.dem(), state, z, x, y, interval_m))
         .map(|tile| tile.to_vec())
     }
 

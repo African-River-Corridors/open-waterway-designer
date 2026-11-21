@@ -4,13 +4,14 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import type * as GeoJSON from "geojson";
-  import { contourTile, terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
+  import { contourTile, cutAt, cutTile, terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
+  import { CUT_PROTOCOL, TERRAIN_STATES, classLabel, cutTemplate, loadTerrainState, otherState, parseCutUrl, readout, saveTerrainState, type ChannelView, type CutAt, type TerrainState } from "./channel";
   import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
   import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
   import { CONTOUR_DEEP_ZOOM, CONTOUR_MIN_ZOOM, CONTOUR_PROTOCOL, INTERVALS, LABEL_PREFIX, contourTemplate, intervalAt, loadContourChoice, parseContourUrl, saveContourChoice, type ContourChoice } from "./contours";
-  import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, tileTemplate, type TerrainPrefs } from "./terrain3d";
+  import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, stateTileTemplate, type TerrainPrefs } from "./terrain3d";
 
   let {
     geometry,
@@ -20,6 +21,7 @@
     hillshade = null,
     terrain = null,
     terrainNote = null,
+    channel = null,
     imagery = layerFor(DEFAULT_IMAGERY),
     onImageryFail,
     stationPosition = null,
@@ -39,6 +41,8 @@
     terrain?: TerrainInfo | null;
     /** Why this app cannot show the DEM in 3D at all (the desktop app, for now). Null where it can. */
     terrainNote?: string | null;
+    /** The channel of the design line as the engine derives it (MAP-5): its edges, or why there are none. Null where the app cannot derive it. */
+    channel?: ChannelView | null;
     /** The imagery to draw under the design, and its attribution. */
     imagery?: ImageryLayer;
     /** Called when imagery that is not the open default cannot load (a refused key, or tiles that keep failing). */
@@ -79,15 +83,29 @@
   maplibregl.addProtocol(TERRAIN_PROTOCOL, (params, abort) => {
     const tile = parseTileUrl(params.url);
     if (!tile) throw new Error(`not a terrain tile address: ${params.url}`);
-    return engineTile(() => terrainTile(tile.z, tile.x, tile.y), abort);
+    return engineTile(() => terrainTile(tile.z, tile.x, tile.y, tile.state), abort);
   });
   // The contour tiles (MAP-3) come the same way: the engine traces the lines of one map tile from the
   // DEM, off this thread, and answers with a vector tile. The interval is the one for the tile's zoom level.
   maplibregl.addProtocol(CONTOUR_PROTOCOL, (params, abort) => {
     const tile = parseContourUrl(params.url);
     if (!tile) throw new Error(`not a contour tile address: ${params.url}`);
-    return engineTile(() => contourTile(tile.z, tile.x, tile.y, intervalAt(tile.choice, tile.z)), abort);
+    return engineTile(() => contourTile(tile.z, tile.x, tile.y, intervalAt(tile.choice, tile.z), tile.state ?? "before"), abort);
   });
+  // The cut-depth picture (MAP-5) comes the same way: a PNG for each map tile, coloured by the engine from
+  // the cut surface and the DEM. A tile with no cut in it has no bytes: the map is given a clear picture.
+  maplibregl.addProtocol(CUT_PROTOCOL, (params, abort) => {
+    const tile = parseCutUrl(params.url);
+    if (!tile) throw new Error(`not a cut-depth tile address: ${params.url}`);
+    return engineTile(async () => {
+      const bytes = await cutTile(tile.z, tile.x, tile.y);
+      return bytes.length ? bytes : Uint8Array.from(atob(BLANK.slice(BLANK.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+    }, abort);
+  });
+
+  /** The colour of the water-surface edges and of the daylight lines: fixed, since they lie on imagery in both themes. */
+  const WATER_EDGE = "#9ecae1";
+  const DAYLIGHT = "#fdae6b";
 
   /** A 1 x 1 transparent PNG. */
   const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -113,6 +131,8 @@
     centreline: !!geometry?.centreline,
     "bank-lines": !!geometry?.banks.length,
     "design-line": !!geometry?.options.length,
+    channel: !!channel?.geometry,
+    cut: !!channel?.geometry?.daylight && terrain?.cut != null,
     "constraint-stretches": !!stretches?.features.length,
     "station-marks": !!geometry?.options.some((o) => o.ticks.length),
     "terrain-shading": !!terrain,
@@ -128,56 +148,145 @@
     prefs = next;
     saveTerrainPrefs(next);
   }
-  /** The DEM whose tiles the map has now, by its number; "" for none. */
+  /** The ground the map shows (MAP-5): as it is, or with the channel cut into it. Remembered on this machine, never in the design. */
+  let terrainState = $state<TerrainState>(loadTerrainState());
+  /** True while Compare is held: the map shows the other state until it is let go. */
+  let peek = $state(false);
+  /** There is a cut to show: the volumes are fresh on the DEM in memory. */
+  const hasCut = $derived(terrain?.cut != null);
+  /** The state the map shows now: After only while there is a cut to show. */
+  const shownState = $derived<TerrainState>(!hasCut ? "before" : peek ? otherState(terrainState) : terrainState);
+  function setTerrainState(next: TerrainState) {
+    terrainState = next;
+    saveTerrainState(next);
+  }
+  /** The DEM and the cut whose tiles the map has now, by their numbers; "" for none. */
   let drawnTerrain = "";
+  /** The shading layers the map has now, by the tiles and the state they are drawn from; "" for none. */
+  let drawnShade = "";
   /** Whether the map is tilted for 3D now, so the camera moves only when 3D goes on or off. */
   let tilted = false;
   /** What the map itself has done, for a test to read: "on" once the terrain is set. */
   let terrainDrawn = $state("off");
-  /** Give the map the DEM's tiles (or take them away), then set 3D, the exaggeration and the shading. */
+  /** The state of the ground the map itself draws from now, for a test to read. */
+  let stateDrawn = $state<TerrainState>("before");
+  /** Give the map the DEM's tiles (or take them away), then set 3D, the state, the exaggeration and the shading. */
   function applyTerrain() {
     if (!map || !ready) return;
-    const key = terrain ? String(terrain.id) : "";
+    const m = map;
+    const key = terrain ? `${terrain.id}/${terrain.cut ?? ""}` : "";
+    const unshade = () => {
+      for (const id of ["terrain-tint", "terrain-shading"]) if (m.getLayer(id)) m.removeLayer(id);
+      drawnShade = "";
+    };
     if (key !== drawnTerrain) {
-      // Another DEM, or none: everything drawn from the old tiles goes.
-      if (map.getTerrain()) map.setTerrain(null);
-      for (const id of ["terrain-tint", "terrain-shading"]) if (map.getLayer(id)) map.removeLayer(id);
-      for (const id of ["dem", "dem-shade"]) if (map.getSource(id)) map.removeSource(id);
+      // Another DEM or another cut, or none: everything drawn from the old tiles goes.
+      if (m.getTerrain()) m.setTerrain(null);
+      unshade();
+      for (const id of ["dem", "dem-shade", "dem-after", "dem-after-shade"]) if (m.getSource(id)) m.removeSource(id);
       if (terrain) {
         // Two sources of the same tiles: the map's own advice, so the 3D surface and the shading
         // each keep their own tiles. The engine makes each tile once and answers both.
-        const source: maplibregl.RasterDEMSourceSpecification = { type: "raster-dem", tiles: [tileTemplate(terrain.id)], tileSize: terrain.tile_size, maxzoom: terrain.max_zoom, encoding: terrain.encoding };
-        map.addSource("dem", source);
+        const t = terrain;
+        const source = (state: TerrainState): maplibregl.RasterDEMSourceSpecification => ({ type: "raster-dem", tiles: [stateTileTemplate(t.id, state, t.cut ?? 0)], tileSize: t.tile_size, maxzoom: t.max_zoom, encoding: t.encoding });
+        m.addSource("dem", source("before"));
         // The shading is drawn only where the DEM is: outside its box there is no terrain to shade.
-        map.addSource("dem-shade", { ...source, bounds: terrain.bounds });
-        // Over the imagery, under the design. The tint colours the ground by its height, low ground dark
-        // and high ground pale, between the DEM's lowest and highest height: flat river country has little
-        // slope to shade, so without the imagery the tint is what shows the DEM.
-        const [low, mid, high] = [token("plate-ink"), token("hillshade"), token("cream")];
-        const span = Math.max(terrain.max_m - terrain.min_m, 0.01);
-        // Under the contours when they are on the map.
-        const over = map.getLayer("contours-casing") ? "contours-casing" : "polygon";
-        map.addLayer({ id: "terrain-tint", type: "color-relief", source: "dem-shade", layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, over);
-        map.addLayer({ id: "terrain-shading", type: "hillshade", source: "dem-shade", layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, over);
+        m.addSource("dem-shade", { ...source("before"), bounds: t.bounds });
+        // The ground with the channel cut into it (MAP-5): a second pair of sources, so Before and After
+        // each keep their tiles and a change of state asks the engine for nothing twice.
+        if (t.cut != null) {
+          m.addSource("dem-after", source("after"));
+          m.addSource("dem-after-shade", { ...source("after"), bounds: t.bounds });
+        }
       }
       drawnTerrain = key;
     }
+    const after = shownState === "after" && !!m.getSource("dem-after");
+    const shadeKey = terrain ? `${key}/${after ? "after" : "before"}` : "";
+    if (shadeKey !== drawnShade) {
+      unshade();
+      if (terrain) {
+        // Over the imagery, under the design. The tint colours the ground by its height, low ground dark
+        // and high ground pale, between the DEM's lowest and highest height: flat river country has little
+        // slope to shade, so without the imagery the tint is what shows the DEM. A layer cannot change its
+        // source, so the two are made again for the other state.
+        const [low, mid, high] = [token("plate-ink"), token("hillshade"), token("cream")];
+        const span = Math.max(terrain.max_m - terrain.min_m, 0.01);
+        const from = after ? "dem-after-shade" : "dem-shade";
+        // Under the contours when they are on the map.
+        const over = m.getLayer("contours-casing") ? "contours-casing" : "polygon";
+        m.addLayer({ id: "terrain-tint", type: "color-relief", source: from, layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, over);
+        m.addLayer({ id: "terrain-shading", type: "hillshade", source: from, layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, over);
+      }
+      drawnShade = shadeKey;
+    }
     if (terrainOn) {
-      map.setTerrain({ source: "dem", exaggeration: prefs.exaggeration });
-      if (!tilted) map.easeTo({ pitch: PITCH_3D, duration: 600 });
+      m.setTerrain({ source: after ? "dem-after" : "dem", exaggeration: prefs.exaggeration });
+      if (!tilted) m.easeTo({ pitch: PITCH_3D, duration: 600 });
     } else {
-      if (map.getTerrain()) map.setTerrain(null);
+      if (m.getTerrain()) m.setTerrain(null);
       // Back to the flat view, north up.
-      if (tilted) map.easeTo({ pitch: 0, bearing: 0, duration: 600 });
+      if (tilted) m.easeTo({ pitch: 0, bearing: 0, duration: 600 });
     }
     tilted = terrainOn;
-    terrainDrawn = map.getTerrain() ? "on" : "off";
+    terrainDrawn = m.getTerrain() ? "on" : "off";
+    stateDrawn = after ? "after" : "before";
     // With the imagery: the shading alone, laid over it. Without: the tint under the shading, the DEM itself.
     const shaded = ticks["terrain-shading"];
-    if (map.getLayer("terrain-shading")) map.setLayoutProperty("terrain-shading", "visibility", shaded ? "visible" : "none");
-    if (map.getLayer("terrain-tint")) map.setLayoutProperty("terrain-tint", "visibility", shaded && !ticks.imagery ? "visible" : "none");
+    if (m.getLayer("terrain-shading")) m.setLayoutProperty("terrain-shading", "visibility", shaded ? "visible" : "none");
+    if (m.getLayer("terrain-tint")) m.setLayoutProperty("terrain-tint", "visibility", shaded && !ticks.imagery ? "visible" : "none");
     applyContours();
+    applyCut();
   }
+
+  /** The cut-depth picture the map has now, as the DEM's and the cut's numbers; "" for none. */
+  let drawnCut = "";
+  /** What the map itself has done, for a test to read: "on" once the cut-depth layer is there. */
+  let cutDrawn = $state("off");
+  /** Put the cut-depth picture on the map, or take it off (MAP-5). It is a raster layer, so in 3D the map
+   * drapes it on whichever ground is shown. It is made only while the tick is on. */
+  function applyCut() {
+    if (!map || !ready) return;
+    const key = terrain && terrain.cut != null && ticks.cut && channel?.geometry?.daylight ? `${terrain.id}/${terrain.cut}` : "";
+    if (key !== drawnCut) {
+      if (map.getLayer("cut-depth")) map.removeLayer("cut-depth");
+      if (map.getSource("cut")) map.removeSource("cut");
+      if (terrain && terrain.cut != null && key) {
+        // Further out than zoom 8 a channel is thinner than a pixel: nothing is asked for there.
+        map.addSource("cut", { type: "raster", tiles: [cutTemplate(terrain.id, terrain.cut)], tileSize: 256, minzoom: 8, maxzoom: Math.max(terrain.max_zoom, 9), bounds: terrain.bounds });
+        // Over the imagery, the shading, the contours and the river polygon; under the lines of the design.
+        map.addLayer({ id: "cut-depth", type: "raster", source: "cut", paint: { "raster-opacity": 0.85, "raster-resampling": "nearest", "raster-fade-duration": 0 } }, "banks");
+      }
+      drawnCut = key;
+      cutDrawn = key ? "on" : "off";
+    }
+    if (!key) cutRead = null;
+  }
+  /** What the last click on the cut read out; null for none. */
+  let cutRead = $state<CutAt | null>(null);
+  /** A click on the map while the cut extent is shown: read the cut out at the point. */
+  function readCut(lon: number, lat: number) {
+    if (!drawnCut) return;
+    cutAt(lon, lat).then(
+      (c) => (cutRead = c),
+      () => (cutRead = null),
+    );
+  }
+
+  /** Draw the channel's edges and the daylight lines the engine derived (MAP-5). */
+  function drawChannel() {
+    if (!map || !ready) return;
+    const g = channel?.geometry;
+    const rings = (e: { polygons: GeoJSON.Position[][] } | null | undefined) => (e?.polygons ?? []).map((ring) => feature({ type: "Polygon", coordinates: [ring] }));
+    const lines = (e: { left: GeoJSON.Position[][]; right: GeoJSON.Position[][] } | null | undefined, kind: string) => [...(e?.left ?? []), ...(e?.right ?? [])].map((l) => feature({ type: "LineString", coordinates: l }, { kind }));
+    (map.getSource("channel-bed") as maplibregl.GeoJSONSource).setData(fc(rings(g?.bed)));
+    (map.getSource("channel-lines") as maplibregl.GeoJSONSource).setData(fc([...lines(g?.bed, "bed"), ...lines(g?.water_surface, "water")]));
+    (map.getSource("cut-daylight") as maplibregl.GeoJSONSource).setData(fc(lines(g?.daylight, "daylight")));
+    channelDrawn = g ? `${g.bed.polygons.length}` : "";
+    untrack(applyCut);
+  }
+  /** The parts of the channel bed the map has drawn, for a test to read; "" for none. */
+  let channelDrawn = $state("");
 
   /** The contour interval the user chose: remembered on this machine, never in the design. */
   let contourChoice = $state<ContourChoice>(loadContourChoice());
@@ -193,14 +302,15 @@
    * with the tick off the map has no contour source, and asks the engine for nothing. */
   function applyContours() {
     if (!map || !ready) return;
-    const key = terrain && ticks.contours ? `${terrain.id}/${contourChoice}` : "";
+    const state = shownState === "after" && terrain?.cut != null ? "after" : "before";
+    const key = terrain && ticks.contours ? `${terrain.id}/${contourChoice}/${state}/${terrain.cut ?? ""}` : "";
     if (key === drawnContours) return;
     for (const id of ["contours-labels", "contours", "contours-casing"]) if (map.getLayer(id)) map.removeLayer(id);
     if (map.getSource("contours")) map.removeSource("contours");
     if (terrain && key) {
       // The lines are made only inside the DEM's box. Tiles go deeper than the DEM's own cells when it
       // is coarse, so a 1 m interval can still be drawn when zoomed in.
-      map.addSource("contours", { type: "vector", tiles: [contourTemplate(terrain.id, contourChoice)], minzoom: CONTOUR_MIN_ZOOM, maxzoom: Math.max(terrain.max_zoom, CONTOUR_DEEP_ZOOM), bounds: terrain.bounds });
+      map.addSource("contours", { type: "vector", tiles: [contourTemplate(terrain.id, contourChoice, state, terrain.cut ?? 0)], minzoom: CONTOUR_MIN_ZOOM, maxzoom: Math.max(terrain.max_zoom, CONTOUR_DEEP_ZOOM), bounds: terrain.bounds });
       // A thin pale line on a soft dark casing: it reads on bright imagery, on dark imagery, on the
       // shaded DEM and on the bare page in either theme. Over the imagery and the shading, under the design.
       const index: maplibregl.ExpressionSpecification = ["==", ["get", "index"], true];
@@ -250,6 +360,7 @@
     if (!map || !ready) return;
     for (const l of MAP_LAYERS) {
       if (l.id === "imagery" || l.id === "terrain-shading" || l.id === "contours") continue;
+      // The cut-depth picture is put on and taken off in `applyCut`; its daylight lines are set here.
       for (const id of STYLE_LAYERS[l.id]) if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", ticks[l.id] ? "visible" : "none");
     }
     // The chainage labels and the tight-bend marks are HTML markers, not map layers.
@@ -257,6 +368,14 @@
     for (const m of bendMarkers) m.getElement().style.display = ticks["design-line"] ? "" : "none";
     shade();
     applyTerrain();
+  }
+
+  /** Why a layer has nothing to draw: said beside its greyed tick. */
+  function noneNote(id: MapLayerId): string {
+    if ((id === "contours" || id === "channel" || id === "cut") && terrainNote) return "web app only for now";
+    if (id === "channel") return geometry?.options.length ? "needs the sizing and a water level" : "no design line yet";
+    if (id === "cut") return !terrain ? "load the DEM first" : "run the volumes first";
+    return "none loaded";
   }
 
   const empty = { type: "FeatureCollection", features: [] } as GeoJSON.FeatureCollection;
@@ -472,13 +591,16 @@
     // The compass shows the bearing and the tilt; a click on it turns the map north up again.
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    map.on("click", (e) => onPick?.(e.lngLat.lng, e.lngLat.lat));
+    map.on("click", (e) => {
+      onPick?.(e.lngLat.lng, e.lngLat.lat);
+      readCut(e.lngLat.lng, e.lngLat.lat);
+    });
     map.on("styleimagemissing", (e) => levelPicture(e.id));
     map.on("load", () => {
       const m = map!;
       // A placeholder picture until the hillshade arrives; `setCoordinates` and `updateImage` replace it.
       m.addSource("hillshade", { type: "image", url: BLANK, coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] });
-      for (const id of ["polygon", "banks", "centre", "options", "bends", "ticks", "stretches"]) m.addSource(id, { type: "geojson", data: empty });
+      for (const id of ["polygon", "banks", "centre", "options", "bends", "ticks", "stretches", "channel-bed", "channel-lines", "cut-daylight"]) m.addSource(id, { type: "geojson", data: empty });
       m.addLayer({ id: "hillshade", type: "raster", source: "hillshade", paint: { "raster-fade-duration": 0 }, layout: { visibility: "none" } });
       // Colours are read from the tokens. On imagery the same cream and plate ink serve both themes.
       const cream = token("cream");
@@ -489,6 +611,15 @@
       m.addLayer({ id: "polygon-outline", type: "line", source: "polygon", paint: { "line-color": token("river"), "line-width": 1.25 } });
       m.addLayer({ id: "banks", type: "line", source: "banks", paint: { "line-color": cream, "line-width": 1.5 } });
       m.addLayer({ id: "centre", type: "line", source: "centre", paint: { "line-color": cream, "line-width": 1, "line-dasharray": [3, 3] } });
+      // The channel (MAP-5), under the design line: the bed as a pale band between its two edges, and the
+      // edges at the water surface as thin lines. Pale on a dark casing, like the river polygon's edge.
+      m.addLayer({ id: "channel-bed", type: "fill", source: "channel-bed", paint: { "fill-color": cream, "fill-opacity": 0.4 } });
+      m.addLayer({ id: "channel-bed-casing", type: "line", source: "channel-lines", filter: ["==", ["get", "kind"], "bed"], paint: { "line-color": ink, "line-width": 3, "line-opacity": 0.6 } });
+      m.addLayer({ id: "channel-bed-edges", type: "line", source: "channel-lines", filter: ["==", ["get", "kind"], "bed"], paint: { "line-color": cream, "line-width": 1.5 } });
+      m.addLayer({ id: "channel-water", type: "line", source: "channel-lines", filter: ["==", ["get", "kind"], "water"], paint: { "line-color": WATER_EDGE, "line-width": 1 } });
+      // The daylight lines of the cut: where the cut slopes meet the ground. Dashed, so they are not read as a bank.
+      m.addLayer({ id: "cut-daylight-casing", type: "line", source: "cut-daylight", paint: { "line-color": ink, "line-width": 3, "line-opacity": 0.6 } });
+      m.addLayer({ id: "cut-daylight", type: "line", source: "cut-daylight", paint: { "line-color": DAYLIGHT, "line-width": 1.5, "line-dasharray": [3, 2] } });
       // The deep line over a cream casing keeps each option readable on any imagery. The design line is the heaviest line.
       m.addLayer({ id: "options-casing", type: "line", source: "options", paint: { "line-color": token("opt-casing"), "line-width": ["case", ["get", "selected"], 8, 6] } });
       m.addLayer({ id: "options", type: "line", source: "options", paint: { "line-color": ["get", "colour"], "line-width": 4, "line-opacity": ["case", ["get", "dim"], 0.55, 1] } });
@@ -569,8 +700,15 @@
   $effect(() => {
     void terrain;
     void prefs;
+    void shownState;
     void ready;
     untrack(applyTerrain);
+  });
+
+  $effect(() => {
+    void channel;
+    void ready;
+    untrack(drawChannel);
   });
 
   $effect(() => {
@@ -585,7 +723,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && (layersOpen = false)} />
 
-<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-contours={contoursDrawn} data-contour-interval={shows("contours") ? (contourNow ?? "") : ""} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
+<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-state={stateDrawn} data-channel={channelDrawn} data-cut={cutDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-contours={contoursDrawn} data-contour-interval={shows("contours") ? (contourNow ?? "") : ""} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
   <div class="canvas" bind:this={host}></div>
   {#if failure}
     <p class="failure" role="alert" data-testid="map-failure">{failure}</p>
@@ -601,6 +739,23 @@
       {#if geometry?.options.some((o) => o.tight_bends.length)}
         <li><span class="bend-key">✕</span>tight bend</li>
       {/if}
+    {/if}
+    {#if shows("channel")}
+      <li data-testid="legend-channel"><span class="key bed" aria-hidden="true"></span>channel bed</li>
+      <li data-testid="legend-channel-water"><span class="key" aria-hidden="true"><span class="stroke thin" style:border-color={WATER_EDGE}></span></span>channel edge at the water surface</li>
+    {/if}
+    {#if shows("cut")}
+      <li data-testid="legend-cut-daylight"><span class="key" aria-hidden="true"><span class="stroke dashed" style:border-color={DAYLIGHT}></span></span>daylight line: the cut meets the ground</li>
+      <li class="ramp" data-testid="legend-cut">
+        <span>depth of cut (click the cut to read a point)</span>
+        {#each [["dredge", "dredge, in the river"], ["dry", "dry cut"]] as const as [kind, label]}
+          <span class="ramp-row" data-testid="legend-cut-{kind}">
+            {#each channel?.legend ?? [] as c}<span class="swatch" style:background={c[kind]} title="{label}: {classLabel(c)}"></span>{/each}
+            <span>{label}</span>
+          </span>
+        {/each}
+        <span class="ramp-ends">{#each channel?.legend ?? [] as c}<span>{c.from_m}</span>{/each}<span>m</span></span>
+      </li>
     {/if}
     {#if ticks["constraint-stretches"] && stretches?.features.some((f) => f.properties.option_id === selectedId)}
       <li data-testid="legend-stretch"><span class="stretch-key" aria-hidden="true"></span>constraint stretch</li>
@@ -626,6 +781,26 @@
   </ul>
   <div class="layers">
     <div class="map-buttons">
+      {#if terrain && (terrainOn || shows("terrain-shading") || shows("contours"))}
+        <div class="terrain-state" role="group" aria-label="Ground shown" data-testid="terrain-state" data-state={shownState}>
+          {#each TERRAIN_STATES as st}
+            <button class="state-button" class:on={shownState === st.id} data-testid="terrain-state-{st.id}" aria-pressed={shownState === st.id} disabled={st.id === "after" && !hasCut} title={st.id === "after" && !hasCut ? "After: run the volumes first, with the DEM loaded" : st.title} onclick={() => setTerrainState(st.id)}>{st.label}</button>
+          {/each}
+          <button
+            class="state-button compare"
+            data-testid="terrain-compare"
+            disabled={!hasCut}
+            aria-pressed={peek}
+            title={hasCut ? "Compare: hold to see the other ground, let go to come back" : "Compare: run the volumes first, with the DEM loaded"}
+            onpointerdown={() => (peek = true)}
+            onpointerup={() => (peek = false)}
+            onpointerleave={() => (peek = false)}
+            onpointercancel={() => (peek = false)}
+            onkeydown={(e) => (e.key === " " || e.key === "Enter") && (e.preventDefault(), (peek = true))}
+            onkeyup={(e) => (e.key === " " || e.key === "Enter") && (peek = false)}
+            onblur={() => (peek = false)}>Compare</button>
+        </div>
+      {/if}
       {#if terrainOn}
         <label class="exaggeration" title="Vertical exaggeration: how many times taller the ground is drawn">
           <span>Height</span>
@@ -647,7 +822,7 @@
             <label class:none={!present[l.id]} data-testid="layer-row-{l.id}">
               <input type="checkbox" data-testid="layer-{l.id}" checked={ticks[l.id]} disabled={!present[l.id]} onchange={(e) => setTick(l.id, e.currentTarget.checked)} />
               <span>{l.label}</span>
-              {#if !present[l.id]}<span class="none-note">{l.id === "contours" && terrainNote ? "web app only for now" : "none loaded"}</span>{/if}
+              {#if !present[l.id]}<span class="none-note">{noneNote(l.id)}</span>{/if}
             </label>
             {#if l.id === "contours" && shows("contours")}
               <select data-testid="contour-interval" aria-label="Contour interval" title="Contour interval. Auto picks it from the zoom level; zoomed far out, a chosen interval is drawn coarser so the map does not fill with lines" value={String(contourChoice)} onchange={(e) => setContourChoice(e.currentTarget.value === "auto" ? "auto" : (Number(e.currentTarget.value) as ContourChoice))}>
@@ -660,6 +835,17 @@
       </fieldset>
     {/if}
   </div>
+  {#if cutRead && shows("cut")}
+    <section class="cut-readout" data-testid="cut-readout" aria-label="The cut at the point clicked">
+      <header>
+        <strong>Cut at this point</strong>
+        <button data-testid="cut-readout-close" aria-label="Close the cut read-out" onclick={() => (cutRead = null)}>×</button>
+      </header>
+      <dl>
+        {#each readout(cutRead) as [name, value]}<dt>{name}</dt><dd>{value}</dd>{/each}
+      </dl>
+    </section>
+  {/if}
   {#if offline}
     <p class="offline" role="status" data-testid="offline-note">
       Imagery offline{hillshade ? " — showing the DEM hillshade" : " — no DEM to show a hillshade from"}
@@ -687,6 +873,25 @@
   .key .stroke { width: 18px; height: 0; border-top: 2px solid var(--cream); }
   .key .stroke.dashed { border-top-style: dashed; }
   .key .stroke.thin { border-top-width: 1px; }
+  .key.bed { background: color-mix(in srgb, var(--cream) 55%, var(--hillshade)); border-top: 1.5px solid var(--cream); border-bottom: 1.5px solid var(--cream); outline: 1px solid var(--plate-ink); }
+  .legend li.ramp { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .ramp-row { display: flex; align-items: center; gap: 0; }
+  .ramp-row .swatch { width: 18px; height: 10px; }
+  .ramp-row > span:last-child { margin-left: var(--sp-2); }
+  .ramp-ends { display: flex; font-size: var(--fs-11); color: var(--ink-3); }
+  .ramp-ends span { width: 18px; }
+  .terrain-state { display: flex; align-items: stretch; background: var(--surface); border: var(--lw-thin) solid var(--ink); border-radius: var(--radius); }
+  .state-button { padding: 0 var(--sp-2); font: 600 var(--fs-12) / 1 var(--font-ui); background: none; color: var(--ink); border: 0; border-right: var(--lw-thin) solid var(--rule); }
+  .state-button:last-child { border-right: 0; }
+  .state-button.on, .state-button.compare[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+  .state-button:disabled { color: var(--ink-3); cursor: not-allowed; }
+  .state-button.compare { font-weight: 400; touch-action: none; }
+  .cut-readout { position: absolute; left: var(--sp-3); bottom: 56px; z-index: 3; min-width: 250px; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); }
+  .cut-readout header { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
+  .cut-readout header button { padding: 0 var(--sp-1); background: none; border: 0; color: var(--ink); font-size: var(--fs-12); cursor: pointer; }
+  .cut-readout dl { margin: var(--sp-1) 0 0; display: grid; grid-template-columns: auto auto; gap: 2px var(--sp-3); }
+  .cut-readout dt { color: var(--ink-3); }
+  .cut-readout dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
   .key .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cream); border: 1px solid var(--plate-ink); box-sizing: border-box; }
   /* Under the map's zoom buttons and compass, the same size as they are. */
   .layers { position: absolute; top: 107px; right: 10px; z-index: 4; max-height: calc(100% - 107px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }

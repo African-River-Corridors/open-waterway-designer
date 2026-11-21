@@ -896,6 +896,46 @@ impl AppState {
             .and(self.dem.clone())
     }
 
+    /// A text that changes when the channel drawn on the map may have changed (MAP-5): the design
+    /// line, what the volumes depend on, and whether the DEM the volumes read is held.
+    pub fn channel_key(&self) -> String {
+        format!(
+            "{}|{:?}",
+            self.session.channel_key(),
+            self.usable_dem().map(|d| Arc::as_ptr(&d))
+        )
+    }
+
+    /// The channel of the design line for the map (MAP-5): its edges as lines and polygons, and
+    /// the cut as a surface over the DEM when the volumes are fresh and the DEM they read is
+    /// held. Derived now; nothing is written to the design. A refusal is the session's reason
+    /// (no design line, no sizing or no water level yet).
+    pub fn channel(
+        &self,
+    ) -> Result<
+        (
+            owd_format::design::channel::ChannelGeometry,
+            Option<owd_format::design::channel::CutSurface>,
+        ),
+        String,
+    > {
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok(),
+            None => None,
+        };
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
+        let channel = self.session.channel(terrain).map_err(message)?;
+        let geometry = self.session.channel_geometry(&channel).map_err(message)?;
+        let cut = match (dem.as_deref(), terrain) {
+            (Some(d), Some(_)) => self.session.cut_surface(&channel, d).map_err(message)?,
+            _ => None,
+        };
+        Ok((geometry, cut))
+    }
+
     /// Get ready to draw the sections of an option: the cached walk if the design has not changed
     /// since, else a job that makes it.
     pub fn begin_walk(&self, option: &str) -> WalkJob {

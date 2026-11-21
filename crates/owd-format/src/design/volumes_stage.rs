@@ -187,6 +187,19 @@ fn refuse(code: &str, message: &str) -> StageError {
     StageError::new(STAGE, code, message)
 }
 
+/// The bottom half-width at each station point, as [`walk`] gives it to the core: the fixed one of
+/// the settings, else widened in the bends from the size (the same rule, the same radius limit).
+pub(super) fn half_widths(
+    xy: &[Pt],
+    size: &ChannelSize,
+    settings: &VolumesSettings,
+) -> Result<Vec<f64>, StageError> {
+    Ok(match settings.half_width_m {
+        Some(h) => vec![h; xy.len()],
+        None => widened_hb_from_shape(xy, size.shape()?, WIDEN_RMAX),
+    })
+}
+
 /// The station walk along `line`: the core's `section_volumes` with the settings, the size, the
 /// river and the level at each station. The session's walk and the pure stage both call it.
 ///

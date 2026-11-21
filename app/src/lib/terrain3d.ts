@@ -69,10 +69,16 @@ export function saveTerrainPrefs(prefs: TerrainPrefs) {
 /** The tile address the map source takes for the DEM numbered `id`. A new DEM has a new number, so no old tile is shown for it. */
 export const tileTemplate = (id: number) => `${TERRAIN_PROTOCOL}://${id}/{z}/{x}/{y}`;
 
-/** The tile a terrain tile address names, or null when it is not one. */
-export function parseTileUrl(url: string): { id: number; z: number; x: number; y: number } | null {
-  const m = /^owd-dem:\/\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(url);
+/** The tile address for the ground in a terrain state other than the DEM as it is (MAP-5): `state` names
+ * it (one address segment: a new state needs no other change here) and `rev` is the number of what is
+ * laid on the ground, so a new cut has another address. The DEM as it is keeps `tileTemplate`. */
+export const stateTileTemplate = (id: number, state: string, rev: number) => (state === "before" ? tileTemplate(id) : `${TERRAIN_PROTOCOL}://${id}/${state}/${rev}/{z}/{x}/{y}`);
+
+/** The tile a terrain tile address names, with its terrain state ("before" for the DEM as it is), or null
+ * when it is not one. */
+export function parseTileUrl(url: string): { id: number; state: string; z: number; x: number; y: number } | null {
+  const m = /^owd-dem:\/\/(\d+)\/(?:([a-z]+)\/\d+\/)?(\d+)\/(\d+)\/(\d+)$/.exec(url);
   if (!m) return null;
-  const [id, z, x, y] = m.slice(1).map(Number);
-  return { id, z, x, y };
+  const [id, z, x, y] = [m[1], m[3], m[4], m[5]].map(Number);
+  return { id, state: m[2] ?? "before", z, x, y };
 }
