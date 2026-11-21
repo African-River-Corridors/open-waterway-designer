@@ -1357,6 +1357,18 @@ pub fn optimise(
             "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
         ));
     }
+    // With no DEM the stage ran on plan area: say so beside the result, not only in a warning.
+    if option["details"]["optimised_on"] == "plan_area" {
+        human.push_str(&format!(
+            "\noptimised on plan area, not volume (no DEM): land weight {} m3 per m2{}",
+            option["details"]["land_weight"],
+            if option["details"]["land_weight_defaulted"] == true {
+                " (the default with no DEM)"
+            } else {
+                ""
+            }
+        ));
+    }
     human.push_str(&touched_text(&option));
     if !ok {
         human.push_str(&format!(
