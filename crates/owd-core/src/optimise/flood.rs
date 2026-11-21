@@ -289,12 +289,12 @@ impl FloodField {
         let mut near: Vec<Near> = Vec::new();
         let mut heap: BinaryHeap<HeapItem> = BinaryHeap::new();
         let offer = |row: i32,
-                         col: i32,
-                         seg: usize,
-                         on_line: bool,
-                         index: &mut HashMap<u64, u32>,
-                         near: &mut Vec<Near>,
-                         heap: &mut BinaryHeap<HeapItem>| {
+                     col: i32,
+                     seg: usize,
+                     on_line: bool,
+                     index: &mut HashMap<u64, u32>,
+                     near: &mut Vec<Near>,
+                     heap: &mut BinaryHeap<HeapItem>| {
             let p = centre(row, col);
             let lo = seg.saturating_sub(1);
             let hi = (seg + 1).min(n_seg - 1);
@@ -460,7 +460,7 @@ impl FloodField {
         }
         for (row, xs) in &mut crossings {
             xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
-            for pair in xs.chunks_exact(2) {
+            for pair in xs.as_chunks::<2>().0 {
                 let c_first = ((pair[0] - x0) / cell_m).ceil() as i64;
                 let c_last = ((pair[1] - x0) / cell_m).ceil() as i64 - 1;
                 for col in c_first..=c_last {
@@ -604,8 +604,7 @@ impl FloodField {
         self.range(start_m, end_m)
             .iter()
             .filter(|c| {
-                (Self::is_land(c) && c.fill_m < level_m)
-                    || (with_river && c.wet && !c.beyond_end)
+                (Self::is_land(c) && c.fill_m < level_m) || (with_river && c.wet && !c.beyond_end)
             })
             .map(|c| self.centre(c))
             .collect()
@@ -1022,7 +1021,13 @@ pub fn explain_blocked(
         )
     };
     // The next site above site j, or the terminal.
-    let next = |j: usize| if j + 1 < s.len() { s[j + 1] } else { terminal_m };
+    let next = |j: usize| {
+        if j + 1 < s.len() {
+            s[j + 1]
+        } else {
+            terminal_m
+        }
+    };
 
     // A. Some weir can hold a pool at the top level, but the pool from it to the terminal breaks
     //    the limit.
@@ -1056,8 +1061,7 @@ pub fn explain_blocked(
     let mut high: Option<(usize, usize)> = None;
     for (j, row) in reach.iter().enumerate() {
         for (k, &r) in row.iter().enumerate() {
-            if r
-                && ok(s[j], next(j), levels_m[k])
+            if r && ok(s[j], next(j), levels_m[k])
                 && high.is_none_or(|h| k > h.1 || (k == h.1 && j > h.0))
             {
                 high = Some((j, k));
@@ -1091,8 +1095,8 @@ pub fn explain_blocked(
     // Where a pool at the top level would stand least above the banks, over the shortest reach it
     // could have.
     let mut best: Option<(usize, f64)> = None;
-    for j in 1..s.len() {
-        let above = banks.max_above_bank(s[j], next(j), terminal_min_level_m);
+    for (j, &site) in s.iter().enumerate().skip(1) {
+        let above = banks.max_above_bank(site, next(j), terminal_min_level_m);
         if best.is_none_or(|b| above < b.1) {
             best = Some((j, above));
         }

@@ -285,7 +285,9 @@ impl OptimiseSettings {
                 }
                 "flood_report" => {
                     out.flood_report = v.as_bool().ok_or_else(|| {
-                        DesignError::Input("the setting `flood_report` must be true or false".into())
+                        DesignError::Input(
+                            "the setting `flood_report` must be true or false".into(),
+                        )
                     })?
                 }
                 "structure_fixed" => out.structure_fixed = f(k)?,

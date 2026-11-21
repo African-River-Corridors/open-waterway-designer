@@ -91,7 +91,7 @@ fn sloped(xs: &[f64], ys: &[f64]) -> Vec<f64> {
         .collect()
 }
 
-fn field(terrain: &dyn Fn(&[f64], &[f64]) -> Vec<f64>) -> FloodField {
+fn field(terrain: owd_core::types::TerrainSampler) -> FloodField {
     FloodField::build(&line(), terrain, &river(), DIST, CELL).unwrap()
 }
 
@@ -161,7 +161,10 @@ fn a_hollow_off_the_river_stays_dry_and_the_river_is_never_counted() {
     assert_eq!(hollow.fill_m, 13.5);
     assert_eq!(wet_hollow(&f.flooded_cells(1000.0, 2000.0, 13.5, false)), 0);
     // Once the water tops the rim the hollow floods: 11 by 5 cells.
-    assert_eq!(wet_hollow(&f.flooded_cells(1000.0, 2000.0, 20.0, false)), 55);
+    assert_eq!(
+        wet_hollow(&f.flooded_cells(1000.0, 2000.0, 20.0, false)),
+        55
+    );
 
     // No flooded cell is in the river polygon, at any level, and the river cells are a layer of
     // their own.
@@ -307,7 +310,10 @@ fn bank_full_is_the_stated_percentile_of_the_ground_beside_the_polygon() {
     assert_eq!(b.min_bank(1000.0, 3000.0), b.bank_at(1000.0));
     // A reach that ends on a window's edge does not read the next window.
     assert_eq!(b.min_bank(1000.0, 1500.0), b.bank_m[2]);
-    assert_eq!(b.at_ends(1000.0, 1500.0, 9.0).above_bank_upper_m, 9.0 - b.bank_m[2]);
+    assert_eq!(
+        b.at_ends(1000.0, 1500.0, 9.0).above_bank_upper_m,
+        9.0 - b.bank_m[2]
+    );
 }
 
 /// On a line with a bend the nearest point of the line gives each cell its chainage and distance:
@@ -327,11 +333,11 @@ fn every_cell_has_the_distance_and_chainage_of_its_nearest_point() {
         let mut run = 0.0;
         for w in line.windows(2) {
             let (a, b) = (w[0], w[1]);
-            let len = ((b[0] - a[0]).powi(2) + (b[1] - a[1]).powi(2)).sqrt();
+            let len = libm::hypot(b[0] - a[0], b[1] - a[1]);
             let t = (((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / (len * len))
                 .clamp(0.0, 1.0);
             let q = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
-            let d = ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2)).sqrt();
+            let d = libm::hypot(p[0] - q[0], p[1] - q[1]);
             if d < best.0 - 1e-9 {
                 best = (d, run + t * len);
             }
@@ -341,8 +347,7 @@ fn every_cell_has_the_distance_and_chainage_of_its_nearest_point() {
         worst = worst.max((c.distance_m - best.0).abs());
         // Where two segments are as near as each other the chainage may be either's.
         if (c.distance_m - best.0).abs() < 1e-9 && !c.beyond_end {
-            let tie = line.windows(2).filter(|_| true).count() > 0
-                && (c.chainage_m - best.1).abs() > 1e-6;
+            let tie = (c.chainage_m - best.1).abs() > 1e-6;
             if tie {
                 // Only the bisectors of the two corners may differ.
                 let on_bisector = ((p[0] - 600.0).abs() - p[1].abs()).abs() < 1e-6
@@ -355,7 +360,10 @@ fn every_cell_has_the_distance_and_chainage_of_its_nearest_point() {
     // Every cell within the distance is there: the count is the area of the 200 m band.
     let inside = f.cells.len() as f64 * 100.0;
     let band = 1700.0 * 400.0 + std::f64::consts::PI * 200.0 * 200.0;
-    assert!((inside - band).abs() < 0.02 * band, "{inside} against {band}");
+    assert!(
+        (inside - band).abs() < 0.02 * band,
+        "{inside} against {band}"
+    );
 }
 
 /// A field too large to hold is refused with the cell size that fits.
@@ -365,7 +373,10 @@ fn every_cell_has_the_distance_and_chainage_of_its_nearest_point() {
 fn a_field_too_large_is_refused_with_the_cell_that_fits() {
     let long: Vec<Pt> = vec![[0.0, 0.0], [240_000.0, 0.0]];
     let e = FloodField::build(&long, &flat, &[], 1500.0, 2.0).unwrap_err();
-    assert!(e.contains("flood_cell_m") && e.contains("at least 6 m"), "{e}");
+    assert!(
+        e.contains("flood_cell_m") && e.contains("at least 6 m"),
+        "{e}"
+    );
 }
 
 // ----- the weir search on the sloped valley -----
@@ -482,7 +493,11 @@ fn a_rising_flood_cost_lowers_the_lifts_and_never_raises_the_flooded_land() {
         assert!(ha <= last_ha + 1e-9, "{rows:?}");
         assert!(lift <= last_lift, "{rows:?}");
         // The total is the cut, the structures and the flood cost of the pools.
-        let cut_sum: f64 = c.pools().iter().map(|&(a, b, l)| cut(a, b, l).unwrap()).sum();
+        let cut_sum: f64 = c
+            .pools()
+            .iter()
+            .map(|&(a, b, l)| cut(a, b, l).unwrap())
+            .sum();
         let want = cut_sum + 1.0e6 * c.weirs.len() as f64 + cost * ha;
         assert!((c.total_cost - want).abs() < 1e-6 * want, "{rows:?}");
         last_ha = ha;
@@ -548,9 +563,15 @@ fn an_impossible_limit_names_the_reach_that_blocks_and_what_unblocks_it() {
     let m = explain(&cfg, 1.0);
     println!("{m}");
     assert!(m.starts_with("No cascade reaches the top level of 14.00 m with every pool at most 1.00 m above bank-full"), "{m}");
-    assert!(m.contains("The reach from ") && m.contains(" blocks it"), "{m}");
+    assert!(
+        m.contains("The reach from ") && m.contains(" blocks it"),
+        "{m}"
+    );
     assert!(m.contains("above bank-full there"), "{m}");
-    assert!(m.contains("To unblock it: give more candidate sites"), "{m}");
+    assert!(
+        m.contains("To unblock it: give more candidate sites"),
+        "{m}"
+    );
     assert!(m.contains("allow smaller lifts (`--lifts`)"), "{m}");
     assert!(m.contains("raise `max_above_bank_m` to at least "), "{m}");
 
@@ -564,7 +585,10 @@ fn an_impossible_limit_names_the_reach_that_blocks_and_what_unblocks_it() {
     assert!(run(&few, &gf, 0.0, Some(1.0)).is_none());
     let m = explain(&few, 1.0);
     println!("{m}");
-    assert!(m.contains("The reach from 500 m to 4000 m blocks it"), "{m}");
+    assert!(
+        m.contains("The reach from 500 m to 4000 m blocks it"),
+        "{m}"
+    );
     assert!(m.contains("the top pool, at 6.00 m"), "{m}");
     // The limit the message names does unblock it.
     let need: f64 = m
@@ -586,7 +610,9 @@ fn the_cached_reach_cost_is_reach_volumes_bit_for_bit() {
     let n = 40;
     let ch: Vec<f64> = (0..n).rev().map(|i| 25.0 * f64::from(i)).collect();
     let levels = vec![0.0, 0.5, 1.0, 1.5];
-    let area = |i: usize, k: usize, s: f64| s * (1.0 + (i as f64 * 0.37).sin().abs()) / (1.0 + k as f64);
+    let area = |i: usize, k: usize, s: f64| {
+        s * (1.0 + libm::sin(i as f64 * 0.37).abs()) / (1.0 + k as f64)
+    };
     let dredge: Vec<Vec<f64>> = (0..n as usize)
         .map(|i| (0..4).map(|k| area(i, k, 31.7)).collect())
         .collect();
@@ -599,11 +625,17 @@ fn the_cached_reach_cost_is_reach_volumes_bit_for_bit() {
         for b in [100.0, 700.0, 1000.0, 5000.0] {
             for &l in &levels {
                 let (d, e) = t.reach_volumes(a, b, l).unwrap();
-                assert_eq!(cost(a, b, l).unwrap().to_bits(), (1.3 * d + 2.9 * e).to_bits());
+                assert_eq!(
+                    cost(a, b, l).unwrap().to_bits(),
+                    (1.3 * d + 2.9 * e).to_bits()
+                );
             }
         }
     }
-    assert!(cost(0.0, 100.0, 0.25).is_err(), "a level off the table is refused");
+    assert!(
+        cost(0.0, 100.0, 0.25).is_err(),
+        "a level off the table is refused"
+    );
 }
 
 /// A wide lift menu on a long river: 240 km, a site every 500 m (479 sites), lifts of 1 to 12 m in
@@ -644,7 +676,9 @@ fn a_240_km_river_with_lifts_of_1_to_12_m() {
     }];
     let sites: Vec<f64> = (1..480).map(|k| 500.0 * f64::from(k)).collect();
     let lifts: Vec<f64> = (1..=12).map(f64::from).collect();
-    let cfg = CascadeConfig::new(sites, lifts, len, 60.0).validated().unwrap();
+    let cfg = CascadeConfig::new(sites, lifts, len, 60.0)
+        .validated()
+        .unwrap();
     let levels = cascade_levels(&cfg);
 
     let t = std::time::Instant::now();
@@ -695,11 +729,16 @@ fn a_240_km_river_with_lifts_of_1_to_12_m() {
         let water = slope * 25.0 * i as f64;
         for (k, &l) in levels.iter().enumerate() {
             let depth = (water + 3.0 - l).max(0.0);
-            cum[i + 1][k] = cum[i][k] + 25.0 * (60.0 * depth + 3.0 * depth * depth) + 25.0 * 5.0 * libm::exp(-(l - water) / 4.0);
+            cum[i + 1][k] = cum[i][k]
+                + 25.0 * (60.0 * depth + 3.0 * depth * depth)
+                + 25.0 * 5.0 * libm::exp(-(l - water) / 4.0);
         }
     }
-    let li: std::collections::HashMap<u64, usize> =
-        levels.iter().enumerate().map(|(i, v)| (v.to_bits(), i)).collect();
+    let li: std::collections::HashMap<u64, usize> = levels
+        .iter()
+        .enumerate()
+        .map(|(i, v)| (v.to_bits(), i))
+        .collect();
     let cut = |a: f64, b: f64, l: f64| -> Result<f64, String> {
         let k = li[&l.to_bits()];
         Ok(cum[(b / 25.0) as usize][k] - cum[(a / 25.0) as usize][k])
@@ -718,7 +757,11 @@ fn a_240_km_river_with_lifts_of_1_to_12_m() {
         let res = search_cascade(&cfg, &reach, &structure).unwrap();
         let dt = t.elapsed().as_secs_f64();
         let best = res.best().expect("a cascade");
-        let ha: f64 = best.pools().iter().map(|&(a, b, l)| field.flooded(a, b, l).area_ha()).sum();
+        let ha: f64 = best
+            .pools()
+            .iter()
+            .map(|&(a, b, l)| field.flooded(a, b, l).area_ha())
+            .sum();
         let worst = best
             .pools()
             .iter()

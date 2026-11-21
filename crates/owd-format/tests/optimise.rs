@@ -450,7 +450,10 @@ fn the_flood_settings_are_off_by_default_round_trip_and_are_validated() {
         "flood_report",
     ];
     for k in keys {
-        assert!(d.to_value().get(k).is_none(), "{k} is written at its default");
+        assert!(
+            d.to_value().get(k).is_none(),
+            "{k} is written at its default"
+        );
     }
     let mut s = design();
     let set = json!({
@@ -506,14 +509,23 @@ fn the_flood_settings_are_off_by_default_round_trip_and_are_validated() {
 #[test]
 fn a_flood_cost_or_a_bank_limit_without_a_dem_is_refused() {
     for (setting, word) in [
-        (json!({"flood_cost_per_ha": 3000.0}), "a flood cost (`flood_cost_per_ha`)"),
-        (json!({"max_above_bank_m": 1.0}), "a limit above bank-full (`max_above_bank_m`)"),
+        (
+            json!({"flood_cost_per_ha": 3000.0}),
+            "a flood cost (`flood_cost_per_ha`)",
+        ),
+        (
+            json!({"max_above_bank_m": 1.0}),
+            "a limit above bank-full (`max_above_bank_m`)",
+        ),
     ] {
         // The DEM is named but cannot be read.
         let mut s = design();
         let before = s.to_text();
         let e = s.run_optimise(&setting, None).unwrap_err().to_string();
-        assert!(e.contains(word) && e.contains("cannot be worked out without a DEM"), "{e}");
+        assert!(
+            e.contains(word) && e.contains("cannot be worked out without a DEM"),
+            "{e}"
+        );
         assert_eq!(s.to_text(), before);
     }
     // No DEM at all.
@@ -571,7 +583,13 @@ fn a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported() {
     shown.run_optimise(&settings, Some(&terrain)).unwrap();
     let res = shown.document()["stages"]["optimise"]["results"].clone();
     let flood = res["cascade"]["flood"].clone();
-    assert!(res["cascade"]["weirs"].as_array().unwrap().iter().all(|w| w["lift_m"] == json!(4.0)));
+    assert!(
+        res["cascade"]["weirs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|w| w["lift_m"] == json!(4.0))
+    );
     let rows = flood["pools"].as_array().unwrap();
     let pools = res["pools"].as_array().unwrap();
     assert_eq!(rows.len(), pools.len());
@@ -631,13 +649,20 @@ fn a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported() {
     println!("priced: {f}");
     let ha = f["flooded_ha"].as_f64().unwrap();
     assert!(ha < sum, "{ha} against {sum}");
-    assert!(doc["stages"]["optimise"]["settings"].get("flood_report").is_none());
+    assert!(
+        doc["stages"]["optimise"]["settings"]
+            .get("flood_report")
+            .is_none()
+    );
     assert!((f["flood_cost"].as_f64().unwrap() - 1.0e7 * ha).abs() < 1e-3);
     let total = c["total_cost"].as_f64().unwrap();
     let parts = f["cut_cost"].as_f64().unwrap()
         + f["flood_cost"].as_f64().unwrap()
         + c["structure_cost"].as_f64().unwrap();
-    assert!((total - parts).abs() < 1e-6 * total.max(1.0), "{total} against {parts}");
+    assert!(
+        (total - parts).abs() < 1e-6 * total.max(1.0),
+        "{total} against {parts}"
+    );
 
     // A limit no cascade can hold: the top pool must stand at 4 m, about 1 m over the banks, and
     // the limit allows 0.25 m. The stage fails in plain words and writes nothing.
@@ -651,7 +676,10 @@ fn a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported() {
         .to_string();
     println!("{e}");
     assert!(e.contains("No cascade reaches the top level of 4.00 m with every pool at most 0.25 m above bank-full"), "{e}");
-    assert!(e.contains("blocks it") && e.contains("To unblock it"), "{e}");
+    assert!(
+        e.contains("blocks it") && e.contains("To unblock it"),
+        "{e}"
+    );
     assert_eq!(shown.to_text(), before);
     // A top level the lifts cannot reach at all is the search's own failure, not the limit's.
     let e = shown
