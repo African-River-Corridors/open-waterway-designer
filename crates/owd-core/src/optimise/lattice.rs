@@ -1496,6 +1496,10 @@ pub fn solve_lattice_until(
     )
 }
 
+/// How much an end at the edge of a gate must be cheaper than one in its middle to be taken: see
+/// [`solve_lattice_ends`].
+pub const GATE_MIDDLE_BIAS: f64 = 0.01;
+
 /// The pose `s` metres along a primitive of radius `r` and sign `sgn` from `from`.
 fn pose_along(from: Pose, r: f64, sgn: i8, s: f64) -> Pose {
     arc_points(from.0, from.1, from.2, r, sgn, s, 1)[0]
@@ -1535,7 +1539,12 @@ fn wrap(d: f64) -> f64 {
 /// [`solve_lattice_until`] with a start that knows what came before it and a goal that is a pose or
 /// a gate ([`SearchStart`], [`SearchGoal`]).
 ///
-/// With a gate the search is still exact for its cost: the goal is one state, reached from a state
+/// With a gate the search is exact for its cost but for one stated preference: an end on the gate
+/// is ranked by its cost times `1 + GATE_MIDDLE_BIAS x` how far it is from the middle of the gate
+/// and from the baseline's heading (each as a fraction of its limit; their mean), so equal ends
+/// resolve to the middle and the river's heading, and an end at the limits wins only when it is
+/// 1 % cheaper. The cost reported is the line's own, without that
+/// factor. The goal is one state, reached from a state
 /// before the gate by the part of a primitive up to the cross-line (a seam), or by one straight at
 /// least `straight_before_m` long (a weir site), each costed by the scorer as any edge is; nothing
 /// else passes the cross-line within `wall_half_m`. The `c_min` heuristic is the cheapest metre
@@ -1703,25 +1712,61 @@ pub fn solve_lattice_ends(
             return Some(0.0);
         }
         let prim = piece_prim(piece, cfg.arc_step_m);
-        let (c, ok) = scorers[si].score(&prim, from);
+        let (c, ok) = scorers
+            .get(si)
+            .unwrap_or(&close_arc_scorer)
+            .score(&prim, from);
         if !ok {
             return None;
         }
         let (ct, st) = (libm::cos(from.2), libm::sin(from.2));
         for q in &prim.pts {
-            if !in_bounds(from.0 + ct * q[1] - st * q[2], from.1 + st * q[1] + ct * q[2]) {
+            if !in_bounds(
+                from.0 + ct * q[1] - st * q[2],
+                from.1 + st * q[1] + ct * q[2],
+            ) {
                 return None;
             }
         }
         Some(c)
     };
     let straight_si = prims.len() - 1;
+    // The scorer of an arc of R_min that is not a lattice primitive: one past the primitives'.
+    let arc_si = prims.len();
+    // The cost of the pieces from `from`, one after the other, and the pose they end on.
+    let tail_costs = |from: Pose, pieces: &[(Piece, usize)]| -> Option<(f64, Pose)> {
+        let mut at = from;
+        let mut total = 0.0;
+        for &(piece, si) in pieces {
+            total += tail_cost(at, piece, si)?;
+            if piece.2 > 1e-9 {
+                at = pose_along(at, piece.0, piece.1, piece.2);
+            }
+        }
+        Some((total, at))
+    };
     let close = cfg.close_goal;
     let reach = cfg.close_reach();
     let mut closing: Option<[Piece; 3]> = None;
     let mut closing_from: Option<Pose> = None;
     // The last piece of a line that ends on a gate: the piece and its scorer.
-    let mut gate_tail: Option<(Piece, usize)> = None;
+    let mut gate_tail: Option<Vec<(Piece, usize)>> = None;
+    // The cost of the line to the gate, without the gate's preference for its middle.
+    let mut gate_cost = f64::INFINITY;
+    // An end on a gate is ranked by its cost times `1 + GATE_MIDDLE_BIAS x` how far it is from the
+    // middle of the gate and from the baseline's heading (each 0 on it and 1 at the limit; their
+    // mean), plus a millionth of that: of two ends that cost the same, the one nearer the middle and
+    // the river's heading wins, and an end at the limits must be 1 % cheaper. Without it the search
+    // takes whichever of many equal ends it meets first, and the next search pays for a start it
+    // would not have chosen: a start across the river's heading most of all, because every heading
+    // of that search is the start's plus whole bins.
+    let gate_rank = |gt: &Gate, cost: f64, at: Pose| -> f64 {
+        let (mid, half) = (0.5 * (gt.lo_m + gt.hi_m), 0.5 * (gt.hi_m - gt.lo_m));
+        let off = 0.5
+            * ((gt.uv(at.0, at.1).1 - mid).abs() / crate::py_max(half, 1e-9)
+                + wrap(at.2 - gt.heading).abs() / gt.heading_tol_rad);
+        cost * (1.0 + GATE_MIDDLE_BIAS * off) + 1e-6 * off
+    };
     let mut fallback: Option<(Key, i64)> = None;
     // The straight the line begins with, when one is asked for.
     let lead = start.lead_straight_m;
@@ -1842,32 +1887,58 @@ pub fn solve_lattice_ends(
                 pq.push(Entry(gc + c, gc + c, GOAL));
             }
         }
-        // A weir site's gate: one straight from this state to the cross-line, at least
-        // `straight_before_m` long (and one pitch more, so the length holds on the line as built).
-        if let Some(gt) = gate.filter(|gt| gt.straight_before_m > 0.0) {
+        // A gate, from a state before it and within reach. At a weir site (`straight_before_m`
+        // above 0): one straight from this state to the cross-line, at least that long (and one
+        // pitch more, so the length holds on the line as built). At any gate: an arc of R_min onto
+        // the baseline's heading, then a straight to the cross-line (as long, at a weir site), so
+        // the line can leave the gate along the river whatever headings the lattice holds.
+        if let Some(gt) = gate {
             let (u0, _) = gt.uv(x, y);
-            let dh = wrap(th - gt.heading);
-            let need = gt.straight_before_m + cfg.pitch_m;
-            if u0 < 0.0 && dh.abs() <= gt.heading_tol_rad + 1e-12 {
-                let d = -u0 / libm::cos(dh);
-                let g_goal = g.get(&GOAL).copied().unwrap_or(f64::INFINITY);
-                if d >= need && d <= need + cfg.r_min_m && gc < g_goal - 1e-6 {
-                    let piece = (f64::INFINITY, 0, d);
-                    let at = pose_along((x, y, th), f64::INFINITY, 0, d);
-                    let v = gt.uv(at.0, at.1).1;
-                    if gt.lo_m <= v
-                        && v <= gt.hi_m
-                        && let Some(c) = tail_cost((x, y, th), piece, straight_si)
-                        && gc + c < g_goal - 1e-6
-                    {
-                        g.insert(GOAL, gc + c);
-                        pose.insert(GOAL, at);
-                        prev.insert(GOAL, Some(k));
-                        prev_prim.insert(GOAL, None);
-                        gate_tail = Some((piece, straight_si));
-                        closing_from = Some((x, y, th));
-                        pq.push(Entry(gc + c, gc + c, GOAL));
+            let need = if gt.straight_before_m > 0.0 {
+                gt.straight_before_m + cfg.pitch_m
+            } else {
+                0.0
+            };
+            let turn = wrap(gt.heading - th);
+            let mut tails: Vec<Vec<(Piece, usize)>> = Vec::new();
+            if u0 < 0.0 && u0 >= -(need + 3.0 * cfg.r_min_m) {
+                if gt.straight_before_m > 0.0 && turn.abs() <= gt.heading_tol_rad + 1e-12 {
+                    let d = -u0 / libm::cos(turn);
+                    if d >= need && d <= need + cfg.r_min_m {
+                        tails.push(vec![((f64::INFINITY, 0, d), straight_si)]);
                     }
+                }
+                let sgn: i8 = if turn > 0.0 { 1 } else { -1 };
+                if turn.abs() > 1e-9
+                    && turn.abs() < core::f64::consts::FRAC_PI_2
+                    && !(code != 0 && sgn == -code.signum())
+                {
+                    let arc = (cfg.r_min_m, sgn, cfg.r_min_m * turn.abs());
+                    let after = pose_along((x, y, th), arc.0, arc.1, arc.2);
+                    let d = -gt.uv(after.0, after.1).0;
+                    if d >= need && d <= need + cfg.r_min_m {
+                        tails.push(vec![(arc, arc_si), ((f64::INFINITY, 0, d), straight_si)]);
+                    }
+                }
+            }
+            for tail in tails {
+                let g_goal = g.get(&GOAL).copied().unwrap_or(f64::INFINITY);
+                if gc < g_goal - 1e-6
+                    && let Some((c, at)) = tail_costs((x, y, th), &tail)
+                    && gt.lo_m <= gt.uv(at.0, at.1).1
+                    && gt.uv(at.0, at.1).1 <= gt.hi_m
+                    && gate_rank(gt, gc + c, at) < g_goal - 1e-6
+                {
+                    gate_cost = gc + c;
+                    let ranked = gate_rank(gt, gc + c, at);
+                    let c = ranked - gc;
+                    g.insert(GOAL, gc + c);
+                    pose.insert(GOAL, at);
+                    prev.insert(GOAL, Some(k));
+                    prev_prim.insert(GOAL, None);
+                    gate_tail = Some(tail);
+                    closing_from = Some((x, y, th));
+                    pq.push(Entry(gc + c, gc + c, GOAL));
                 }
             }
         }
@@ -1896,13 +1967,15 @@ pub fn solve_lattice_ends(
                         && wrap(at.2 - gt.heading).abs() <= gt.heading_tol_rad + 1e-12
                         && gc < g_goal - 1e-6
                         && let Some(c) = tail_cost((x, y, th), piece, pi)
-                        && gc + c < g_goal - 1e-6
+                        && gate_rank(gt, gc + c, at) < g_goal - 1e-6
                     {
+                        gate_cost = gc + c;
+                        let c = gate_rank(gt, gc + c, at) - gc;
                         g.insert(GOAL, gc + c);
                         pose.insert(GOAL, at);
                         prev.insert(GOAL, Some(k));
                         prev_prim.insert(GOAL, None);
-                        gate_tail = Some((piece, pi));
+                        gate_tail = Some(vec![(piece, pi)]);
                         closing_from = Some((x, y, th));
                         pq.push(Entry(gc + c, gc + c, GOAL));
                     }
@@ -1998,7 +2071,11 @@ pub fn solve_lattice_ends(
     // really ends, and the line is costed as it is rebuilt; when no closing path leaves from there,
     // the goal is not closed and the result says so (`end_err_m`).
     let mut closed = closed;
-    let mut cost = g[&best];
+    let mut cost = if gate.is_some() && closed {
+        gate_cost
+    } else {
+        g[&best]
+    };
     let last_code = chain.last().map_or(0, |k| k.3);
     let moved = closed
         && closing_from.is_some_and(|f| {
@@ -2022,27 +2099,40 @@ pub fn solve_lattice_ends(
     // A line that ends on a gate: its last piece runs from where the line really is to the
     // cross-line (the same primitive, cut again there), so the line ends on the cross-line even when
     // the chain as rebuilt ends some metres from the pose the piece was first cut from.
-    if let (true, Some(gt), Some((piece, si))) = (closed && moved, gate, gate_tail) {
+    if let (true, Some(gt), Some(mut tail)) = (closed && moved, gate, gate_tail.clone()) {
         let end = (cx, cy, cth);
-        let len = if gt.straight_before_m > 0.0 {
-            let (u0, _) = gt.uv(cx, cy);
-            crate::py_max(0.0, -u0 / libm::cos(wrap(cth - gt.heading)))
-        } else if gt.uv(cx, cy).0 >= 0.0 {
+        let last = tail.len() - 1;
+        // Where the last piece starts: after the arc onto the baseline's heading, when there is one.
+        let from = tail[..last].iter().fold(end, |at, &(piece, _)| {
+            pose_along(at, piece.0, piece.1, piece.2)
+        });
+        let (piece, si) = tail[last];
+        let u0 = gt.uv(from.0, from.1).0;
+        tail[last].0.2 = if u0 >= 0.0 {
             0.0
+        } else if piece.1 == 0 {
+            -u0 / libm::cos(wrap(from.2 - gt.heading))
         } else {
             // Cut where it meets the cross-line; a primitive that now ends short of it is kept whole.
             let full = prims[si].arc_len;
-            gate_crossing(gt, end, piece.0, piece.1, full).unwrap_or(full)
+            gate_crossing(gt, from, piece.0, piece.1, full).unwrap_or(full)
         };
-        let redone = (piece.0, piece.1, len);
-        let prim = piece_prim(redone, cfg.arc_step_m);
-        let c = if len > 1e-9 {
-            scorers[si].score(&prim, end).0
-        } else {
-            0.0
-        };
-        cost = chain_cost() + if c.is_finite() { c } else { 0.0 };
-        gate_tail = Some((redone, si));
+        let mut at = end;
+        let mut c = 0.0;
+        for &(piece, si) in &tail {
+            if piece.2 > 1e-9 {
+                let prim = piece_prim(piece, cfg.arc_step_m);
+                let part = scorers
+                    .get(si)
+                    .unwrap_or(&close_arc_scorer)
+                    .score(&prim, at)
+                    .0;
+                c += if part.is_finite() { part } else { 0.0 };
+                at = pose_along(at, piece.0, piece.1, piece.2);
+            }
+        }
+        cost = chain_cost() + c;
+        gate_tail = Some(tail);
     }
     if moved && gate.is_none() {
         let insign = last_code.signum();
@@ -2071,13 +2161,11 @@ pub fn solve_lattice_ends(
     }
     // The pieces after the chain, each with its scorer when it is not a closing path's.
     let close_pieces: Vec<(Piece, Option<usize>)> = match (closed, closing, gate_tail) {
-        (true, _, Some((piece, si))) => {
-            if piece.2 > 1e-9 {
-                vec![(piece, Some(si))]
-            } else {
-                Vec::new()
-            }
-        }
+        (true, _, Some(tail)) => tail
+            .into_iter()
+            .filter(|p| p.0.2 > 1e-9)
+            .map(|(piece, si)| (piece, Some(si)))
+            .collect(),
         (true, Some(path), None) => path
             .into_iter()
             .filter(|p| p.2 > 1e-9)
@@ -2109,7 +2197,7 @@ pub fn solve_lattice_ends(
         for &(piece, si) in &close_pieces {
             let prim = piece_prim(piece, cfg.arc_step_m);
             let sc = match si {
-                Some(si) => &scorers[si],
+                Some(si) => scorers.get(si).unwrap_or(&close_arc_scorer),
                 None if piece.1 == 0 => straight_scorer,
                 None => &close_arc_scorer,
             };
@@ -2335,8 +2423,8 @@ pub fn pool_pieces(
 /// Candidate seams are tried every this many metres of baseline.
 pub const SEAM_STEP_M: f64 = 10.0;
 
-/// A point of the baseline counts as straight for a seam when its local radius is at least this
-/// many times R_min; among straight points the nearest to the even split is taken.
+/// A seam's reason calls the baseline straight there when its local radius is at least this many
+/// times R_min.
 pub const SEAM_STRAIGHT_FACTOR: f64 = 10.0;
 
 /// A seam moves no further from the even split than this fraction of the even piece length, so no
@@ -2388,12 +2476,12 @@ pub struct Seam {
     pub placed_because: &'static str,
 }
 
-pub const SEAM_STRAIGHT_IN_RIVER: &str = "the nearest point to the even split where the baseline \
-    is straight and inside the river polygon";
+pub const SEAM_STRAIGHT_IN_RIVER: &str = "the straightest point of the window inside the river \
+    polygon, and the baseline is straight there";
 pub const SEAM_STRAIGHTEST_IN_RIVER: &str = "the straightest point of the window that is inside \
     the river polygon (none is straight)";
-pub const SEAM_STRAIGHT_OFF_RIVER: &str = "the nearest point to the even split where the baseline \
-    is straight (no point of the window is inside the river polygon)";
+pub const SEAM_STRAIGHT_OFF_RIVER: &str = "the straightest point of the window, and the baseline \
+    is straight there (no point of the window is inside the river polygon)";
 pub const SEAM_STRAIGHTEST_OFF_RIVER: &str = "the straightest point of the window (none is \
     straight, and none is inside the river polygon)";
 
@@ -2404,8 +2492,9 @@ pub const SEAM_STRAIGHTEST_OFF_RIVER: &str = "the straightest point of the windo
 /// seam is then looked for every [`SEAM_STEP_M`] within `cfg.seam_window_m` of the even split (and
 /// no further than [`SEAM_MAX_WINDOW_FRACTION`] of the even piece length). A point inside the river
 /// polygon beats one outside it; then the larger [`local_radius_m`] wins, read over
-/// [`seam_span_m`] either side, with every radius of [`SEAM_STRAIGHT_FACTOR`] x R_min or more
-/// counted as equally straight; then the point nearer the even split.
+/// [`seam_span_m`] either side (every wholly straight window reads the same, the cap); then the
+/// point nearer the even split. The reason calls a seam straight when its local radius is at least
+/// [`SEAM_STRAIGHT_FACTOR`] x R_min.
 pub fn seams_on_straights(
     baseline: &[Pt],
     river_polygon: &[Polygon],
@@ -2437,15 +2526,12 @@ pub fn seams_on_straights(
             let mut best = (wet, r, even);
             // Outward from the even split, so the nearer point wins a tie.
             for i in 1..=steps {
-                for s in [
-                    even - SEAM_STEP_M * i as f64,
-                    even + SEAM_STEP_M * i as f64,
-                ] {
+                for s in [even - SEAM_STEP_M * i as f64, even + SEAM_STEP_M * i as f64] {
                     let (wet, r) = read(s);
                     let better = match (wet, best.0) {
                         (true, false) => true,
                         (false, true) => false,
-                        _ => crate::py_min(r, straight) > crate::py_min(best.1, straight) + 1e-9,
+                        _ => r > best.1 + 1e-9,
                     };
                     if better {
                         best = (wet, r, s);
@@ -2737,9 +2823,9 @@ pub fn optimise_pool_ends(
         piece: None,
         end_moved_from_m: None,
         start_moved_from_m: None,
-        free_start: ends
-            .start
-            .is_some_and(|s| hypot(s.pose.0 - start.0, s.pose.1 - start.1) > 0.0 || s.pose.2 != start.2),
+        free_start: ends.start.is_some_and(|s| {
+            hypot(s.pose.0 - start.0, s.pose.1 - start.1) > 0.0 || s.pose.2 != start.2
+        }),
         free_end: ends.gate.is_some(),
     })
 }
@@ -3140,7 +3226,8 @@ pub fn optimise_pools(
         let j_start = i.checked_sub(1).and_then(|k| joint_after[k]);
         let j_end = joint_after[i];
         let prev = out_pools.last();
-        let from_free = j_start.filter(|&j| joints[j].free && prev.is_some_and(|p| p.used && p.free_end));
+        let from_free =
+            j_start.filter(|&j| joints[j].free && prev.is_some_and(|p| p.used && p.free_end));
         let start = match (from_free, prev) {
             (Some(j), Some(p)) => Some(SearchStart {
                 pose: p.result.end_pose,
@@ -3175,7 +3262,9 @@ pub fn optimise_pools(
         // A pinned end the search cannot close on, or a line that crosses itself: the end moves
         // upstream, as in the pinned search (downstream, the next search would have to start there).
         let unclosed = |r: &LatticeResult| cfg.close_goal && !r.goal_closed;
-        if gate.is_none() && pa.result.converged && (unclosed(&pa.result) || crosses_itself(&pa.result))
+        if gate.is_none()
+            && pa.result.converged
+            && (unclosed(&pa.result) || crosses_itself(&pa.result))
         {
             for e in (1..=BOUNDARY_STEPS)
                 .map(|k| b - step * k as f64)
@@ -3271,7 +3360,10 @@ pub fn optimise_pools(
         }
         // A line that lost the line it met at a free joint meets nothing there: it goes too, and so
         // on along the free joints.
-        while dropped {
+        loop {
+            if !dropped {
+                break;
+            }
             let orphan = (0..out_pools.len().saturating_sub(1)).find_map(|i| {
                 let j = joint_after[i]?;
                 let (l, r) = (&out_pools[i], &out_pools[i + 1]);
@@ -3333,34 +3425,34 @@ fn adopt(
     keep_if_dearer: bool,
 ) -> (bool, Option<&'static str>) {
     let converged = pa.result.converged;
-        let dearer = pa.result.cost > pa.baseline_cost;
-        // The baseline is kept when the search did not converge, or when it is cheaper and either
-        // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
-        // breaks R_min is never kept in place of a lattice line that holds it.
-        let (use_it, because) = if !converged && pa.result.hit_cap {
-            (false, Some(HIT_CAP_REASON))
-        } else if !converged && cfg.corridor_limit && !pa.result.timed_out {
-            (false, Some(NO_LINE_IN_CORRIDOR_REASON))
-        } else if !converged {
-            (false, Some(NOT_CONVERGED_REASON))
-        } else if crosses_itself(&pa.result) {
-            (false, Some(SELF_CROSSING_REASON))
-        } else if keep_if_dearer && dearer {
-            let base_ok = line_of(linear::substring(baseline, pa.start_m, pa.end_m))
-                .ok()
-                .and_then(|seg| min_radius_on_chord(&seg, default_check_chord(cfg.r_min_m)).ok())
-                .is_some_and(|r| radius_ok(r, cfg.r_min_m));
-            if base_ok || !pa.result.radius_ok {
-                (
-                    false,
-                    Some("the baseline is cheaper and holds R_min (or the lattice line does not)"),
-                )
-            } else {
-                (true, None)
-            }
+    let dearer = pa.result.cost > pa.baseline_cost;
+    // The baseline is kept when the search did not converge, or when it is cheaper and either
+    // holds R_min or the lattice line does not hold it either (issue #547): a baseline that
+    // breaks R_min is never kept in place of a lattice line that holds it.
+    let (use_it, because) = if !converged && pa.result.hit_cap {
+        (false, Some(HIT_CAP_REASON))
+    } else if !converged && cfg.corridor_limit && !pa.result.timed_out {
+        (false, Some(NO_LINE_IN_CORRIDOR_REASON))
+    } else if !converged {
+        (false, Some(NOT_CONVERGED_REASON))
+    } else if crosses_itself(&pa.result) {
+        (false, Some(SELF_CROSSING_REASON))
+    } else if keep_if_dearer && dearer {
+        let base_ok = line_of(linear::substring(baseline, pa.start_m, pa.end_m))
+            .ok()
+            .and_then(|seg| min_radius_on_chord(&seg, default_check_chord(cfg.r_min_m)).ok())
+            .is_some_and(|r| radius_ok(r, cfg.r_min_m));
+        if base_ok || !pa.result.radius_ok {
+            (
+                false,
+                Some("the baseline is cheaper and holds R_min (or the lattice line does not)"),
+            )
         } else {
             (true, None)
-        };
+        }
+    } else {
+        (true, None)
+    };
     (use_it, because)
 }
 
