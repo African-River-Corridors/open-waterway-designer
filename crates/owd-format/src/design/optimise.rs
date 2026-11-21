@@ -23,7 +23,8 @@ use owd_core::optimise::flood::{
     with_flood_cost,
 };
 use owd_core::optimise::lattice::{
-    HalfWidthSpec, LatticeConfig, PoolOptions, SectionSpec, optimise_pools,
+    DEFAULT_SEAM_HEADING_TOL_DEG, DEFAULT_SEAM_WINDOW_M, HalfWidthSpec, Joint, JointKind,
+    LatticeConfig, NO_CORRIDOR_REASON, PoolOptions, SectionSpec, optimise_pools, seam_span_m,
 };
 use owd_core::volumes::sections::HalfWidth;
 use serde_json::{Value, json};
@@ -112,6 +113,32 @@ pub struct OptimiseSettings {
     /// False (the default) is the search as it was, where the corridor only feeds the heuristic;
     /// then it is not written into the document.
     pub corridor_limit: bool,
+    /// Put the seams of a long pool (the boundaries of the pieces it is searched in) where the
+    /// baseline is straightest and inside the river polygon, within `seam_window_m` of the even
+    /// split. False (the default) is the rule as it was; then it is not written into the document.
+    pub seams_on_straights: bool,
+    /// How far a seam may move from the even split, in metres (default 1,500). Written only when it
+    /// is not the default.
+    pub seam_window_m: f64,
+    /// Do not pin the line to the baseline's point and heading at a seam or at a weir site between
+    /// two pools: the line passes a gate on the cross-line there, and the next search starts from
+    /// the pose it ended on. At a weir site it is straight for `weir_straight_m` through the gate.
+    /// False (the default) pins both, as before; then it is not written into the document.
+    pub free_seams: bool,
+    /// The lateral room of a gate either side of the baseline, in metres; `None` (the default): the
+    /// stretch of the cross-line inside the river polygon, no further than half of
+    /// `corridor_half_m` from the baseline. Written only when set.
+    pub seam_offset_m: Option<f64>,
+    /// How far the line's heading at a gate may be from the baseline's, in degrees (default 30).
+    /// Written only when it is not the default.
+    pub seam_heading_tol_deg: f64,
+    /// The straight the line has through a weir site between two pools with `free_seams`, in
+    /// metres; `None` (the default): two lengths of the vessel the sizing stage sized for. Written
+    /// only when set.
+    pub weir_straight_m: Option<f64>,
+    /// Between a left curve and a right curve the line runs straight for at least this length, in
+    /// metres. 0 (the default) is off; then it is not written into the document.
+    pub min_straight_m: f64,
     pub cell_m: f64,
     pub check_chord_m: Option<f64>,
 }
@@ -151,6 +178,13 @@ impl Default for OptimiseSettings {
             radius_multiples: vec![1.0, 1.5, 3.0],
             corridor_half_m: 350.0,
             corridor_limit: false,
+            seams_on_straights: false,
+            seam_window_m: DEFAULT_SEAM_WINDOW_M,
+            free_seams: false,
+            seam_offset_m: None,
+            seam_heading_tol_deg: DEFAULT_SEAM_HEADING_TOL_DEG,
+            weir_straight_m: None,
+            min_straight_m: 0.0,
             cell_m: 2.0,
             check_chord_m: None,
         }
@@ -215,6 +249,28 @@ impl OptimiseSettings {
         }
         if self.flood_report {
             v["flood_report"] = json!(true);
+        }
+        // The settings of the joins (OPT-3), each written only when it is not its default.
+        if self.seams_on_straights {
+            v["seams_on_straights"] = json!(true);
+        }
+        if self.seam_window_m != DEFAULT_SEAM_WINDOW_M {
+            v["seam_window_m"] = json!(self.seam_window_m);
+        }
+        if self.free_seams {
+            v["free_seams"] = json!(true);
+        }
+        if let Some(o) = self.seam_offset_m {
+            v["seam_offset_m"] = json!(o);
+        }
+        if self.seam_heading_tol_deg != DEFAULT_SEAM_HEADING_TOL_DEG {
+            v["seam_heading_tol_deg"] = json!(self.seam_heading_tol_deg);
+        }
+        if let Some(w) = self.weir_straight_m {
+            v["weir_straight_m"] = json!(w);
+        }
+        if self.min_straight_m != 0.0 {
+            v["min_straight_m"] = json!(self.min_straight_m);
         }
         v
     }
@@ -365,6 +421,69 @@ impl OptimiseSettings {
                         )
                     })?
                 }
+                "seams_on_straights" => {
+                    out.seams_on_straights = v.as_bool().ok_or_else(|| {
+                        DesignError::Input(
+                            "the setting `seams_on_straights` must be true or false (true puts the \
+                             seams of a long pool on straights of the baseline)"
+                                .into(),
+                        )
+                    })?
+                }
+                "free_seams" => {
+                    out.free_seams = v.as_bool().ok_or_else(|| {
+                        DesignError::Input(
+                            "the setting `free_seams` must be true or false (true lets the line \
+                             pass a seam or a weir site through a gate, off the baseline's pose)"
+                                .into(),
+                        )
+                    })?
+                }
+                "seam_window_m" => {
+                    out.seam_window_m = length(v, k, "how far a seam may move from the even split")?
+                }
+                "min_straight_m" => {
+                    out.min_straight_m = length(
+                        v,
+                        k,
+                        "the straight between a left curve and a right curve; 0 is off",
+                    )?
+                }
+                "seam_offset_m" => {
+                    out.seam_offset_m = match v {
+                        Value::Null => None,
+                        _ => Some(length(
+                            v,
+                            k,
+                            "the room of a gate either side of the baseline; null takes the \
+                             river's width there",
+                        )?),
+                    }
+                }
+                "weir_straight_m" => {
+                    out.weir_straight_m = match v {
+                        Value::Null => None,
+                        _ => Some(length(
+                            v,
+                            k,
+                            "the straight through a weir site; null takes two vessel lengths",
+                        )?),
+                    }
+                }
+                "seam_heading_tol_deg" => {
+                    let t = v
+                        .as_f64()
+                        .filter(|t| *t > 0.0 && *t < 90.0)
+                        .ok_or_else(|| {
+                            DesignError::Input(
+                            "the setting `seam_heading_tol_deg` must be a number of degrees above \
+                             0 and below 90 (how far the line's heading at a gate may be from the \
+                             baseline's)"
+                                .into(),
+                        )
+                        })?;
+                    out.seam_heading_tol_deg = t;
+                }
                 "cell_m" => out.cell_m = f(k)?,
                 "check_chord_m" => out.check_chord_m = maybe(k)?,
                 other => {
@@ -376,6 +495,17 @@ impl OptimiseSettings {
         }
         Ok(out)
     }
+}
+
+/// A length setting: a finite number of metres >= 0, or a plain refusal that says what it is.
+fn length(v: &Value, key: &str, what: &str) -> Result<f64, DesignError> {
+    v.as_f64()
+        .filter(|x| x.is_finite() && *x >= 0.0)
+        .ok_or_else(|| {
+            DesignError::Input(format!(
+                "the setting `{key}` must be a number of metres >= 0 ({what})"
+            ))
+        })
 }
 
 fn num(v: &Value, key: &str) -> Result<f64, DesignError> {
@@ -760,6 +890,15 @@ impl Session {
         lattice.n_heading = typed.n_heading;
         lattice.radius_multiples = nums(&settings, "radius_multiples")?;
         lattice.corridor_limit = typed.corridor_limit;
+        lattice.seams_on_straights = typed.seams_on_straights;
+        lattice.seam_window_m = typed.seam_window_m;
+        lattice.free_seams = typed.free_seams;
+        lattice.seam_offset_m = typed.seam_offset_m;
+        lattice.seam_heading_tol_deg = typed.seam_heading_tol_deg;
+        lattice.min_straight_m = typed.min_straight_m;
+        // The straight through a weir site: the setting, else two lengths of the sizing's vessel.
+        // It is also the length either side of a seam over which the baseline's radius is read.
+        lattice.weir_straight_m = typed.weir_straight_m.unwrap_or(2.0 * size.loa_m);
         let lattice = lattice.validated().map_err(refuse)?;
         let out = optimise_pools(
             &baseline,
@@ -874,6 +1013,33 @@ impl Session {
                 }
             }
         }
+        // With a setting of the joins on (OPT-3), the details say so and give every seam and every
+        // weir site between two pools: where it is and why, how the line was held there, and what
+        // the joined line does there. Off, nothing is added.
+        if typed.seams_on_straights {
+            details["seams_on_straights"] = json!(true);
+            details["seam_window_m"] = json!(typed.seam_window_m);
+            details["seam_radius_span_m"] = json!(seam_span_m(&lattice));
+        }
+        if typed.free_seams {
+            details["free_seams"] = json!(true);
+            details["seam_heading_tol_deg"] = json!(typed.seam_heading_tol_deg);
+            details["weir_straight_m"] = json!(lattice.weir_straight_m);
+        }
+        if typed.min_straight_m != 0.0 {
+            details["min_straight_m"] = json!(typed.min_straight_m);
+        }
+        if typed.seams_on_straights || typed.free_seams {
+            let of = |kind: JointKind| -> Vec<Value> {
+                out.joints
+                    .iter()
+                    .filter(|j| j.kind == kind)
+                    .map(joint_json)
+                    .collect()
+            };
+            details["seams"] = json!(of(JointKind::Seam));
+            details["weirs"] = json!(of(JointKind::Weir));
+        }
         // With the corridor limit on, the details say so, with the half-width the line was held to.
         if typed.corridor_limit {
             details["corridor_limit"] = json!(true);
@@ -949,6 +1115,26 @@ impl Session {
             for p in out.moved_boundaries() {
                 w.push(json!(moved_warning(p)));
             }
+            // A seam or weir site that `free_seams` could not free, and a weir site whose straight is
+            // shorter than asked: named, never silent.
+            for j in &out.joints {
+                if let Some(text) = joint_warning(j) {
+                    w.push(json!(text));
+                }
+            }
+            // A pool whose corridor could not be built was not searched: named, never silent.
+            for p in out
+                .pools
+                .iter()
+                .filter(|p| p.kept_baseline_because == Some(NO_CORRIDOR_REASON))
+            {
+                w.push(json!(format!(
+                    "{} keeps the baseline: {NO_CORRIDOR_REASON} ({:.0} m either side), so it was \
+                     not searched",
+                    pool_name(p),
+                    typed.corridor_half_m
+                )));
+            }
             // A pool with no line inside the corridor keeps its baseline (`corridor_limit`).
             for p in out.no_line_in_corridor_pools() {
                 w.push(json!(corridor_warning(p, typed.corridor_half_m)));
@@ -986,6 +1172,62 @@ impl Session {
         let h = self.dependency_hash(Stage::Optimise);
         self.doc["stages"]["optimise"]["depends_on"] = json!(h);
         Ok(())
+    }
+}
+
+/// One seam or weir site, as the details give it.
+fn joint_json(j: &Joint) -> Value {
+    let mut v = json!({
+        "at_m": j.at_m,
+        "baseline_local_radius_m": j.local_radius_m,
+        "in_river": j.in_river,
+        "straight_through_m": num_or_null(j.straight_through_m),
+    });
+    if let Some(n) = j.nominal_m {
+        v["nominal_m"] = json!(n);
+        v["placed_because"] = json!(j.placed_because);
+    }
+    if j.gate_lo_m.is_some() {
+        v["free"] = json!(j.free);
+        v["pinned_because"] = json!(j.pinned_because);
+        v["gate_m"] = json!([j.gate_lo_m, j.gate_hi_m]);
+        v["offset_m"] = json!(j.offset_m);
+        v["heading_off_deg"] = json!(j.heading_off_rad.map(f64::to_degrees));
+    }
+    if let Some(need) = j.straight_required_m {
+        v["straight_required_m"] = json!(need);
+        v["straight_ok"] = json!(j.straight_ok);
+    }
+    v
+}
+
+/// The sanity warning for a seam or weir site that is pinned although `free_seams` is on, or for a
+/// weir site whose straight is shorter than asked. `None` when there is nothing to say.
+fn joint_warning(j: &Joint) -> Option<String> {
+    let what = match j.kind {
+        JointKind::Seam => "the seam",
+        JointKind::Weir => "the weir site",
+    };
+    if let Some(because) = j.pinned_because {
+        let mut text = format!(
+            "{what} at {:.0} m is pinned to the baseline's point and heading: {because}",
+            j.at_m
+        );
+        if let (JointKind::Weir, Some(need)) = (j.kind, j.straight_required_m) {
+            text.push_str(&format!(
+                " (the line there is straight for {:.0} m against {need:.0} m asked; the baseline's \
+                 local radius there is {:.0} m)",
+                j.straight_through_m, j.local_radius_m
+            ));
+        }
+        return Some(text);
+    }
+    match (j.straight_ok, j.straight_required_m) {
+        (Some(false), Some(need)) => Some(format!(
+            "{what} at {:.0} m: the line is straight for {:.0} m against {need:.0} m asked",
+            j.at_m, j.straight_through_m
+        )),
+        _ => None,
     }
 }
 

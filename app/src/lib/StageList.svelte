@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useWaterChoice } from "./api";
-  import type { CascadeFlood, FloodSetting, RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
+  import type { CascadeFlood, FloodSetting, JoinSetting, RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
 
   let {
     snap,
@@ -13,6 +13,7 @@
     onOptimiseLand,
     onCorridorLimit,
     onOptimiseFlood,
+    onJoinSetting,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -33,6 +34,7 @@
     onCorridorLimit: (on: boolean) => void;
     /** Set a flood setting of the weir search (a number as typed; an empty limit is no limit). */
     onOptimiseFlood: (setting: FloodSetting, value: string) => void;
+    onJoinSetting: (key: JoinSetting, value: boolean | string) => void;
     lineName?: string | null;
   } = $props();
   // The stored flood settings: the cost is 0 (off) and the limit is none until set, and neither is written then.
@@ -92,6 +94,61 @@
   let onPlanArea = $derived(
     (snap?.document.stages.optimise.results as { optimised_on?: string } | null)?.optimised_on === "plan_area",
   );
+  // The join settings of the pool search (OPT-3); none is written into the design at its default.
+  type JoinStored = Partial<Record<JoinSetting, number | boolean | null>>;
+  let joins = $derived((snap?.document.stages.optimise.settings as JoinStored | null) ?? {});
+  const JOIN_TICKS: { key: JoinSetting; id: string; label: string; help: string }[] = [
+    {
+      key: "seams_on_straights",
+      id: "seams-on-straights",
+      label: "Put seams on straights",
+      help: "A long pool is searched in pieces; this puts each seam between two pieces where the river line is straightest and inside the river.",
+    },
+    {
+      key: "free_seams",
+      id: "free-seams",
+      label: "Free the line at seams and weirs",
+      help: "The line may pass a seam or a weir site anywhere across the river instead of on the river line's exact point and heading, and it runs straight through a weir site.",
+    },
+  ];
+  const JOIN_LENGTHS: { key: JoinSetting; id: string; label: string; help: string; unset: string }[] = [
+    {
+      key: "seam_window_m",
+      id: "seam-window",
+      label: "Seam search window (m)",
+      help: "How far a seam may move from the even split of a long pool to find a straight.",
+      unset: "1500",
+    },
+    {
+      key: "min_straight_m",
+      id: "min-straight",
+      label: "Straight between opposite curves (m; 0 = off)",
+      help: "The line runs straight for at least this length between a left curve and a right curve.",
+      unset: "0",
+    },
+    {
+      key: "weir_straight_m",
+      id: "weir-straight",
+      label: "Straight through a weir site (m; empty = two vessel lengths)",
+      help: "With the line freed at weirs, it runs straight for this length through each weir site, half upstream and half downstream.",
+      unset: "",
+    },
+  ];
+  const joinStored = (key: JoinSetting, unset: string) => {
+    const v = joins[key];
+    return v === undefined || v === null ? unset : String(v);
+  };
+  let joinText = $state<Record<string, string>>({});
+  let joinSeen: Record<string, string> = {};
+  $effect(() => {
+    for (const f of JOIN_LENGTHS) {
+      const now = joinStored(f.key, f.unset);
+      if (joinSeen[f.key] !== now) {
+        joinSeen[f.key] = now;
+        joinText[f.key] = now;
+      }
+    }
+  });
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
@@ -178,6 +235,26 @@
           </label>
           <span class="dim help" data-testid="corridor-limit-help">The pool search may not go further from the baseline than the corridor's half-width. A pool with no line inside the corridor keeps the baseline and says so.</span>
         </li>
+        {#each JOIN_TICKS as t (t.key)}
+          <li class="sub length" data-testid="{t.id}-row">
+            <label class="tick">
+              <input type="checkbox" data-testid={t.id} checked={joins[t.key] === true} disabled={busy !== null} onchange={(e) => onJoinSetting(t.key, e.currentTarget.checked)} />
+              {t.label}
+            </label>
+            <span class="dim help" data-testid="{t.id}-help">{t.help}</span>
+          </li>
+        {/each}
+        {#each JOIN_LENGTHS as f (f.key)}
+          <li class="sub length" data-testid="{f.id}-row">
+            <label class="name">
+              {f.label}
+              <input type="text" inputmode="decimal" data-testid={f.id} bind:value={joinText[f.key]} disabled={busy !== null} />
+            </label>
+            <button data-testid="set-{f.id}" disabled={busy !== null} onclick={() => onJoinSetting(f.key, joinText[f.key] ?? "")}>Set</button>
+            <span class="dim help" data-testid="{f.id}-help">{f.help}</span>
+            <span class="dim" data-testid="{f.id}-stored">Stored: {joinStored(f.key, f.unset)}</span>
+          </li>
+        {/each}
         <li class="sub length" data-testid="flood-cost-row">
           <label class="name">
             Cost per hectare of flooded land (0 = off)

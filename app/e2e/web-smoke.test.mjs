@@ -625,6 +625,34 @@ describe("OWD web smoke tests", () => {
     await until(b, "the corridor limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.corridor_limit === undefined);
     assert.equal((await pageDoc(b)).stages.optimise.settings.land_weight, 3.5, "the land cost is kept");
     assert.equal(await exists(b, "error"), false);
+    // The join settings (OPT-3): two tick boxes and three lengths, each with one plain sentence of help; none is in the design at its default.
+    const opt = async () => (await pageDoc(b)).stages.optimise.settings;
+    for (const [id, key] of [["seams-on-straights", "seams_on_straights"], ["free-seams", "free_seams"]]) {
+      assert.equal(await (await tid(b, id)).isSelected(), false);
+      assert.equal((await opt())[key], undefined);
+      await (await tid(b, id)).click();
+      await until(b, `${key} stored`, async () => (await opt())?.[key] === true);
+      await until(b, `${id} ticked`, async () => await (await tid(b, id)).isSelected());
+      assert.match(await text(b, `${id}-help`), /^[^.]+\.$/, "one sentence of help");
+    }
+    await (await tid(b, "seams-on-straights")).click();
+    await until(b, "seams on straights gone", async () => (await opt())?.seams_on_straights === undefined);
+    for (const [id, key, unset, value] of [["seam-window", "seam_window_m", "1500", 900], ["min-straight", "min_straight_m", "0", 90], ["weir-straight", "weir_straight_m", "", 180]]) {
+      assert.equal(await text(b, `${id}-stored`), `Stored: ${unset}`.trimEnd());
+      assert.equal((await opt())[key], undefined);
+      await (await tid(b, id)).setValue(String(value));
+      await (await tid(b, `set-${id}`)).click();
+      await until(b, `${key} stored`, async () => (await opt())?.[key] === value);
+      assert.equal(await text(b, `${id}-stored`), `Stored: ${value}`);
+      assert.match(await text(b, `${id}-help`), /^[^.]+\.$/, "one sentence of help");
+    }
+    assert.equal((await opt()).free_seams, true, "the free seams are kept");
+    assert.equal(await exists(b, "error"), false);
+    // A length below 0 is refused in plain words, and the design keeps what it held.
+    await (await tid(b, "min-straight")).setValue("-5");
+    await (await tid(b, "set-min-straight")).click();
+    await until(b, "the length refusal", async () => (await exists(b, "error")) && (await text(b, "error")).includes("The length must be a number of metres, 0 or more."));
+    assert.equal((await opt()).min_straight_m, 90);
     // A value below 0 is refused in plain words, and the design keeps what it held.
     await (await tid(b, "land-weight")).setValue("-1");
     await (await tid(b, "set-land-weight")).click();

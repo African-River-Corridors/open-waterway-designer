@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Choices, CustomFields, FloodSetting, InputRole, OptionTable, ProjectStatus, RunMethod, Snapshot, StageName, UseWater } from "./api";
+  import type { Choices, CustomFields, FloodSetting, InputRole, JoinSetting, OptionTable, ProjectStatus, RunMethod, Snapshot, StageName, UseWater } from "./api";
   import ProjectPanel from "./ProjectPanel.svelte";
   import ChecksList from "./ChecksList.svelte";
   import DesignLineCard from "./DesignLineCard.svelte";
@@ -30,6 +30,7 @@
     onOptimiseLand,
     onCorridorLimit,
     onOptimiseFlood,
+    onJoinSetting,
     lineName = null,
     table,
     indexOf,
@@ -62,6 +63,7 @@
     onOptimiseLand: (weight: string) => void;
     onCorridorLimit: (on: boolean) => void;
     onOptimiseFlood: (setting: FloodSetting, value: string) => void;
+    onJoinSetting: (key: JoinSetting, value: boolean | string) => void;
     lineName?: string | null;
     /** The design line and its checks, as the session tables them. */
     table: OptionTable | null;
@@ -77,7 +79,7 @@
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {lineName} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {onJoinSetting} {lineName} />
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
   {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}

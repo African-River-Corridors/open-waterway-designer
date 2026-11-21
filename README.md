@@ -345,6 +345,38 @@ the Optimise row.
 second once the tables are built; building the cut table (one pass of the sections for each pool
 level) is the long part.
 
+**The joins: seams, weir sites and S-bends (`seams_on_straights`, `free_seams`, `min_straight_m`).**
+The lattice searches each pool on its own, and a pool longer than 6 km in pieces. By default every
+search starts and ends on the baseline's exact point and heading (the baseline is the alignment's
+design line, else the river centreline). A pinned point on a bend forces a curve of R_min beside
+it, and a pinned point off the river forces the line off the river there. Three settings change
+that. All are off by default, and a design that does not set them gives the same line as before.
+
+- `seams_on_straights` (`owd optimise --seams-on-straights`): the seam between two pieces of a long
+  pool goes where the baseline is straightest and inside the river polygon, within `seam_window_m`
+  (`--seam-window`, 1,500 m by default) of the even split. Straightness is the baseline's mean
+  radius over the weir straight either side of the point (two vessel lengths, and at least half of
+  R_min). The details list each seam: where the even split was, where the seam is, and why.
+- `free_seams` (`--free-seams`): at a seam the line passes a gate instead of a point. The gate is
+  the cross-line through the baseline's point, as wide as the river is there (set
+  `seam_offset_m`, `--seam-offset`, for a fixed room either side), and the heading may differ from
+  the baseline's by `seam_heading_tol_deg` (`--seam-heading-tol`, 30 degrees by default). The next
+  piece starts from the pose the line ended on, so there is no gap and no closing curve. At a weir
+  site between two pools the line passes a lock, so it must be straight there: the line runs
+  straight for `weir_straight_m` (`--weir-straight`; two lengths of the sized vessel by default)
+  through the gate, half upstream of the weir's cross-line and half downstream. Where the search
+  finds no such line (a weir on a tight bend in a narrow corridor, for one), the weir site is pinned
+  to the baseline as before, and the details and a warning say why by name. The ends of the whole
+  line stay pinned.
+- `min_straight_m` (`--min-straight`, 0 is off): between a left curve and a right curve the line
+  runs straight for at least this length. One ship length is a good first value. The search holds
+  it in its state, so it is a rule and not a cost; it is counted in whole lattice straights (twice
+  the pitch), so the length enforced is the next multiple at or above the setting.
+
+The details give every seam (`seams`) and every weir site (`weirs`): its chainage, whether it is
+free, the gate, where the line passed it, and the straight the line has there, measured on the
+line.
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

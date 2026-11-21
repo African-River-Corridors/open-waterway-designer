@@ -1249,6 +1249,13 @@ pub struct OptimiseFlags {
     pub max_above_bank: Option<f64>,
     pub flood_distance: Option<f64>,
     pub flood_report: bool,
+    pub seams_on_straights: Option<bool>,
+    pub free_seams: Option<bool>,
+    pub seam_window: Option<f64>,
+    pub seam_offset: Option<f64>,
+    pub seam_heading_tol: Option<f64>,
+    pub min_straight: Option<f64>,
+    pub weir_straight: Option<f64>,
     pub model: Option<String>,
 }
 
@@ -1276,13 +1283,24 @@ pub fn optimise(
         ("flood_cost_per_ha", flags.flood_cost_per_ha),
         ("max_above_bank_m", flags.max_above_bank),
         ("flood_distance_m", flags.flood_distance),
+        ("seam_window_m", flags.seam_window),
+        ("seam_offset_m", flags.seam_offset),
+        ("seam_heading_tol_deg", flags.seam_heading_tol),
+        ("min_straight_m", flags.min_straight),
+        ("weir_straight_m", flags.weir_straight),
     ] {
         if let Some(v) = v {
             overrides.insert(k.into(), json!(v));
         }
     }
-    if let Some(on) = flags.corridor_limit {
-        overrides.insert("corridor_limit".into(), json!(on));
+    for (k, on) in [
+        ("corridor_limit", flags.corridor_limit),
+        ("seams_on_straights", flags.seams_on_straights),
+        ("free_seams", flags.free_seams),
+    ] {
+        if let Some(on) = on {
+            overrides.insert(k.into(), json!(on));
+        }
     }
     if flags.flood_report {
         overrides.insert("flood_report".into(), json!(true));
