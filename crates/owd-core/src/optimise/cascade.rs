@@ -308,7 +308,12 @@ pub fn search_cascade(
             if dp[j][hi] == inf || h < cfg.terminal_min_level_m - 1e-9 {
                 continue;
             }
-            finals.push((dp[j][hi] + reach_cost(s[j].0, cfg.terminal_m, h)?, j, hi));
+            let total = dp[j][hi] + reach_cost(s[j].0, cfg.terminal_m, h)?;
+            // A reach the caller does not allow costs infinity: it is never an ending.
+            if total == inf {
+                continue;
+            }
+            finals.push((total, j, hi));
         }
     }
     finals.sort_by(|a, b| cmp(a.0, b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
@@ -513,6 +518,19 @@ impl LevelTable {
         level_m: f64,
     ) -> Result<(f64, f64), Refusal> {
         let (ch, cd, ce) = self.cumulative();
+        self.volumes_between(&ch, &cd, &ce, start_m, end_m, level_m)
+    }
+
+    /// [`Self::reach_volumes`] on cumulative volumes already worked out by [`Self::cumulative`].
+    fn volumes_between(
+        &self,
+        ch: &[f64],
+        cd: &[Vec<f64>],
+        ce: &[Vec<f64>],
+        start_m: f64,
+        end_m: f64,
+        level_m: f64,
+    ) -> Result<(f64, f64), Refusal> {
         let j = self.level_index(level_m)?;
         // np.searchsorted(ch, x): the first index with ch[i] >= x.
         let i0 = ch.partition_point(|&c| c < start_m);
@@ -612,8 +630,10 @@ pub fn earthworks_reach_cost(
     wet_weight: f64,
     dry_weight: f64,
 ) -> impl Fn(f64, f64, f64) -> Result<f64, Refusal> + '_ {
+    // The cumulative volumes once, not once a call: the search asks for every (site, site, level).
+    let (ch, cd, ce) = table.cumulative();
     move |a, b, level| {
-        let (d, e) = table.reach_volumes(a, b, level)?;
+        let (d, e) = table.volumes_between(&ch, &cd, &ce, a, b, level)?;
         Ok(wet_weight * d + dry_weight * e)
     }
 }

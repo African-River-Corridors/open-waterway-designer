@@ -15,6 +15,10 @@ use owd_core::optimise::cascade::{
     CascadeConfig, SectionOptions, build_level_table, cascade_levels, earthworks_reach_cost,
     search_cascade,
 };
+use owd_core::optimise::flood::{
+    BANK_FULL_ESTIMATE, BankProfile, FloodField, FloodTable, FloodTerms, explain_blocked,
+    with_flood_cost,
+};
 use owd_core::optimise::lattice::{
     HalfWidthSpec, LatticeConfig, PoolOptions, SectionSpec, optimise_pools,
 };
@@ -23,6 +27,11 @@ use serde_json::{Value, json};
 
 /// The id and the method of the lattice's design line.
 const LATTICE: &str = "lattice";
+
+/// The default distance from the design line out to which flooded land is counted, in metres.
+pub const FLOOD_DISTANCE_M: f64 = 1500.0;
+/// The default side of a cell of the flood grid, in metres.
+pub const FLOOD_CELL_M: f64 = 25.0;
 
 /// The settings of the optimise stage, typed. A key the stage does not know is refused by name.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +56,23 @@ pub struct OptimiseSettings {
     /// the baseline it compares with. 0 (the default) is off; then it is not written into the
     /// document, so a design run without it reads, hashes and saves as before.
     pub length_weight: f64,
+    /// The cost of one hectare of land a pool floods outside the river polygon, in the units of
+    /// the cut cost (money, when the weights are prices). The weir search adds it to the cost of
+    /// each pool, so it trades cut against flooded land. 0 (the default) is off; then it is not
+    /// written into the document, so a design run without it reads, hashes and saves as before.
+    /// It needs a DEM.
+    pub flood_cost_per_ha: f64,
+    /// No pool may stand more than this many metres above bank-full anywhere in its reach. `None`
+    /// (the default) is no limit, and is not written. Bank-full is an estimate from the DEM.
+    pub max_above_bank_m: Option<f64>,
+    /// Flooded land is counted out to this distance from the design line, in metres. Written only
+    /// when it is not the default.
+    pub flood_distance_m: f64,
+    /// The side of a cell of the flood grid, in metres. Written only when it is not the default.
+    pub flood_cell_m: f64,
+    /// Report each pool's flooded land and its height above bank-full with no flood cost and no
+    /// limit set. Off by default, and not written then.
+    pub flood_report: bool,
     pub structure_fixed: f64,
     pub structure_per_lift: f64,
     pub structure_power: f64,
@@ -79,6 +105,11 @@ impl Default for OptimiseSettings {
             wet_weight: 1.0,
             dry_weight: 1.0,
             length_weight: 0.0,
+            flood_cost_per_ha: 0.0,
+            max_above_bank_m: None,
+            flood_distance_m: FLOOD_DISTANCE_M,
+            flood_cell_m: FLOOD_CELL_M,
+            flood_report: false,
             structure_fixed: 1.0e5,
             structure_per_lift: 2.0e5,
             structure_power: 1.0,
@@ -137,7 +168,28 @@ impl OptimiseSettings {
         if self.length_weight != 0.0 {
             v["length_weight"] = json!(self.length_weight);
         }
+        // The flood settings, the same way: each is written only when it is not its default.
+        if self.flood_cost_per_ha != 0.0 {
+            v["flood_cost_per_ha"] = json!(self.flood_cost_per_ha);
+        }
+        if let Some(m) = self.max_above_bank_m {
+            v["max_above_bank_m"] = json!(m);
+        }
+        if self.flood_distance_m != FLOOD_DISTANCE_M {
+            v["flood_distance_m"] = json!(self.flood_distance_m);
+        }
+        if self.flood_cell_m != FLOOD_CELL_M {
+            v["flood_cell_m"] = json!(self.flood_cell_m);
+        }
+        if self.flood_report {
+            v["flood_report"] = json!(true);
+        }
         v
+    }
+
+    /// The flood terms are on: the search or the report reads flooded land and bank-full.
+    pub fn flood_on(&self) -> bool {
+        self.flood_cost_per_ha != 0.0 || self.max_above_bank_m.is_some() || self.flood_report
     }
 
     /// Lay the settings of `source` (an object, or null for none) over these. A key the stage does
@@ -186,6 +238,55 @@ impl OptimiseSettings {
                         ));
                     }
                     out.length_weight = w;
+                }
+                "flood_cost_per_ha" => {
+                    let w = f(k)?;
+                    if !(w.is_finite() && w >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `flood_cost_per_ha` must be a number >= 0 (a cost per \
+                             hectare of land a pool floods outside the river polygon; 0 is off)"
+                                .into(),
+                        ));
+                    }
+                    out.flood_cost_per_ha = w;
+                }
+                "max_above_bank_m" => {
+                    let m = maybe(k)?;
+                    if m.is_some_and(|m| !(m.is_finite() && m >= 0.0)) {
+                        return Err(DesignError::Input(
+                            "the setting `max_above_bank_m` must be a number of metres >= 0, or \
+                             null for no limit (the most a pool may stand above bank-full)"
+                                .into(),
+                        ));
+                    }
+                    out.max_above_bank_m = m;
+                }
+                "flood_distance_m" => {
+                    let d = f(k)?;
+                    if !(d.is_finite() && d > 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `flood_distance_m` must be a number of metres > 0 (how \
+                             far from the design line flooded land is counted)"
+                                .into(),
+                        ));
+                    }
+                    out.flood_distance_m = d;
+                }
+                "flood_cell_m" => {
+                    let d = f(k)?;
+                    if !(d.is_finite() && d > 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `flood_cell_m` must be a number of metres > 0 (the side \
+                             of a cell of the flood grid)"
+                                .into(),
+                        ));
+                    }
+                    out.flood_cell_m = d;
+                }
+                "flood_report" => {
+                    out.flood_report = v.as_bool().ok_or_else(|| {
+                        DesignError::Input("the setting `flood_report` must be true or false".into())
+                    })?
                 }
                 "structure_fixed" => out.structure_fixed = f(k)?,
                 "structure_per_lift" => out.structure_per_lift = f(k)?,
@@ -289,6 +390,23 @@ impl Session {
                 run_first: Stage::Alignment,
             });
         }
+        // Flooded land and bank-full are read from the ground levels: with no DEM there is nothing
+        // to read, so a flood cost or a bank limit is refused, never dropped.
+        let asked = self.optimise_settings(overrides)?;
+        if (self.dem_path().is_none() || terrain.is_none())
+            && (asked.flood_cost_per_ha != 0.0 || asked.max_above_bank_m.is_some())
+        {
+            let what = if asked.flood_cost_per_ha != 0.0 {
+                "a flood cost (`flood_cost_per_ha`)"
+            } else {
+                "a limit above bank-full (`max_above_bank_m`)"
+            };
+            return Err(DesignError::Input(format!(
+                "{what} cannot be worked out without a DEM: flooded land and bank-full are read \
+                 from the ground levels. Import a DEM (`owd import --dem FILE`), or run with the \
+                 flood cost at 0 and no limit."
+            )));
+        }
         let Some(dem_path) = self.dem_path().map(str::to_string) else {
             return Err(DesignError::Input(
                 "the optimise stage needs a DEM: import one first (`owd import --dem FILE`)".into(),
@@ -384,14 +502,127 @@ impl Session {
         );
         let reach = earthworks_reach_cost(&table, wet, dry);
         let structure = move |lift: f64| fixed + coeff * libm::pow(lift, power);
-        let search = search_cascade(&cfg, &reach, &structure).map_err(refuse)?;
+        // The flood terms (off by default: then the search is the one above, unchanged). The ground
+        // beside the baseline is read once; every (site, site, level) is then two reads of a table.
+        let flood_ground = if typed.flood_on() {
+            let field = FloodField::build(
+                &baseline,
+                terrain,
+                &river,
+                typed.flood_distance_m,
+                typed.flood_cell_m,
+            )
+            .map_err(refuse)?;
+            let banks = BankProfile::new(&field);
+            if typed.max_above_bank_m.is_some() && !banks.known() {
+                return Err(DesignError::Input(format!(
+                    "bank-full cannot be estimated, so `max_above_bank_m` cannot be held: no cell \
+                     of the flood grid ({} m cells) touches the river polygon with a DEM value. \
+                     Use smaller cells (`flood_cell_m`) or check the river polygon and the DEM.",
+                    typed.flood_cell_m
+                )));
+            }
+            let mut breaks: Vec<f64> = vec![cfg.start_m, cfg.terminal_m];
+            breaks.extend(cfg.candidate_sites_m.iter().copied());
+            let flood_table = FloodTable::new(&field, &breaks, &cascade_levels(&cfg));
+            Some((field, flood_table, banks))
+        } else {
+            None
+        };
+        let flood_terms = flood_ground
+            .as_ref()
+            .map(|(field, flood_table, banks)| FloodTerms {
+                field,
+                table: flood_table,
+                banks,
+                cost_per_ha: typed.flood_cost_per_ha,
+                max_above_bank_m: typed.max_above_bank_m,
+            });
+        let search = match flood_terms {
+            Some(terms) => search_cascade(&cfg, &with_flood_cost(&reach, terms), &structure),
+            None => search_cascade(&cfg, &reach, &structure),
+        }
+        .map_err(refuse)?;
         let Some(best) = search.best() else {
+            if let (Some(terms), Some(limit)) = (flood_terms, typed.max_above_bank_m) {
+                let mut kept: Vec<f64> = cfg
+                    .candidate_sites_m
+                    .iter()
+                    .copied()
+                    .filter(|c| cfg.start_m < *c && *c <= cfg.terminal_m)
+                    .collect();
+                kept.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+                return Err(DesignError::Input(explain_blocked(
+                    terms.banks,
+                    limit,
+                    cfg.start_m,
+                    cfg.base_level_m,
+                    &kept,
+                    &cfg.lifts_m,
+                    &search.levels_m,
+                    cfg.terminal_m,
+                    cfg.terminal_min_level_m,
+                    cfg.min_spacing_m,
+                )));
+            }
             return Err(DesignError::Input(
                 "no cascade reaches the terminal level: raise the lifts or the candidate sites"
                     .into(),
             ));
         };
         let pools = best.pools();
+        // What each pool of the chosen cascade floods, and how it stands against the banks.
+        let mut flood_warnings: Vec<String> = Vec::new();
+        let flood_report = flood_terms.map(|terms| {
+            let mut total_m2 = 0.0;
+            let mut any_limit = false;
+            let rows: Vec<Value> = pools
+                .iter()
+                .enumerate()
+                .map(|(i, &(a, b, level))| {
+                    let f = terms.field.flooded(a, b, level);
+                    let e = terms.banks.at_ends(a, b, level);
+                    total_m2 += f.area_m2;
+                    any_limit |= f.reaches_limit;
+                    if f.reaches_limit {
+                        flood_warnings.push(format!(
+                            "the pool from {a:.0} m to {b:.0} m at {level:.2} m floods land out to \
+                             the edge of the flood grid ({:.0} m from the line, or the edge of the \
+                             DEM): its {:.1} ha of flooded land is a lower bound",
+                            typed.flood_distance_m,
+                            f.area_ha()
+                        ));
+                    }
+                    json!({
+                        "start_m": a, "end_m": b, "level_m": level,
+                        // The lift of the weir at the pool's lower end; none below the first weir.
+                        "lift_m": i.checked_sub(1).and_then(|w| best.weirs.get(w)).map(|w| w.lift_m),
+                        "flooded_ha": f.area_ha(),
+                        "flood_cost": typed.flood_cost_per_ha * f.area_ha(),
+                        "reaches_limit": f.reaches_limit,
+                        "above_bank_lower_m": num_or_null(e.above_bank_lower_m),
+                        "above_bank_upper_m": num_or_null(e.above_bank_upper_m),
+                        "max_above_bank_m": num_or_null(e.max_above_bank_m),
+                        "depth_over_river_lower_m": num_or_null(e.depth_over_river_lower_m),
+                        "depth_over_river_upper_m": num_or_null(e.depth_over_river_upper_m),
+                    })
+                })
+                .collect();
+            let flood_cost = typed.flood_cost_per_ha * total_m2 / 10_000.0;
+            json!({
+                "flood_cost_per_ha": typed.flood_cost_per_ha,
+                "max_above_bank_m": typed.max_above_bank_m,
+                "distance_m": typed.flood_distance_m,
+                "cell_m": typed.flood_cell_m,
+                "bank_full": BANK_FULL_ESTIMATE,
+                "flooded_ha": total_m2 / 10_000.0,
+                "flood_cost": flood_cost,
+                // The cut part of the cascade's reach cost: the reach cost less the flood cost.
+                "cut_cost": best.reach_cost() - flood_cost,
+                "reaches_limit": any_limit,
+                "pools": rows,
+            })
+        });
 
         // The pool lattice.
         let mut spec = SectionSpec::new(HalfWidthSpec::Fixed(half_width));
@@ -564,6 +795,10 @@ impl Session {
             for p in out.looped_pools() {
                 w.push(json!(looped_warning(p)));
             }
+            // A pool whose flooded land runs to the edge of the flood grid: its area is a lower bound.
+            for f in &flood_warnings {
+                w.push(json!(f));
+            }
         }
 
         let profile_points = self.pool_profile(&baseline, &pools)?;
@@ -586,6 +821,10 @@ impl Session {
             },
             "design_line": refined,
         });
+        // With the flood terms on, the cascade says what each pool floods; off, nothing is added.
+        if let Some(f) = flood_report {
+            st["results"]["cascade"]["flood"] = f;
+        }
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Optimise);
         self.doc["stages"]["optimise"]["depends_on"] = json!(h);

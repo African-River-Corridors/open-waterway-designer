@@ -537,6 +537,21 @@ impl Session {
                     }
                 }
             }
+            // The flooded land of each pool (written with the flood terms on): the same pools,
+            // listed from the other end. A pool's lower and upper ends are places on the ground,
+            // so they keep their values; the lift changes sign as the weir's does.
+            if let Some(p) = r["cascade"]["flood"]["pools"].as_array_mut() {
+                p.reverse();
+                for q in p.iter_mut() {
+                    if let (Some(a), Some(b)) = (q["start_m"].as_f64(), q["end_m"].as_f64()) {
+                        q["start_m"] = json!((baseline_len - b).max(0.0));
+                        q["end_m"] = json!((baseline_len - a).max(0.0));
+                    }
+                    if let Some(l) = q["lift_m"].as_f64() {
+                        q["lift_m"] = json!(-l);
+                    }
+                }
+            }
             turn_design_line(&mut r["design_line"], baseline_len);
             if fresh.contains(&Stage::Optimise) {
                 notes.push(OpenNote::action(
