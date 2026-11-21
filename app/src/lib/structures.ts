@@ -14,14 +14,16 @@ export const POOL_SURFACE_PROTOCOL = "owd-pool-dem";
 
 /** The tile address the map source takes for pool water `id`. A new flood mask has a new number. */
 export const poolTemplate = (id: number) => `${POOL_PROTOCOL}://${id}/{z}/{x}/{y}`;
-export const poolSurfaceTemplate = (id: number) => `${POOL_SURFACE_PROTOCOL}://${id}/{z}/{x}/{y}`;
+export const poolSurfaceTemplate = (id: number, state = "before", rev = 0) => (state === "before" ? `${POOL_SURFACE_PROTOCOL}://${id}/{z}/{x}/{y}` : `${POOL_SURFACE_PROTOCOL}://${id}/${state}/${rev}/{z}/{x}/{y}`);
 
-/** The tile a pool water address names (either scheme), or null when it is not one. */
-export function parsePoolUrl(url: string): { surface: boolean; id: number; z: number; x: number; y: number } | null {
-  const m = /^owd-pool(-dem)?:\/\/(\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(url);
-  if (!m) return null;
-  const [id, z, x, y] = m.slice(2).map(Number);
-  return { surface: !!m[1], id, z, x, y };
+/** The tile a pool water address names (either scheme), or null when it is not one. The terrain with the
+ * water on it may name the terrain state it stands on (MAP-5: "after", the cut channel filled to the pool
+ * level) and the number of the cut. */
+export function parsePoolUrl(url: string): { surface: boolean; id: number; z: number; x: number; y: number; state?: string } | null {
+  const m = /^owd-pool(-dem)?:\/\/(\d+)\/(?:([a-z]+)\/\d+\/)?(\d+)\/(\d+)\/(\d+)$/.exec(url);
+  if (!m || (m[3] && !m[1])) return null;
+  const [id, z, x, y] = [m[2], m[4], m[5], m[6]].map(Number);
+  return { surface: !!m[1], id, z, x, y, ...(m[3] ? { state: m[3] } : {}) };
 }
 
 const m1 = (v: number) => v.toFixed(1);

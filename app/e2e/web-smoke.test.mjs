@@ -672,6 +672,31 @@ describe("OWD web smoke tests", () => {
     assert.equal(await text(b, "bank-limit-stored"), "Stored: no limit");
   });
 
+  it("shows that a design with no DEM was optimised on plan area, not volume (OPT-1)", async () => {
+    // The synthetic example names no DEM. The command line optimises it on plan area; the app opens the result.
+    const EXAMPLE = path.resolve(here, "../../examples/synthetic-river.owd");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-plan-area-"));
+    const doc = path.join(dir, "synthetic-river.owd");
+    fs.copyFileSync(EXAMPLE, doc);
+    const said = execFileSync(CLI, ["optimise", doc, "--length-weight", "1"], { encoding: "utf8", stdio: "pipe" });
+    assert.match(said, /optimised on plan area, not volume \(no DEM\)/);
+    const native = JSON.parse(fs.readFileSync(doc, "utf8"));
+    assert.equal(native.stages.optimise.results.optimised_on, "plan_area");
+    assert.deepEqual(native.stages.optimise.results.pools, []);
+
+    const b = await start();
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    await pick(b, async () => (await openButton(b)).click(), doc);
+    await until(b, "the design", async () => (await text(b, "file-label")).includes("synthetic-river.owd"));
+    await until(b, "the plan-area note", async () => await exists(b, "plan-area-note"));
+    assert.equal(
+      await text(b, "plan-area-note"),
+      "Optimised on plan area, not volume: no elevation model is loaded. The search kept the channel inside the river polygon; it chose no weirs. Load a DEM and run Optimise again to optimise on volume.",
+    );
+    assert.equal(await exists(b, "error"), false);
+  });
+
   it("opens an older-format design with one quiet information row and the DEM warning; Details lists the notes, Dismiss removes a row, another design clears them (UI-3)", async () => {
     // A format 0.4 file whose stages were all up to date (a synthetic river; its DEM is not loaded).
     const OLD = path.resolve(here, "../../crates/owd-format/tests/data/format-0.4-lattice-only.owd");
@@ -1124,7 +1149,8 @@ describe("OWD web smoke tests", () => {
     assert.equal(await button.getAttribute("aria-expanded"), "true");
     // The seven layers of MAP-1, and the terrain shading (MAP-2) and the contours (MAP-3), which have tests of their own below.
     // And the weirs and locks, the pool levels and the pool water (MAP-4), tested below too.
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 5);
+    // And the channel and the cut extent (MAP-5), tested below as well.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 7);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);
@@ -2074,6 +2100,385 @@ describe("OWD web smoke tests", () => {
     await (await tid(b, "layers-button")).click();
     assert.deepEqual(await box("pool-water"), { checked: true, disabled: true, row: "Pool water load a DEM" });
     assert.equal(await mapAttr("data-pool-water"), "off");
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("the channel and its cut (MAP-5): the Channel and Cut extent layers, the cut read-out, Before and After in 3D with shading and contours, all remembered, the design unchanged, and the cross-section drawn to the ground", async () => {
+    // The map needs WebGL: headless Chrome gets it from SwiftShader, in software.
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const mapAttr = async (name) => (await tid(b, "plan-map")).getAttribute(name);
+    const box = (id) => b.execute((i) => {
+      const c = document.querySelector(`[data-testid="layer-${i}"]`);
+      return { checked: c.checked, disabled: c.disabled, row: c.closest("label").textContent.replace(/\s+/g, " ").trim() };
+    }, id);
+    const mapState = () => b.execute(() => {
+      const m = window.__owdMap;
+      const t = m.getTerrain();
+      const sources = m.getStyle().sources;
+      return {
+        terrain: t ? t.source : null,
+        sources: ["dem", "dem-shade", "dem-after", "dem-after-shade", "cut", "contours"].filter((id) => m.getSource(id)),
+        afterTiles: sources["dem-after"]?.tiles?.[0] ?? null,
+        cutTiles: sources.cut?.tiles?.[0] ?? null,
+        contourTiles: sources.contours?.tiles?.[0] ?? null,
+        shadeFrom: m.getLayer("terrain-shading")?.source ?? null,
+        layers: m.getStyle().layers.map((l) => l.id).filter((id) => /^(channel|cut)/.test(id)),
+        channelVisible: m.getLayer("channel-bed") ? m.getLayoutProperty("channel-bed", "visibility") !== "none" : false,
+        bed: m.getSource("channel-bed") ? m.getStyle().sources["channel-bed"].data.features.length : 0,
+        daylight: m.getSource("cut-daylight") ? m.getStyle().sources["cut-daylight"].data.features.length : 0,
+      };
+    });
+    /** Tick a layer on or off. A floating panel may lie over the list after a station pick: the tick is pressed in
+     * the page, with a click event (`pick` below turns `click()` off for inputs). */
+    const tick = (id) => b.execute((i) => void document.querySelector(`[data-testid="layer-${i}"]`).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })), id);
+    const savedText = async () => {
+      await b.execute(() => window.__owdPlatform.call("snapshot"));
+      await new Promise((r) => setTimeout(r, 300));
+      return b.execute(() => JSON.parse(localStorage.getItem("owd.lastDesign")).text);
+    };
+    await until(b, "the map", () => b.execute(() => !!window.__owdMap));
+
+    // No design: both ticks are there, greyed, and say why. The channel starts on and the cut extent off.
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box("channel"), { checked: true, disabled: true, row: "Channel no design line yet" });
+    assert.deepEqual(await box("cut"), { checked: false, disabled: true, row: "Cut extent load the DEM first" });
+    assert.equal(await exists(b, "terrain-state"), false);
+    assert.equal(await exists(b, "legend-channel"), false);
+
+    // The example has a design line, a size and a water level: the channel is drawn, as a band and its edges.
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the channel on the map", async () => (await mapAttr("data-channel")) !== "");
+    assert.deepEqual(await box("channel"), { checked: true, disabled: false, row: "Channel" });
+    let m = await mapState();
+    assert.ok(m.bed >= 1 && m.channelVisible, JSON.stringify(m));
+    assert.deepEqual(m.layers, ["channel-bed", "channel-bed-casing", "channel-bed-edges", "channel-water", "cut-daylight-casing", "cut-daylight"]);
+    assert.equal(await exists(b, "legend-channel"), true);
+    assert.equal(await exists(b, "legend-channel-water"), true);
+    const first = await b.execute(() => window.__owdPlatform.call("channel_geometry"));
+    assert.ok(first.geometry.bed.left[0].length === first.geometry.stations && first.geometry.water_surface.polygons.length >= 1);
+    // The example's volumes record was saved without its stations: there is no cut to show until the volumes run again.
+    assert.equal(first.geometry.daylight, null);
+    assert.deepEqual(await box("cut"), { checked: false, disabled: true, row: "Cut extent run the volumes first" });
+    assert.equal((await b.execute(() => window.__owdPlatform.call("terrain_info"))).cut, null);
+
+    // Run the volumes: the stations are stored, and the cut is there.
+    await (await tid(b, "run-volumes")).click();
+    await until(b, "the cut", async () => !(await box("cut")).disabled, 180000);
+    const info = await b.execute(() => window.__owdPlatform.call("terrain_info"));
+    assert.ok(Number.isInteger(info.cut), JSON.stringify(info));
+    const view = await b.execute(() => window.__owdPlatform.call("channel_geometry"));
+    assert.ok(view.geometry.from_volumes && view.geometry.daylight.polygons.length >= 1);
+    assert.equal(view.legend.length, 6);
+    assert.notEqual(view.key, first.key);
+    await until(b, "the daylight lines on the map", async () => (await mapState()).daylight >= 2);
+    const before = await savedText();
+    await b.execute(() => {
+      window.__mapErrors = [];
+      window.__owdMap.on("error", (e) => window.__mapErrors.push(`${e.sourceId ?? ""}: ${e.error?.message ?? e.error}`));
+    });
+
+    // The cut extent: a picture of the depth of cut, made by the engine one tile at a time, with a key.
+    assert.equal(await mapAttr("data-cut"), "off");
+    assert.equal(await exists(b, "legend-cut"), false);
+    await tick("cut");
+    await until(b, "the cut-depth layer", async () => (await mapAttr("data-cut")) === "on");
+    m = await mapState();
+    assert.match(m.cutTiles, /^owd-cut:\/\/\d+\/\d+\/\{z\}\/\{x\}\/\{y\}$/);
+    assert.ok(m.layers.includes("cut-depth"));
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["cut"]');
+    assert.equal(await exists(b, "legend-cut"), true);
+    assert.equal(await exists(b, "legend-cut-daylight"), true);
+    assert.equal((await b.$$('[data-testid="legend-cut-dredge"] .swatch')).length, 6);
+    assert.equal((await b.$$('[data-testid="legend-cut-dry"] .swatch')).length, 6);
+
+    // A point of the cut, found on the engine's own geometry: between the bed edge and the daylight line.
+    const point = await b.execute(async (g) => {
+      const day = g.daylight, n = day.left[0].length;
+      let best = null;
+      for (let i = 2; i < n - 2; i += 1) {
+        for (const t of [0.5, 0.25, 0.75, 0.1, 0.9]) {
+          const lon = day.left[0][i][0] + (day.right[0][i][0] - day.left[0][i][0]) * t;
+          const lat = day.left[0][i][1] + (day.right[0][i][1] - day.left[0][i][1]) * t;
+          const c = await window.__owdPlatform.call("cut_at", { lon, lat });
+          if (c && (!best || c.depth_m > best.c.depth_m)) best = { lon, lat, c };
+        }
+      }
+      return best;
+    }, view.geometry);
+    assert.ok(point, "some point between the daylight lines is cut");
+    const c = point.c;
+    assert.ok(c.depth_m > 0 && Math.abs(c.ground_m - c.after_m - c.depth_m) < 1e-6, JSON.stringify(c));
+    assert.ok(c.kind === "dredge" || c.kind === "dry");
+    assert.equal(await b.execute(async () => (await window.__owdPlatform.call("cut_at", { lon: 0, lat: 0 }))), null);
+    console.log(`the deepest cut found: ${c.depth_m.toFixed(2)} m (${c.kind}) at chainage ${c.chainage_m.toFixed(0)} m, ground ${c.ground_m.toFixed(2)} m, after ${c.after_m.toFixed(2)} m`);
+
+    // The engine's tiles there: the cut-depth picture has colour, and the After ground is the Before ground cut down.
+    const tiles = await b.execute(async (lon, lat, zoom) => {
+      const k = 2 ** zoom;
+      const x = Math.floor(((lon + 180) / 360) * k);
+      const sin = Math.sin((lat * Math.PI) / 180);
+      const y = Math.floor((0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k);
+      const pixels = async (png) => {
+        const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(bitmap, 0, 0);
+        return ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      };
+      const heights = (px) => Array.from({ length: px.length / 4 }, (_, i) => px[4 * i] * 256 + px[4 * i + 1] + px[4 * i + 2] / 256 - 32768);
+      const t0 = performance.now();
+      const afterPng = await window.__owdPlatform.call("terrain_tile", { z: zoom, x, y, state: "after" });
+      const afterMs = performance.now() - t0;
+      const t1 = performance.now();
+      const cutPng = await window.__owdPlatform.call("cut_tile", { z: zoom, x, y });
+      const cutMs = performance.now() - t1;
+      const was = heights(await pixels(await window.__owdPlatform.call("terrain_tile", { z: zoom, x, y })));
+      const now = heights(await pixels(afterPng));
+      const cut = await pixels(cutPng);
+      let lower = 0, higher = 0, deepest = 0, coloured = 0, clear = 0;
+      for (let i = 0; i < was.length; i += 1) {
+        if (now[i] < was[i] - 0.01) lower += 1;
+        if (now[i] > was[i] + 0.01) higher += 1;
+        deepest = Math.max(deepest, was[i] - now[i]);
+        if (cut[4 * i + 3] === 255) coloured += 1;
+        else if (cut[4 * i + 3] === 0) clear += 1;
+      }
+      const far = await window.__owdPlatform.call("cut_tile", { z: 3, x: 0, y: 0 });
+      let refused = "";
+      try {
+        await window.__owdPlatform.call("terrain_tile", { z: zoom, x, y, state: "pool" });
+      } catch (e) {
+        refused = String(e);
+      }
+      return { lower, higher, deepest, coloured, clear, total: was.length, far: far.length, refused, afterMs, cutMs };
+    }, point.lon, point.lat, info.max_zoom);
+    console.log(`After terrain tile in the browser (wasm, SwiftShader run): ${tiles.afterMs.toFixed(1)} ms; cut-depth tile: ${tiles.cutMs.toFixed(1)} ms; ${tiles.lower} of ${tiles.total} pixels cut, the deepest ${tiles.deepest.toFixed(2)} m`);
+    assert.ok(tiles.lower > 0 && tiles.higher === 0, `the After ground is never above the Before ground: ${JSON.stringify(tiles)}`);
+    assert.ok(tiles.coloured > 0 && tiles.coloured + tiles.clear === tiles.total, `the picture is coloured where the cut is and clear elsewhere: ${JSON.stringify(tiles)}`);
+    assert.ok(Math.abs(tiles.coloured - tiles.lower) <= tiles.total * 0.02, `the picture covers the cut: ${JSON.stringify(tiles)}`);
+    assert.equal(tiles.far, 0, "a tile with no cut has no bytes");
+    assert.match(tiles.refused, /no terrain state `pool`/);
+
+    // A click on the cut reads the point out.
+    const at = await b.execute(async (lon, lat) => {
+      const map = window.__owdMap;
+      map.jumpTo({ center: [lon, lat], zoom: 15 });
+      await new Promise((r) => map.once("idle", r));
+      const p = map.project([lon, lat]);
+      const r = map.getCanvas().getBoundingClientRect();
+      return { x: Math.round(r.left + p.x), y: Math.round(r.top + p.y) };
+    }, point.lon, point.lat);
+    await b.action("pointer").move({ x: at.x, y: at.y }).down().up().perform();
+    await until(b, "the cut read-out", () => exists(b, "cut-readout"));
+    const read = (await text(b, "cut-readout")).replace(/\s+/g, " ");
+    for (const word of ["Chainage", "Ground before", "Level after", "Depth of cut", "Kind", "Station", "m²"]) assert.ok(read.includes(word), `${word} in: ${read}`);
+    assert.match(read, new RegExp(c.kind === "dredge" ? "dredge \\(in the river\\)" : "dry cut"));
+    await (await tid(b, "cut-readout-close")).click();
+    assert.equal(await exists(b, "cut-readout"), false);
+
+    // 3D: the state control comes with it. Before is the DEM as it is.
+    assert.equal(await exists(b, "terrain-state"), false);
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the terrain on the map", async () => (await mapAttr("data-terrain")) === "on");
+    const control = await tid(b, "terrain-state");
+    assert.equal(await control.getAttribute("role"), "group");
+    assert.equal(await control.getAttribute("data-state"), "before");
+    m = await mapState();
+    assert.equal(m.terrain, "dem");
+    assert.deepEqual(m.sources, ["dem", "dem-shade", "dem-after", "dem-after-shade", "cut"]);
+    assert.match(m.afterTiles, /^owd-dem:\/\/\d+\/after\/\d+\/\{z\}\/\{x\}\/\{y\}$/);
+    const afterButton = await tid(b, "terrain-state-after");
+    const beforeButton = await tid(b, "terrain-state-before");
+    assert.equal(await afterButton.getTagName(), "button");
+    assert.deepEqual([await beforeButton.getAttribute("aria-pressed"), await afterButton.getAttribute("aria-pressed")], ["true", "false"]);
+    // After: the map's terrain is the second source, the ground with the channel cut into it.
+    await afterButton.click();
+    await until(b, "the After ground", async () => (await mapAttr("data-terrain-state")) === "after");
+    assert.equal((await mapState()).terrain, "dem-after");
+    assert.deepEqual([await beforeButton.getAttribute("aria-pressed"), await afterButton.getAttribute("aria-pressed")], ["false", "true"]);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-terrain-state")), "after");
+    await until(b, "the After tiles", () => b.execute(() => window.__owdMap.isSourceLoaded("dem-after")), 120000);
+    // By the keyboard: Before with Enter on its button, and Compare shows the other ground while Space is held.
+    await b.execute(() => document.querySelector('[data-testid="terrain-state-before"]').focus());
+    await b.keys("Enter");
+    await until(b, "Before by the keyboard", async () => (await mapAttr("data-terrain-state")) === "before");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-terrain-state")), null);
+    await b.execute(() => document.querySelector('[data-testid="terrain-compare"]').focus());
+    await b.action("key").down(" ").perform(true);
+    await until(b, "the other ground while Compare is held", async () => (await mapAttr("data-terrain-state")) === "after");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-terrain-state")), null, "a look is not a choice");
+    await b.action("key").up(" ").perform();
+    await until(b, "back when Compare is let go", async () => (await mapAttr("data-terrain-state")) === "before");
+    await afterButton.click();
+    await until(b, "After again", async () => (await mapAttr("data-terrain-state")) === "after");
+
+    // The shading and the contours follow the state.
+    await tick("terrain-shading");
+    await until(b, "the shading of the After ground", async () => (await mapState()).shadeFrom === "dem-after-shade");
+    await tick("contours");
+    await until(b, "the contours of the After ground", async () => /^owd-contour:\/\/\d+\/after\/\d+\/auto\//.test((await mapState()).contourTiles ?? ""));
+    await beforeButton.click();
+    await until(b, "the shading of the ground as it is", async () => (await mapState()).shadeFrom === "dem-shade");
+    assert.match((await mapState()).contourTiles, /^owd-contour:\/\/\d+\/auto\//);
+    await afterButton.click();
+    await until(b, "After once more", async () => (await mapState()).terrain === "dem-after");
+    await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()), 180000);
+    if (SHOTS) {
+      fs.mkdirSync(SHOTS, { recursive: true });
+      await b.saveScreenshot(path.join(SHOTS, "web-cut-after-3d.png"));
+    }
+    assert.deepEqual(await b.execute(() => window.__mapErrors.filter((e) => /^(dem|cut|contours)/.test(e))), [], "no terrain, cut or contour tile failed");
+    // 3D off: the control stays while the shading or the contours are on (they follow the state), and goes with them.
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the terrain off", async () => (await mapAttr("data-terrain")) === "off");
+    assert.equal(await exists(b, "terrain-state"), true);
+    await tick("terrain-shading");
+    await tick("contours");
+    await until(b, "the control to go", async () => !(await exists(b, "terrain-state")));
+
+    // The cross-section is drawn to the ground: the cut slopes stop at the daylight points.
+    // The click on the cut may have picked a station too, which opens the panel.
+    if (!(await exists(b, "section-panel"))) await (await tid(b, "section-toggle")).click();
+    await until(b, "a cross-section", async () => (await exists(b, "cs-chainage")), 120000);
+    const drawn = await b.execute(async () => {
+      const svg = document.querySelector('[data-testid="cross-section-svg"]');
+      const chainage = Number(document.querySelector('[data-testid="cross-section"]').dataset.chainage);
+      const option = (await window.__owdPlatform.call("map_geometry")).options[0].id;
+      const s = await window.__owdPlatform.call("cross_section", { option, chainage });
+      const finite = (v) => v != null && Number.isFinite(v);
+      const marks = [...document.querySelectorAll('[data-testid="cs-daylight"]')].map((c) => ({ offset: Number(c.dataset.offset), level: Number(c.dataset.level) }));
+      return { lo: Number(svg.dataset.lo), hi: Number(svg.dataset.hi), ground: Math.max(...s.terrain_m.filter(finite)), template: Math.max(...s.cut_face_m.filter(finite)), water: s.water_level_m, marks, face: document.querySelector('[data-testid="cs-face"]').getAttribute("d").length };
+    });
+    console.log(`cross-section: the plot runs ${drawn.lo} m to ${drawn.hi} m; the ground tops at ${drawn.ground.toFixed(2)} m, the stored template at ${drawn.template.toFixed(2)} m; ${drawn.marks.length} daylight point(s)`);
+    assert.ok(drawn.hi <= Math.max(drawn.ground, drawn.water) + 0.011, `the plot is scaled to the ground, not to the template: ${JSON.stringify(drawn)}`);
+    assert.ok(drawn.marks.length <= 2 && drawn.face > 0);
+    for (const mark of drawn.marks) assert.ok(mark.level <= drawn.ground + 0.011, "a daylight point is on the ground");
+
+    // Nothing of this is in the design: the saved text is the same, byte for byte.
+    const after = await savedText();
+    assert.equal(after, before, "the design file is byte-identical after the layers, the read-out and Before and After");
+    assert.doesNotMatch(after, /owd-cut|owd-map-terrain-state|dem-after|daylight/);
+
+    // Remembered on this machine. A reload has the design and not the DEM: the cut waits for it.
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-terrain-state")), "after");
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["cut"]');
+    await b.refresh();
+    await loaded(b);
+    await until(b, "the example after a reload", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the map again", () => b.execute(() => !!window.__owdMap));
+    await until(b, "the channel again", async () => (await mapAttr("data-channel")) !== "");
+    await (await tid(b, "layers-button")).click();
+    assert.deepEqual(await box("channel"), { checked: true, disabled: false, row: "Channel" });
+    assert.deepEqual(await box("cut"), { checked: true, disabled: true, row: "Cut extent load the DEM first" });
+    assert.equal(await mapAttr("data-cut"), "off");
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the cut to come back with the DEM", async () => (await mapAttr("data-cut")) === "on", 60000);
+    assert.equal(await mapAttr("data-terrain-state"), "after", "the state is remembered");
+    // The channel tick off: its layers go, and the legend with them.
+    await tick("channel");
+    await until(b, "the channel to go", async () => !(await mapState()).channelVisible);
+    assert.equal(await exists(b, "legend-channel"), false);
+    assert.equal(await b.execute(() => localStorage.getItem("owd-map-layers")), '["channel","cut"]');
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("After with the pool water (MAP-4 with MAP-5): the 3D view stands on the cut ground with the cut channel filled to the pool level", async () => {
+    // The synthetic example with three pools, as the weirs test makes it.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-cut-pools-"));
+    const doc = path.join(dir, "river-pools.owd");
+    fs.copyFileSync(path.join(FIXTURES, "river-example.owd"), doc);
+    fs.writeFileSync(path.join(dir, "pools.csv"), "chainage_m,level_m\n0,1.0\n1000,2.5\n2000,4.0\n");
+    execFileSync(CLI, ["import", doc, "--water-pools", path.join(dir, "pools.csv")], { encoding: "utf8" });
+    const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
+    await b.url(`${origin}/owd/app`);
+    await loaded(b);
+    const mapAttr = async (name) => (await tid(b, "plan-map")).getAttribute(name);
+    const tick = (id) => b.execute((i) => void document.querySelector(`[data-testid="layer-${i}"]`).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })), id);
+    const mapState = () => b.execute(() => {
+      const m = window.__owdMap;
+      return { terrain: m.getTerrain()?.source ?? null, water: m.getStyle().sources["dem-water"]?.tiles?.[0] ?? null };
+    });
+    await until(b, "the map", () => b.execute(() => !!window.__owdMap));
+    await pick(b, async () => (await openButton(b)).click(), doc);
+    await until(b, "the file name", async () => (await text(b, "file-label")).includes("river-pools.owd"));
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the DEM", async () => (await text(b, "data-dem")).includes("river-dem.tif"));
+    // The pools changed the water level: the volumes run again, and the cut is there.
+    await (await tid(b, "run-volumes")).click();
+    await until(b, "the cut", async () => Number.isInteger((await b.execute(() => window.__owdPlatform.call("terrain_info")))?.cut), 180000);
+    await (await tid(b, "layers-button")).click();
+    await until(b, "the pool water tick", async () => !(await b.execute(() => document.querySelector('[data-testid="layer-pool-water"]').disabled)));
+    await tick("pool-water");
+    await until(b, "the pool water on the map", async () => (await mapAttr("data-pool-water")) === "on", 120000);
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the water terrain", async () => (await mapAttr("data-water-terrain")) === "on");
+    // Before: the water on the ground as it is.
+    assert.match((await mapState()).water, /^owd-pool-dem:\/\/\d+\/\{z\}\/\{x\}\/\{y\}$/);
+    // After: the water on the cut ground, with the cut filled.
+    await (await tid(b, "terrain-state-after")).click();
+    await until(b, "the water on the After ground", async () => /^owd-pool-dem:\/\/\d+\/after\/\d+\//.test((await mapState()).water ?? ""));
+    assert.equal((await mapState()).terrain, "dem-water");
+    assert.equal(await mapAttr("data-terrain-state"), "after");
+    // The engine's tiles at the deepest cut: the ground as it is; the cut ground; the cut ground with the water on it.
+    const tiles = await b.execute(async () => {
+      const p = window.__owdPlatform;
+      const g = (await p.call("channel_geometry")).geometry;
+      const info = await p.call("terrain_info");
+      const water = await p.call("pool_water_info");
+      // The deepest dry cut between the daylight lines: high ground the channel is cut through.
+      const day = g.daylight;
+      let best = null;
+      for (let i = 2; i < day.left[0].length - 2; i += 1) {
+        for (const t of [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]) {
+          const lon = day.left[0][i][0] + (day.right[0][i][0] - day.left[0][i][0]) * t;
+          const lat = day.left[0][i][1] + (day.right[0][i][1] - day.left[0][i][1]) * t;
+          const c = await p.call("cut_at", { lon, lat });
+          if (c && c.kind === "dry" && (!best || c.depth_m > best.c.depth_m)) best = { lon, lat, c };
+        }
+      }
+      const zoom = info.max_zoom, k = 2 ** zoom;
+      const x = Math.floor(((best.lon + 180) / 360) * k);
+      const sin = Math.sin((best.lat * Math.PI) / 180);
+      const y = Math.floor((0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * k);
+      const heights = async (png) => {
+        const bitmap = await createImageBitmap(new Blob([png], { type: "image/png" }), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(bitmap, 0, 0);
+        const px = ctx.getImageData(0, 0, bitmap.width, bitmap.height).data;
+        return Array.from({ length: px.length / 4 }, (_, i) => px[4 * i] * 256 + px[4 * i + 1] + px[4 * i + 2] / 256 - 32768);
+      };
+      const ground = await heights(await p.call("terrain_tile", { z: zoom, x, y }));
+      const after = await heights(await p.call("terrain_tile", { z: zoom, x, y, state: "after" }));
+      const wet = await heights(await p.call("pool_surface_tile", { id: water.id, z: zoom, x, y }));
+      const filled = await heights(await p.call("pool_surface_tile", { id: water.id, z: zoom, x, y, state: "after" }));
+      const levels = water.pools.map((q) => q.level_m);
+      let below = 0, changed = 0, standing = 0, offLevel = 0, aboveOld = 0, deepest = 0;
+      for (let i = 0; i < filled.length; i += 1) {
+        if (filled[i] < after[i] - 0.01) below += 1;
+        // Where nothing is cut, the water is as on the ground as it is.
+        if (Math.abs(after[i] - ground[i]) <= 0.01 && Math.abs(filled[i] - wet[i]) > 0.01) changed += 1;
+        // Dry ground before (no water on it), cut to below the pool level: water stands in the cut.
+        if (Math.abs(wet[i] - ground[i]) <= 0.01 && filled[i] > after[i] + 0.01) {
+          standing += 1;
+          deepest = Math.max(deepest, filled[i] - after[i]);
+          if (!levels.some((l) => Math.abs(l - filled[i]) < 0.01)) offLevel += 1;
+          if (filled[i] > ground[i] + 0.01) aboveOld += 1;
+        }
+      }
+      return { c: best.c, levels, below, changed, standing, offLevel, aboveOld, deepest };
+    });
+    console.log(`After with the pool water, in the tile of the deepest dry cut (chainage ${tiles.c.chainage_m.toFixed(0)} m, ${tiles.c.depth_m.toFixed(1)} m deep): water stands in the cut on ${tiles.standing} pixels of ground that was dry, up to ${tiles.deepest.toFixed(2)} m deep, at the pool levels ${tiles.levels.join(", ")} m`);
+    assert.ok(tiles.standing > 0, `the cut channel is filled where it goes through dry ground: ${JSON.stringify(tiles)}`);
+    // Between the two stations either side of a weir the level runs from one pool's to the next: a few pixels.
+    assert.ok(tiles.offLevel <= tiles.standing * 0.05, `the water in the cut is at a pool's level: ${JSON.stringify(tiles)}`);
+    // Ground below the pool level that the flood did not reach, and the cut now joins to the pool, is under water too.
+    assert.ok(tiles.aboveOld < tiles.standing, `most of the water stands in ground that was above it: ${JSON.stringify(tiles)}`);
+    assert.equal(tiles.below, 0, "the water is never below the cut ground");
+    assert.equal(tiles.changed, 0, "where nothing is cut, the water is as on the ground as it is");
     assert.equal(await exists(b, "error"), false);
   });
 

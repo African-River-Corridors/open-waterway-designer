@@ -88,6 +88,10 @@
   let storedCorridorLimit = $derived(
     (snap?.document.stages.optimise.settings as { corridor_limit?: boolean } | null)?.corridor_limit ?? false,
   );
+  // The optimise stage ran with no DEM: its line was optimised on plan area, not volume.
+  let onPlanArea = $derived(
+    (snap?.document.stages.optimise.results as { optimised_on?: string } | null)?.optimised_on === "plan_area",
+  );
   const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
 
   // Display labels only: the stage names and their order come from the session.
@@ -144,6 +148,11 @@
         </li>
       {/if}
       {#if s.name === "optimise"}
+        {#if onPlanArea}
+          <li class="sub length" data-testid="plan-area-note">
+            <span class="help">Optimised on plan area, not volume: no elevation model is loaded. The search kept the channel inside the river polygon; it chose no weirs. Load a DEM and run Optimise again to optimise on volume.</span>
+          </li>
+        {/if}
         <li class="sub length" data-testid="length-weight-row">
           <label class="name">
             Cost per metre of line (m³ of cut per m; 0 = off)

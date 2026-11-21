@@ -17,7 +17,7 @@ use owd_core::optimise::lattice::{
 };
 use owd_core::synthetic::{RiverParams, synthetic_river};
 use owd_core::volumes::sections::HalfWidth;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::design::{AlignMethod, Role, Session, Stage, StageStatus};
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
 
@@ -321,10 +321,14 @@ fn the_stage_says_what_it_needs() {
         .unwrap();
     bare.set_vessel("CEMT_IV", None).unwrap();
     bare.run_stage(Stage::Sizing).unwrap();
-    assert!(matches!(
-        bare.run_optimise(&example_settings(), Some(&terrain)),
-        Err(DesignError::Input(m)) if m.contains("needs a DEM")
-    ));
+    // With no DEM the stage runs on plan area, so a bare design is refused for what that needs:
+    // a river to follow.
+    let e = bare
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap_err()
+        .to_string();
+    println!("{e}");
+    assert!(!e.contains("needs a DEM"), "{e}");
 }
 
 /// The length weight (a cost per metre of design line) is a setting of the stage, off (0) by
@@ -679,6 +683,179 @@ fn with_the_corridor_limit_the_stages_line_stays_inside_the_corridor() {
     }
 }
 
+/// A design like `design()` on a river with tight bends (wavelength 900 m, amplitude 120 m: bends of
+/// about 170 m against R_min 255 m), with NO DEM.
+fn design_without_a_dem() -> (Session, Vec<Polygon>) {
+    let r = synthetic_river(RiverParams {
+        length_m: 3000.0,
+        wavelength_m: 900.0,
+        amplitude_m: 120.0,
+        ..RiverParams::default()
+    })
+    .unwrap();
+    let ring: Vec<Pt> = r.polygon.exterior.iter().map(shift).collect();
+    let line = [shift(&[0.0, 0.0]), shift(&[3000.0, 0.0])];
+    let mut s = Session::new("Plan area", "2026-11-20");
+    s.import(&[
+        (
+            Role::Centreline,
+            &format!(
+                r#"{{"type":"LineString"{UTM30},"coordinates":{}}}"#,
+                json!(line)
+            ),
+        ),
+        (
+            Role::RiverPolygon,
+            &format!(
+                r#"{{"type":"Polygon"{UTM30},"coordinates":{}}}"#,
+                json!([ring.clone()])
+            ),
+        ),
+    ])
+    .unwrap();
+    s.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
+        .unwrap();
+    s.set_vessel("CEMT_IV", Some(2.5)).unwrap();
+    s.run_stage(Stage::Sizing).unwrap();
+    s.align(AlignMethod::RollingCircle, &Value::Null, None)
+        .unwrap();
+    (
+        s,
+        vec![Polygon {
+            exterior: ring,
+            holes: vec![],
+        }],
+    )
+}
+
+/// With no DEM the stage runs on plan area ("optimize for volume, or m2 if we don't have a DEM"):
+/// the cost is the m2 of channel footprint outside the river polygon, at a land weight of 1 unless
+/// one is set, plus the length cost. No water level is needed, no weirs or pool levels are chosen,
+/// and the result says plainly, in its results, its details and its warnings, that it was optimised
+/// on plan area and not on volume. The line takes less land than the baseline it started from. The
+/// volumes stage still refuses to run without a DEM.
+///
+/// Label: property
+#[test]
+fn with_no_dem_the_stage_optimises_on_plan_area_and_says_so() {
+    let (mut s, river) = design_without_a_dem();
+    let settings = json!({
+        "rake_half_m": 80.0, "rake_step_m": 5.0, "ds_step_m": 10.0, "pitch_m": 20.0,
+        "n_heading": 24, "radius_multiples": [1.0, 2.0, 4.0], "corridor_half_m": 180.0,
+        "cell_m": 5.0, "length_weight": 1.0,
+    });
+    s.run_optimise(&settings, None).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    let doc = s.document().clone();
+    let res = &doc["stages"]["optimise"]["results"];
+    assert_eq!(res["optimised_on"], json!("plan_area"));
+    assert_eq!(res["pools"], json!([]));
+    assert_eq!(res["profile"], json!([]));
+    assert_eq!(res["cascade"]["weirs"], json!([]));
+    assert!(res["base_level_m"].is_null());
+    // The land weight was not set: 1 is used and said, and it is not written into the settings.
+    assert!(
+        doc["stages"]["optimise"]["settings"]
+            .get("land_weight")
+            .is_none()
+    );
+    let opt = owd_format::design::design_lines_of(&doc)
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    let d = &opt["details"];
+    assert_eq!(d["optimised_on"], json!("plan_area"));
+    assert_eq!(d["land_weight"], json!(1.0));
+    assert_eq!(d["land_weight_defaulted"], json!(true));
+    let note = d["optimised_on_note"].as_str().unwrap();
+    assert!(
+        note.contains("optimised on plan area") && note.contains("not on volume"),
+        "{note}"
+    );
+    assert!(
+        opt["sanity"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w.as_str() == Some(note)),
+        "{}",
+        opt["sanity"]
+    );
+    // Every piece is one stretch of the whole line, with no water level; the line takes less land
+    // than the baseline, and its cost is its land (weight 1) and its length (weight 1), no cut.
+    let (mut land, mut base_land) = (0.0, 0.0);
+    for p in d["pools"].as_array().unwrap() {
+        assert!(p["water_level_m"].is_null(), "{p}");
+        assert_eq!(p["converged"], json!(true), "{p}");
+        let (a, l) = (
+            p["land_area_m2"].as_f64().unwrap(),
+            p["line_length_m"].as_f64().unwrap(),
+        );
+        let cost = p["cost"].as_f64().unwrap();
+        assert!((cost - a - l).abs() < 1e-3 * cost, "{p}");
+        land += a;
+        base_land += p["baseline_land_area_m2"].as_f64().unwrap();
+    }
+    println!("land: line {land:.0} m2, baseline {base_land:.0} m2");
+    assert!(land < 0.8 * base_land, "{land} against {base_land}");
+    // Read apart from the search's own measure: less of the line's centre is outside the polygon
+    // than of the baseline's.
+    let outside = |line: &[Pt]| {
+        let n = (owd_core::geom::linear::length(line) / 5.0) as usize;
+        (0..=n)
+            .filter(|&i| {
+                let p = owd_core::geom::linear::interpolate(line, i as f64 * 5.0).unwrap();
+                !owd_core::geom::overlay::contains_xy(&river, p)
+            })
+            .count() as f64
+            / (n + 1) as f64
+    };
+    let (line_out, base_out) = (outside(&pts(&opt["line"])), outside(&pts(&res["baseline"])));
+    println!("outside the polygon: line {line_out:.3}, baseline {base_out:.3}");
+    assert!(line_out < base_out, "{line_out} against {base_out}");
+    assert_eq!(opt["checks"]["radius_ok"], json!(true));
+
+    // The run needed no water level. With one given, the water the later stages read is still the
+    // inputs': the stage set no pool level.
+    assert!(s.water_profile().is_none());
+    s.set_water_profile(&[[0.0, 0.0]]).unwrap();
+    s.run_optimise(&settings, None).unwrap();
+    assert_eq!(s.water_profile().unwrap().1, "input");
+    // The volumes stage refuses without a DEM, as before.
+    let e = s.run_volumes(&Value::Null, None).unwrap_err().to_string();
+    assert!(e.contains("the volumes stage needs a DEM"), "{e}");
+    assert!(s.document()["stages"]["volumes"]["results"].is_null());
+
+    // A land weight that is set is the one used.
+    let mut with = settings.clone();
+    with["land_weight"] = json!(2.0);
+    s.run_optimise(&with, None).unwrap();
+    let opt = owd_format::design::design_lines_of(s.document())
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert_eq!(opt["details"]["land_weight"], json!(2.0));
+    assert_eq!(opt["details"]["land_weight_defaulted"], json!(false));
+    assert_eq!(opt["details"]["optimised_on"], json!("plan_area"));
+}
+
+/// A design that names a DEM whose file is missing is still refused: plan area is for a design with
+/// no DEM at all, never a quiet fallback when the DEM cannot be read.
+///
+/// Label: property
+#[test]
+fn a_named_dem_that_is_missing_is_still_refused() {
+    let mut s = design();
+    let e = s
+        .run_optimise(&example_settings(), None)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("dem.tif") && e.contains("missing"), "{e}");
+    assert!(s.document()["stages"]["optimise"]["results"].is_null());
+}
+
 /// The flood settings (ticket OPT-2) are settings of the stage, each off or at its default until
 /// set, and then not written into the document. Set, each is written through the same reading as
 /// the flags of `owd optimise`. A bad value is refused by the setting's name and changes nothing.
@@ -754,8 +931,10 @@ fn the_flood_settings_are_off_by_default_round_trip_and_are_validated() {
     assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
 }
 
-/// With no DEM the flood cost cannot be worked out: a flood cost above 0, or a limit above
-/// bank-full, is refused in plain words, and the design is not changed.
+/// With no DEM the optimise stage runs on plan area and chooses no weirs, so flooded land cannot be
+/// worked out: a flood cost above 0, a limit above bank-full or the flood report is refused in plain
+/// words, and the design is not changed. A
+/// named DEM whose file is missing keeps the stage's own refusal.
 ///
 /// Label: property
 #[test]
@@ -769,34 +948,25 @@ fn a_flood_cost_or_a_bank_limit_without_a_dem_is_refused() {
             json!({"max_above_bank_m": 1.0}),
             "a limit above bank-full (`max_above_bank_m`)",
         ),
+        (
+            json!({"flood_report": true}),
+            "the flood report (`flood_report`)",
+        ),
     ] {
-        // The DEM is named but cannot be read.
-        let mut s = design();
+        let (mut s, _) = design_without_a_dem();
         let before = s.to_text();
         let e = s.run_optimise(&setting, None).unwrap_err().to_string();
         assert!(
             e.contains(word) && e.contains("cannot be worked out without a DEM"),
             "{e}"
         );
+        assert!(e.contains("runs on plan area"), "{e}");
         assert_eq!(s.to_text(), before);
+        // The DEM named but not there to read: the stage's own message, before the flood one.
+        let mut named = design();
+        let e = named.run_optimise(&setting, None).unwrap_err().to_string();
+        assert!(e.contains("dem.tif") && e.contains("missing"), "{e}");
     }
-    // No DEM at all.
-    let mut bare = Session::new("x", "2026-11-21");
-    bare.set_rule_sets(&["pianc-wg141"], &[("se_quality", "B")])
-        .unwrap();
-    bare.set_vessel("CEMT_IV", None).unwrap();
-    bare.run_stage(Stage::Sizing).unwrap();
-    let e = bare
-        .run_optimise(&json!({"flood_cost_per_ha": 1.0}), Some(&terrain))
-        .unwrap_err()
-        .to_string();
-    assert!(e.contains("cannot be worked out without a DEM"), "{e}");
-    // At 0 the stage's own message stands.
-    let e = bare
-        .run_optimise(&json!({"flood_cost_per_ha": 0.0}), Some(&terrain))
-        .unwrap_err()
-        .to_string();
-    assert!(e.contains("needs a DEM"), "{e}");
 }
 
 /// The flood terms in the stage, on the `optimise_pools` example. At flood cost 0 the stage writes

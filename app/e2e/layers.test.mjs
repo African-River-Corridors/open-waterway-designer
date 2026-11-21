@@ -4,13 +4,13 @@ import assert from "node:assert/strict";
 import { LAYERS_KEY, MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, defaultTicks, loadLayerTicks, parseTicks, saveLayerTicks, serialiseTicks } from "../src/lib/mapLayers.ts";
 
 describe("the map layer ticks", () => {
-  it("lists the twelve layers, each with the map layers it shows or hides", () => {
-    assert.deepEqual(MAP_LAYERS.map((l) => l.label), ["River polygon", "Centreline", "Bank lines", "Design line", "Constraint stretches", "Station marks", "Weirs and locks", "Pool levels", "Pool water", "Terrain shading", "Contours", "Imagery"]);
+  it("lists the fourteen layers, each with the map layers it shows or hides", () => {
+    assert.deepEqual(MAP_LAYERS.map((l) => l.label), ["River polygon", "Centreline", "Bank lines", "Design line", "Channel", "Cut extent", "Constraint stretches", "Station marks", "Weirs and locks", "Pool levels", "Pool water", "Terrain shading", "Contours", "Imagery"]);
     for (const l of MAP_LAYERS) assert.ok(STYLE_LAYERS[l.id].length > 0, l.id);
   });
-  it("are all on by default but the pool water, the terrain shading and the contours, and for stored text that is not ours", () => {
-    assert.deepEqual(STARTS_OFF, ["pool-water", "terrain-shading", "contours"]);
-    for (const l of MAP_LAYERS) assert.equal(defaultTicks()[l.id], !["pool-water", "terrain-shading", "contours"].includes(l.id), l.id);
+  it("are all on by default but the cut extent, the pool water, the terrain shading and the contours, and for stored text that is not ours", () => {
+    assert.deepEqual(STARTS_OFF, ["cut", "pool-water", "terrain-shading", "contours"]);
+    for (const l of MAP_LAYERS) assert.equal(defaultTicks()[l.id], !STARTS_OFF.includes(l.id), l.id);
     for (const text of [null, "", "{", "{}", "7", '["no-such-layer"]']) assert.deepEqual(parseTicks(text), defaultTicks(), String(text));
   });
   it("round-trip through the stored text, which names only the layers turned off", () => {

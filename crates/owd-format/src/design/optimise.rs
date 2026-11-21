@@ -3,6 +3,9 @@
 //! is stored as `results.design_line`; once it is there, it is the design line the later stages read. The calls are those of the `optimise_pools` example:
 //! `build_level_table`, `search_cascade` with an earthworks reach cost, then `optimise_pools`.
 //!
+//! A design with no DEM has no ground to cut: the stage then skips the cascade and searches the whole
+//! line on plan area, the m2 of channel footprint outside the river polygon (`PLAN_AREA`), and says so.
+//!
 //! The baseline is the alignment's design line, else the river centreline. Chainages are
 //! metres along it. Weights are settings, not prices: 1.0 / 1.0 minimises volume.
 
@@ -24,6 +27,16 @@ use owd_core::optimise::lattice::{
 };
 use owd_core::volumes::sections::HalfWidth;
 use serde_json::{Value, json};
+
+/// What `optimised_on` says when the stage ran with no DEM: the search cost was the plan area of
+/// the channel's footprint outside the river polygon (m2, times the land weight), plus the length
+/// cost, and not a volume.
+pub const PLAN_AREA: &str = "plan_area";
+
+/// The same, in plain words: in the lattice's details and among the design line's warnings.
+pub const PLAN_AREA_NOTE: &str = "the design has no DEM, so the design line was optimised on plan \
+    area (the m2 of channel outside the river polygon), not on volume: no weirs or pool levels were \
+    chosen. Import a DEM and run the optimise stage again to optimise on volume";
 
 /// The id and the method of the lattice's design line.
 const LATTICE: &str = "lattice";
@@ -432,35 +445,40 @@ impl Session {
                 run_first: Stage::Alignment,
             });
         }
-        // Flooded land and bank-full are read from the ground levels: with no DEM there is nothing
-        // to read, so a flood cost or a bank limit is refused, never dropped.
-        let asked = self.optimise_settings(overrides)?;
-        if (self.dem_path().is_none() || terrain.is_none())
-            && (asked.flood_cost_per_ha != 0.0 || asked.max_above_bank_m.is_some())
-        {
-            let what = if asked.flood_cost_per_ha != 0.0 {
+        // A design that names a DEM is optimised on volume, and cannot run while the file is
+        // missing. A design with no DEM at all is optimised on plan area (see `PLAN_AREA`): there is
+        // no ground to cut, so no cascade, and the line is searched for the least channel footprint
+        // outside the river polygon.
+        let terrain: Option<TerrainSampler> = match (self.dem_path().map(str::to_string), terrain) {
+            (Some(_), Some(t)) => Some(t),
+            (Some(dem_path), None) => {
+                return Err(DesignError::Input(format!(
+                    "the DEM `{dem_path}` is missing: the optimise stage cannot run without it"
+                )));
+            }
+            (None, _) => None,
+        };
+        let plan_area = terrain.is_none();
+
+        let typed = self.optimise_settings(overrides)?;
+        // Flooded land and bank-full are read from the ground levels. With no DEM the stage runs on
+        // plan area and chooses no weirs, so there is no pool to price or to limit: a flood cost, a
+        // limit above bank-full or the flood report is refused, never dropped.
+        if plan_area && typed.flood_on() {
+            let what = if typed.flood_cost_per_ha != 0.0 {
                 "a flood cost (`flood_cost_per_ha`)"
-            } else {
+            } else if typed.max_above_bank_m.is_some() {
                 "a limit above bank-full (`max_above_bank_m`)"
+            } else {
+                "the flood report (`flood_report`)"
             };
             return Err(DesignError::Input(format!(
                 "{what} cannot be worked out without a DEM: flooded land and bank-full are read \
-                 from the ground levels. Import a DEM (`owd import --dem FILE`), or run with the \
-                 flood cost at 0 and no limit."
+                 from the ground levels, and with no DEM the optimise stage runs on plan area and \
+                 chooses no weirs. Import a DEM (`owd import --dem FILE`), or run with the flood \
+                 cost at 0, no limit and no flood report."
             )));
         }
-        let Some(dem_path) = self.dem_path().map(str::to_string) else {
-            return Err(DesignError::Input(
-                "the optimise stage needs a DEM: import one first (`owd import --dem FILE`)".into(),
-            ));
-        };
-        let terrain = terrain.ok_or_else(|| {
-            DesignError::Input(format!(
-                "the DEM `{dem_path}` is missing: the optimise stage cannot run without it"
-            ))
-        })?;
-
-        let typed = self.optimise_settings(overrides)?;
         let settings = typed.to_value();
         let size = self.channel_size()?;
         let (depth, r_min) = (size.design_depth_m, size.min_bend_radius_m);
@@ -479,200 +497,244 @@ impl Session {
             None => self.base_line()?,
         };
         let length = linear::length(&baseline);
-        // The water level below the first weir: a setting, else the document's profile at the start
-        // of the baseline (the profile of the inputs; the stage's own pool levels come after).
-        let centre = self.river_centreline()?;
-        let base_level = match settings["base_level_m"].as_f64() {
-            Some(b) => b,
-            None => {
-                let profile = self
-                    .input_water_profile()
-                    .ok_or_else(|| self.needs_water_profile(Stage::Optimise))?;
-                self.water_level_along(&profile, &baseline, &centre)(0.0)
-            }
-        };
-
         let river = self.river_polygons().ok_or_else(|| {
             DesignError::Input("the optimise stage needs the river polygon: import it first".into())
         })?;
 
-        // The cascade search.
-        let sites: Vec<f64> = match &settings["candidate_sites_m"] {
-            Value::Null => {
-                let step = num(&settings, "site_step_m")?;
-                if !(step.is_finite() && step > 0.0) {
-                    return Err(DesignError::Input(
-                        "the setting `site_step_m` must be a positive number".into(),
-                    ));
-                }
-                (1..)
-                    .map(|k| k as f64 * step)
-                    .take_while(|c| *c < length)
-                    .collect()
-            }
-            _ => nums(&settings, "candidate_sites_m")?,
-        };
-        let mut cfg = CascadeConfig::new(
-            sites,
-            nums(&settings, "lifts_m")?,
-            length,
-            num(&settings, "terminal_min_level_m")?,
-        );
-        cfg.base_level_m = base_level;
-        cfg.min_spacing_m = num(&settings, "min_spacing_m")?;
-        cfg.k_best = typed.k_best;
-        let cfg = cfg.validated().map_err(refuse)?;
         let (wet, dry) = (num(&settings, "wet_weight")?, num(&settings, "dry_weight")?);
-        let table = build_level_table(
-            &baseline,
-            terrain,
-            &river,
-            &cascade_levels(&cfg),
-            depth,
-            &HalfWidth::Fixed(half_width),
-            settings["cut_model"].as_str(),
-            Some(num(&settings, "station_m")?),
-            Some(num(&settings, "maxw_m")?),
-            None,
-            SectionOptions::default(),
-        )
-        .map_err(refuse)?;
-        let (fixed, coeff, power) = (
-            num(&settings, "structure_fixed")?,
-            num(&settings, "structure_per_lift")?,
-            num(&settings, "structure_power")?,
-        );
-        let reach = earthworks_reach_cost(&table, wet, dry);
-        let structure = move |lift: f64| fixed + coeff * libm::pow(lift, power);
-        // The flood terms (off by default: then the search is the one above, unchanged). The ground
-        // beside the baseline is read once; every (site, site, level) is then two reads of a table.
-        let flood_ground = if typed.flood_on() {
-            let field = FloodField::build(
-                &baseline,
-                terrain,
-                &river,
-                typed.flood_distance_m,
-                typed.flood_cell_m,
-            )
-            .map_err(refuse)?;
-            let banks = BankProfile::new(&field);
-            if typed.max_above_bank_m.is_some() && !banks.known() {
-                return Err(DesignError::Input(format!(
-                    "bank-full cannot be estimated, so `max_above_bank_m` cannot be held: no cell \
-                     of the flood grid ({} m cells) touches the river polygon with a DEM value. \
-                     Use smaller cells (`flood_cell_m`) or check the river polygon and the DEM.",
-                    typed.flood_cell_m
-                )));
-            }
-            let mut breaks: Vec<f64> = vec![cfg.start_m, cfg.terminal_m];
-            breaks.extend(cfg.candidate_sites_m.iter().copied());
-            let flood_table = FloodTable::new(&field, &breaks, &cascade_levels(&cfg));
-            Some((field, flood_table, banks))
-        } else {
-            None
-        };
-        let flood_terms = flood_ground
-            .as_ref()
-            .map(|(field, flood_table, banks)| FloodTerms {
-                field,
-                table: flood_table,
-                banks,
-                cost_per_ha: typed.flood_cost_per_ha,
-                max_above_bank_m: typed.max_above_bank_m,
-            });
-        let search = match flood_terms {
-            Some(terms) => search_cascade(&cfg, &with_flood_cost(&reach, terms), &structure),
-            None => search_cascade(&cfg, &reach, &structure),
-        }
-        .map_err(refuse)?;
-        let Some(best) = search.best() else {
-            // The limit is to blame only when the search reaches the top level without it.
-            let without_limit = || {
-                search_cascade(&cfg, &reach, &structure)
-                    .map(|s| s.best().is_some())
-                    .unwrap_or(false)
-            };
-            if let (Some(terms), Some(limit)) = (flood_terms, typed.max_above_bank_m)
-                && without_limit()
-            {
-                let mut kept: Vec<f64> = cfg
-                    .candidate_sites_m
-                    .iter()
-                    .copied()
-                    .filter(|c| cfg.start_m < *c && *c <= cfg.terminal_m)
-                    .collect();
-                kept.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
-                return Err(DesignError::Input(explain_blocked(
-                    terms.banks,
-                    limit,
-                    cfg.start_m,
-                    cfg.base_level_m,
-                    &kept,
-                    &cfg.lifts_m,
-                    &search.levels_m,
-                    cfg.terminal_m,
-                    cfg.terminal_min_level_m,
-                    cfg.min_spacing_m,
-                )));
-            }
-            return Err(DesignError::Input(
-                "no cascade reaches the terminal level: raise the lifts or the candidate sites"
-                    .into(),
-            ));
-        };
-        let pools = best.pools();
-        // What each pool of the chosen cascade floods, and how it stands against the banks.
+        // On plan area there is no ground: a flat sampler well below the bed, so nothing is cut.
+        let no_ground = move |xs: &[f64], _: &[f64]| vec![-(depth + 1000.0); xs.len()];
+        // What each pool floods, and the warnings of it: filled by the cascade when the flood terms
+        // are on.
         let mut flood_warnings: Vec<String> = Vec::new();
-        let flood_report = flood_terms.map(|terms| {
-            let mut total_m2 = 0.0;
-            let mut any_limit = false;
-            let rows: Vec<Value> = pools
-                .iter()
-                .enumerate()
-                .map(|(i, &(a, b, level))| {
-                    let f = terms.field.flooded(a, b, level);
-                    let e = terms.banks.at_ends(a, b, level);
-                    total_m2 += f.area_m2;
-                    any_limit |= f.reaches_limit;
-                    if f.reaches_limit {
-                        flood_warnings.push(format!(
-                            "the pool from {a:.0} m to {b:.0} m at {level:.2} m floods land out to \
-                             the edge of the flood grid ({:.0} m from the line, or the edge of the \
-                             DEM): its {:.1} ha of flooded land is a lower bound",
-                            typed.flood_distance_m,
-                            f.area_ha()
-                        ));
+        let mut flood_report: Option<Value> = None;
+        let (terrain, base_level, pools, cascade): (TerrainSampler, Option<f64>, Vec<_>, Value) =
+            if let Some(terrain) = terrain {
+                // The water level below the first weir: a setting, else the document's profile at the start
+                // of the baseline (the profile of the inputs; the stage's own pool levels come after).
+                let centre = self.river_centreline()?;
+                let base_level = match settings["base_level_m"].as_f64() {
+                    Some(b) => b,
+                    None => {
+                        let profile = self
+                            .input_water_profile()
+                            .ok_or_else(|| self.needs_water_profile(Stage::Optimise))?;
+                        self.water_level_along(&profile, &baseline, &centre)(0.0)
                     }
+                };
+
+                // The cascade search.
+                let sites: Vec<f64> = match &settings["candidate_sites_m"] {
+                    Value::Null => {
+                        let step = num(&settings, "site_step_m")?;
+                        if !(step.is_finite() && step > 0.0) {
+                            return Err(DesignError::Input(
+                                "the setting `site_step_m` must be a positive number".into(),
+                            ));
+                        }
+                        (1..)
+                            .map(|k| k as f64 * step)
+                            .take_while(|c| *c < length)
+                            .collect()
+                    }
+                    _ => nums(&settings, "candidate_sites_m")?,
+                };
+                let mut cfg = CascadeConfig::new(
+                    sites,
+                    nums(&settings, "lifts_m")?,
+                    length,
+                    num(&settings, "terminal_min_level_m")?,
+                );
+                cfg.base_level_m = base_level;
+                cfg.min_spacing_m = num(&settings, "min_spacing_m")?;
+                cfg.k_best = typed.k_best;
+                let cfg = cfg.validated().map_err(refuse)?;
+                let table = build_level_table(
+                    &baseline,
+                    terrain,
+                    &river,
+                    &cascade_levels(&cfg),
+                    depth,
+                    &HalfWidth::Fixed(half_width),
+                    settings["cut_model"].as_str(),
+                    Some(num(&settings, "station_m")?),
+                    Some(num(&settings, "maxw_m")?),
+                    None,
+                    SectionOptions::default(),
+                )
+                .map_err(refuse)?;
+                let (fixed, coeff, power) = (
+                    num(&settings, "structure_fixed")?,
+                    num(&settings, "structure_per_lift")?,
+                    num(&settings, "structure_power")?,
+                );
+                let reach = earthworks_reach_cost(&table, wet, dry);
+                let structure = move |lift: f64| fixed + coeff * libm::pow(lift, power);
+                // The flood terms (off by default: then the search is the one above, unchanged). The ground
+                // beside the baseline is read once; every (site, site, level) is then two reads of a table.
+                let flood_ground = if typed.flood_on() {
+                    let field = FloodField::build(
+                        &baseline,
+                        terrain,
+                        &river,
+                        typed.flood_distance_m,
+                        typed.flood_cell_m,
+                    )
+                    .map_err(refuse)?;
+                    let banks = BankProfile::new(&field);
+                    if typed.max_above_bank_m.is_some() && !banks.known() {
+                        return Err(DesignError::Input(format!(
+                            "bank-full cannot be estimated, so `max_above_bank_m` cannot be held: no cell \
+                             of the flood grid ({} m cells) touches the river polygon with a DEM value. \
+                             Use smaller cells (`flood_cell_m`) or check the river polygon and the DEM.",
+                            typed.flood_cell_m
+                        )));
+                    }
+                    let mut breaks: Vec<f64> = vec![cfg.start_m, cfg.terminal_m];
+                    breaks.extend(cfg.candidate_sites_m.iter().copied());
+                    let flood_table = FloodTable::new(&field, &breaks, &cascade_levels(&cfg));
+                    Some((field, flood_table, banks))
+                } else {
+                    None
+                };
+                let flood_terms =
+                    flood_ground
+                        .as_ref()
+                        .map(|(field, flood_table, banks)| FloodTerms {
+                            field,
+                            table: flood_table,
+                            banks,
+                            cost_per_ha: typed.flood_cost_per_ha,
+                            max_above_bank_m: typed.max_above_bank_m,
+                        });
+                let search = match flood_terms {
+                    Some(terms) => {
+                        search_cascade(&cfg, &with_flood_cost(&reach, terms), &structure)
+                    }
+                    None => search_cascade(&cfg, &reach, &structure),
+                }
+                .map_err(refuse)?;
+                let Some(best) = search.best() else {
+                    // The limit is to blame only when the search reaches the top level without it.
+                    let without_limit = || {
+                        search_cascade(&cfg, &reach, &structure)
+                            .map(|s| s.best().is_some())
+                            .unwrap_or(false)
+                    };
+                    if let (Some(terms), Some(limit)) = (flood_terms, typed.max_above_bank_m)
+                        && without_limit()
+                    {
+                        let mut kept: Vec<f64> = cfg
+                            .candidate_sites_m
+                            .iter()
+                            .copied()
+                            .filter(|c| cfg.start_m < *c && *c <= cfg.terminal_m)
+                            .collect();
+                        kept.sort_by(|a, b| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal));
+                        return Err(DesignError::Input(explain_blocked(
+                            terms.banks,
+                            limit,
+                            cfg.start_m,
+                            cfg.base_level_m,
+                            &kept,
+                            &cfg.lifts_m,
+                            &search.levels_m,
+                            cfg.terminal_m,
+                            cfg.terminal_min_level_m,
+                            cfg.min_spacing_m,
+                        )));
+                    }
+                    return Err(DesignError::Input(
+                        "no cascade reaches the terminal level: raise the lifts or the candidate sites"
+                            .into(),
+                    ));
+                };
+                let pools = best.pools();
+                // What each pool of the chosen cascade floods, and how it stands against the banks.
+                flood_report = flood_terms.map(|terms| {
+                    let mut total_m2 = 0.0;
+                    let mut any_limit = false;
+                    let rows: Vec<Value> = pools
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &(a, b, level))| {
+                            let f = terms.field.flooded(a, b, level);
+                            let e = terms.banks.at_ends(a, b, level);
+                            total_m2 += f.area_m2;
+                            any_limit |= f.reaches_limit;
+                            if f.reaches_limit {
+                                flood_warnings.push(format!(
+                                    "the pool from {a:.0} m to {b:.0} m at {level:.2} m floods land out to \
+                                     the edge of the flood grid ({:.0} m from the line, or the edge of the \
+                                     DEM): its {:.1} ha of flooded land is a lower bound",
+                                    typed.flood_distance_m,
+                                    f.area_ha()
+                                ));
+                            }
+                            json!({
+                                "start_m": a, "end_m": b, "level_m": level,
+                                // The lift of the weir at the pool's lower end; none below the first weir.
+                                "lift_m": i.checked_sub(1).and_then(|w| best.weirs.get(w)).map(|w| w.lift_m),
+                                "flooded_ha": f.area_ha(),
+                                "flood_cost": typed.flood_cost_per_ha * f.area_ha(),
+                                "reaches_limit": f.reaches_limit,
+                                "above_bank_lower_m": num_or_null(e.above_bank_lower_m),
+                                "above_bank_upper_m": num_or_null(e.above_bank_upper_m),
+                                "max_above_bank_m": num_or_null(e.max_above_bank_m),
+                                "depth_over_river_lower_m": num_or_null(e.depth_over_river_lower_m),
+                                "depth_over_river_upper_m": num_or_null(e.depth_over_river_upper_m),
+                            })
+                        })
+                        .collect();
+                    let flood_cost = typed.flood_cost_per_ha * total_m2 / 10_000.0;
                     json!({
-                        "start_m": a, "end_m": b, "level_m": level,
-                        // The lift of the weir at the pool's lower end; none below the first weir.
-                        "lift_m": i.checked_sub(1).and_then(|w| best.weirs.get(w)).map(|w| w.lift_m),
-                        "flooded_ha": f.area_ha(),
-                        "flood_cost": typed.flood_cost_per_ha * f.area_ha(),
-                        "reaches_limit": f.reaches_limit,
-                        "above_bank_lower_m": num_or_null(e.above_bank_lower_m),
-                        "above_bank_upper_m": num_or_null(e.above_bank_upper_m),
-                        "max_above_bank_m": num_or_null(e.max_above_bank_m),
-                        "depth_over_river_lower_m": num_or_null(e.depth_over_river_lower_m),
-                        "depth_over_river_upper_m": num_or_null(e.depth_over_river_upper_m),
+                        "flood_cost_per_ha": typed.flood_cost_per_ha,
+                        "max_above_bank_m": typed.max_above_bank_m,
+                        "distance_m": typed.flood_distance_m,
+                        "cell_m": typed.flood_cell_m,
+                        "bank_full": BANK_FULL_ESTIMATE,
+                        "flooded_ha": total_m2 / 10_000.0,
+                        "flood_cost": flood_cost,
+                        // The cut part of the cascade's reach cost: the reach cost less the flood cost.
+                        "cut_cost": best.reach_cost() - flood_cost,
+                        "reaches_limit": any_limit,
+                        "pools": rows,
                     })
-                })
-                .collect();
-            let flood_cost = typed.flood_cost_per_ha * total_m2 / 10_000.0;
-            json!({
-                "flood_cost_per_ha": typed.flood_cost_per_ha,
-                "max_above_bank_m": typed.max_above_bank_m,
-                "distance_m": typed.flood_distance_m,
-                "cell_m": typed.flood_cell_m,
-                "bank_full": BANK_FULL_ESTIMATE,
-                "flooded_ha": total_m2 / 10_000.0,
-                "flood_cost": flood_cost,
-                // The cut part of the cascade's reach cost: the reach cost less the flood cost.
-                "cut_cost": best.reach_cost() - flood_cost,
-                "reaches_limit": any_limit,
-                "pools": rows,
-            })
-        });
+                });
+                let cascade = json!({
+                    "total_cost": best.total_cost,
+                    "reach_cost": best.reach_cost(),
+                    "structure_cost": best.structure_cost(),
+                    "weirs": best.weirs.iter().map(|w| json!({
+                        "site_id": w.site_id, "chainage_m": w.chainage_m,
+                        "pool_level_m": w.pool_level_m, "lift_m": w.lift_m,
+                        "structure_cost": w.structure_cost,
+                    })).collect::<Vec<_>>(),
+                });
+                (terrain, Some(base_level), pools, cascade)
+            } else {
+                // No weirs are chosen and no pool level is set: the water stays the inputs'.
+                (
+                    &no_ground,
+                    None,
+                    Vec::new(),
+                    json!({"total_cost": null, "reach_cost": null, "structure_cost": null, "weirs": []}),
+                )
+            };
+        // What the lattice searches: the cascade's pools, or on plan area the whole line as one
+        // stretch (cut into pieces like any long pool) at a water level of 0, which no cost reads.
+        let stretches: Vec<(f64, f64, f64)> = if plan_area {
+            vec![(0.0, length, 0.0)]
+        } else {
+            pools.clone()
+        };
+        // The land weight in force: the setting, or on plan area 1 when the setting is 0 (the cost
+        // is then the m2 of footprint outside the river polygon, plus the length cost).
+        let land_weight = if plan_area && typed.land_weight == 0.0 {
+            1.0
+        } else {
+            typed.land_weight
+        };
 
         // The pool lattice.
         let mut spec = SectionSpec::new(HalfWidthSpec::Fixed(half_width));
@@ -691,7 +753,7 @@ impl Session {
         // along the same baseline, whose land take does not depend on the pool level in this
         // measure. Its footprint is the channel's plan width at the water surface: the bottom width
         // plus the side slopes (`side_slope`) up through the design depth.
-        spec.land_weight = typed.land_weight;
+        spec.land_weight = land_weight;
         spec.land_depth_m = depth;
         let mut lattice = LatticeConfig::new(r_min);
         lattice.pitch_m = num(&settings, "pitch_m")?;
@@ -703,7 +765,7 @@ impl Session {
             &baseline,
             terrain,
             &river,
-            &pools,
+            &stretches,
             depth,
             &spec,
             &lattice,
@@ -784,19 +846,31 @@ impl Session {
         // With a land weight on, the same: the footprint's width, and each pool's land area and
         // land cost (its line's, and its baseline's for comparison). The cut part of a pool's cost
         // is cost - length_cost - land_cost.
-        if typed.land_weight != 0.0 {
-            details["land_weight"] = json!(typed.land_weight);
+        if land_weight != 0.0 {
+            details["land_weight"] = json!(land_weight);
             details["land_footprint_width_m"] =
                 json!(2.0 * (half_width + spec.side_slope_h_per_v * depth));
             if let Some(ps) = details["pools"].as_array_mut() {
                 for (d, p) in ps.iter_mut().zip(&out.pools) {
                     if let Some(a) = p.result.land_area_m2 {
                         d["land_area_m2"] = json!(a);
-                        d["land_cost"] = json!(typed.land_weight * a);
+                        d["land_cost"] = json!(land_weight * a);
                     }
                     if let Some(a) = p.baseline_land_area_m2 {
                         d["baseline_land_area_m2"] = json!(a);
                     }
+                }
+            }
+        }
+        // On plan area the details say so in plain words, and no pool carries a water level: the
+        // level the search ran at is a placeholder that no cost read.
+        if plan_area {
+            details["optimised_on"] = json!(PLAN_AREA);
+            details["optimised_on_note"] = json!(PLAN_AREA_NOTE);
+            details["land_weight_defaulted"] = json!(typed.land_weight == 0.0);
+            if let Some(ps) = details["pools"].as_array_mut() {
+                for d in ps.iter_mut() {
+                    d["water_level_m"] = Value::Null;
                 }
             }
         }
@@ -857,6 +931,9 @@ impl Session {
         // The design line's own sanity check, one warning for each pool (or piece) whose search
         // hit its limit (issue #559), and one for each pool join that does not hold R_min (issue #6).
         if let Some(w) = refined.sanity["warnings"].as_array_mut() {
+            if plan_area {
+                w.push(json!(PLAN_AREA_NOTE));
+            }
             for p in out.capped_pools() {
                 w.push(json!(capped_warning(p, lattice.max_expand)));
             }
@@ -894,21 +971,16 @@ impl Session {
             "base_level_m": base_level,
             "profile": profile_points,
             "pools": pools.iter().map(|&(a, b, l)| json!([a, b, l])).collect::<Vec<_>>(),
-            "cascade": {
-                "total_cost": best.total_cost,
-                "reach_cost": best.reach_cost(),
-                "structure_cost": best.structure_cost(),
-                "weirs": best.weirs.iter().map(|w| json!({
-                    "site_id": w.site_id, "chainage_m": w.chainage_m,
-                    "pool_level_m": w.pool_level_m, "lift_m": w.lift_m,
-                    "structure_cost": w.structure_cost,
-                })).collect::<Vec<_>>(),
-            },
+            "cascade": cascade,
             "design_line": refined,
         });
         // With the flood terms on, the cascade says what each pool floods; off, nothing is added.
         if let Some(f) = flood_report {
             st["results"]["cascade"]["flood"] = f;
+        }
+        // Written on plan area only, so a run on volume keeps the bytes it had.
+        if plan_area {
+            st["results"]["optimised_on"] = json!(PLAN_AREA);
         }
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Optimise);

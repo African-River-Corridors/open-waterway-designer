@@ -10,7 +10,7 @@
 //! Every level is a whole multiple of the interval; every [`INDEX_EVERY`]th is an index contour.
 
 use super::session::DesignError;
-use super::terrain_tile::{TILE, TileMaker};
+use super::terrain_tile::{TILE, TerrainState, TileMaker};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -355,8 +355,20 @@ pub fn contours(
     y: u32,
     interval_m: f64,
 ) -> Result<ContourTile, DesignError> {
+    contours_in(maker, TerrainState::Before, z, x, y, interval_m)
+}
+
+/// [`contours`] of the ground in `state` (MAP-5): the contours of the After ground show the cut.
+pub fn contours_in(
+    maker: &TileMaker,
+    state: TerrainState,
+    z: u8,
+    x: u32,
+    y: u32,
+    interval_m: f64,
+) -> Result<ContourTile, DesignError> {
     check_interval(interval_m)?;
-    let ground = maker.ground(z, x, y, MARGIN)?;
+    let ground = maker.ground_in(state, z, x, y, MARGIN)?;
     if !maker.holds_dem(z, x, y) {
         return Ok(ContourTile::default());
     }
@@ -471,8 +483,8 @@ type Kept = (u64, Arc<Vec<u8>>);
 /// The last contour tiles made, as vector tiles: at most `capacity` of them.
 #[derive(Debug)]
 pub struct ContourCache {
-    /// By tile and interval (in millimetres).
-    cache: HashMap<(u8, u32, u32, u32), Kept>,
+    /// By terrain state, tile and interval (in millimetres).
+    cache: HashMap<(TerrainState, u8, u32, u32, u32), Kept>,
     clock: u64,
     capacity: usize,
 }
@@ -512,14 +524,32 @@ impl ContourCache {
         y: u32,
         interval_m: f64,
     ) -> Result<Arc<Vec<u8>>, DesignError> {
+        self.tile_in(maker, TerrainState::Before, z, x, y, interval_m)
+    }
+
+    /// Forget the tiles of one terrain state: what is laid on the ground in it has changed.
+    pub fn clear_state(&mut self, state: TerrainState) {
+        self.cache.retain(|k, _| k.0 != state);
+    }
+
+    /// [`ContourCache::tile`] of the ground in `state`.
+    pub fn tile_in(
+        &mut self,
+        maker: &TileMaker,
+        state: TerrainState,
+        z: u8,
+        x: u32,
+        y: u32,
+        interval_m: f64,
+    ) -> Result<Arc<Vec<u8>>, DesignError> {
         check_interval(interval_m)?;
-        let key = (z, x, y, libm::round(interval_m * 1000.0) as u32);
+        let key = (state, z, x, y, libm::round(interval_m * 1000.0) as u32);
         self.clock += 1;
         if let Some(hit) = self.cache.get_mut(&key) {
             hit.0 = self.clock;
             return Ok(hit.1.clone());
         }
-        let bytes = Arc::new(contours(maker, z, x, y, interval_m)?.to_mvt());
+        let bytes = Arc::new(contours_in(maker, state, z, x, y, interval_m)?.to_mvt());
         if self.cache.len() >= self.capacity
             && let Some(oldest) = self
                 .cache

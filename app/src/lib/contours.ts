@@ -76,17 +76,20 @@ export function saveContourChoice(choice: ContourChoice) {
 }
 
 /** The tile address the map source takes for the DEM numbered `id` and an interval choice. A new DEM or
- * another choice has another address, so no old tile is shown for it. */
-export const contourTemplate = (id: number, choice: ContourChoice) => `${CONTOUR_PROTOCOL}://${id}/${choice}/{z}/{x}/{y}`;
+ * another choice has another address, so no old tile is shown for it. With a terrain state other than
+ * "before" (MAP-5) the address names the state and the number of what is laid on the ground. */
+export const contourTemplate = (id: number, choice: ContourChoice, state = "before", rev = 0) =>
+  state === "before" ? `${CONTOUR_PROTOCOL}://${id}/${choice}/{z}/{x}/{y}` : `${CONTOUR_PROTOCOL}://${id}/${state}/${rev}/${choice}/{z}/{x}/{y}`;
 
-/** The tile a contour tile address names, or null when it is not one. */
-export function parseContourUrl(url: string): { id: number; choice: ContourChoice; z: number; x: number; y: number } | null {
-  const m = /^owd-contour:\/\/(\d+)\/(auto|\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(url);
-  if (!m) return null;
-  const choice = m[2] === "auto" ? "auto" : Number(m[2]);
+/** The tile a contour tile address names, with its terrain state when it is not the DEM as it is, or null
+ * when it is not one. */
+export function parseContourUrl(url: string): { id: number; choice: ContourChoice; z: number; x: number; y: number; state?: string } | null {
+  const m = /^owd-contour:\/\/(\d+)\/(?:([a-z]+)\/\d+\/)?(auto|\d+)\/(\d+)\/(\d+)\/(\d+)$/.exec(url);
+  if (!m || m[2] === "auto") return null;
+  const choice = m[3] === "auto" ? "auto" : Number(m[3]);
   if (choice !== "auto" && !(INTERVALS as readonly number[]).includes(choice)) return null;
-  const [id, z, x, y] = [m[1], m[3], m[4], m[5]].map(Number);
-  return { id, choice: choice as ContourChoice, z, x, y };
+  const [id, z, x, y] = [m[1], m[4], m[5], m[6]].map(Number);
+  return { id, choice: choice as ContourChoice, z, x, y, ...(m[2] ? { state: m[2] } : {}) };
 }
 
 /** The name of the picture of an index contour's level, which the map asks the page to draw. */

@@ -492,6 +492,82 @@ impl Session {
         .map_err(DesignError::Input)
     }
 
+    /// The stations of one option with no terrain read (MAP-5): where each stands, the bottom
+    /// half-width and the water level there, as [`Session::option_sections`] gives them to the walk
+    /// (the same station frame, the same half-width rule, the same level reader), and the design
+    /// depth. For drawing the channel when the volumes stage holds no stations.
+    pub(super) fn option_frame(
+        &self,
+        plan: &SectionPlan,
+        o: &Value,
+    ) -> Result<(Vec<owd_core::volumes::sections::StationAt>, f64), DesignError> {
+        let line: Vec<Pt> = all_positions(&o["line"]);
+        let (chain, xy, th) =
+            owd_core::volumes::sections::station_frame(&line, plan.typed.station_m)
+                .map_err(DesignError::Input)?;
+        let mut settings = plan.typed.clone();
+        settings.half_width_m = plan.fixed_hb;
+        let hb = super::volumes_stage::half_widths(&xy, &plan.shape, &settings)
+            .map_err(super::rule_sets::stage_error)?;
+        let water_in = self.water_input_on(
+            crate::types::Polyline(line.clone()),
+            crate::types::Polyline(plan.centre.clone()),
+        );
+        let stage_level;
+        let port_level;
+        let wl: &dyn Fn(f64) -> f64 = match self.water_sampling {
+            super::water::WaterSampling::Projection => {
+                stage_level = super::water_stage::level_reader(&water_in)
+                    .map_err(|e| DesignError::Input(e.message))?;
+                &stage_level
+            }
+            super::water::WaterSampling::DesignLineChainage => {
+                port_level = self.water_level_along(&plan.profile, &line, &plan.centre);
+                &port_level
+            }
+        };
+        let stations = (0..xy.len())
+            .map(|i| owd_core::volumes::sections::StationAt {
+                chainage_m: chain[i],
+                xy: xy[i],
+                heading_rad: th[i],
+                hb: hb[i],
+                wl: wl(chain[i]),
+            })
+            .collect();
+        Ok((stations, plan.shape.design_depth_m))
+    }
+
+    /// The slope of the cut below water and the reach and spacing of a section's samples, as the
+    /// plan's settings give them.
+    pub(super) fn plan_cut_settings(plan: &SectionPlan) -> (f64, f64, f64) {
+        (plan.typed.wet_slope, plan.typed.maxw_m, plan.typed.dx_m)
+    }
+
+    /// The bed model's bed at a point of the project CRS, as [`Session::plan_terrain`] lays it on
+    /// the terrain: `None` outside the water. `None` when the document has no bed model.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn plan_bed_at(plan: &SectionPlan) -> Option<Box<dyn Fn(Pt) -> Option<f64>>> {
+        let (bed, level) = plan.bed.clone()?;
+        Some(Box::new(move |p: Pt| {
+            let wl = level.level_at(crate::types::Chainage(bed.chainage_of(p)));
+            bed.bed_elevation(p, wl)
+        }))
+    }
+
+    /// `terrain` as the walk reads it: with the bed model laid inside the water, when the document
+    /// has one.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn plan_terrain<'a>(
+        plan: &'a SectionPlan,
+        terrain: TerrainSampler<'a>,
+    ) -> Box<dyn Fn(&[f64], &[f64]) -> Vec<f64> + 'a> {
+        match &plan.bed {
+            Some((bed, level)) => Box::new(super::bed::with_bed(bed, level, terrain)),
+            None => Box::new(move |xs, ys| terrain(xs, ys)),
+        }
+    }
+
     /// [`Session::option_sections`] with the cut-rate multiplier at points (ticket 13), for the
     /// volumes stage's own walk.
     pub(super) fn option_sections_weighted(

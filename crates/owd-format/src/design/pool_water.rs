@@ -573,6 +573,12 @@ impl PoolWater {
         (ground < level).then_some((p, level, ground))
     }
 
+    /// The pool's level at a point in the DEM's CRS where there is water; `None` on dry ground.
+    /// For a terrain made of another ground with this water on it (MAP-5: the cut channel filled).
+    pub fn level_at(&self, px: f64, py: f64) -> Option<f64> {
+        self.water(px, py).map(|(_, level, _)| level)
+    }
+
     /// What a click reads at a longitude and latitude in degrees. `None` on dry ground.
     pub fn at(&self, maker: &TileMaker, lon: f64, lat: f64) -> Option<WaterAt> {
         let [px, py] = maker.to_dem([lon, lat])?;

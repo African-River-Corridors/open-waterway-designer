@@ -37,12 +37,15 @@ declare module "*/wasm-pkg/owd_web.js" {
     map_geometry(): string;
     hillshade(): string;
     terrain_info(): string;
-    terrain_tile(z: number, x: number, y: number): Uint8Array;
-    contour_tile(z: number, x: number, y: number, interval_m: number): Uint8Array;
+    terrain_tile(state: string, z: number, x: number, y: number): Uint8Array;
+    contour_tile(state: string, z: number, x: number, y: number, interval_m: number): Uint8Array;
+    channel_geometry(): string;
+    cut_tile(z: number, x: number, y: number): Uint8Array;
+    cut_at(lon: number, lat: number): string;
     map_structures(): string;
     pool_water_info(): string;
     pool_water_tile(id: number, z: number, x: number, y: number): Uint8Array;
-    pool_surface_tile(id: number, z: number, x: number, y: number): Uint8Array;
+    pool_surface_tile(id: number, state: string, z: number, x: number, y: number): Uint8Array;
     pool_water_at(id: number, lon: number, lat: number): string;
     long_section(option: string): string;
     cross_section(option: string, chainage: number): string;

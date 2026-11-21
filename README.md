@@ -289,6 +289,15 @@ end on its end pose inside the corridor is searched again with its end moved, as
 cannot close. A pool with no line inside the corridor keeps the baseline; the details and a warning
 say so. The limit never fails silently. Turn it off again with `--corridor-limit false`.
 
+**With no DEM: optimise on plan area.** A design that has no DEM can still run the optimise stage.
+There is then no ground to cut, so the stage chooses no weirs and no pool levels, and it needs no
+water level. It searches the whole line for the least channel footprint outside the river polygon,
+in m2, at a land weight of 1 unless `land_weight` is set, plus the length cost. The results
+(`optimised_on: "plan_area"`), the lattice's details, a warning on the design line, the command
+line and the app all say that the line was optimised on plan area, not on volume. The volumes stage
+still needs a DEM. A design that names a DEM whose file is missing is refused as before: plan area
+is never a quiet fallback.
+
 **Paying for flooded land (`flood_cost_per_ha`, `max_above_bank_m`).** The weir search prices cut and
 structures. A higher pool always cuts less, so with nothing else in the cost it takes the largest
 lift you offer at every weir, and the pools can stand far above the banks. Two optimise settings
