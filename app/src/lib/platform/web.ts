@@ -476,6 +476,13 @@ export async function createWebPlatform(): Promise<Platform> {
     terrain_tile: (a) => host.rpc("terrain_tile", a.z, a.x, a.y),
     // Contours (MAP-3): traced in the worker from the same DEM, a vector tile for each map tile.
     contour_tile: (a) => host.rpc("contour_tile", a.z, a.x, a.y, a.interval),
+    // Weirs, locks and pools (MAP-4): the list is made by the session; the pool water is worked out in the
+    // worker from the DEM in memory, and its tiles are made there too.
+    map_structures: () => json("map_structures"),
+    pool_water_info: () => json("pool_water_info"),
+    pool_water_tile: (a) => host.rpc("pool_water_tile", a.id, a.z, a.x, a.y),
+    pool_surface_tile: (a) => host.rpc("pool_surface_tile", a.id, a.z, a.x, a.y),
+    pool_water_at: (a) => json("pool_water_at", a.id, a.lon, a.lat),
     long_section: (a) => json("long_section", a.option),
     sheets: (a) => json("sheets", a.option),
     export_sheets: async (a) => {

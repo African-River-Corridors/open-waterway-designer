@@ -56,6 +56,12 @@ pub struct OptimiseSettings {
     /// the baseline it compares with. 0 (the default) is off; then it is not written into the
     /// document, so a design run without it reads, hashes and saves as before.
     pub length_weight: f64,
+    /// The cost of one m2 of land taken, in m3 of cut per m2: the pool lattice pays it for every m2
+    /// of the channel's footprint at the water surface that lies outside the river polygon, cut or
+    /// no cut, on its line and on the baseline it compares with. A value equal to the channel depth
+    /// prices land like a cut of the full depth. 0 (the default) is off; then it is not written into
+    /// the document, so a design run without it reads, hashes and saves as before.
+    pub land_weight: f64,
     /// The cost of one hectare of land a pool floods outside the river polygon, in the units of
     /// the cut cost (money, when the weights are prices). The weir search adds it to the cost of
     /// each pool, so it trades cut against flooded land. 0 (the default) is off; then it is not
@@ -88,6 +94,11 @@ pub struct OptimiseSettings {
     pub n_heading: i64,
     pub radius_multiples: Vec<f64>,
     pub corridor_half_m: f64,
+    /// Hold the pool search to the corridor: no point of the lattice's line may lie further than
+    /// `corridor_half_m` from the baseline (the alignment's design line, else the river centreline).
+    /// False (the default) is the search as it was, where the corridor only feeds the heuristic;
+    /// then it is not written into the document.
+    pub corridor_limit: bool,
     pub cell_m: f64,
     pub check_chord_m: Option<f64>,
 }
@@ -105,6 +116,7 @@ impl Default for OptimiseSettings {
             wet_weight: 1.0,
             dry_weight: 1.0,
             length_weight: 0.0,
+            land_weight: 0.0,
             flood_cost_per_ha: 0.0,
             max_above_bank_m: None,
             flood_distance_m: FLOOD_DISTANCE_M,
@@ -125,6 +137,7 @@ impl Default for OptimiseSettings {
             n_heading: 16,
             radius_multiples: vec![1.0, 1.5, 3.0],
             corridor_half_m: 350.0,
+            corridor_limit: false,
             cell_m: 2.0,
             check_chord_m: None,
         }
@@ -167,6 +180,12 @@ impl OptimiseSettings {
         // change makes the optimise stage stale.
         if self.length_weight != 0.0 {
             v["length_weight"] = json!(self.length_weight);
+        }
+        if self.land_weight != 0.0 {
+            v["land_weight"] = json!(self.land_weight);
+        }
+        if self.corridor_limit {
+            v["corridor_limit"] = json!(true);
         }
         // The flood settings, the same way: each is written only when it is not its default.
         if self.flood_cost_per_ha != 0.0 {
@@ -238,6 +257,18 @@ impl OptimiseSettings {
                         ));
                     }
                     out.length_weight = w;
+                }
+                "land_weight" => {
+                    let w = f(k)?;
+                    if !(w.is_finite() && w >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `land_weight` must be a number >= 0 (a cost per m2 of \
+                             channel footprint outside the river polygon, in m3 of cut per m2; 0 \
+                             is off)"
+                                .into(),
+                        ));
+                    }
+                    out.land_weight = w;
                 }
                 "flood_cost_per_ha" => {
                     let w = f(k)?;
@@ -312,6 +343,15 @@ impl OptimiseSettings {
                 "n_heading" => out.n_heading = whole(k)?,
                 "radius_multiples" => out.radius_multiples = list(k)?,
                 "corridor_half_m" => out.corridor_half_m = f(k)?,
+                "corridor_limit" => {
+                    out.corridor_limit = v.as_bool().ok_or_else(|| {
+                        DesignError::Input(
+                            "the setting `corridor_limit` must be true or false (true holds the \
+                             pool search inside the corridor)"
+                                .into(),
+                        )
+                    })?
+                }
                 "cell_m" => out.cell_m = f(k)?,
                 "check_chord_m" => out.check_chord_m = maybe(k)?,
                 other => {
@@ -647,10 +687,17 @@ impl Session {
         // weight x length to each and change no choice of weirs. It stays out of the cascade, whose
         // numbers are then the same with the weight on or off.
         spec.length_weight = typed.length_weight;
+        // The land cost is the lattice's only as well: the cascade prices every candidate reach
+        // along the same baseline, whose land take does not depend on the pool level in this
+        // measure. Its footprint is the channel's plan width at the water surface: the bottom width
+        // plus the side slopes (`side_slope`) up through the design depth.
+        spec.land_weight = typed.land_weight;
+        spec.land_depth_m = depth;
         let mut lattice = LatticeConfig::new(r_min);
         lattice.pitch_m = num(&settings, "pitch_m")?;
         lattice.n_heading = typed.n_heading;
         lattice.radius_multiples = nums(&settings, "radius_multiples")?;
+        lattice.corridor_limit = typed.corridor_limit;
         let lattice = lattice.validated().map_err(refuse)?;
         let out = optimise_pools(
             &baseline,
@@ -734,6 +781,30 @@ impl Session {
                 }
             }
         }
+        // With a land weight on, the same: the footprint's width, and each pool's land area and
+        // land cost (its line's, and its baseline's for comparison). The cut part of a pool's cost
+        // is cost - length_cost - land_cost.
+        if typed.land_weight != 0.0 {
+            details["land_weight"] = json!(typed.land_weight);
+            details["land_footprint_width_m"] =
+                json!(2.0 * (half_width + spec.side_slope_h_per_v * depth));
+            if let Some(ps) = details["pools"].as_array_mut() {
+                for (d, p) in ps.iter_mut().zip(&out.pools) {
+                    if let Some(a) = p.result.land_area_m2 {
+                        d["land_area_m2"] = json!(a);
+                        d["land_cost"] = json!(typed.land_weight * a);
+                    }
+                    if let Some(a) = p.baseline_land_area_m2 {
+                        d["baseline_land_area_m2"] = json!(a);
+                    }
+                }
+            }
+        }
+        // With the corridor limit on, the details say so, with the half-width the line was held to.
+        if typed.corridor_limit {
+            details["corridor_limit"] = json!(true);
+            details["corridor_half_m"] = json!(typed.corridor_half_m);
+        }
         let river_geometry = self
             .river_geometry()
             .map_err(super::rule_sets::stage_error)?;
@@ -800,6 +871,10 @@ impl Session {
             }
             for p in out.moved_boundaries() {
                 w.push(json!(moved_warning(p)));
+            }
+            // A pool with no line inside the corridor keeps its baseline (`corridor_limit`).
+            for p in out.no_line_in_corridor_pools() {
+                w.push(json!(corridor_warning(p, typed.corridor_half_m)));
             }
             // A pool whose line crossed itself or the rest of the line keeps its baseline (#569).
             for p in out.looped_pools() {
@@ -898,13 +973,30 @@ fn pool_name(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
 /// The sanity warning for a pool whose search could not close on its end pose at any end tried, and
 /// whose line would have broken its join, so it keeps the baseline (issue #565).
 fn unclosed_warning(p: &owd_core::optimise::lattice::PoolAlignment) -> String {
+    let inside = if p.kept_baseline_because
+        == Some(owd_core::optimise::lattice::UNCLOSED_IN_CORRIDOR_REASON)
+    {
+        " inside the corridor"
+    } else {
+        ""
+    };
     format!(
-        "{} keeps the baseline: its search could not end on the pool's end pose, even with the end \
-         moved, and its line would have joined the next piece {:.1} m and {:.1}° off, breaking \
-         R_min or crossing itself",
+        "{} keeps the baseline: its search could not end on the pool's end pose{inside}, even with \
+         the end moved, and its line would have joined the next piece {:.1} m and {:.1}° off, \
+         breaking R_min or crossing itself",
         pool_name(p),
         p.result.end_err_m,
         p.result.end_heading_err_rad.to_degrees()
+    )
+}
+
+/// The sanity warning for a pool whose search, held to the corridor (`corridor_limit`), found no
+/// line inside it, so it keeps the baseline.
+fn corridor_warning(p: &owd_core::optimise::lattice::PoolAlignment, half_m: f64) -> String {
+    format!(
+        "{} keeps the baseline: the search found no line that stays within {half_m:.0} m of the \
+         baseline (`corridor_limit` is on). Widen `corridor_half_m`, or turn the limit off",
+        pool_name(p)
     )
 }
 

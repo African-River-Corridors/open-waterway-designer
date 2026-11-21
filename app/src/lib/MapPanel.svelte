@@ -4,12 +4,14 @@
   import "maplibre-gl/dist/maplibre-gl.css";
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
   import type * as GeoJSON from "geojson";
-  import { contourTile, terrainTile, type Hillshade, type MapGeometry, type StretchCollection, type TerrainInfo } from "./api";
+  import { contourTile, mapStructures, poolSurfaceTile, poolWaterAt, poolWaterInfo, poolWaterTile, terrainTile, type Hillshade, type LonLat, type MapGeometry, type MapStructures, type PoolWaterInfo, type StretchCollection, type TerrainInfo, type WaterAt } from "./api";
   import { DEFAULT_IMAGERY, layerFor, type ImageryLayer, type ImagerySource } from "./imagery";
   import OptionSwatch from "./OptionSwatch.svelte";
   import { optionColour, token } from "./theme";
   import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
   import { CONTOUR_DEEP_ZOOM, CONTOUR_MIN_ZOOM, CONTOUR_PROTOCOL, INTERVALS, LABEL_PREFIX, contourTemplate, intervalAt, loadContourChoice, parseContourUrl, saveContourChoice, type ContourChoice } from "./contours";
+  import StructureCard from "./StructureCard.svelte";
+  import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, extrusionFeatures, parsePoolUrl, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stopColour, waterReadout, weirLabel } from "./structures";
   import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, tileTemplate, type TerrainPrefs } from "./terrain3d";
 
   let {
@@ -88,6 +90,15 @@
     if (!tile) throw new Error(`not a contour tile address: ${params.url}`);
     return engineTile(() => contourTile(tile.z, tile.x, tile.y, intervalAt(tile.choice, tile.z)), abort);
   });
+  // The pool water (MAP-4) comes the same way, under two schemes: the picture of the water, coloured by
+  // depth, and the terrain with the water on it, which the 3D view stands on while the water is shown.
+  for (const scheme of [POOL_PROTOCOL, POOL_SURFACE_PROTOCOL]) {
+    maplibregl.addProtocol(scheme, (params, abort) => {
+      const tile = parsePoolUrl(params.url);
+      if (!tile) throw new Error(`not a pool water tile address: ${params.url}`);
+      return engineTile(() => (tile.surface ? poolSurfaceTile : poolWaterTile)(tile.id, tile.z, tile.x, tile.y), abort);
+    });
+  }
 
   /** A 1 x 1 transparent PNG. */
   const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
@@ -107,6 +118,22 @@
   /** The layers ticked on in the Layers list: remembered on this machine, never in the design. */
   let ticks = $state<LayerTicks>(loadLayerTicks());
   let layersOpen = $state(false);
+  /** The weirs, the locks and the pools of the design (MAP-4): asked of the session whenever the design
+   * changes. It is made on demand and never stored; a design with no pools has empty lists. */
+  let structures = $state<MapStructures | null>(null);
+  let structuresText = "";
+  let structuresAsk = 0;
+  $effect(() => {
+    void geometry;
+    const ask = ++structuresAsk;
+    const take = (next: MapStructures | null) => {
+      const text = JSON.stringify(next);
+      if (ask !== structuresAsk || text === structuresText) return;
+      structuresText = text;
+      structures = next;
+    };
+    mapStructures().then(take, () => take(null));
+  });
   /** The layers this design has something to draw for. Imagery is always there. */
   const present = $derived<Record<MapLayerId, boolean>>({
     "river-polygon": !!geometry?.river_polygon,
@@ -115,6 +142,9 @@
     "design-line": !!geometry?.options.length,
     "constraint-stretches": !!stretches?.features.length,
     "station-marks": !!geometry?.options.some((o) => o.ticks.length),
+    structures: !!structures?.weirs.length,
+    "pool-levels": !!structures?.pools.length,
+    "pool-water": !!structures?.pools.length && !!terrain,
     "terrain-shading": !!terrain,
     contours: !!terrain,
     imagery: true,
@@ -141,6 +171,7 @@
     if (key !== drawnTerrain) {
       // Another DEM, or none: everything drawn from the old tiles goes.
       if (map.getTerrain()) map.setTerrain(null);
+      dropPoolWater();
       for (const id of ["terrain-tint", "terrain-shading"]) if (map.getLayer(id)) map.removeLayer(id);
       for (const id of ["dem", "dem-shade"]) if (map.getSource(id)) map.removeSource(id);
       if (terrain) {
@@ -155,15 +186,18 @@
         // slope to shade, so without the imagery the tint is what shows the DEM.
         const [low, mid, high] = [token("plate-ink"), token("hillshade"), token("cream")];
         const span = Math.max(terrain.max_m - terrain.min_m, 0.01);
-        // Under the contours when they are on the map.
-        const over = map.getLayer("contours-casing") ? "contours-casing" : "polygon";
+        // Under the pool water and the contours when they are on the map.
+        const over = ["pool-water", "contours-casing", "polygon"].find((id) => map!.getLayer(id));
         map.addLayer({ id: "terrain-tint", type: "color-relief", source: "dem-shade", layout: { visibility: "none" }, paint: { "color-relief-color": ["interpolate", ["linear"], ["elevation"], terrain.min_m, low, terrain.min_m + span / 2, mid, terrain.max_m, high] } }, over);
         map.addLayer({ id: "terrain-shading", type: "hillshade", source: "dem-shade", layout: { visibility: "none" }, paint: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": low, "hillshade-highlight-color": high } }, over);
       }
       drawnTerrain = key;
     }
     if (terrainOn) {
-      map.setTerrain({ source: "dem", exaggeration: prefs.exaggeration });
+      // While the pool water is shown the 3D view stands on the terrain with the water on it: the pool's
+      // level where there is water, the ground elsewhere. So each pool reads as a flat surface.
+      const surface = ticks["pool-water"] && map.getSource("dem-water") ? "dem-water" : "dem";
+      map.setTerrain({ source: surface, exaggeration: prefs.exaggeration });
       if (!tilted) map.easeTo({ pitch: PITCH_3D, duration: 600 });
     } else {
       if (map.getTerrain()) map.setTerrain(null);
@@ -172,11 +206,165 @@
     }
     tilted = terrainOn;
     terrainDrawn = map.getTerrain() ? "on" : "off";
+    waterTerrain = map.getTerrain()?.source === "dem-water" ? "on" : "off";
+    // The blocks of the weirs and locks stand up only in the 3D view.
+    if (map.getLayer("structures-3d")) map.setLayoutProperty("structures-3d", "visibility", ticks.structures && terrainOn ? "visible" : "none");
+    raiseBlocks();
     // With the imagery: the shading alone, laid over it. Without: the tint under the shading, the DEM itself.
     const shaded = ticks["terrain-shading"];
     if (map.getLayer("terrain-shading")) map.setLayoutProperty("terrain-shading", "visibility", shaded ? "visible" : "none");
     if (map.getLayer("terrain-tint")) map.setLayoutProperty("terrain-tint", "visibility", shaded && !ticks.imagery ? "visible" : "none");
     applyContours();
+  }
+
+  /** The pool water (MAP-4): the ground each pool floods. The engine works it out in this browser, from the
+   * DEM in memory, only while the tick is on; null until then, and with no DEM or no pools. */
+  let poolWater = $state<PoolWaterInfo | null>(null);
+  /** What the pool water is waiting for, or why it could not be made. */
+  let poolWaterNote = $state<string | null>(null);
+  let poolAsk = 0;
+  const poolWaterWanted = $derived(ticks["pool-water"] && !!terrain && !!structures?.pools.length);
+  $effect(() => {
+    void structures;
+    void terrain?.id;
+    const ask = ++poolAsk;
+    // Another DEM or other pools: the water on the map is out of date.
+    poolWater = null;
+    waterRead = null;
+    if (!poolWaterWanted) {
+      poolWaterNote = null;
+      return;
+    }
+    poolWaterNote = "Working out the pool water…";
+    poolWaterInfo().then(
+      (info) => {
+        if (ask !== poolAsk) return;
+        poolWater = info;
+        poolWaterNote = null;
+      },
+      (e) => {
+        if (ask !== poolAsk) return;
+        poolWaterNote = `The pool water could not be worked out: ${e}`;
+      },
+    );
+  });
+  /** The pool water the map has now, as the DEM's number and the flood mask's; "" for none. */
+  let drawnPool = "";
+  /** What the map itself has done, for a test to read: "on" once the pool water layer is there. */
+  let poolWaterDrawn = $state("off");
+  /** "on" while the 3D view stands on the terrain with the water on it. */
+  let waterTerrain = $state("off");
+  /** Take the pool water off the map. */
+  function dropPoolWater() {
+    if (!map) return;
+    if (map.getTerrain()?.source === "dem-water") map.setTerrain(null);
+    if (map.getLayer("pool-water")) map.removeLayer("pool-water");
+    for (const id of ["pool-water", "dem-water"]) if (map.getSource(id)) map.removeSource(id);
+    drawnPool = "";
+    poolWaterDrawn = "off";
+  }
+  /** Put the pool water on the map, or take it off: the picture of the water over the ground, and the
+   * terrain with the water on it for the 3D view. */
+  function applyPoolWater() {
+    if (!map || !ready) return;
+    const key = poolWater && terrain ? `${terrain.id}/${poolWater.id}` : "";
+    if (key !== drawnPool) {
+      dropPoolWater();
+      if (poolWater && terrain) {
+        map.addSource("pool-water", { type: "raster", tiles: [poolTemplate(poolWater.id)], tileSize: terrain.tile_size, maxzoom: terrain.max_zoom, bounds: terrain.bounds });
+        map.addSource("dem-water", { type: "raster-dem", tiles: [poolSurfaceTemplate(poolWater.id)], tileSize: terrain.tile_size, maxzoom: terrain.max_zoom, encoding: terrain.encoding });
+        // Over the imagery and the terrain shading, under the contours and the design.
+        map.addLayer({ id: "pool-water", type: "raster", source: "pool-water", paint: { "raster-fade-duration": 0 } }, ["contours-casing", "polygon"].find((id) => map!.getLayer(id)));
+        drawnPool = key;
+        poolWaterDrawn = "on";
+      }
+    }
+    applyTerrain();
+  }
+  /** What the last click on the pool water read: the water level, the ground, the depth and the pool. */
+  let waterRead = $state<WaterAt | null>(null);
+  let readAsk = 0;
+  function readWater(lon: number, lat: number) {
+    const ask = ++readAsk;
+    if (!poolWater || !ticks["pool-water"]) {
+      waterRead = null;
+      return;
+    }
+    poolWaterAt(poolWater.id, lon, lat).then(
+      (w) => ask === readAsk && (waterRead = w),
+      () => ask === readAsk && (waterRead = null),
+    );
+  }
+  /** The flooded land table is open. */
+  let landOpen = $state(false);
+
+  /** The weir whose card is open, by its number. */
+  let selectedWeir = $state<number | null>(null);
+  const weirShown = $derived(ticks.structures ? (structures?.weirs.find((w) => w.number === selectedWeir) ?? null) : null);
+  let weirMarkers: maplibregl.Marker[] = [];
+  let poolMarkers: maplibregl.Marker[] = [];
+  /** The weirs the map has drawn, for a test to read. */
+  let structuresDrawn = $state(0);
+  /** Draw the weirs, the locks and the pools: the blocks as map shapes, the labels as HTML markers (the map
+   * has no glyph server, so it has no text of its own). */
+  function drawStructures() {
+    if (!map || !ready) return;
+    (map.getSource("structures") as maplibregl.GeoJSONSource).setData(fc(partFeatures(structures)));
+    (map.getSource("pool-reaches") as maplibregl.GeoJSONSource).setData(fc(poolFeatures(structures)));
+    weirMarkers.forEach((m) => m.remove());
+    poolMarkers.forEach((m) => m.remove());
+    weirMarkers = [];
+    poolMarkers = [];
+    for (const w of structures?.weirs ?? []) {
+      // A square with the weir's number: a clear mark at any zoom. Its words show from WEIR_TEXT_ZOOM in.
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "weir-marker";
+      el.dataset.testid = "weir-marker";
+      el.dataset.weir = String(w.number);
+      el.title = `${weirLabel(w)} (${PLACEHOLDER_NOTE})`;
+      const mark = document.createElement("span");
+      mark.className = "weir-mark";
+      mark.textContent = String(w.number);
+      const words = document.createElement("span");
+      words.className = "weir-text";
+      words.textContent = weirLabel(w);
+      el.append(mark, words);
+      // The click opens the card and goes no further: it does not move the section station.
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectedWeir = w.number;
+      });
+      weirMarkers.push(new maplibregl.Marker({ element: el, anchor: "left", offset: [-10, 0] }).setLngLat(w.position).addTo(map));
+    }
+    for (const p of structures?.pools ?? []) {
+      const el = document.createElement("span");
+      el.className = "pool-label";
+      el.dataset.testid = "pool-label";
+      el.textContent = poolLabel(p);
+      poolMarkers.push(new maplibregl.Marker({ element: el, offset: [0, 16] }).setLngLat(p.mid).addTo(map));
+    }
+    structuresDrawn = weirMarkers.length;
+    if (!structures?.weirs.some((w) => w.number === selectedWeir)) selectedWeir = null;
+    untrack(applyLayers);
+  }
+  /** The heights of the 3D blocks the map has now. */
+  let blocksKey = "";
+  /** Stand the blocks of the weirs and locks up in the 3D view, each top at its level. The map measures a
+   * block's height from the terrain at its middle (see `extrusionHeight`), so the heights are worked out
+   * from the terrain the map has drawn, and again whenever it settles (a tile arrived, the exaggeration
+   * changed, the pool water went on or off). */
+  function raiseBlocks() {
+    if (!map || !ready) return;
+    const source = map.getSource("structures-3d") as maplibregl.GeoJSONSource | undefined;
+    if (!source) return;
+    const m = map;
+    const on = terrainOn && ticks.structures && !!m.getTerrain();
+    const blocks = on ? extrusionFeatures(structures, prefs.exaggeration, (at: LonLat) => m.queryTerrainElevation(at) ?? 0) : [];
+    const key = `${structuresText}|${blocks.map((b) => b.properties?.height).join(",")}`;
+    if (key === blocksKey) return;
+    blocksKey = key;
+    source.setData(fc(blocks));
   }
 
   /** The contour interval the user chose: remembered on this machine, never in the design. */
@@ -255,6 +443,8 @@
     // The chainage labels and the tight-bend marks are HTML markers, not map layers.
     for (const m of labels) m.getElement().style.display = ticks["station-marks"] ? "" : "none";
     for (const m of bendMarkers) m.getElement().style.display = ticks["design-line"] ? "" : "none";
+    for (const m of weirMarkers) m.getElement().style.display = ticks.structures ? "" : "none";
+    for (const m of poolMarkers) m.getElement().style.display = ticks["pool-levels"] ? "" : "none";
     shade();
     applyTerrain();
   }
@@ -472,13 +662,21 @@
     // The compass shows the bearing and the tilt; a click on it turns the map north up again.
     map.addControl(new maplibregl.NavigationControl({ showCompass: true, visualizePitch: true }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    map.on("click", (e) => onPick?.(e.lngLat.lng, e.lngLat.lat));
+    map.on("click", (e) => {
+      // A click on a weir or a lock opens its card; a click on the pool water reads the water there.
+      const blocks = ["structures-3d", "structures-weir", "structures-lock", "structures-chamber"].filter((id) => map!.getLayer(id));
+      const hit = ticks.structures && blocks.length ? map!.queryRenderedFeatures(e.point, { layers: blocks }) : [];
+      if (hit.length) selectedWeir = Number(hit[0].properties.weir);
+      readWater(e.lngLat.lng, e.lngLat.lat);
+      onPick?.(e.lngLat.lng, e.lngLat.lat);
+    });
+    map.on("idle", raiseBlocks);
     map.on("styleimagemissing", (e) => levelPicture(e.id));
     map.on("load", () => {
       const m = map!;
       // A placeholder picture until the hillshade arrives; `setCoordinates` and `updateImage` replace it.
       m.addSource("hillshade", { type: "image", url: BLANK, coordinates: [[0, 1], [1, 1], [1, 0], [0, 0]] });
-      for (const id of ["polygon", "banks", "centre", "options", "bends", "ticks", "stretches"]) m.addSource(id, { type: "geojson", data: empty });
+      for (const id of ["polygon", "banks", "centre", "options", "bends", "ticks", "stretches", "pool-reaches", "structures", "structures-3d"]) m.addSource(id, { type: "geojson", data: empty });
       m.addLayer({ id: "hillshade", type: "raster", source: "hillshade", paint: { "raster-fade-duration": 0 }, layout: { visibility: "none" } });
       // Colours are read from the tokens. On imagery the same cream and plate ink serve both themes.
       const cream = token("cream");
@@ -489,6 +687,9 @@
       m.addLayer({ id: "polygon-outline", type: "line", source: "polygon", paint: { "line-color": token("river"), "line-width": 1.25 } });
       m.addLayer({ id: "banks", type: "line", source: "banks", paint: { "line-color": cream, "line-width": 1.5 } });
       m.addLayer({ id: "centre", type: "line", source: "centre", paint: { "line-color": cream, "line-width": 1, "line-dasharray": [3, 3] } });
+      // Each pool's reach: a wide pale band under the design line, of two blues in turn, so that the place
+      // where one pool ends and the next begins shows.
+      m.addLayer({ id: "pool-reaches", type: "line", source: "pool-reaches", layout: { "line-cap": "butt" }, paint: { "line-color": ["case", ["get", "odd"], token("river"), cream], "line-width": 14, "line-opacity": 0.45 } });
       // The deep line over a cream casing keeps each option readable on any imagery. The design line is the heaviest line.
       m.addLayer({ id: "options-casing", type: "line", source: "options", paint: { "line-color": token("opt-casing"), "line-width": ["case", ["get", "selected"], 8, 6] } });
       m.addLayer({ id: "options", type: "line", source: "options", paint: { "line-color": ["get", "colour"], "line-width": 4, "line-opacity": ["case", ["get", "dim"], 0.55, 1] } });
@@ -497,6 +698,16 @@
       m.addLayer({ id: "stretches-casing", type: "line", source: "stretches", filter: ["==", ["get", "picked"], true], paint: { "line-color": cream, "line-width": 12 } });
       m.addLayer({ id: "stretches", type: "line", source: "stretches", paint: { "line-color": fail, "line-width": ["case", ["get", "picked"], 7, 4], "line-dasharray": [2, 1] } });
       m.addLayer({ id: "ticks", type: "circle", source: "ticks", paint: { "circle-radius": 3, "circle-color": cream, "circle-stroke-color": ink, "circle-stroke-width": 1 } });
+      // The weirs and locks (MAP-4), a placeholder model, not a design: the weir a pale bar across the river,
+      // the lock two pale walls and two dark gates on the design line with water between. Flat on the 2D
+      // map; in the 3D view the same shapes stand up as blocks (see `raiseBlocks`).
+      const kind = (...kinds: string[]): maplibregl.FilterSpecification => ["in", ["get", "kind"], ["literal", kinds]];
+      const river = token("river");
+      m.addLayer({ id: "structures-chamber", type: "fill", source: "structures", filter: kind("lock_chamber"), paint: { "fill-color": river } });
+      m.addLayer({ id: "structures-lock", type: "fill", source: "structures", filter: kind("lock_wall", "lock_gate"), paint: { "fill-color": ["match", ["get", "kind"], "lock_gate", ink, cream] } });
+      m.addLayer({ id: "structures-weir", type: "fill", source: "structures", filter: kind("weir"), paint: { "fill-color": cream } });
+      m.addLayer({ id: "structures-outline", type: "line", source: "structures", paint: { "line-color": ink, "line-width": 1 } });
+      m.addLayer({ id: "structures-3d", type: "fill-extrusion", source: "structures-3d", layout: { visibility: "none" }, paint: { "fill-extrusion-color": ["match", ["get", "kind"], "lock_gate", ink, "lock_chamber", river, cream], "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": 0, "fill-extrusion-opacity": 1 } });
       ready = true;
       // A test reads the map's own state (terrain, pitch) through this; only a build in test mode has it.
       if (import.meta.env.MODE === "test") (window as unknown as { __owdMap: maplibregl.Map }).__owdMap = m;
@@ -574,18 +785,35 @@
   });
 
   $effect(() => {
+    void structures;
+    void ready;
+    untrack(drawStructures);
+  });
+
+  $effect(() => {
+    void poolWater;
+    void ready;
+    untrack(applyPoolWater);
+  });
+
+  $effect(() => {
     void contourChoice;
     void ready;
     untrack(applyContours);
   });
 
   /** The contour interval the map draws at this zoom level, in metres; null further out than any contour. */
+  /** From this zoom level in, a weir's mark has its words beside it and each pool its label. */
+  const LABEL_ZOOM = 9;
+  /** The deepest depth the pool water's colours tell apart, in metres. */
+  const deepest = $derived(poolWater?.depth_stops[poolWater.depth_stops.length - 1]?.[0] ?? 0);
+  const m1 = (v: number) => v.toFixed(1);
   const contourNow = $derived(zoomNow < CONTOUR_MIN_ZOOM ? null : intervalAt(contourChoice, Math.floor(zoomNow)));
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && (layersOpen = false)} />
 
-<div class="map" data-testid="plan-map" data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-contours={contoursDrawn} data-contour-interval={shows("contours") ? (contourNow ?? "") : ""} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
+<div class="map" class:far={zoomNow < LABEL_ZOOM} data-testid="plan-map" data-structures={structuresDrawn} data-pool-water={poolWaterDrawn} data-water-terrain={waterTerrain} data-layers-off={MAP_LAYERS.filter((l) => !ticks[l.id] && !STARTS_OFF.includes(l.id)).map((l) => l.id).join(" ")} data-terrain={terrainDrawn} data-terrain-shading={ticks["terrain-shading"] && terrain ? "shown" : "hidden"} data-contours={contoursDrawn} data-contour-interval={shows("contours") ? (contourNow ?? "") : ""} data-hillshade={ticks.imagery && offline && hillshade ? "shown" : "hidden"} data-selected={drawn ?? ""} data-stretch={drawnStretch}>
   <div class="canvas" bind:this={host}></div>
   {#if failure}
     <p class="failure" role="alert" data-testid="map-failure">{failure}</p>
@@ -617,6 +845,21 @@
     {#if shows("centreline")}
       <li data-testid="legend-centreline"><span class="key" aria-hidden="true"><span class="stroke dashed"></span></span>centreline</li>
     {/if}
+    {#if shows("structures")}
+      <li data-testid="legend-structures"><span class="key weir-key" aria-hidden="true"></span>weir and lock: {PLACEHOLDER_NOTE}</li>
+    {/if}
+    {#if shows("pool-levels")}
+      <li data-testid="legend-pool-levels"><span class="key" aria-hidden="true"><span class="stroke pool"></span></span>pool, with its water level in metres</li>
+    {/if}
+    {#if shows("pool-water")}
+      <li data-testid="legend-pool-water">
+        {#if poolWater}
+          <span class="depth-ramp" aria-hidden="true" style="background: linear-gradient(to right, {poolWater.depth_stops.map(([d, c]) => `${stopColour(c)} ${deepest ? (d / deepest) * 100 : 0}%`).join(", ")})"></span>pool water by depth: 0 m to {deepest} m and deeper
+        {:else}
+          <span class="key" aria-hidden="true"></span>{poolWaterNote ?? "pool water"}
+        {/if}
+      </li>
+    {/if}
     {#if shows("contours")}
       <li data-testid="legend-contours"><span class="key" aria-hidden="true"><span class="stroke thin"></span></span>{contourNow ? `contour, every ${contourNow} m` : "contours: zoom in to see them"}</li>
       {#if contourNow}
@@ -647,8 +890,11 @@
             <label class:none={!present[l.id]} data-testid="layer-row-{l.id}">
               <input type="checkbox" data-testid="layer-{l.id}" checked={ticks[l.id]} disabled={!present[l.id]} onchange={(e) => setTick(l.id, e.currentTarget.checked)} />
               <span>{l.label}</span>
-              {#if !present[l.id]}<span class="none-note">{l.id === "contours" && terrainNote ? "web app only for now" : "none loaded"}</span>{/if}
+              {#if !present[l.id]}<span class="none-note">{(l.id === "contours" || l.id === "pool-water") && terrainNote ? "web app only for now" : l.id === "structures" || l.id === "pool-levels" || (l.id === "pool-water" && !structures?.pools.length) ? "none" : l.id === "pool-water" ? "load a DEM" : "none loaded"}</span>{/if}
             </label>
+            {#if l.id === "pool-water" && shows("pool-water") && poolWater}
+              <button class="land-button" data-testid="pool-land-button" aria-expanded={landOpen} title="The land each pool floods, in hectares" onclick={() => (landOpen = !landOpen)}>Land</button>
+            {/if}
             {#if l.id === "contours" && shows("contours")}
               <select data-testid="contour-interval" aria-label="Contour interval" title="Contour interval. Auto picks it from the zoom level; zoomed far out, a chosen interval is drawn coarser so the map does not fill with lines" value={String(contourChoice)} onchange={(e) => setContourChoice(e.currentTarget.value === "auto" ? "auto" : (Number(e.currentTarget.value) as ContourChoice))}>
                 <option value="auto">Auto</option>
@@ -659,7 +905,34 @@
         {/each}
       </fieldset>
     {/if}
+    {#if landOpen && shows("pool-water") && poolWater}
+      <section class="land" data-testid="pool-land-table" aria-label="Land flooded by each pool">
+        <header>
+          <h3>Land flooded by each pool</h3>
+          <button class="close" aria-label="Close" onclick={() => (landOpen = false)}>×</button>
+        </header>
+        <table>
+          <thead>
+            <tr><th>Pool</th><th>Level, m</th><th>Flooded, ha</th><th>Outside the river polygon, ha</th></tr>
+          </thead>
+          <tbody>
+            {#each poolWater.pools as p}
+              <tr data-testid="pool-land-row"><td>{p.number}</td><td>{m1(p.level_m)}</td><td>{m1(p.flooded_ha)}</td><td>{p.outside_river_ha == null ? "no polygon" : m1(p.outside_river_ha)}</td></tr>
+            {/each}
+          </tbody>
+        </table>
+        <p>Ground below each pool's level that is joined to the river, from the DEM. {poolWater.mask.factor > 1 ? `Whether ground is joined to the river is worked out on cells of ${Math.round(poolWater.mask.cell_m)} m.` : ""} A study figure, not a survey.</p>
+      </section>
+    {/if}
   </div>
+  {#if weirShown && structures}
+    <StructureCard weir={weirShown} {structures} {poolWater} onClose={() => (selectedWeir = null)} />
+  {/if}
+  {#if shows("pool-water") && waterRead}
+    <p class="water-read" role="status" data-testid="pool-water-readout">{waterReadout(waterRead)}<button class="close" aria-label="Close" onclick={() => (waterRead = null)}>×</button></p>
+  {:else if shows("pool-water") && poolWaterNote}
+    <p class="water-read" role="status" data-testid="pool-water-note">{poolWaterNote}</p>
+  {/if}
   {#if offline}
     <p class="offline" role="status" data-testid="offline-note">
       Imagery offline{hillshade ? " — showing the DEM hillshade" : " — no DEM to show a hillshade from"}
@@ -687,6 +960,23 @@
   .key .stroke { width: 18px; height: 0; border-top: 2px solid var(--cream); }
   .key .stroke.dashed { border-top-style: dashed; }
   .key .stroke.thin { border-top-width: 1px; }
+  .key .stroke.pool { border-top: 6px solid color-mix(in srgb, var(--river) 60%, var(--cream)); }
+  .key.weir-key { background: var(--cream); border: 1px solid var(--plate-ink); }
+  .depth-ramp { display: inline-block; width: 44px; height: 12px; border: 1px solid var(--plate-ink); box-sizing: border-box; background-color: var(--hillshade); }
+  .land-button { padding: 0 var(--sp-2); font-size: var(--fs-12); background: var(--surface); color: var(--ink); border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); }
+  .land { padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); color: var(--ink); background: var(--surface); border: var(--lw-thin) solid var(--ink); max-width: 330px; min-height: 0; overflow-y: auto; }
+  .land header { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+  .land h3 { margin: 0; font-size: var(--fs-12); font-weight: 600; }
+  .land table { border-collapse: collapse; margin: var(--sp-1) 0; font-variant-numeric: tabular-nums; }
+  .land th, .land td { padding: 1px var(--sp-2) 1px 0; text-align: right; vertical-align: bottom; }
+  .land th { font-weight: 600; color: var(--ink-2); }
+  .land p { margin: 0; color: var(--ink-2); }
+  .close { width: 22px; height: 22px; padding: 0; line-height: 1; background: none; border: var(--lw-thin) solid var(--rule-strong); border-radius: var(--radius); color: var(--ink); }
+  .water-read { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); margin: 0; padding: 3px var(--sp-2); display: flex; gap: var(--sp-2); align-items: center; font-size: var(--fs-12); font-variant-numeric: tabular-nums; background: var(--surface); color: var(--ink); border: var(--lw-thin) solid var(--ink); z-index: 3; max-width: 90%; }
+  :global(.weir-marker) { display: flex; gap: 4px; align-items: center; padding: 0; background: none; border: 0; cursor: pointer; font: 600 var(--fs-11) / 1 var(--font-ui); color: var(--cream); text-shadow: 0 0 3px var(--plate-ink), 0 0 3px var(--plate-ink); white-space: nowrap; }
+  :global(.weir-mark) { display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 2px; box-sizing: border-box; background: var(--plate-ink); color: var(--cream); border: 2px solid var(--cream); box-shadow: 0 0 0 1px var(--plate-ink); text-shadow: none; }
+  :global(.pool-label) { padding: 1px 4px; font: 600 var(--fs-11) / 1.2 var(--font-ui); color: var(--plate-ink); background: color-mix(in srgb, var(--cream) 85%, var(--river)); border: 1px solid var(--plate-ink); white-space: nowrap; pointer-events: none; }
+  .far :global(.weir-text), .far :global(.pool-label) { display: none; }
   .key .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--cream); border: 1px solid var(--plate-ink); box-sizing: border-box; }
   /* Under the map's zoom buttons and compass, the same size as they are. */
   .layers { position: absolute; top: 107px; right: 10px; z-index: 4; max-height: calc(100% - 107px - 24px); display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }

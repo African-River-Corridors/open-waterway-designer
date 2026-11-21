@@ -427,6 +427,258 @@ fn a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown()
     );
 }
 
+/// FNV-1a, 64 bit, of a text: a fingerprint with no dependency.
+fn fingerprint(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// With every new setting at its default (`land_weight` 0, `corridor_limit` false) the optimise
+/// stage gives the bytes it gave before the settings existed. The fingerprints are of the stage's
+/// settings and results on the `optimise_pools` example, as text, taken on the branch
+/// `local/2026-11-20` at cabe3ee, before the land cost was written. Naming the defaults changes
+/// nothing either. A change of the optimise results on purpose must move these numbers.
+///
+/// Label: snapshot (the base branch's optimise results on the example).
+#[test]
+fn with_the_new_settings_at_their_defaults_the_results_are_the_base_branchs_bytes() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let st = &plain.document()["stages"]["optimise"];
+    let (settings, results) = (st["settings"].to_string(), st["results"].to_string());
+    println!(
+        "settings {} bytes {:#018x}, results {} bytes {:#018x}",
+        settings.len(),
+        fingerprint(&settings),
+        results.len(),
+        fingerprint(&results)
+    );
+    assert_eq!((settings.len(), fingerprint(&settings)), BASE_SETTINGS);
+    assert_eq!((results.len(), fingerprint(&results)), BASE_RESULTS);
+    // The defaults, named: the same bytes.
+    let mut named = design();
+    let mut with_defaults = example_settings();
+    with_defaults["land_weight"] = json!(0.0);
+    with_defaults["corridor_limit"] = json!(false);
+    named.run_optimise(&with_defaults, Some(&terrain)).unwrap();
+    assert_eq!(named.to_text(), plain.to_text());
+}
+
+/// The land weight (a cost per m2 of channel footprint outside the river polygon) is a setting of
+/// the stage, off (0) by default. Off, it is not written into the document; on, it is, through the
+/// same reading as `owd optimise --land-weight`. A negative value, or text, is refused by name in
+/// plain words and changes nothing.
+///
+/// Label: property
+#[test]
+fn the_land_weight_is_a_setting_off_by_default() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert_eq!(d.land_weight, 0.0);
+    assert!(d.to_value().get("land_weight").is_none());
+    let mut s = design();
+    s.set_optimise_settings(&json!({"land_weight": 3.25}))
+        .unwrap();
+    let st = &s.document()["stages"]["optimise"]["settings"];
+    let mut want = d.to_value();
+    want["land_weight"] = json!(3.25);
+    assert_eq!(st, &want);
+    // It reads back from the saved text.
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(
+        again.document()["stages"]["optimise"]["settings"]["land_weight"],
+        json!(3.25)
+    );
+    let before = s.to_text();
+    let e = s
+        .set_optimise_settings(&json!({"land_weight": -1.0}))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        e,
+        "the setting `land_weight` must be a number >= 0 (a cost per m2 of channel footprint \
+         outside the river polygon, in m3 of cut per m2; 0 is off)"
+    );
+    assert_eq!(s.to_text(), before);
+    let e = s
+        .set_optimise_settings(&json!({"land_weight": "a lot"}))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        e.contains("land_weight") && e.contains("must be a number"),
+        "{e}"
+    );
+    assert_eq!(s.to_text(), before);
+    s.set_optimise_settings(&json!({"land_weight": 0.0}))
+        .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// A positive land weight makes a fresh stage stale, is kept in the settings and shown in the
+/// lattice's details: the weight, the width of the footprint it is charged on, and each pool's land
+/// area and land cost. The cascade does not read it, so the weirs and their costs are unchanged.
+/// The volumes stage reports true volumes: it does not read the search cost, so on a line it
+/// measures the same m3 whatever land weight is set.
+///
+/// Label: property
+#[test]
+fn a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes() {
+    let mut plain = design();
+    plain
+        .run_optimise(&example_settings(), Some(&terrain))
+        .unwrap();
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    s.set_optimise_settings(&json!({"land_weight": 3.25}))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Stale);
+    s.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    let (doc, base) = (s.document(), plain.document());
+    assert_eq!(
+        doc["stages"]["optimise"]["results"]["cascade"],
+        base["stages"]["optimise"]["results"]["cascade"]
+    );
+    let lattice = |d: &Value| {
+        owd_format::design::design_lines_of(d)
+            .into_iter()
+            .find(|o| o["method"] == "lattice")
+            .unwrap()
+            .clone()
+    };
+    let opt = lattice(doc);
+    assert_eq!(opt["details"]["land_weight"], json!(3.25));
+    // Bottom width 30.4 m, side slope 3 through a depth of 3.25 m each side.
+    let width = opt["details"]["land_footprint_width_m"].as_f64().unwrap();
+    assert!((width - (30.4 + 2.0 * 3.0 * 3.25)).abs() < 1e-9, "{width}");
+    let mut seen = 0;
+    for p in opt["details"]["pools"].as_array().unwrap() {
+        if p["converged"] == json!(true) {
+            let area = p["land_area_m2"].as_f64().unwrap();
+            assert!(area >= 0.0);
+            assert_eq!(p["land_cost"].as_f64().unwrap(), 3.25 * area);
+            assert!(p["cost"].as_f64().unwrap() >= 3.25 * area - 1e-6);
+            assert!(p["baseline_land_area_m2"].as_f64().unwrap() >= 0.0);
+            seen += 1;
+        }
+    }
+    assert!(seen > 0);
+    let off = lattice(base);
+    assert!(off["details"].get("land_weight").is_none());
+    assert!(off["details"].get("land_footprint_width_m").is_none());
+    assert!(
+        off["details"]["pools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p.get("land_area_m2").is_none() && p.get("land_cost").is_none())
+    );
+
+    // The volumes stage measures the line it is given, with its own section method: its record
+    // holds m3 only, the same fields as on a run with no land weight, and no land cost.
+    let rows = |s: &mut Session| -> Vec<Value> {
+        s.run_volumes(&json!({"cut_model": "b", "maxw_m": 120.0}), Some(&terrain))
+            .unwrap();
+        owd_format::design::volume_rows_of(s.document())
+    };
+    let (with_land, without) = (rows(&mut s), rows(&mut plain));
+    let keys = |r: &Value| -> Vec<String> { r.as_object().unwrap().keys().cloned().collect() };
+    assert_eq!(keys(&with_land[0]), keys(&without[0]));
+    assert!(keys(&with_land[0]).iter().all(|k| !k.contains("land")));
+    assert!(with_land[0]["dredge_m3"].as_f64().unwrap() > 0.0);
+}
+
+const BASE_SETTINGS: (usize, u64) = (551, 0xd587_925a_739f_6b8a);
+const BASE_RESULTS: (usize, u64) = (48188, 0x5036_5f19_a431_3451);
+
+/// The corridor limit is a setting of the stage, off (false) by default and then not written. On,
+/// it is written, read back from the saved text, and makes a fresh stage stale. A value that is not
+/// true or false is refused by name in plain words and changes nothing.
+///
+/// Label: property
+#[test]
+fn the_corridor_limit_is_a_setting_off_by_default() {
+    use owd_format::design::OptimiseSettings;
+    let d = OptimiseSettings::default();
+    assert!(!d.corridor_limit);
+    assert!(d.to_value().get("corridor_limit").is_none());
+    let mut s = design();
+    s.set_optimise_settings(&json!({"corridor_limit": true}))
+        .unwrap();
+    let mut want = d.to_value();
+    want["corridor_limit"] = json!(true);
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], want);
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(
+        again.document()["stages"]["optimise"]["settings"]["corridor_limit"],
+        json!(true)
+    );
+    let before = s.to_text();
+    for bad in [json!(1.0), json!("yes")] {
+        let e = s
+            .set_optimise_settings(&json!({ "corridor_limit": bad }))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            e,
+            "the setting `corridor_limit` must be true or false (true holds the pool search \
+             inside the corridor)"
+        );
+        assert_eq!(s.to_text(), before);
+    }
+    s.set_optimise_settings(&json!({"corridor_limit": false}))
+        .unwrap();
+    assert_eq!(s.document()["stages"]["optimise"]["settings"], d.to_value());
+}
+
+/// With the limit on, the lattice's line stays within `corridor_half_m` of the baseline (to within
+/// a grid cell), the details say the limit was on and how wide, and every pool is either used or
+/// keeps its baseline with a reason. The example's corridor is 180 m.
+///
+/// Label: property
+#[test]
+fn with_the_corridor_limit_the_stages_line_stays_inside_the_corridor() {
+    let mut s = design();
+    s.run_optimise(&example_settings(), Some(&terrain)).unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Fresh);
+    s.set_optimise_settings(&json!({"corridor_limit": true}))
+        .unwrap();
+    assert_eq!(s.stage_status(Stage::Optimise), StageStatus::Stale);
+    s.run_optimise(&Value::Null, Some(&terrain)).unwrap();
+    let doc = s.document();
+    let res = &doc["stages"]["optimise"]["results"];
+    let opt = owd_format::design::design_lines_of(doc)
+        .into_iter()
+        .find(|o| o["method"] == "lattice")
+        .unwrap()
+        .clone();
+    assert_eq!(opt["details"]["corridor_limit"], json!(true));
+    assert_eq!(opt["details"]["corridor_half_m"], json!(180.0));
+    let (line, baseline) = (pts(&opt["line"]), pts(&res["baseline"]));
+    let far = line
+        .iter()
+        .map(|p| {
+            let q = owd_core::geom::linear::interpolate(
+                &baseline,
+                owd_core::geom::linear::project(&baseline, *p),
+            )
+            .unwrap();
+            libm::hypot(p[0] - q[0], p[1] - q[1])
+        })
+        .fold(0.0, f64::max);
+    assert!(far <= 180.0 + 5.0, "{far}");
+    for p in opt["details"]["pools"].as_array().unwrap() {
+        assert!(
+            p["used"] == json!(true) || p["kept_baseline_because"].is_string(),
+            "{p}"
+        );
+    }
+}
+
 /// The flood settings (ticket OPT-2) are settings of the stage, each off or at its default until
 /// set, and then not written into the document. Set, each is written through the same reading as
 /// the flags of `owd optimise`. A bad value is refused by the setting's name and changes nothing.

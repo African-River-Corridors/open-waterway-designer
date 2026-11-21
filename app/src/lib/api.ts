@@ -425,6 +425,83 @@ export const terrainTile = (z: number, x: number, y: number) => invoke<Uint8Arra
 /** The contour lines of one map tile of the DEM, every `interval` metres (MAP-3): a vector tile, made in
  * this browser from the DEM in memory. No bytes when the tile has no line. */
 export const contourTile = (z: number, x: number, y: number, interval: number) => invoke<Uint8Array>("contour_tile", { z, x, y, interval });
+/** The sizes of the placeholder lock and weir (MAP-4), and the rules they come from. A placeholder model, not a design. */
+export interface LockModel {
+  note: string;
+  vessel_length_m: number | null;
+  vessel_beam_m: number | null;
+  chamber_length_m: number | null;
+  chamber_width_m: number | null;
+  wall_thickness_m: number;
+  wall_freeboard_m: number;
+  default_weir_length_m: number;
+  rules: string;
+}
+/** One pool: a stretch of the design line at one water level. */
+export interface PoolReach {
+  number: number;
+  from_m: number;
+  to_m: number;
+  level_m: number;
+  line: LonLat[];
+  mid: LonLat;
+}
+/** One block of the placeholder model: a flat-topped shape. */
+export interface ModelPart {
+  kind: "weir" | "lock_wall" | "lock_gate" | "lock_chamber";
+  ring: LonLat[];
+  top_m: number;
+}
+/** One weir site: where one pool ends and the next begins. Upstream is the higher chainage. */
+export interface WeirSite {
+  number: number;
+  chainage_m: number;
+  position: LonLat;
+  bearing_deg: number;
+  upstream_level_m: number;
+  downstream_level_m: number;
+  lift_m: number;
+  upstream_pool: number | null;
+  downstream_pool: number | null;
+  weir_length_m: number;
+  clipped_to_river: boolean;
+  parts: ModelPart[];
+}
+/** The weirs, the locks and the pools of the design, for the map. Empty lists when the design has no pools. */
+export interface MapStructures {
+  model: LockModel;
+  pools: PoolReach[];
+  weirs: WeirSite[];
+}
+/** Made by the session on demand from the water level along the design line: nothing of it is in the design file. */
+export const mapStructures = () => invoke<MapStructures>("map_structures");
+/** The pool water (MAP-4): the ground each pool floods, worked out in this browser from the DEM in memory. */
+export interface PoolWaterInfo {
+  /** A number that changes with the flood mask: tiles of another number are out of date. */
+  id: number;
+  /** The time the flood mask took, in milliseconds (0 when it was already made). */
+  build_ms: number;
+  made: boolean;
+  mask: { factor: number; width: number; height: number; cell_m: number; bytes: number; peak_bytes: number; flooded_cells: number };
+  /** Each pool's flooded ground, and the part of it outside the river polygon (null with no polygon), in hectares. */
+  pools: { number: number; level_m: number; flooded_ha: number; outside_river_ha: number | null }[];
+  /** The colour of the water by its depth: `[depth in metres, [red, green, blue, alpha]]`. */
+  depth_stops: [number, [number, number, number, number]][];
+}
+/** Null with no DEM in memory or no pools. The first call for a DEM and its pools makes the flood mask. */
+export const poolWaterInfo = () => invoke<PoolWaterInfo | null>("pool_water_info");
+/** The water of one map tile, a PNG coloured by depth and clear where dry. */
+export const poolWaterTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_water_tile", { id, z, x, y });
+/** One terrain tile with the water on it: the pool's level where there is water, the ground elsewhere. */
+export const poolSurfaceTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_surface_tile", { id, z, x, y });
+/** What a click on the water reads. Null on dry ground. */
+export interface WaterAt {
+  pool: number;
+  water_level_m: number;
+  ground_m: number;
+  depth_m: number;
+}
+export const poolWaterAt = (id: number, lon: number, lat: number) => invoke<WaterAt | null>("pool_water_at", { id, lon, lat });
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 
@@ -447,9 +524,11 @@ export const useWaterChoice = (value: boolean | null | undefined): UseWater => (
 /** Set the rolling circle's water-aware mode in the design (`owd align --use-water`); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
 export const setUseWater = (choice: UseWater) =>
   invoke<Snapshot>("set_alignment_settings", { method: "rolling_circle", settings: { use_water: useWaterValue(choice) } });
-/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `flood_cost_per_ha`: the cost of one hectare of land a pool floods outside the river polygon (0 is off). `max_above_bank_m`: the most a pool may stand above bank-full, in metres (null is no limit). */
+/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `land_weight`: the cost of one m² of channel footprint outside the river polygon, in m³ of cut per m² (0 is off). `corridor_limit`: hold the pool search inside the corridor (false is off). `flood_cost_per_ha`: the cost of one hectare of land a pool floods outside the river polygon (0 is off). `max_above_bank_m`: the most a pool may stand above bank-full, in metres (null is no limit). */
 export interface OptimiseSettings {
   length_weight?: number;
+  land_weight?: number;
+  corridor_limit?: boolean;
   flood_cost_per_ha?: number;
   max_above_bank_m?: number | null;
 }

@@ -4,6 +4,8 @@
 //! made from the same maker. Nothing here is written to the design.
 
 use owd_format::design::contours::ContourCache;
+use owd_format::design::pool_water::{DEPTH_STOPS, PoolWater};
+use owd_format::design::structures::PoolWaterIn;
 use owd_format::design::terrain_tile::TileMaker;
 use owd_format::geotiff::Dem;
 use serde_json::{Value, json};
@@ -17,6 +19,10 @@ pub struct TerrainTiles {
     contours: ContourCache,
     /// Counts the DEMs seen: the `id` in [`TerrainTiles::info`].
     id: u32,
+    /// The pool water of the maker's DEM (MAP-4): the flood mask, and what it was made from.
+    water: Option<(PoolWater, PoolWaterIn)>,
+    /// Counts the flood masks made: the `id` in [`TerrainTiles::pool_water`].
+    water_id: u32,
 }
 
 impl TerrainTiles {
@@ -26,6 +32,7 @@ impl TerrainTiles {
         let Some(dem) = dem else {
             self.maker = None;
             self.contours.clear();
+            self.water = None;
             return Ok(None);
         };
         if !self
@@ -35,6 +42,7 @@ impl TerrainTiles {
         {
             self.maker = None;
             self.contours.clear();
+            self.water = None;
             self.maker = Some(TileMaker::new(dem).map_err(|e| e.to_string())?);
             self.id += 1;
         }
@@ -95,6 +103,84 @@ impl TerrainTiles {
         self.contours
             .tile(maker, z, x, y, interval_m)
             .map_err(|e| e.to_string())
+    }
+
+    /// The pool water of `pools` on the DEM (MAP-4): the flood mask is made now unless the one
+    /// in memory is of the same DEM and the same pools. Answers `null` with no DEM or no pools,
+    /// else `{id, made, mask: {factor, width, height, cell_m, bytes, peak_bytes, flooded_cells},
+    /// pools: [{number, level_m, flooded_ha, outside_river_ha}], depth_stops: [[depth_m, [r, g,
+    /// b, a]], ...]}`. `id` changes with the mask: tiles of another number are out of date.
+    /// `made` says whether this call made the mask.
+    pub fn pool_water(
+        &mut self,
+        dem: Option<Arc<Dem>>,
+        pools: Option<PoolWaterIn>,
+    ) -> Result<Value, String> {
+        let (Some(_), Some(pools)) = (self.for_dem(dem)?, pools) else {
+            self.water = None;
+            return Ok(Value::Null);
+        };
+        let made = !self.water.as_ref().is_some_and(|(_, of)| *of == pools);
+        if made {
+            self.water = None;
+            let maker = self.maker.as_ref().expect("the maker was just made");
+            let water = PoolWater::build(maker, &pools).map_err(|e| e.to_string())?;
+            self.water = Some((water, pools));
+            self.water_id += 1;
+        }
+        let (water, _) = self.water.as_ref().expect("the mask was just made");
+        Ok(json!({
+            "id": self.water_id,
+            "made": made,
+            "mask": water.stats(),
+            "pools": water.areas(),
+            "depth_stops": DEPTH_STOPS.iter().map(|(d, c)| json!([d, c])).collect::<Vec<_>>(),
+        }))
+    }
+
+    /// The flood mask numbered `id` and the maker of its DEM. Refused when the mask in memory
+    /// is another one: the tile asked for is out of date.
+    fn water_of(&mut self, id: u32) -> Result<(&mut PoolWater, &TileMaker), String> {
+        match (&mut self.water, &self.maker) {
+            (Some((water, _)), Some(maker)) if id == self.water_id => Ok((water, maker)),
+            _ => Err("the pool water asked for is out of date".to_string()),
+        }
+    }
+
+    /// The water of tile `z/x/y` of flood mask `id`: a PNG coloured by depth, clear where dry.
+    pub fn pool_water_tile(
+        &mut self,
+        id: u32,
+        z: u32,
+        x: u32,
+        y: u32,
+    ) -> Result<Arc<Vec<u8>>, String> {
+        let (water, maker) = self.water_of(id)?;
+        let z = u8::try_from(z).map_err(|_| format!("there is no map tile {z}/{x}/{y}"))?;
+        water.depth_tile(maker, z, x, y).map_err(|e| e.to_string())
+    }
+
+    /// The terrain of tile `z/x/y` with the water of flood mask `id` on it: a Terrarium PNG
+    /// whose height is the pool's level where there is water and the ground elsewhere.
+    pub fn pool_surface_tile(
+        &mut self,
+        id: u32,
+        z: u32,
+        x: u32,
+        y: u32,
+    ) -> Result<Arc<Vec<u8>>, String> {
+        let (water, maker) = self.water_of(id)?;
+        let z = u8::try_from(z).map_err(|_| format!("there is no map tile {z}/{x}/{y}"))?;
+        water
+            .surface_tile(maker, z, x, y)
+            .map_err(|e| e.to_string())
+    }
+
+    /// What a click reads at a longitude and latitude: `{pool, water_level_m, ground_m,
+    /// depth_m}`, or `null` on dry ground.
+    pub fn pool_water_at(&mut self, id: u32, lon: f64, lat: f64) -> Result<Value, String> {
+        let (water, maker) = self.water_of(id)?;
+        serde_json::to_value(water.at(maker, lon, lat)).map_err(|e| e.to_string())
     }
 }
 
@@ -215,5 +301,78 @@ mod tests {
                 .unwrap_err()
                 .contains("2/4/0")
         );
+    }
+
+    /// A valley along the DEM's rows, lowest on row 25, and a pool at `level` along that row.
+    fn valley() -> Arc<Dem> {
+        Arc::new(Dem {
+            data: (0..2500)
+                .map(|i| 10.0 + ((i / 50) as f64 - 24.5).abs())
+                .collect(),
+            ..(*dem(0.0)).clone()
+        })
+    }
+
+    fn pool(level: f64) -> PoolWaterIn {
+        PoolWaterIn {
+            line: vec![[-1.995, 5.0255], [-1.955, 5.0255]],
+            chainage_m: vec![0.0, 4000.0],
+            pools: vec![(1, 0.0, 4000.0, level)],
+            polygon: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_pool_water_is_made_once_for_a_dem_and_its_pools_and_old_tiles_are_refused() {
+        let mut t = TerrainTiles::default();
+        assert_eq!(t.pool_water(None, Some(pool(15.0))).unwrap(), Value::Null);
+        assert_eq!(t.pool_water(Some(valley()), None).unwrap(), Value::Null);
+        assert!(
+            t.pool_water_tile(1, 12, 2025, 1990)
+                .unwrap_err()
+                .contains("out of date")
+        );
+        let a = valley();
+        let first = t.pool_water(Some(a.clone()), Some(pool(15.0))).unwrap();
+        assert_eq!((&first["id"], &first["made"]), (&json!(1), &json!(true)));
+        assert_eq!(first["mask"]["factor"], 1);
+        assert_eq!(first["pools"][0]["number"], 1);
+        assert!(first["pools"][0]["flooded_ha"].as_f64().unwrap() > 0.0);
+        assert_eq!(first["pools"][0]["outside_river_ha"], Value::Null);
+        assert_eq!(first["depth_stops"][0], json!([0.0, DEPTH_STOPS[0].1]));
+        // Asked again: the same mask. Its tiles: a picture, a terrain tile, a click.
+        let again = t.pool_water(Some(a.clone()), Some(pool(15.0))).unwrap();
+        assert_eq!((&again["id"], &again["made"]), (&json!(1), &json!(false)));
+        let png = t.pool_water_tile(1, 12, 2025, 1990).unwrap();
+        assert!(png.len() > 100);
+        let heights = decode_png(&t.pool_surface_tile(1, 12, 2025, 1990).unwrap()).unwrap();
+        assert!(
+            heights.iter().any(|h| (h - 15.0).abs() < 0.01),
+            "water at the pool's level"
+        );
+        let wet = t.pool_water_at(1, -1.975, 5.0255).unwrap();
+        assert_eq!(wet["water_level_m"], 15.0);
+        assert_eq!(wet["pool"], 1);
+        assert_eq!(
+            t.pool_water_at(1, -1.975, 5.045).unwrap(),
+            Value::Null,
+            "high ground"
+        );
+        // Another level: another mask, and a tile of the old one is refused.
+        let higher = t.pool_water(Some(a.clone()), Some(pool(20.0))).unwrap();
+        assert_eq!((&higher["id"], &higher["made"]), (&json!(2), &json!(true)));
+        assert!(
+            higher["pools"][0]["flooded_ha"].as_f64().unwrap()
+                > first["pools"][0]["flooded_ha"].as_f64().unwrap()
+        );
+        assert!(
+            t.pool_water_tile(1, 12, 2025, 1990)
+                .unwrap_err()
+                .contains("out of date")
+        );
+        assert!(t.pool_water_tile(2, 12, 2025, 1990).is_ok());
+        // Another DEM: the mask goes with the old one.
+        t.info(Some(dem(10.0))).unwrap();
+        assert!(t.pool_water_tile(2, 12, 2025, 1990).is_err());
     }
 }

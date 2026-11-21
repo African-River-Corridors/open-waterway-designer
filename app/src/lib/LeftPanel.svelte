@@ -27,6 +27,8 @@
     onMouth,
     onRunInputs,
     onOptimiseLength,
+    onOptimiseLand,
+    onCorridorLimit,
     onOptimiseFlood,
     lineName = null,
     table,
@@ -57,6 +59,8 @@
     onMouth: (mouth: string) => void;
     onRunInputs: (objective: string, limits: string, level: string) => void;
     onOptimiseLength: (weight: string) => void;
+    onOptimiseLand: (weight: string) => void;
+    onCorridorLimit: (on: boolean) => void;
     onOptimiseFlood: (setting: FloodSetting, value: string) => void;
     lineName?: string | null;
     /** The design line and its checks, as the session tables them. */
@@ -73,7 +77,7 @@
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseFlood} {lineName} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {lineName} />
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
   {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}
