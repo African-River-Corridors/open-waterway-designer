@@ -1,0 +1,17 @@
+$ owd new example.owd --title Example River --date 2026-11-24
+created setup.owd: "Example River"
+$ owd import example.owd --centreline inputs/centreline.geojson --polygon inputs/river-polygon.geojson --dem dem.tif --water-level 0.0 --water-slope -0.001
+project CRS: EPSG:32630
+centreline: 751 positions, from EPSG:32630
+river_polygon: 1503 positions, from EPSG:32630
+dem: 140728 pixels, from EPSG:32630
+$ owd size example.owd --rule-set pianc-wg141 --set-input se_quality=B --vessel CEMT_IV --draught 2.5
+pianc-wg141@0.3.0 (se_quality B) x CEMT-IV: bottom width 30.4 m, R_min 255 m, design depth 3.25 m
+Every Rule is unverified until a second reader checks it against its source.
+$ owd align example.owd --method rolling-circle
+Rolling circle: minimum radius 254 m on a 85 m chord against R_min 255 m: ok
+fits in water (width only, no depth data): FAILS at 3 stretch(es)
+NO FEASIBLE LINE: every bend is infeasible; the line is not a design
+the design line is saved, marked failed: no_feasible_line, fits_in_water
+owd: the design line fails: no_feasible_line, fits_in_water
+$ python3 set_setting.py example.owd terminal_min_level_m=6.5

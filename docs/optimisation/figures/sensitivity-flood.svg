@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" font-family="'Public Sans', system-ui, sans-serif" role="img" aria-label="Flood cost: flooded land per pool at three prices per hectare">
+<title>Flood cost: flooded land per pool at three prices per hectare</title>
+<rect width="960" height="400" fill="#ffffff"/>
+<line x1="90.0" y1="330.0" x2="930.0" y2="330.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="84.0" y="334.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">0.00</text>
+<line x1="90.0" y1="262.5" x2="930.0" y2="262.5" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="84.0" y="266.5" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">2.00</text>
+<line x1="90.0" y1="195.0" x2="930.0" y2="195.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="84.0" y="199.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">4.00</text>
+<line x1="90.0" y1="127.5" x2="930.0" y2="127.5" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="84.0" y="131.5" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">6.00</text>
+<line x1="90.0" y1="60.0" x2="930.0" y2="60.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="84.0" y="64.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">8.00</text>
+<rect x="115.2" y="330.0" width="37.2" height="0.0" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="133.8" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<rect x="154.4" y="330.0" width="37.2" height="0.0" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="173.0" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<rect x="193.6" y="330.0" width="37.2" height="0.0" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="212.2" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<text x="174.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0 to 1,000 m</text>
+<text x="174.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">levels 0.0 / 0.0 / 0.0 m</text>
+<rect x="283.2" y="330.0" width="37.2" height="0.0" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="301.8" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<rect x="322.4" y="330.0" width="37.2" height="0.0" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="341.0" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<rect x="361.6" y="330.0" width="37.2" height="0.0" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="380.2" y="326.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.00</text>
+<text x="342.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">1,000 to 2,000 m</text>
+<text x="342.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">levels 2.0 / 2.0 / 2.0 m</text>
+<rect x="451.2" y="321.6" width="37.2" height="8.4" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="469.8" y="317.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.25</text>
+<rect x="490.4" y="321.6" width="37.2" height="8.4" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="509.0" y="317.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.25</text>
+<rect x="529.6" y="321.6" width="37.2" height="8.4" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="548.2" y="317.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.25</text>
+<text x="510.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">2,000 to 3,000 m</text>
+<text x="510.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">levels 4.0 / 4.0 / 4.0 m</text>
+<rect x="619.2" y="110.6" width="37.2" height="219.4" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="637.8" y="106.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">6.50</text>
+<rect x="658.4" y="110.6" width="37.2" height="219.4" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="677.0" y="106.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">6.50</text>
+<rect x="697.6" y="311.0" width="37.2" height="19.0" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="716.2" y="307.0" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.56</text>
+<text x="678.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">3,000 to 4,000 m</text>
+<text x="678.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">levels 6.0 / 6.0 / 5.5 m</text>
+<rect x="787.2" y="313.1" width="37.2" height="16.9" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="805.8" y="309.1" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.50</text>
+<rect x="826.4" y="313.1" width="37.2" height="16.9" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="845.0" y="309.1" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.50</text>
+<rect x="865.6" y="313.1" width="37.2" height="16.9" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="884.2" y="309.1" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">0.50</text>
+<text x="846.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">4,000 to 6,682 m</text>
+<text x="846.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">levels 6.5 / 6.5 / 6.5 m</text>
+<rect x="100.0" y="34.0" width="14.0" height="12.0" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="120.0" y="45.0" font-size="11" fill="#1f1e1b" text-anchor="start" font-weight="normal">flood cost 0 (base)</text>
+<rect x="290.0" y="34.0" width="14.0" height="12.0" fill="#c6d98c" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="310.0" y="45.0" font-size="11" fill="#1f1e1b" text-anchor="start" font-weight="normal">flood cost 3,000 per ha</text>
+<rect x="480.0" y="34.0" width="14.0" height="12.0" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="500.0" y="45.0" font-size="11" fill="#1f1e1b" text-anchor="start" font-weight="normal">flood cost 20,000 per ha</text>
+<text x="46.0" y="195.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal" transform="rotate(-90 46.0 195.0)">flooded land, ha</text>
+<text x="952" y="392" font-size="10" fill="#55524b" text-anchor="end">Drawn by us, not by OWD</text>
+</svg>

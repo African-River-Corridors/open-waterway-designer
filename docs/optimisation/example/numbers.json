@@ -1,0 +1,4985 @@
+{
+ "align.length_m": {
+  "derived": "the length of the rolling circle's polyline",
+  "value": 6682.163793645555
+ },
+ "align.measured_min_radius_m": {
+  "pointer": "/stages/alignment/results/checks/measured_min_radius_m",
+  "run": "base",
+  "value": 254.23487998935263
+ },
+ "align.radius_check_chord_m": {
+  "pointer": "/stages/alignment/results/checks/radius_check_chord_m",
+  "run": "base",
+  "value": 85.0
+ },
+ "align.radius_ok": {
+  "pointer": "/stages/alignment/results/checks/radius_ok",
+  "run": "base",
+  "value": true
+ },
+ "bank-0.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "bank-0",
+  "value": 330943.8692051522
+ },
+ "bank-0.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "bank-0",
+  "value": 1700000.0
+ },
+ "bank-0.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "bank-0",
+  "value": 2030943.8692051522
+ },
+ "bank-0.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "bank-0",
+  "value": 330943.8692051522
+ },
+ "bank-0.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "bank-0",
+  "value": 1.3125
+ },
+ "bank-0.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "bank-0",
+  "value": -2.5792340494364523
+ },
+ "bank-0.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "bank-0",
+  "value": 2.0
+ },
+ "bank-0.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "bank-0",
+  "value": -1.6437011013746274
+ },
+ "bank-0.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "bank-0",
+  "value": 0.25
+ },
+ "bank-0.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "bank-0",
+  "value": 4.0
+ },
+ "bank-0.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "bank-0",
+  "value": -0.6062989295959467
+ },
+ "bank-0.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "bank-0",
+  "value": 0.5625
+ },
+ "bank-0.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "bank-0",
+  "value": 5.5
+ },
+ "bank-0.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "bank-0",
+  "value": -0.11321687148213222
+ },
+ "bank-0.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "bank-0",
+  "value": 0.5
+ },
+ "bank-0.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "bank-0",
+  "value": 6.5
+ },
+ "bank-0.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "bank-0",
+  "value": -0.14247659991388328
+ },
+ "bank-0.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "bank-0",
+  "value": 3000.0
+ },
+ "bank-0.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "bank-0",
+  "value": 255.03046327168462
+ },
+ "bank-0.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "bank-0",
+  "value": 4000.0
+ },
+ "bank-0.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "bank-0",
+  "value": 629.6841210263385
+ },
+ "bank-0.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6696.089467218503
+ },
+ "bank-0.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "bank-0",
+  "value": 254.23487998935263
+ },
+ "bank-0.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "bank-0",
+  "value": 1
+ },
+ "bank-0.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "bank-0",
+  "value": 255.0
+ },
+ "bank-0.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "bank-0",
+  "value": 85.0
+ },
+ "bank-0.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "bank-0",
+  "value": 49060.165099571575
+ },
+ "bank-0.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "bank-0",
+  "value": 49893.16850194273
+ },
+ "bank-0.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "bank-0",
+  "value": 1000.0
+ },
+ "bank-0.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "bank-0",
+  "value": 608
+ },
+ "bank-0.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "bank-0",
+  "value": false
+ },
+ "bank-0.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "bank-0",
+  "value": 0.0
+ },
+ "bank-0.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "bank-0",
+  "value": 17230.20783524456
+ },
+ "bank-0.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "bank-0",
+  "value": 25742.536352232386
+ },
+ "bank-0.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "bank-0",
+  "value": 2000.0
+ },
+ "bank-0.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "bank-0",
+  "value": 440
+ },
+ "bank-0.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "bank-0",
+  "value": 1000.0
+ },
+ "bank-0.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "bank-0",
+  "value": false
+ },
+ "bank-0.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "bank-0",
+  "value": 2.0
+ },
+ "bank-0.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "bank-0",
+  "value": 12075.377987003149
+ },
+ "bank-0.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "bank-0",
+  "value": 13223.346710464743
+ },
+ "bank-0.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "bank-0",
+  "value": 3000.0
+ },
+ "bank-0.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "bank-0",
+  "value": 1243
+ },
+ "bank-0.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "bank-0",
+  "value": 2000.0
+ },
+ "bank-0.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "bank-0",
+  "value": false
+ },
+ "bank-0.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "bank-0",
+  "value": 4.0
+ },
+ "bank-0.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "bank-0",
+  "value": 152770.50676412423
+ },
+ "bank-0.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "bank-0",
+  "value": 81157.41620878801
+ },
+ "bank-0.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "bank-0",
+  "value": 4000.0
+ },
+ "bank-0.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "bank-0",
+  "value": 2830
+ },
+ "bank-0.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "bank-0",
+  "value": 3000.0
+ },
+ "bank-0.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "bank-0",
+  "value": 5.5
+ },
+ "bank-0.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "bank-0",
+  "value": 66784.66232833007
+ },
+ "bank-0.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "bank-0",
+  "value": 68314.62436121385
+ },
+ "bank-0.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "bank-0",
+  "value": 6682.163793645561
+ },
+ "bank-0.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "bank-0",
+  "value": 24881
+ },
+ "bank-0.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "bank-0",
+  "value": true
+ },
+ "bank-0.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "bank-0",
+  "value": 4000.0
+ },
+ "bank-0.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "bank-0",
+  "value": false
+ },
+ "bank-0.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "bank-0",
+  "value": 6.5
+ },
+ "bank-0.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "bank-0",
+  "value": 68346.69469498961
+ },
+ "bank-0.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "bank-0",
+  "value": 268546.6439274951
+ },
+ "bank-0.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 11.598937000749165
+ },
+ "bank-0.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "bank-0",
+  "value": 134757.91213618204
+ },
+ "bank-0.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "bank-0",
+  "value": 3.5059304320332227
+ },
+ "bank-0.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "bank-0",
+  "value": 268
+ },
+ "bank-0.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "bank-0",
+  "value": 403304.5560636772
+ },
+ "bank-0.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "bank-0",
+  "value": 66411.21744119244
+ },
+ "bank-0.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "bank-0",
+  "value": 1000.0
+ },
+ "bank-0.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "bank-0",
+  "value": 2.0
+ },
+ "bank-0.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "bank-0",
+  "value": 2.0
+ },
+ "bank-0.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "bank-0",
+  "value": 500000.0
+ },
+ "bank-0.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "bank-0",
+  "value": 2000.0
+ },
+ "bank-0.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "bank-0",
+  "value": 2.0
+ },
+ "bank-0.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "bank-0",
+  "value": 4.0
+ },
+ "bank-0.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "bank-0",
+  "value": 500000.0
+ },
+ "bank-0.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "bank-0",
+  "value": 3000.0
+ },
+ "bank-0.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "bank-0",
+  "value": 1.5
+ },
+ "bank-0.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "bank-0",
+  "value": 5.5
+ },
+ "bank-0.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "bank-0",
+  "value": 400000.0
+ },
+ "bank-0.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "bank-0",
+  "value": 4000.0
+ },
+ "bank-0.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "bank-0",
+  "value": 1.0
+ },
+ "bank-0.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "bank-0",
+  "value": 6.5
+ },
+ "bank-0.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "bank-0",
+  "value": 300000.0
+ },
+ "base.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "base",
+  "value": 309031.38546725025
+ },
+ "base.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "base",
+  "value": 1700000.0
+ },
+ "base.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "base",
+  "value": 2009031.3854672504
+ },
+ "base.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "base",
+  "value": 309031.38546725025
+ },
+ "base.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "base",
+  "value": 7.25
+ },
+ "base.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "base",
+  "value": -2.5792340494364523
+ },
+ "base.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "base",
+  "value": -1.6437011013746274
+ },
+ "base.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "base",
+  "value": 0.25
+ },
+ "base.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "base",
+  "value": 4.0
+ },
+ "base.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "base",
+  "value": -0.6062989295959467
+ },
+ "base.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "base",
+  "value": 6.5
+ },
+ "base.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "base",
+  "value": 6.0
+ },
+ "base.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "base",
+  "value": 0.3867831285178678
+ },
+ "base.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "base",
+  "value": 0.5
+ },
+ "base.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "base",
+  "value": 6.5
+ },
+ "base.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "base",
+  "value": -0.14247659991388328
+ },
+ "base.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "base",
+  "value": 3000.0
+ },
+ "base.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "base",
+  "value": 255.03046327168462
+ },
+ "base.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "base",
+  "value": true
+ },
+ "base.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "base",
+  "value": 4000.0
+ },
+ "base.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "base",
+  "value": 629.6841210263385
+ },
+ "base.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "base",
+  "value": true
+ },
+ "base.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6696.089467218503
+ },
+ "base.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "base",
+  "value": 254.23487998935263
+ },
+ "base.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "base",
+  "value": 1
+ },
+ "base.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "base",
+  "value": true
+ },
+ "base.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "base",
+  "value": 255.0
+ },
+ "base.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "base",
+  "value": 85.0
+ },
+ "base.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "base",
+  "value": true
+ },
+ "base.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "base",
+  "value": 49060.165099571575
+ },
+ "base.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "base",
+  "value": 49893.16850194273
+ },
+ "base.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "base",
+  "value": 1000.0
+ },
+ "base.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "base",
+  "value": 608
+ },
+ "base.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "base",
+  "value": true
+ },
+ "base.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "base",
+  "value": false
+ },
+ "base.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "base",
+  "value": 0.0
+ },
+ "base.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "base",
+  "value": 17230.20783524456
+ },
+ "base.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "base",
+  "value": 25742.536352232386
+ },
+ "base.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "base",
+  "value": 2000.0
+ },
+ "base.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "base",
+  "value": 440
+ },
+ "base.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "base",
+  "value": true
+ },
+ "base.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "base",
+  "value": 1000.0
+ },
+ "base.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "base",
+  "value": false
+ },
+ "base.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "base",
+  "value": 12075.377987003149
+ },
+ "base.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "base",
+  "value": 13223.346710464743
+ },
+ "base.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "base",
+  "value": 3000.0
+ },
+ "base.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "base",
+  "value": 1243
+ },
+ "base.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "base",
+  "value": true
+ },
+ "base.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "base",
+  "value": 2000.0
+ },
+ "base.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "base",
+  "value": false
+ },
+ "base.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "base",
+  "value": 4.0
+ },
+ "base.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "base",
+  "value": 131414.7357824678
+ },
+ "base.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "base",
+  "value": 66459.64766907161
+ },
+ "base.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "base",
+  "value": 4000.0
+ },
+ "base.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "base",
+  "value": 2414
+ },
+ "base.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "base",
+  "value": true
+ },
+ "base.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "base",
+  "value": 3000.0
+ },
+ "base.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "base",
+  "value": true
+ },
+ "base.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "base",
+  "value": 6.0
+ },
+ "base.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "base",
+  "value": 66784.66232833007
+ },
+ "base.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "base",
+  "value": 68314.62436121385
+ },
+ "base.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "base",
+  "value": 6682.163793645561
+ },
+ "base.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "base",
+  "value": 24881
+ },
+ "base.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "base",
+  "value": true
+ },
+ "base.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "base",
+  "value": 4000.0
+ },
+ "base.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "base",
+  "value": false
+ },
+ "base.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "base",
+  "value": 6.5
+ },
+ "base.reach1.dredge_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/0/dredge_m3",
+  "run": "base",
+  "value": 91423.68984928727
+ },
+ "base.reach1.excav_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/0/excav_m3",
+  "run": "base",
+  "value": 14232.573895182866
+ },
+ "base.reach1.stations": {
+  "pointer": "/stages/volumes/results/sections/by_reach/0/stations",
+  "run": "base",
+  "value": 40
+ },
+ "base.reach2.dredge_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/1/dredge_m3",
+  "run": "base",
+  "value": 31815.184887218395
+ },
+ "base.reach2.excav_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/1/excav_m3",
+  "run": "base",
+  "value": 1709.9876128389762
+ },
+ "base.reach2.stations": {
+  "pointer": "/stages/volumes/results/sections/by_reach/1/stations",
+  "run": "base",
+  "value": 40
+ },
+ "base.reach3.dredge_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/2/dredge_m3",
+  "run": "base",
+  "value": 5481.1541152897
+ },
+ "base.reach3.excav_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/2/excav_m3",
+  "run": "base",
+  "value": 13721.67660110083
+ },
+ "base.reach3.stations": {
+  "pointer": "/stages/volumes/results/sections/by_reach/2/stations",
+  "run": "base",
+  "value": 40
+ },
+ "base.reach4.dredge_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/3/dredge_m3",
+  "run": "base",
+  "value": 5528.911261538401
+ },
+ "base.reach4.excav_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/3/excav_m3",
+  "run": "base",
+  "value": 74410.97580617572
+ },
+ "base.reach4.stations": {
+  "pointer": "/stages/volumes/results/sections/by_reach/3/stations",
+  "run": "base",
+  "value": 41
+ },
+ "base.reach5.dredge_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/4/dredge_m3",
+  "run": "base",
+  "value": 128262.17893735641
+ },
+ "base.reach5.excav_m3": {
+  "pointer": "/stages/volumes/results/sections/by_reach/4/excav_m3",
+  "run": "base",
+  "value": 16676.753583529495
+ },
+ "base.reach5.stations": {
+  "pointer": "/stages/volumes/results/sections/by_reach/4/stations",
+  "run": "base",
+  "value": 107
+ },
+ "base.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "base",
+  "value": 58543.947468075705
+ },
+ "base.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "base",
+  "value": 262511.11905069015
+ },
+ "base.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 0.0
+ },
+ "base.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "base",
+  "value": 120751.96749882789
+ },
+ "base.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "base",
+  "value": 3.5059304320332227
+ },
+ "base.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "base",
+  "value": 268
+ },
+ "base.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "base",
+  "value": 383263.08654951805
+ },
+ "base.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "base",
+  "value": 62208.02003075217
+ },
+ "base.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "base",
+  "value": 1000.0
+ },
+ "base.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "base",
+  "value": 500000.0
+ },
+ "base.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "base",
+  "value": 2000.0
+ },
+ "base.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "base",
+  "value": 4.0
+ },
+ "base.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "base",
+  "value": 500000.0
+ },
+ "base.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "base",
+  "value": 3000.0
+ },
+ "base.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "base",
+  "value": 2.0
+ },
+ "base.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "base",
+  "value": 6.0
+ },
+ "base.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "base",
+  "value": 500000.0
+ },
+ "base.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "base",
+  "value": 4000.0
+ },
+ "base.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "base",
+  "value": 0.5
+ },
+ "base.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "base",
+  "value": 6.5
+ },
+ "base.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "base",
+  "value": 200000.0
+ },
+ "flood-20000.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "flood-20000",
+  "value": 357193.8692051522
+ },
+ "flood-20000.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "flood-20000",
+  "value": 1700000.0
+ },
+ "flood-20000.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "flood-20000",
+  "value": 2057193.8692051522
+ },
+ "flood-20000.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "flood-20000",
+  "value": 330943.8692051522
+ },
+ "flood-20000.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "flood-20000",
+  "value": 26250.0
+ },
+ "flood-20000.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "flood-20000",
+  "value": 1.3125
+ },
+ "flood-20000.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "flood-20000",
+  "value": -2.5792340494364523
+ },
+ "flood-20000.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "flood-20000",
+  "value": 2.0
+ },
+ "flood-20000.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "flood-20000",
+  "value": -1.6437011013746274
+ },
+ "flood-20000.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "flood-20000",
+  "value": 0.25
+ },
+ "flood-20000.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "flood-20000",
+  "value": 4.0
+ },
+ "flood-20000.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "flood-20000",
+  "value": -0.6062989295959467
+ },
+ "flood-20000.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "flood-20000",
+  "value": 0.5625
+ },
+ "flood-20000.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "flood-20000",
+  "value": 5.5
+ },
+ "flood-20000.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "flood-20000",
+  "value": -0.11321687148213222
+ },
+ "flood-20000.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "flood-20000",
+  "value": 0.5
+ },
+ "flood-20000.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "flood-20000",
+  "value": 6.5
+ },
+ "flood-20000.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "flood-20000",
+  "value": -0.14247659991388328
+ },
+ "flood-20000.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "flood-20000",
+  "value": 3000.0
+ },
+ "flood-20000.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "flood-20000",
+  "value": 255.03046327168462
+ },
+ "flood-20000.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "flood-20000",
+  "value": 4000.0
+ },
+ "flood-20000.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "flood-20000",
+  "value": 629.6841210263385
+ },
+ "flood-20000.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6696.089467218503
+ },
+ "flood-20000.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "flood-20000",
+  "value": 254.23487998935263
+ },
+ "flood-20000.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "flood-20000",
+  "value": 1
+ },
+ "flood-20000.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "flood-20000",
+  "value": 255.0
+ },
+ "flood-20000.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "flood-20000",
+  "value": 85.0
+ },
+ "flood-20000.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "flood-20000",
+  "value": 49060.165099571575
+ },
+ "flood-20000.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "flood-20000",
+  "value": 49893.16850194273
+ },
+ "flood-20000.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "flood-20000",
+  "value": 1000.0
+ },
+ "flood-20000.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "flood-20000",
+  "value": 608
+ },
+ "flood-20000.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "flood-20000",
+  "value": false
+ },
+ "flood-20000.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "flood-20000",
+  "value": 0.0
+ },
+ "flood-20000.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "flood-20000",
+  "value": 17230.20783524456
+ },
+ "flood-20000.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "flood-20000",
+  "value": 25742.536352232386
+ },
+ "flood-20000.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "flood-20000",
+  "value": 2000.0
+ },
+ "flood-20000.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "flood-20000",
+  "value": 440
+ },
+ "flood-20000.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "flood-20000",
+  "value": 1000.0
+ },
+ "flood-20000.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "flood-20000",
+  "value": false
+ },
+ "flood-20000.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "flood-20000",
+  "value": 2.0
+ },
+ "flood-20000.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "flood-20000",
+  "value": 12075.377987003149
+ },
+ "flood-20000.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "flood-20000",
+  "value": 13223.346710464743
+ },
+ "flood-20000.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "flood-20000",
+  "value": 3000.0
+ },
+ "flood-20000.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "flood-20000",
+  "value": 1243
+ },
+ "flood-20000.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "flood-20000",
+  "value": 2000.0
+ },
+ "flood-20000.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "flood-20000",
+  "value": false
+ },
+ "flood-20000.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "flood-20000",
+  "value": 4.0
+ },
+ "flood-20000.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "flood-20000",
+  "value": 152770.50676412423
+ },
+ "flood-20000.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "flood-20000",
+  "value": 81157.41620878801
+ },
+ "flood-20000.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "flood-20000",
+  "value": 4000.0
+ },
+ "flood-20000.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "flood-20000",
+  "value": 2830
+ },
+ "flood-20000.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "flood-20000",
+  "value": 3000.0
+ },
+ "flood-20000.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "flood-20000",
+  "value": 5.5
+ },
+ "flood-20000.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "flood-20000",
+  "value": 66784.66232833007
+ },
+ "flood-20000.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "flood-20000",
+  "value": 68314.62436121385
+ },
+ "flood-20000.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "flood-20000",
+  "value": 6682.163793645561
+ },
+ "flood-20000.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "flood-20000",
+  "value": 24881
+ },
+ "flood-20000.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "flood-20000",
+  "value": true
+ },
+ "flood-20000.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "flood-20000",
+  "value": 4000.0
+ },
+ "flood-20000.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "flood-20000",
+  "value": false
+ },
+ "flood-20000.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "flood-20000",
+  "value": 6.5
+ },
+ "flood-20000.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "flood-20000",
+  "value": 68346.69469498961
+ },
+ "flood-20000.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "flood-20000",
+  "value": 268546.6439274951
+ },
+ "flood-20000.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 11.598937000749165
+ },
+ "flood-20000.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "flood-20000",
+  "value": 134757.91213618204
+ },
+ "flood-20000.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "flood-20000",
+  "value": 3.5059304320332227
+ },
+ "flood-20000.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "flood-20000",
+  "value": 268
+ },
+ "flood-20000.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "flood-20000",
+  "value": 403304.5560636772
+ },
+ "flood-20000.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "flood-20000",
+  "value": 66411.21744119244
+ },
+ "flood-20000.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "flood-20000",
+  "value": 1000.0
+ },
+ "flood-20000.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "flood-20000",
+  "value": 2.0
+ },
+ "flood-20000.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "flood-20000",
+  "value": 2.0
+ },
+ "flood-20000.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "flood-20000",
+  "value": 500000.0
+ },
+ "flood-20000.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "flood-20000",
+  "value": 2000.0
+ },
+ "flood-20000.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "flood-20000",
+  "value": 2.0
+ },
+ "flood-20000.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "flood-20000",
+  "value": 4.0
+ },
+ "flood-20000.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "flood-20000",
+  "value": 500000.0
+ },
+ "flood-20000.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "flood-20000",
+  "value": 3000.0
+ },
+ "flood-20000.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "flood-20000",
+  "value": 1.5
+ },
+ "flood-20000.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "flood-20000",
+  "value": 5.5
+ },
+ "flood-20000.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "flood-20000",
+  "value": 400000.0
+ },
+ "flood-20000.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "flood-20000",
+  "value": 4000.0
+ },
+ "flood-20000.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "flood-20000",
+  "value": 1.0
+ },
+ "flood-20000.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "flood-20000",
+  "value": 6.5
+ },
+ "flood-20000.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "flood-20000",
+  "value": 300000.0
+ },
+ "flood-3000.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "flood-3000",
+  "value": 330781.38546725025
+ },
+ "flood-3000.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "flood-3000",
+  "value": 1700000.0
+ },
+ "flood-3000.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "flood-3000",
+  "value": 2030781.3854672504
+ },
+ "flood-3000.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "flood-3000",
+  "value": 309031.38546725025
+ },
+ "flood-3000.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "flood-3000",
+  "value": 21750.0
+ },
+ "flood-3000.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "flood-3000",
+  "value": 7.25
+ },
+ "flood-3000.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "flood-3000",
+  "value": -2.5792340494364523
+ },
+ "flood-3000.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "flood-3000",
+  "value": -1.6437011013746274
+ },
+ "flood-3000.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "flood-3000",
+  "value": 0.25
+ },
+ "flood-3000.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "flood-3000",
+  "value": 4.0
+ },
+ "flood-3000.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "flood-3000",
+  "value": -0.6062989295959467
+ },
+ "flood-3000.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "flood-3000",
+  "value": 6.5
+ },
+ "flood-3000.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "flood-3000",
+  "value": 6.0
+ },
+ "flood-3000.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "flood-3000",
+  "value": 0.3867831285178678
+ },
+ "flood-3000.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "flood-3000",
+  "value": 0.5
+ },
+ "flood-3000.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "flood-3000",
+  "value": 6.5
+ },
+ "flood-3000.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "flood-3000",
+  "value": -0.14247659991388328
+ },
+ "flood-3000.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "flood-3000",
+  "value": 3000.0
+ },
+ "flood-3000.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "flood-3000",
+  "value": 255.03046327168462
+ },
+ "flood-3000.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "flood-3000",
+  "value": 4000.0
+ },
+ "flood-3000.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "flood-3000",
+  "value": 629.6841210263385
+ },
+ "flood-3000.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6696.089467218503
+ },
+ "flood-3000.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "flood-3000",
+  "value": 254.23487998935263
+ },
+ "flood-3000.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "flood-3000",
+  "value": 1
+ },
+ "flood-3000.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "flood-3000",
+  "value": 255.0
+ },
+ "flood-3000.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "flood-3000",
+  "value": 85.0
+ },
+ "flood-3000.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "flood-3000",
+  "value": 49060.165099571575
+ },
+ "flood-3000.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "flood-3000",
+  "value": 49893.16850194273
+ },
+ "flood-3000.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "flood-3000",
+  "value": 1000.0
+ },
+ "flood-3000.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "flood-3000",
+  "value": 608
+ },
+ "flood-3000.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "flood-3000",
+  "value": false
+ },
+ "flood-3000.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "flood-3000",
+  "value": 0.0
+ },
+ "flood-3000.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "flood-3000",
+  "value": 17230.20783524456
+ },
+ "flood-3000.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "flood-3000",
+  "value": 25742.536352232386
+ },
+ "flood-3000.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "flood-3000",
+  "value": 2000.0
+ },
+ "flood-3000.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "flood-3000",
+  "value": 440
+ },
+ "flood-3000.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "flood-3000",
+  "value": 1000.0
+ },
+ "flood-3000.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "flood-3000",
+  "value": false
+ },
+ "flood-3000.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "flood-3000",
+  "value": 12075.377987003149
+ },
+ "flood-3000.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "flood-3000",
+  "value": 13223.346710464743
+ },
+ "flood-3000.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "flood-3000",
+  "value": 3000.0
+ },
+ "flood-3000.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "flood-3000",
+  "value": 1243
+ },
+ "flood-3000.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "flood-3000",
+  "value": 2000.0
+ },
+ "flood-3000.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "flood-3000",
+  "value": false
+ },
+ "flood-3000.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "flood-3000",
+  "value": 4.0
+ },
+ "flood-3000.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "flood-3000",
+  "value": 131414.7357824678
+ },
+ "flood-3000.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "flood-3000",
+  "value": 66459.64766907161
+ },
+ "flood-3000.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "flood-3000",
+  "value": 4000.0
+ },
+ "flood-3000.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "flood-3000",
+  "value": 2414
+ },
+ "flood-3000.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "flood-3000",
+  "value": 3000.0
+ },
+ "flood-3000.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "flood-3000",
+  "value": 6.0
+ },
+ "flood-3000.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "flood-3000",
+  "value": 66784.66232833007
+ },
+ "flood-3000.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "flood-3000",
+  "value": 68314.62436121385
+ },
+ "flood-3000.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "flood-3000",
+  "value": 6682.163793645561
+ },
+ "flood-3000.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "flood-3000",
+  "value": 24881
+ },
+ "flood-3000.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "flood-3000",
+  "value": true
+ },
+ "flood-3000.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "flood-3000",
+  "value": 4000.0
+ },
+ "flood-3000.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "flood-3000",
+  "value": false
+ },
+ "flood-3000.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "flood-3000",
+  "value": 6.5
+ },
+ "flood-3000.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "flood-3000",
+  "value": 58543.947468075705
+ },
+ "flood-3000.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "flood-3000",
+  "value": 262511.11905069015
+ },
+ "flood-3000.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 0.0
+ },
+ "flood-3000.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "flood-3000",
+  "value": 120751.96749882789
+ },
+ "flood-3000.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "flood-3000",
+  "value": 3.5059304320332227
+ },
+ "flood-3000.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "flood-3000",
+  "value": 268
+ },
+ "flood-3000.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "flood-3000",
+  "value": 383263.08654951805
+ },
+ "flood-3000.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "flood-3000",
+  "value": 62208.02003075217
+ },
+ "flood-3000.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "flood-3000",
+  "value": 1000.0
+ },
+ "flood-3000.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "flood-3000",
+  "value": 500000.0
+ },
+ "flood-3000.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "flood-3000",
+  "value": 2000.0
+ },
+ "flood-3000.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "flood-3000",
+  "value": 4.0
+ },
+ "flood-3000.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "flood-3000",
+  "value": 500000.0
+ },
+ "flood-3000.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "flood-3000",
+  "value": 3000.0
+ },
+ "flood-3000.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "flood-3000",
+  "value": 2.0
+ },
+ "flood-3000.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "flood-3000",
+  "value": 6.0
+ },
+ "flood-3000.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "flood-3000",
+  "value": 500000.0
+ },
+ "flood-3000.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "flood-3000",
+  "value": 4000.0
+ },
+ "flood-3000.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "flood-3000",
+  "value": 0.5
+ },
+ "flood-3000.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "flood-3000",
+  "value": 6.5
+ },
+ "flood-3000.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "flood-3000",
+  "value": 200000.0
+ },
+ "free-seams-0.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "free-seams-0",
+  "value": 309031.38546725025
+ },
+ "free-seams-0.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "free-seams-0",
+  "value": 1700000.0
+ },
+ "free-seams-0.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "free-seams-0",
+  "value": 2009031.3854672504
+ },
+ "free-seams-0.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "free-seams-0",
+  "value": 309031.38546725025
+ },
+ "free-seams-0.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "free-seams-0",
+  "value": 7.25
+ },
+ "free-seams-0.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "free-seams-0",
+  "value": -2.5792340494364523
+ },
+ "free-seams-0.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "free-seams-0",
+  "value": -1.6437011013746274
+ },
+ "free-seams-0.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "free-seams-0",
+  "value": 0.25
+ },
+ "free-seams-0.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "free-seams-0",
+  "value": 4.0
+ },
+ "free-seams-0.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "free-seams-0",
+  "value": -0.6062989295959467
+ },
+ "free-seams-0.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "free-seams-0",
+  "value": 6.5
+ },
+ "free-seams-0.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "free-seams-0",
+  "value": 6.0
+ },
+ "free-seams-0.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "free-seams-0",
+  "value": 0.3867831285178678
+ },
+ "free-seams-0.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "free-seams-0",
+  "value": 0.5
+ },
+ "free-seams-0.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "free-seams-0",
+  "value": 6.5
+ },
+ "free-seams-0.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "free-seams-0",
+  "value": -0.14247659991388328
+ },
+ "free-seams-0.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "free-seams-0",
+  "value": 2000.0
+ },
+ "free-seams-0.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "free-seams-0",
+  "value": 672.4152692794244
+ },
+ "free-seams-0.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "free-seams-0",
+  "value": 3000.0
+ },
+ "free-seams-0.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "free-seams-0",
+  "value": 254.86962939272917
+ },
+ "free-seams-0.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.join3.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/at_m",
+  "run": "free-seams-0",
+  "value": 4000.0
+ },
+ "free-seams-0.join3.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/measured_min_radius_m",
+  "run": "free-seams-0",
+  "value": 668.7821742784403
+ },
+ "free-seams-0.join3.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/radius_ok",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6718.896669856357
+ },
+ "free-seams-0.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "free-seams-0",
+  "value": 254.8703068654224
+ },
+ "free-seams-0.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "free-seams-0",
+  "value": 2
+ },
+ "free-seams-0.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "free-seams-0",
+  "value": 255.0
+ },
+ "free-seams-0.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "free-seams-0",
+  "value": 85.0
+ },
+ "free-seams-0.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "free-seams-0",
+  "value": 49060.165099571575
+ },
+ "free-seams-0.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "free-seams-0",
+  "value": 49893.16850194273
+ },
+ "free-seams-0.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "free-seams-0",
+  "value": 1000.0
+ },
+ "free-seams-0.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "free-seams-0",
+  "value": 608
+ },
+ "free-seams-0.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "free-seams-0",
+  "value": 17230.20783524456
+ },
+ "free-seams-0.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "free-seams-0",
+  "value": 25742.536352232386
+ },
+ "free-seams-0.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "free-seams-0",
+  "value": 2000.0
+ },
+ "free-seams-0.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "free-seams-0",
+  "value": 440
+ },
+ "free-seams-0.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "free-seams-0",
+  "value": 1000.0
+ },
+ "free-seams-0.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "free-seams-0",
+  "value": 12075.377987003149
+ },
+ "free-seams-0.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "free-seams-0",
+  "value": 1022.3104191868215
+ },
+ "free-seams-0.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "free-seams-0",
+  "value": 3000.0
+ },
+ "free-seams-0.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "free-seams-0",
+  "value": 203
+ },
+ "free-seams-0.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "free-seams-0",
+  "value": 2000.0
+ },
+ "free-seams-0.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "free-seams-0",
+  "value": 4.0
+ },
+ "free-seams-0.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "free-seams-0",
+  "value": 131414.7357824678
+ },
+ "free-seams-0.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "free-seams-0",
+  "value": 62786.219458930966
+ },
+ "free-seams-0.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "free-seams-0",
+  "value": 4000.0
+ },
+ "free-seams-0.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "free-seams-0",
+  "value": 1706
+ },
+ "free-seams-0.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "free-seams-0",
+  "value": 3000.0
+ },
+ "free-seams-0.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "free-seams-0",
+  "value": 6.0
+ },
+ "free-seams-0.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "free-seams-0",
+  "value": 66784.66232833007
+ },
+ "free-seams-0.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "free-seams-0",
+  "value": 68314.62436121385
+ },
+ "free-seams-0.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "free-seams-0",
+  "value": 6682.163793645561
+ },
+ "free-seams-0.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "free-seams-0",
+  "value": 24881
+ },
+ "free-seams-0.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "free-seams-0",
+  "value": 4000.0
+ },
+ "free-seams-0.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "free-seams-0",
+  "value": 6.5
+ },
+ "free-seams-0.site1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/at_m",
+  "run": "free-seams-0",
+  "value": 1000.0
+ },
+ "free-seams-0.site1.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/free",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.site1.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/straight_required_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.site1.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/straight_through_m",
+  "run": "free-seams-0",
+  "value": 9.999768847334053
+ },
+ "free-seams-0.site2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/at_m",
+  "run": "free-seams-0",
+  "value": 2000.0
+ },
+ "free-seams-0.site2.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/free",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.site2.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/straight_required_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.site2.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/straight_through_m",
+  "run": "free-seams-0",
+  "value": 0.04224319713057412
+ },
+ "free-seams-0.site3.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/at_m",
+  "run": "free-seams-0",
+  "value": 3000.0
+ },
+ "free-seams-0.site3.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/free",
+  "run": "free-seams-0",
+  "value": true
+ },
+ "free-seams-0.site3.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/straight_required_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.site3.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/straight_through_m",
+  "run": "free-seams-0",
+  "value": 1.983780786135867
+ },
+ "free-seams-0.site4.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/at_m",
+  "run": "free-seams-0",
+  "value": 4000.0
+ },
+ "free-seams-0.site4.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/free",
+  "run": "free-seams-0",
+  "value": false
+ },
+ "free-seams-0.site4.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/straight_required_m",
+  "run": "free-seams-0",
+  "value": 0.0
+ },
+ "free-seams-0.site4.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/straight_through_m",
+  "run": "free-seams-0",
+  "value": 1.0639378987502823
+ },
+ "free-seams-0.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "free-seams-0",
+  "value": 63384.01808851413
+ },
+ "free-seams-0.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "free-seams-0",
+  "value": 266017.1769108672
+ },
+ "free-seams-0.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": -7.888109984193692
+ },
+ "free-seams-0.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "free-seams-0",
+  "value": 111226.91949444253
+ },
+ "free-seams-0.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "free-seams-0",
+  "value": 3.5059304752310503
+ },
+ "free-seams-0.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "free-seams-0",
+  "value": 269
+ },
+ "free-seams-0.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "free-seams-0",
+  "value": 377244.09640530974
+ },
+ "free-seams-0.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "free-seams-0",
+  "value": 47842.90140592839
+ },
+ "free-seams-0.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "free-seams-0",
+  "value": 1000.0
+ },
+ "free-seams-0.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "free-seams-0",
+  "value": 500000.0
+ },
+ "free-seams-0.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "free-seams-0",
+  "value": 2000.0
+ },
+ "free-seams-0.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "free-seams-0",
+  "value": 4.0
+ },
+ "free-seams-0.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "free-seams-0",
+  "value": 500000.0
+ },
+ "free-seams-0.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "free-seams-0",
+  "value": 3000.0
+ },
+ "free-seams-0.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "free-seams-0",
+  "value": 2.0
+ },
+ "free-seams-0.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "free-seams-0",
+  "value": 6.0
+ },
+ "free-seams-0.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "free-seams-0",
+  "value": 500000.0
+ },
+ "free-seams-0.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "free-seams-0",
+  "value": 4000.0
+ },
+ "free-seams-0.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "free-seams-0",
+  "value": 0.5
+ },
+ "free-seams-0.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "free-seams-0",
+  "value": 6.5
+ },
+ "free-seams-0.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "free-seams-0",
+  "value": 200000.0
+ },
+ "free-seams.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "free-seams",
+  "value": 309031.38546725025
+ },
+ "free-seams.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "free-seams",
+  "value": 1700000.0
+ },
+ "free-seams.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "free-seams",
+  "value": 2009031.3854672504
+ },
+ "free-seams.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "free-seams",
+  "value": 309031.38546725025
+ },
+ "free-seams.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "free-seams",
+  "value": 7.25
+ },
+ "free-seams.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "free-seams",
+  "value": -2.5792340494364523
+ },
+ "free-seams.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "free-seams",
+  "value": -1.6437011013746274
+ },
+ "free-seams.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "free-seams",
+  "value": 0.25
+ },
+ "free-seams.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "free-seams",
+  "value": 4.0
+ },
+ "free-seams.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "free-seams",
+  "value": -0.6062989295959467
+ },
+ "free-seams.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "free-seams",
+  "value": 6.5
+ },
+ "free-seams.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "free-seams",
+  "value": 6.0
+ },
+ "free-seams.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "free-seams",
+  "value": 0.3867831285178678
+ },
+ "free-seams.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "free-seams",
+  "value": 0.5
+ },
+ "free-seams.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "free-seams",
+  "value": 6.5
+ },
+ "free-seams.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "free-seams",
+  "value": -0.14247659991388328
+ },
+ "free-seams.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "free-seams",
+  "value": 3000.0
+ },
+ "free-seams.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "free-seams",
+  "value": 255.03046327168462
+ },
+ "free-seams.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "free-seams",
+  "value": 4000.0
+ },
+ "free-seams.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "free-seams",
+  "value": 629.6841210263385
+ },
+ "free-seams.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6696.089467218503
+ },
+ "free-seams.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "free-seams",
+  "value": 254.23487998935263
+ },
+ "free-seams.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "free-seams",
+  "value": 1
+ },
+ "free-seams.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "free-seams",
+  "value": 255.0
+ },
+ "free-seams.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "free-seams",
+  "value": 85.0
+ },
+ "free-seams.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "free-seams",
+  "value": 49060.165099571575
+ },
+ "free-seams.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "free-seams",
+  "value": 49893.16850194273
+ },
+ "free-seams.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "free-seams",
+  "value": 1000.0
+ },
+ "free-seams.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "free-seams",
+  "value": 608
+ },
+ "free-seams.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "free-seams",
+  "value": 0.0
+ },
+ "free-seams.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "free-seams",
+  "value": 17230.20783524456
+ },
+ "free-seams.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "free-seams",
+  "value": 25742.536352232386
+ },
+ "free-seams.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "free-seams",
+  "value": 2000.0
+ },
+ "free-seams.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "free-seams",
+  "value": 440
+ },
+ "free-seams.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "free-seams",
+  "value": 1000.0
+ },
+ "free-seams.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "free-seams",
+  "value": 12075.377987003149
+ },
+ "free-seams.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "free-seams",
+  "value": 13223.346710464743
+ },
+ "free-seams.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "free-seams",
+  "value": 3000.0
+ },
+ "free-seams.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "free-seams",
+  "value": 1243
+ },
+ "free-seams.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "free-seams",
+  "value": 2000.0
+ },
+ "free-seams.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "free-seams",
+  "value": 4.0
+ },
+ "free-seams.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "free-seams",
+  "value": 131414.7357824678
+ },
+ "free-seams.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "free-seams",
+  "value": 66459.64766907161
+ },
+ "free-seams.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "free-seams",
+  "value": 4000.0
+ },
+ "free-seams.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "free-seams",
+  "value": 2414
+ },
+ "free-seams.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "free-seams",
+  "value": 3000.0
+ },
+ "free-seams.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "free-seams",
+  "value": 6.0
+ },
+ "free-seams.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "free-seams",
+  "value": 66784.66232833007
+ },
+ "free-seams.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "free-seams",
+  "value": 68314.62436121385
+ },
+ "free-seams.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "free-seams",
+  "value": 6682.163793645561
+ },
+ "free-seams.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "free-seams",
+  "value": 24881
+ },
+ "free-seams.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "free-seams",
+  "value": true
+ },
+ "free-seams.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "free-seams",
+  "value": 4000.0
+ },
+ "free-seams.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "free-seams",
+  "value": 6.5
+ },
+ "free-seams.site1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/at_m",
+  "run": "free-seams",
+  "value": 1000.0
+ },
+ "free-seams.site1.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/free",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.site1.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/straight_required_m",
+  "run": "free-seams",
+  "value": 170.0
+ },
+ "free-seams.site1.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/0/straight_through_m",
+  "run": "free-seams",
+  "value": 9.999768847334053
+ },
+ "free-seams.site2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/at_m",
+  "run": "free-seams",
+  "value": 2000.0
+ },
+ "free-seams.site2.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/free",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.site2.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/straight_required_m",
+  "run": "free-seams",
+  "value": 170.0
+ },
+ "free-seams.site2.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/1/straight_through_m",
+  "run": "free-seams",
+  "value": 9.999525238719798
+ },
+ "free-seams.site3.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/at_m",
+  "run": "free-seams",
+  "value": 3000.0
+ },
+ "free-seams.site3.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/free",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.site3.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/straight_required_m",
+  "run": "free-seams",
+  "value": 170.0
+ },
+ "free-seams.site3.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/2/straight_through_m",
+  "run": "free-seams",
+  "value": 2.4537005440201938
+ },
+ "free-seams.site4.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/at_m",
+  "run": "free-seams",
+  "value": 4000.0
+ },
+ "free-seams.site4.free": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/free",
+  "run": "free-seams",
+  "value": false
+ },
+ "free-seams.site4.straight_required_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/straight_required_m",
+  "run": "free-seams",
+  "value": 170.0
+ },
+ "free-seams.site4.straight_through_m": {
+  "pointer": "/stages/optimise/results/design_line/details/weirs/3/straight_through_m",
+  "run": "free-seams",
+  "value": 3.1587102665557723
+ },
+ "free-seams.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "free-seams",
+  "value": 58543.947468075705
+ },
+ "free-seams.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "free-seams",
+  "value": 262511.11905069015
+ },
+ "free-seams.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 0.0
+ },
+ "free-seams.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "free-seams",
+  "value": 120751.96749882789
+ },
+ "free-seams.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "free-seams",
+  "value": 3.5059304320332227
+ },
+ "free-seams.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "free-seams",
+  "value": 268
+ },
+ "free-seams.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "free-seams",
+  "value": 383263.08654951805
+ },
+ "free-seams.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "free-seams",
+  "value": 62208.02003075217
+ },
+ "free-seams.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "free-seams",
+  "value": 1000.0
+ },
+ "free-seams.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "free-seams",
+  "value": 500000.0
+ },
+ "free-seams.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "free-seams",
+  "value": 2000.0
+ },
+ "free-seams.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "free-seams",
+  "value": 4.0
+ },
+ "free-seams.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "free-seams",
+  "value": 500000.0
+ },
+ "free-seams.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "free-seams",
+  "value": 3000.0
+ },
+ "free-seams.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "free-seams",
+  "value": 2.0
+ },
+ "free-seams.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "free-seams",
+  "value": 6.0
+ },
+ "free-seams.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "free-seams",
+  "value": 500000.0
+ },
+ "free-seams.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "free-seams",
+  "value": 4000.0
+ },
+ "free-seams.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "free-seams",
+  "value": 0.5
+ },
+ "free-seams.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "free-seams",
+  "value": 6.5
+ },
+ "free-seams.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "free-seams",
+  "value": 200000.0
+ },
+ "land.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "land",
+  "value": 309031.38546725025
+ },
+ "land.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "land",
+  "value": 1700000.0
+ },
+ "land.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "land",
+  "value": 2009031.3854672504
+ },
+ "land.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "land",
+  "value": 309031.38546725025
+ },
+ "land.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "land",
+  "value": 7.25
+ },
+ "land.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "land",
+  "value": -2.5792340494364523
+ },
+ "land.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "land",
+  "value": -1.6437011013746274
+ },
+ "land.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "land",
+  "value": 0.25
+ },
+ "land.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "land",
+  "value": 4.0
+ },
+ "land.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "land",
+  "value": -0.6062989295959467
+ },
+ "land.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "land",
+  "value": 6.5
+ },
+ "land.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "land",
+  "value": 6.0
+ },
+ "land.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "land",
+  "value": 0.3867831285178678
+ },
+ "land.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "land",
+  "value": 0.5
+ },
+ "land.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "land",
+  "value": 6.5
+ },
+ "land.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "land",
+  "value": -0.14247659991388328
+ },
+ "land.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "land",
+  "value": 3000.0
+ },
+ "land.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "land",
+  "value": 255.03046327180883
+ },
+ "land.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "land",
+  "value": true
+ },
+ "land.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "land",
+  "value": 4000.0
+ },
+ "land.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "land",
+  "value": 416.19612829574004
+ },
+ "land.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "land",
+  "value": true
+ },
+ "land.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6695.757845501407
+ },
+ "land.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "land",
+  "value": 254.23487998935263
+ },
+ "land.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "land",
+  "value": 1
+ },
+ "land.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "land",
+  "value": true
+ },
+ "land.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "land",
+  "value": 255.0
+ },
+ "land.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "land",
+  "value": 85.0
+ },
+ "land.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "land",
+  "value": true
+ },
+ "land.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "land",
+  "value": 49060.165099571575
+ },
+ "land.pool1.baseline_land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_land_area_m2",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "land",
+  "value": 49893.16850194273
+ },
+ "land.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "land",
+  "value": 1000.0
+ },
+ "land.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "land",
+  "value": 415
+ },
+ "land.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "land",
+  "value": true
+ },
+ "land.pool1.land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/land_area_m2",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "land",
+  "value": false
+ },
+ "land.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "land",
+  "value": 17230.20783524456
+ },
+ "land.pool2.baseline_land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_land_area_m2",
+  "run": "land",
+  "value": 0.0
+ },
+ "land.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "land",
+  "value": 32399.974316897406
+ },
+ "land.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "land",
+  "value": 2000.0
+ },
+ "land.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "land",
+  "value": 316
+ },
+ "land.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "land",
+  "value": true
+ },
+ "land.pool2.land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/land_area_m2",
+  "run": "land",
+  "value": 2048.442450666159
+ },
+ "land.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "land",
+  "value": 1000.0
+ },
+ "land.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "land",
+  "value": false
+ },
+ "land.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "land",
+  "value": 19891.373353085364
+ },
+ "land.pool3.baseline_land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_land_area_m2",
+  "run": "land",
+  "value": 2404.9216511022214
+ },
+ "land.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "land",
+  "value": 21652.233305677408
+ },
+ "land.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "land",
+  "value": 3000.0
+ },
+ "land.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "land",
+  "value": 1186
+ },
+ "land.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "land",
+  "value": true
+ },
+ "land.pool3.land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/land_area_m2",
+  "run": "land",
+  "value": 2593.5035677577434
+ },
+ "land.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "land",
+  "value": 2000.0
+ },
+ "land.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "land",
+  "value": false
+ },
+ "land.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "land",
+  "value": 4.0
+ },
+ "land.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "land",
+  "value": 233381.8837558826
+ },
+ "land.pool4.baseline_land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_land_area_m2",
+  "run": "land",
+  "value": 31374.507068742998
+ },
+ "land.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "land",
+  "value": 131381.267569156
+ },
+ "land.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "land",
+  "value": 4000.0
+ },
+ "land.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "land",
+  "value": 2715
+ },
+ "land.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "land",
+  "value": true
+ },
+ "land.pool4.land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/land_area_m2",
+  "run": "land",
+  "value": 19854.72567938327
+ },
+ "land.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "land",
+  "value": 3000.0
+ },
+ "land.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "land",
+  "value": true
+ },
+ "land.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "land",
+  "value": 6.0
+ },
+ "land.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "land",
+  "value": 66849.65807069077
+ },
+ "land.pool5.baseline_land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_land_area_m2",
+  "run": "land",
+  "value": 19.998689957137188
+ },
+ "land.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "land",
+  "value": 68387.68356584694
+ },
+ "land.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "land",
+  "value": 6682.163793645561
+ },
+ "land.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "land",
+  "value": 8067
+ },
+ "land.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "land",
+  "value": true
+ },
+ "land.pool5.land_area_m2": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/land_area_m2",
+  "run": "land",
+  "value": 22.479755271720748
+ },
+ "land.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "land",
+  "value": 4000.0
+ },
+ "land.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "land",
+  "value": false
+ },
+ "land.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "land",
+  "value": 6.5
+ },
+ "land.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "land",
+  "value": 59569.09783088795
+ },
+ "land.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "land",
+  "value": 262061.96161695546
+ },
+ "land.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 0.8370713198733171
+ },
+ "land.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "land",
+  "value": 121762.74758694333
+ },
+ "land.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "land",
+  "value": 3.5059304383614727
+ },
+ "land.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "land",
+  "value": 268
+ },
+ "land.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "land",
+  "value": 383824.7092038988
+ },
+ "land.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "land",
+  "value": 62193.64975605539
+ },
+ "land.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "land",
+  "value": 1000.0
+ },
+ "land.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "land",
+  "value": 500000.0
+ },
+ "land.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "land",
+  "value": 2000.0
+ },
+ "land.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "land",
+  "value": 4.0
+ },
+ "land.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "land",
+  "value": 500000.0
+ },
+ "land.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "land",
+  "value": 3000.0
+ },
+ "land.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "land",
+  "value": 2.0
+ },
+ "land.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "land",
+  "value": 6.0
+ },
+ "land.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "land",
+  "value": 500000.0
+ },
+ "land.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "land",
+  "value": 4000.0
+ },
+ "land.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "land",
+  "value": 0.5
+ },
+ "land.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "land",
+  "value": 6.5
+ },
+ "land.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "land",
+  "value": 200000.0
+ },
+ "length-1000.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "length-1000",
+  "value": 309031.38546725025
+ },
+ "length-1000.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "length-1000",
+  "value": 1700000.0
+ },
+ "length-1000.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "length-1000",
+  "value": 2009031.3854672504
+ },
+ "length-1000.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "length-1000",
+  "value": 309031.38546725025
+ },
+ "length-1000.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "length-1000",
+  "value": 7.25
+ },
+ "length-1000.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "length-1000",
+  "value": -2.5792340494364523
+ },
+ "length-1000.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "length-1000",
+  "value": -1.6437011013746274
+ },
+ "length-1000.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "length-1000",
+  "value": 0.25
+ },
+ "length-1000.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "length-1000",
+  "value": 4.0
+ },
+ "length-1000.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "length-1000",
+  "value": -0.6062989295959467
+ },
+ "length-1000.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "length-1000",
+  "value": 6.5
+ },
+ "length-1000.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "length-1000",
+  "value": 6.0
+ },
+ "length-1000.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "length-1000",
+  "value": 0.3867831285178678
+ },
+ "length-1000.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "length-1000",
+  "value": 0.5
+ },
+ "length-1000.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "length-1000",
+  "value": 6.5
+ },
+ "length-1000.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "length-1000",
+  "value": -0.14247659991388328
+ },
+ "length-1000.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "length-1000",
+  "value": 1000.0
+ },
+ "length-1000.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "length-1000",
+  "value": 255.0669904251434
+ },
+ "length-1000.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "length-1000",
+  "value": 2000.0
+ },
+ "length-1000.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "length-1000",
+  "value": 255.0599399133897
+ },
+ "length-1000.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.join3.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/at_m",
+  "run": "length-1000",
+  "value": 3000.0
+ },
+ "length-1000.join3.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/measured_min_radius_m",
+  "run": "length-1000",
+  "value": 255.06180478533892
+ },
+ "length-1000.join3.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/radius_ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.join4.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/at_m",
+  "run": "length-1000",
+  "value": 4000.0
+ },
+ "length-1000.join4.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/measured_min_radius_m",
+  "run": "length-1000",
+  "value": 289.9812921478989
+ },
+ "length-1000.join4.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/radius_ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6289.163757504182
+ },
+ "length-1000.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "length-1000",
+  "value": 254.87084134070017
+ },
+ "length-1000.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "length-1000",
+  "value": 5
+ },
+ "length-1000.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "length-1000",
+  "value": 255.0
+ },
+ "length-1000.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "length-1000",
+  "value": 85.0
+ },
+ "length-1000.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "length-1000",
+  "value": 1049060.1650995857
+ },
+ "length-1000.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "length-1000",
+  "value": 1041612.1220830717
+ },
+ "length-1000.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "length-1000",
+  "value": 1000.0
+ },
+ "length-1000.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "length-1000",
+  "value": 1844
+ },
+ "length-1000.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool1.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/line_length_m",
+  "run": "length-1000",
+  "value": 990.0350039422049
+ },
+ "length-1000.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "length-1000",
+  "value": 0.0
+ },
+ "length-1000.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "length-1000",
+  "value": 1017230.2078351992
+ },
+ "length-1000.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "length-1000",
+  "value": 1013593.0907982767
+ },
+ "length-1000.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "length-1000",
+  "value": 2000.0
+ },
+ "length-1000.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "length-1000",
+  "value": 2808
+ },
+ "length-1000.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool2.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/line_length_m",
+  "run": "length-1000",
+  "value": 847.6011850431669
+ },
+ "length-1000.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "length-1000",
+  "value": 1000.0
+ },
+ "length-1000.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "length-1000",
+  "value": 1012075.3779870454
+ },
+ "length-1000.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "length-1000",
+  "value": 1001494.6680486603
+ },
+ "length-1000.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "length-1000",
+  "value": 3000.0
+ },
+ "length-1000.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "length-1000",
+  "value": 1168
+ },
+ "length-1000.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool3.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/line_length_m",
+  "run": "length-1000",
+  "value": 985.0456033820325
+ },
+ "length-1000.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "length-1000",
+  "value": 2000.0
+ },
+ "length-1000.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "length-1000",
+  "value": 4.0
+ },
+ "length-1000.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "length-1000",
+  "value": 1131414.7357824221
+ },
+ "length-1000.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "length-1000",
+  "value": 1075420.0353469437
+ },
+ "length-1000.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "length-1000",
+  "value": 4000.0
+ },
+ "length-1000.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "length-1000",
+  "value": 2284
+ },
+ "length-1000.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool4.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/line_length_m",
+  "run": "length-1000",
+  "value": 1004.8131031304215
+ },
+ "length-1000.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "length-1000",
+  "value": 3000.0
+ },
+ "length-1000.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "length-1000",
+  "value": 6.0
+ },
+ "length-1000.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "length-1000",
+  "value": 2748948.455973921
+ },
+ "length-1000.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "length-1000",
+  "value": 2711040.731499848
+ },
+ "length-1000.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "length-1000",
+  "value": 6682.163793645561
+ },
+ "length-1000.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "length-1000",
+  "value": 90729
+ },
+ "length-1000.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool5.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/line_length_m",
+  "run": "length-1000",
+  "value": 2461.6758126330474
+ },
+ "length-1000.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "length-1000",
+  "value": 4000.0
+ },
+ "length-1000.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "length-1000",
+  "value": true
+ },
+ "length-1000.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "length-1000",
+  "value": 6.5
+ },
+ "length-1000.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "length-1000",
+  "value": 342080.43747576454
+ },
+ "length-1000.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "length-1000",
+  "value": 204318.57853004834
+ },
+ "length-1000.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 338.7926905769409
+ },
+ "length-1000.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "length-1000",
+  "value": 529850.8071127001
+ },
+ "length-1000.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "length-1000",
+  "value": 3.508543891700617
+ },
+ "length-1000.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "length-1000",
+  "value": 252
+ },
+ "length-1000.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "length-1000",
+  "value": 734169.3856427484
+ },
+ "length-1000.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "length-1000",
+  "value": 187770.36963693562
+ },
+ "length-1000.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "length-1000",
+  "value": 1000.0
+ },
+ "length-1000.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "length-1000",
+  "value": 500000.0
+ },
+ "length-1000.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "length-1000",
+  "value": 2000.0
+ },
+ "length-1000.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "length-1000",
+  "value": 4.0
+ },
+ "length-1000.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "length-1000",
+  "value": 500000.0
+ },
+ "length-1000.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "length-1000",
+  "value": 3000.0
+ },
+ "length-1000.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "length-1000",
+  "value": 2.0
+ },
+ "length-1000.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "length-1000",
+  "value": 6.0
+ },
+ "length-1000.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "length-1000",
+  "value": 500000.0
+ },
+ "length-1000.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "length-1000",
+  "value": 4000.0
+ },
+ "length-1000.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "length-1000",
+  "value": 0.5
+ },
+ "length-1000.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "length-1000",
+  "value": 6.5
+ },
+ "length-1000.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "length-1000",
+  "value": 200000.0
+ },
+ "length-300.base_level_m": {
+  "pointer": "/stages/optimise/results/base_level_m",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.cascade.reach_cost": {
+  "pointer": "/stages/optimise/results/cascade/reach_cost",
+  "run": "length-300",
+  "value": 309031.38546725025
+ },
+ "length-300.cascade.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/structure_cost",
+  "run": "length-300",
+  "value": 1700000.0
+ },
+ "length-300.cascade.total_cost": {
+  "pointer": "/stages/optimise/results/cascade/total_cost",
+  "run": "length-300",
+  "value": 2009031.3854672504
+ },
+ "length-300.flood.cut_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
+  "run": "length-300",
+  "value": 309031.38546725025
+ },
+ "length-300.flood.flood_cost": {
+  "pointer": "/stages/optimise/results/cascade/flood/flood_cost",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.flood.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/flooded_ha",
+  "run": "length-300",
+  "value": 7.25
+ },
+ "length-300.flood.pool1.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/flooded_ha",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.flood.pool1.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/level_m",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.flood.pool1.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/0/max_above_bank_m",
+  "run": "length-300",
+  "value": -2.5792340494364523
+ },
+ "length-300.flood.pool2.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/flooded_ha",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.flood.pool2.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/level_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.flood.pool2.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/1/max_above_bank_m",
+  "run": "length-300",
+  "value": -1.6437011013746274
+ },
+ "length-300.flood.pool3.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/flooded_ha",
+  "run": "length-300",
+  "value": 0.25
+ },
+ "length-300.flood.pool3.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/level_m",
+  "run": "length-300",
+  "value": 4.0
+ },
+ "length-300.flood.pool3.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/2/max_above_bank_m",
+  "run": "length-300",
+  "value": -0.6062989295959467
+ },
+ "length-300.flood.pool4.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/flooded_ha",
+  "run": "length-300",
+  "value": 6.5
+ },
+ "length-300.flood.pool4.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/level_m",
+  "run": "length-300",
+  "value": 6.0
+ },
+ "length-300.flood.pool4.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/3/max_above_bank_m",
+  "run": "length-300",
+  "value": 0.3867831285178678
+ },
+ "length-300.flood.pool5.flooded_ha": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/flooded_ha",
+  "run": "length-300",
+  "value": 0.5
+ },
+ "length-300.flood.pool5.level_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/level_m",
+  "run": "length-300",
+  "value": 6.5
+ },
+ "length-300.flood.pool5.max_above_bank_m": {
+  "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
+  "run": "length-300",
+  "value": -0.14247659991388328
+ },
+ "length-300.join1.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
+  "run": "length-300",
+  "value": 1000.0
+ },
+ "length-300.join1.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/measured_min_radius_m",
+  "run": "length-300",
+  "value": 275.73665899855416
+ },
+ "length-300.join1.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/0/radius_ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.join2.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/at_m",
+  "run": "length-300",
+  "value": 2000.0
+ },
+ "length-300.join2.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/measured_min_radius_m",
+  "run": "length-300",
+  "value": 382.7028527820715
+ },
+ "length-300.join2.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.join3.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/at_m",
+  "run": "length-300",
+  "value": 3000.0
+ },
+ "length-300.join3.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/measured_min_radius_m",
+  "run": "length-300",
+  "value": 255.0927443342325
+ },
+ "length-300.join3.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/2/radius_ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.join4.at_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/at_m",
+  "run": "length-300",
+  "value": 4000.0
+ },
+ "length-300.join4.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/measured_min_radius_m",
+  "run": "length-300",
+  "value": 255.2949176114043
+ },
+ "length-300.join4.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/details/joins/3/radius_ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.line.length_m": {
+  "derived": "the length of the design line's polyline",
+  "value": 6667.183723644015
+ },
+ "length-300.line.measured_min_radius_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/measured_min_radius_m",
+  "run": "length-300",
+  "value": 254.88324126299884
+ },
+ "length-300.line.n_replaced": {
+  "pointer": "/stages/optimise/results/design_line/details/n_replaced",
+  "run": "length-300",
+  "value": 3
+ },
+ "length-300.line.no_self_crossing": {
+  "pointer": "/stages/optimise/results/design_line/checks/no_self_crossing/ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.line.r_min_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/r_min_m",
+  "run": "length-300",
+  "value": 255.0
+ },
+ "length-300.line.radius_check_chord_m": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_check_chord_m",
+  "run": "length-300",
+  "value": 85.0
+ },
+ "length-300.line.radius_ok": {
+  "pointer": "/stages/optimise/results/design_line/checks/radius_ok",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool1.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/baseline_cost",
+  "run": "length-300",
+  "value": 349060.1650995758
+ },
+ "length-300.pool1.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/cost",
+  "run": "length-300",
+  "value": 348559.37440911843
+ },
+ "length-300.pool1.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/end_m",
+  "run": "length-300",
+  "value": 1000.0
+ },
+ "length-300.pool1.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/expansions",
+  "run": "length-300",
+  "value": 864
+ },
+ "length-300.pool1.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/goal_closed",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool1.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/line_length_m",
+  "run": "length-300",
+  "value": 990.5162837344451
+ },
+ "length-300.pool1.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/start_m",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.pool1.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/used",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool1.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/0/water_level_m",
+  "run": "length-300",
+  "value": 0.0
+ },
+ "length-300.pool2.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/baseline_cost",
+  "run": "length-300",
+  "value": 317230.207835231
+ },
+ "length-300.pool2.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/cost",
+  "run": "length-300",
+  "value": 323700.31489136856
+ },
+ "length-300.pool2.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/end_m",
+  "run": "length-300",
+  "value": 2000.0
+ },
+ "length-300.pool2.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/expansions",
+  "run": "length-300",
+  "value": 639
+ },
+ "length-300.pool2.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/goal_closed",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool2.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/line_length_m",
+  "run": "length-300",
+  "value": 990.8887900838982
+ },
+ "length-300.pool2.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/start_m",
+  "run": "length-300",
+  "value": 1000.0
+ },
+ "length-300.pool2.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/used",
+  "run": "length-300",
+  "value": false
+ },
+ "length-300.pool2.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/1/water_level_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.pool3.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/baseline_cost",
+  "run": "length-300",
+  "value": 312075.37798701576
+ },
+ "length-300.pool3.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/cost",
+  "run": "length-300",
+  "value": 311260.55930061603
+ },
+ "length-300.pool3.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/end_m",
+  "run": "length-300",
+  "value": 3000.0
+ },
+ "length-300.pool3.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/expansions",
+  "run": "length-300",
+  "value": 1060
+ },
+ "length-300.pool3.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/goal_closed",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool3.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/line_length_m",
+  "run": "length-300",
+  "value": 989.3006740970002
+ },
+ "length-300.pool3.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/start_m",
+  "run": "length-300",
+  "value": 2000.0
+ },
+ "length-300.pool3.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/used",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool3.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/2/water_level_m",
+  "run": "length-300",
+  "value": 4.0
+ },
+ "length-300.pool4.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/baseline_cost",
+  "run": "length-300",
+  "value": 431414.73578245443
+ },
+ "length-300.pool4.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/cost",
+  "run": "length-300",
+  "value": 372749.16602000047
+ },
+ "length-300.pool4.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/end_m",
+  "run": "length-300",
+  "value": 4000.0
+ },
+ "length-300.pool4.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/expansions",
+  "run": "length-300",
+  "value": 1820
+ },
+ "length-300.pool4.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/goal_closed",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool4.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/line_length_m",
+  "run": "length-300",
+  "value": 1005.207058568153
+ },
+ "length-300.pool4.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/start_m",
+  "run": "length-300",
+  "value": 3000.0
+ },
+ "length-300.pool4.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/used",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool4.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/3/water_level_m",
+  "run": "length-300",
+  "value": 6.0
+ },
+ "length-300.pool5.baseline_cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/baseline_cost",
+  "run": "length-300",
+  "value": 871433.8004220063
+ },
+ "length-300.pool5.cost": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/cost",
+  "run": "length-300",
+  "value": 872534.981181432
+ },
+ "length-300.pool5.end_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/end_m",
+  "run": "length-300",
+  "value": 6682.163793645561
+ },
+ "length-300.pool5.expansions": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/expansions",
+  "run": "length-300",
+  "value": 60408
+ },
+ "length-300.pool5.goal_closed": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/goal_closed",
+  "run": "length-300",
+  "value": true
+ },
+ "length-300.pool5.line_length_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/line_length_m",
+  "run": "length-300",
+  "value": 2678.5270777254077
+ },
+ "length-300.pool5.start_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/start_m",
+  "run": "length-300",
+  "value": 4000.0
+ },
+ "length-300.pool5.used": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/used",
+  "run": "length-300",
+  "value": false
+ },
+ "length-300.pool5.water_level_m": {
+  "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
+  "run": "length-300",
+  "value": 6.5
+ },
+ "length-300.volumes.cut_through_m3": {
+  "pointer": "/stages/volumes/results/cut_through_m3",
+  "run": "length-300",
+  "value": 58253.246744321485
+ },
+ "length-300.volumes.dredge_m3": {
+  "pointer": "/stages/volumes/results/dredge_m3",
+  "run": "length-300",
+  "value": 263215.7228795371
+ },
+ "length-300.volumes.dry_change_pct": {
+  "derived": "dry cut of the run over dry cut of the base run, less one, in percent",
+  "value": 19.302746688957527
+ },
+ "length-300.volumes.excav_m3": {
+  "pointer": "/stages/volumes/results/excav_m3",
+  "run": "length-300",
+  "value": 144060.41390705894
+ },
+ "length-300.volumes.max_face_h_m": {
+  "pointer": "/stages/volumes/results/max_face_h_m",
+  "run": "length-300",
+  "value": 3.505930505355135
+ },
+ "length-300.volumes.stations": {
+  "pointer": "/stages/volumes/results/stations",
+  "run": "length-300",
+  "value": 267
+ },
+ "length-300.volumes.total_m3": {
+  "pointer": "/stages/volumes/results/total_m3",
+  "run": "length-300",
+  "value": 407276.13678659603
+ },
+ "length-300.volumes.widening_m3": {
+  "pointer": "/stages/volumes/results/widening_m3",
+  "run": "length-300",
+  "value": 85807.16716273745
+ },
+ "length-300.weir1.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/chainage_m",
+  "run": "length-300",
+  "value": 1000.0
+ },
+ "length-300.weir1.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/lift_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.weir1.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/pool_level_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.weir1.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/0/structure_cost",
+  "run": "length-300",
+  "value": 500000.0
+ },
+ "length-300.weir2.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/chainage_m",
+  "run": "length-300",
+  "value": 2000.0
+ },
+ "length-300.weir2.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/lift_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.weir2.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/pool_level_m",
+  "run": "length-300",
+  "value": 4.0
+ },
+ "length-300.weir2.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/1/structure_cost",
+  "run": "length-300",
+  "value": 500000.0
+ },
+ "length-300.weir3.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/chainage_m",
+  "run": "length-300",
+  "value": 3000.0
+ },
+ "length-300.weir3.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/lift_m",
+  "run": "length-300",
+  "value": 2.0
+ },
+ "length-300.weir3.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/pool_level_m",
+  "run": "length-300",
+  "value": 6.0
+ },
+ "length-300.weir3.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/2/structure_cost",
+  "run": "length-300",
+  "value": 500000.0
+ },
+ "length-300.weir4.chainage_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/chainage_m",
+  "run": "length-300",
+  "value": 4000.0
+ },
+ "length-300.weir4.lift_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/lift_m",
+  "run": "length-300",
+  "value": 0.5
+ },
+ "length-300.weir4.pool_level_m": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/pool_level_m",
+  "run": "length-300",
+  "value": 6.5
+ },
+ "length-300.weir4.structure_cost": {
+  "pointer": "/stages/optimise/results/cascade/weirs/3/structure_cost",
+  "run": "length-300",
+  "value": 200000.0
+ },
+ "river.length_m": {
+  "derived": "the length of the river centreline's polyline",
+  "value": 7499.714373883941
+ },
+ "river.neck_width_m": {
+  "derived": "inputs/facts.json (make_inputs.py)",
+  "value": 278.8
+ },
+ "size.beam_m": {
+  "pointer": "/stages/sizing/results/beam_m",
+  "run": "base",
+  "value": 9.5
+ },
+ "size.bottom_width_at_rmin_m": {
+  "pointer": "/stages/sizing/results/bottom_width_at_rmin_m",
+  "run": "base",
+  "value": 44.56666666666667
+ },
+ "size.bottom_width_straight_m": {
+  "pointer": "/stages/sizing/results/bottom_width_straight_m",
+  "run": "base",
+  "value": 30.400000000000002
+ },
+ "size.design_depth_m": {
+  "pointer": "/stages/sizing/results/design_depth_m",
+  "run": "base",
+  "value": 3.25
+ },
+ "size.draught_m": {
+  "pointer": "/stages/sizing/results/draught_m",
+  "run": "base",
+  "value": 2.5
+ },
+ "size.loa_m": {
+  "pointer": "/stages/sizing/results/loa_m",
+  "run": "base",
+  "value": 85.0
+ },
+ "size.min_bend_radius_m": {
+  "pointer": "/stages/sizing/results/min_bend_radius_m",
+  "run": "base",
+  "value": 255.0
+ },
+ "station.bench_left": {
+  "pointer": "/stages/volumes/results/sections/stations/140/bench_left",
+  "run": "base",
+  "value": true
+ },
+ "station.bench_right": {
+  "pointer": "/stages/volumes/results/sections/stations/140/bench_right",
+  "run": "base",
+  "value": true
+ },
+ "station.by_hand.cut_samples": {
+  "derived": "station.csv: rows with a cut",
+  "value": 53
+ },
+ "station.by_hand.dredge_area_m2": {
+  "derived": "station.csv: the sum of the cut of the wet samples, times 1 m",
+  "value": 12.928506160239671
+ },
+ "station.by_hand.dry_area_m2": {
+  "derived": "station.csv: the sum of the cut of the dry samples, times 1 m",
+  "value": 151.3433961724661
+ },
+ "station.by_hand.samples": {
+  "derived": "station.csv: the number of rows",
+  "value": 401
+ },
+ "station.by_hand.slope_reach_m": {
+  "derived": "half-width + 3 x depth",
+  "value": 28.7265497072898
+ },
+ "station.chainage_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/chainage_m",
+  "run": "base",
+  "value": 3511.058147605213
+ },
+ "station.depth_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/depth_m",
+  "run": "base",
+  "value": 3.25
+ },
+ "station.dredge_area_m2": {
+  "pointer": "/stages/volumes/results/sections/stations/140/dredge_area_m2",
+  "run": "base",
+  "value": 12.928506160239671
+ },
+ "station.excav_area_m2": {
+  "pointer": "/stages/volumes/results/sections/stations/140/excav_area_m2",
+  "run": "base",
+  "value": 151.3433961724661
+ },
+ "station.half_width_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/half_width_m",
+  "run": "base",
+  "value": 18.9765497072898
+ },
+ "station.invert_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/invert_m",
+  "run": "base",
+  "value": 2.75
+ },
+ "station.max_face_h_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/max_face_h_m",
+  "run": "base",
+  "value": 0.9477344669552723
+ },
+ "station.slice_m3": {
+  "derived": "(dredge + dry area of the station) x 25 m",
+  "value": 4106.797558317644
+ },
+ "station.water_level_m": {
+  "pointer": "/stages/volumes/results/sections/stations/140/water_level_m",
+  "run": "base",
+  "value": 6.0
+ }
+}
