@@ -20,7 +20,11 @@ every number, the table of settings, the derivations and a map from each section
 
 OWD has two searches. The **weir search** chooses where the weirs stand and how high each pool is.
 The **pool search** then moves the design line inside each pool. The table says which parts are in a
-release, which are only in the development branch, and which are planned.
+release, which are only in the development branch, and which are planned. The terms are explained
+in the sections named and in the [glossary](#glossary).
+
+The development branch still reports version 0.3.1, so `owd --version` cannot tell it from the
+release. To run the example of this document, build the tool from this repository.
 
 | Part of the method | Section | Status |
 |---|---|---|
@@ -46,7 +50,8 @@ release, which are only in the development branch, and which are planned.
 
 ### In the engineer's words
 
-A vessel and a rule set give three numbers: the bottom width $B$ of the channel, its depth $D$ below
+A vessel and a **rule set** (a design standard written as rules, such as PIANC WG 141) give three
+numbers: the bottom width $B$ of the channel, its depth $D$ below
 the water, and the minimum radius $R_{\min}$ of its line. The river gives a centreline, a polygon of
 its water, and ground levels (a DEM). The engineer gives places where a weir may stand and the lifts
 a weir may have.
@@ -120,7 +125,7 @@ sets these gaps out, with the numbers of the example.
 
 ## 2 The chain of stages
 
-![The chain of stages: sizing, alignment, weir search, pool search, volumes, checks](figures/pipeline.svg)
+![The chain of stages: sizing, alignment, weir search, pool search, checks, volumes](figures/pipeline.svg)
 
 *Figure 1. The chain of stages and what passes between them. Drawn by us.*
 
@@ -130,8 +135,8 @@ sets these gaps out, with the numbers of the example.
 | **Alignment** | river centreline, river polygon, $R_{\min}$ | the **baseline**: a line along the river with its bends opened to $R_{\min}$ |
 | **Weir search** | baseline, DEM, river polygon, sites, lifts, weights | weirs, lifts, pool levels |
 | **Pool search** | baseline, pools, DEM, river polygon, weights | the **design line** |
-| **Volumes** | design line, pool levels, DEM, river polygon | section areas and volumes |
 | **Checks** | design line | pass or fail, with the measured values |
+| **Volumes** | design line, pool levels, DEM, river polygon | section areas and volumes |
 
 The weir search and the pool search are one command, `owd optimise`. Each stage stores what it read
 as a hash. When an input or an earlier result changes, the later stages show as stale and must run
@@ -141,7 +146,7 @@ again ([section 6](#6-guarantees-and-checks)).
 $R_{\min}$ rolls along the inside of each bend of the river centreline, and where the circle touches
 the line twice the bend is replaced by the arc and a tangent straight. With a river polygon the
 stage also checks, bend by bend, that the channel widened for the bend stays in the water, and tries
-a wider arc or a fitted line where it does not. This document does not set out the rolling circle in
+a wider arc where it does not. This document does not set out the rolling circle in
 full. It matters here for one reason: both searches start from its line.
 
 ### The worked example
@@ -150,16 +155,17 @@ The example is a synthetic river 7,500<!--=river.length_m--> m long, written fro
 document. No bundled example showed a cascade of weirs, a meander and a cut through a rise together,
 so we added this one. It has:
 
-- gentle bends of about 300 m radius, and one tight loop with bends of about 125 m and a neck
-  279<!--=river.neck_width_m--> m wide;
+- gentle bends of about 300 m radius, and one tight loop with bends of about 125 m, whose two limbs
+  come within 279<!--=river.neck_width_m--> m of each other at the neck;
 - a river 60 m wide with a bed 2.5 m below its water;
 - a natural water level that rises 1 m per km;
-- a plain 2.5 m above the water, a rise 6 m high in the neck of the loop, and a low bank near
-  5,800 m of river;
+- a plain 2.5 m above the water, a rise 6 m high between the two limbs of the loop at its neck, and
+  a low bank near 5,800 m of river;
 - a DEM with 10 m cells.
 
 The vessel is a CEMT class IV motor vessel (85<!--=size.loa_m--> m by 9.5<!--=size.beam_m--> m) at a
-draught of 2.5<!--=size.draught_m--> m, under PIANC WG 141 quality B. The tool prints, untouched:
+draught of 2.5<!--=size.draught_m--> m, under the rule set PIANC WG 141 at its quality B (the
+middle of that guideline's three levels of ease of navigation). The tool prints, untouched:
 
 <!-- file: example/runs/setup.txt -->
 ```text
@@ -170,6 +176,7 @@ Rolling circle: minimum radius 254 m on a 85 m chord against R_min 255 m: ok
 fits in water (width only, no depth data): FAILS at 3 stretch(es)
 NO FEASIBLE LINE: every bend is infeasible; the line is not a design
 the design line is saved, marked failed: no_feasible_line, fits_in_water
+owd: the design line fails: no_feasible_line, fits_in_water
 ```
 
 So $B$ = 30.4<!--=size.bottom_width_straight_m--> m, $D$ = 3.25<!--=size.design_depth_m--> m and
@@ -183,10 +190,19 @@ that warning as it stands: at the loop the design leaves the river and cuts grou
 
 ![Plan of the example river with the baseline, the design line and the four weirs](figures/example-plan.svg)
 
-*Figure 2. The example in plan, with the result of the base run. Drawn by us from the run files.*
+*Figure 2. The example in plan, with the result of the base run. The two rings round the rise are
+90 m and 180 m from its top, where it is 3.6 m and 0.8 m high. Drawn by us from the run files.*
 
 The base run offers six weir sites, one every 1,000 m of baseline, and lifts of 0.5, 1, 1.5 and 2 m.
-The top pool must be at 6.5 m or above, which is about the natural water level at the upstream end.
+The top pool must be at 6.5 m or above. That is a choice made for the example, and it is 1 m below
+the natural water level at the upstream end of the river (7.5 m): nothing in OWD ties a pool level
+to the natural water ([section 7](#7-what-the-cost-does-not-know-and-results-to-doubt)).
+
+The example does not reach every part of the method. It has no pool longer than 6,000 m, so it has
+no seams. Its lines do not loop, every pool's search closes on its end, and its DEM covers the
+whole corridor. Those parts are described from the code and are pinned by the tests behind
+[section 6](#6-guarantees-and-checks), not shown by a run here. The low bank plays little part in
+the runs shown: the pool over it floods 0.5<!--=base.flood.pool5.flooded_ha--> ha.
 [Appendix A](appendices.md#a-commands-for-every-number) gives every command.
 
 ## 3 The cut at one station
@@ -197,15 +213,24 @@ measures the cut. This is the measure of record: quote volumes from this stage, 
 ### The section
 
 At a station the stage knows the pool level $L$, the depth $D$ and the bottom half-width $b$. On a
-straight $b = B/2$. In a bend the rule set widens the channel, so $b$ is larger; the stage reads the
-radius of the line at the station to find the widening.
+straight $b = B/2$. In a bend the rule set widens the channel. Under the example's rule set the
+widening is $\ell_v^2 / (2R)$ for a vessel of length $\ell_v$ on a radius $R$, half on each side:
+
+$$b = \frac{B}{2} + \frac{\ell_v^2}{4 \max(R,\ R_{\min})} \quad \text{where } R < 2000 \text{ m}, \qquad b = \frac{B}{2} \quad \text{elsewhere}$$
+
+$R$ is read on the stations themselves: at each station, the radius of the circle through it and the
+stations two before and two after it; then the mean of that radius over the station and its two
+neighbours on each side.
 
 The **bed level** is
 
 $$z_b = L - D$$
 
-Let $o$ be the distance from the design line across the section, measured on either side. The **cut
-face** $z_f(o)$ is the level the ground is cut down to. Under Cut Model A it has up to four parts:
+Offsets across the section are signed: negative towards the river's left bank (left as you look
+downstream), positive towards its right bank. The cut face is the same on both sides, so in the
+formulas $o$ stands for the size of the offset, the distance from the design line. The **cut
+face** $z_f(o)$ is the level the ground is cut down to. The **channel prism** is the channel below
+the pool level: the bed and the two under-water slopes. Under Cut Model A it has up to four parts:
 
 | Part | Where | Level of the cut face $z_f(o)$ |
 |---|---|---|
@@ -219,8 +244,9 @@ a side only when that side is **benched**. A side is benched when ground stands 
 inside the channel prism: take the sample nearest the line, on that side, with $o \le b + mD$ and
 ground above $L$. If it lies more than 2 m inside the edge of the prism, that is if
 $(b + mD) - o > 2$ m, the side is benched. On a side that is not benched nothing is cut beyond
-$o = b + mD$. The upper slope runs until it meets the ground: that point is where the cut
-**daylights**.
+$o = b + mD$: ground that stands above the pool level there is left as it is. The upper slope runs
+until it meets the ground: that point is where the cut **daylights**. The **tallest face** the stage
+reports is the greatest height of the ground above the pool level at a sample that is cut.
 
 ### The area and the volume
 
@@ -229,7 +255,8 @@ At each sample the depth of cut is
 
 $$c(o) = \max\bigl(z_g(o) - z_f(o),\ 0\bigr)$$
 
-where $z_g$ is the ground level from the DEM. A sample inside the river polygon counts as
+where $z_g$ is the ground level, read from the DEM by linear interpolation between the centres of
+its four nearest cells. A sample inside the river polygon counts as
 **dredge**; a sample outside it counts as **dry cut**. The areas of the station are
 
 $$A_{\text{wet}} = \Delta x \sum_{o \in \Omega} c(o), \qquad A_{\text{dry}} = \Delta x \sum_{o \notin \Omega} c(o)$$
@@ -253,7 +280,8 @@ Take the station at 3,511.1<!--=station.chainage_m--> m, in the pool at
 $L$ = 6.00<!--=station.water_level_m--> m. It lies where the line leaves the river to cross the neck
 of the loop.
 
-- $b$ = 18.98<!--=station.half_width_m--> m (the line bends here, so the channel is widened);
+- $R$ = 478<!--=station.by_hand.radius_m--> m, so
+  $b = 15.2 + 85^2 / (4 \times 478.3)$ = 18.98<!--=station.half_width_m--> m;
 - $z_b = 6.00 - 3.25$ = 2.75<!--=station.invert_m--> m;
 - the under-water slope ends at $b + mD = 18.98 + 3 \times 3.25$ =
   28.73<!--=station.by_hand.slope_reach_m--> m from the line.
@@ -261,11 +289,13 @@ of the loop.
 ![The section at station 3,511 m: ground, cut face, dredge and dry cut](figures/section.svg)
 
 *Figure 3. The section at the station. The plain stands at about 6.94 m, above the pool level, and
-reaches inside the channel prism on both sides of the line, so both sides are benched. Drawn by us
-from the stored section.*
+reaches inside the channel prism on both sides of the line, so both sides are benched. On the right
+the red face rises above the ground: nothing is cut there. The section reaches 200 m each side; the
+middle 160 m is shown. Drawn by us from the stored section.*
 
 Some of the 401<!--=station.by_hand.samples--> samples, from the file of the whole section
-([appendix A](appendices.md#a-commands-for-every-number)):
+([appendix A](appendices.md#the-station-by-hand) says where it is and where the tool keeps the same
+section):
 
 | Offset $o$, m | Ground $z_g$, m | In the river | Part of the face | Face $z_f$, m | Cut $c$, m |
 |---:|---:|:---:|---|---:|---:|
@@ -289,7 +319,8 @@ Some of the 401<!--=station.by_hand.samples--> samples, from the file of the who
 | Dredge area $A_{\text{wet}}$, m² | 12.93<!--=station.by_hand.dredge_area_m2--> | 12.93<!--=station.dredge_area_m2--> |
 | Dry cut area $A_{\text{dry}}$, m² | 151.34<!--=station.by_hand.dry_area_m2--> | 151.34<!--=station.excav_area_m2--> |
 
-The two agree to better than one part in a million. The station adds
+The two agree to better than one part in a million. The same formulas give the tool's areas at each
+of the 21<!--=station.by_hand.stations_checked--> stations whose section the tool keeps. The station adds
 $(12.93 + 151.34) \times 25$ = 4,107<!--=station.slice_m3--> m³ to the totals.
 
 For the whole line the tool prints:
@@ -304,11 +335,12 @@ Pool lattice: dredge 262511 m3, dry cut 120752 m3, tallest face 3.5 m
 
 ### What is chosen
 
-The weir search works on the baseline. Its chainage runs along the baseline from the downstream end,
-0, to the upstream end, $s_{\text{end}}$.
+The weir search works on the baseline. In this section $s$ is chainage along the baseline, from the
+downstream end, 0, to the upstream end, $s_{\text{end}}$.
 
 - **Candidate sites.** The chainages where a weir may stand: a list from the engineer (`--sites`),
-  or one every `site_step_m` (500 m by default).
+  or one every `site_step_m` (500 m by default), starting one step from the downstream end. A site
+  at chainage 0 or beyond the end is dropped.
 - **The lift menu.** The lifts a weir may have (`--lifts`; 0.5 and 1 m by default).
 - **The base level** $L_0$: the water level below the first weir. By default it is the design's
   water level at the start of the line.
@@ -323,21 +355,24 @@ rounded to the millimetre. In the example these are the
 ### The cost
 
 A cascade is a set of weirs $(s_1, l_1), \dots, (s_n, l_n)$. Write $s_0 = 0$ and
-$s_{n+1} = s_{\text{end}}$. Pool $i$ runs from $s_i$ to $s_{i+1}$ at level $L_i$. Its cost is
+$s_{n+1} = s_{\text{end}}$. Pool $i$ runs from $s_i$ to $s_{i+1}$ at level $L_i$. The cost of the
+cascade is
 
 $$C = \sum_{i=0}^{n} R(s_i, s_{i+1}, L_i) + \sum_{i=1}^{n} \left( F + P\, l_i^{\,p} \right)$$
 
-**The reach cost** $R(a, b, L)$ is the cost of a pool from chainage $a$ to chainage $b$ at level $L$:
+**The reach cost** $R(u, v, L)$ is the cost of a pool from chainage $u$ to chainage $v$ at level $L$:
 
-$$R(a, b, L) = w_{\text{wet}} V_{\text{wet}}(a, b, L) + w_{\text{dry}} V_{\text{dry}}(a, b, L) + c_{\text{flood}} A_{\text{flood}}(a, b, L)$$
+$$R(u, v, L) = w_{\text{wet}} V_{\text{wet}}(u, v, L) + w_{\text{dry}} V_{\text{dry}}(u, v, L) + c_{\text{flood}} A_{\text{flood}}(u, v, L)$$
 
 and $R = \infty$ when the pool breaks the bank limit (below).
 
 $V_{\text{wet}}$ and $V_{\text{dry}}$ are the volumes of [section 3](#3-the-cut-at-one-station) on
-the baseline, for the stations with $a \le s < b$, with the pool level $L$ and so the bed at $L - D$.
+the baseline, for the stations with $u \le s < v$, with the pool level $L$ and so the bed at $L - D$.
 Before the search starts, the sections are measured once for every level in the list. A table of
-running totals then gives any $V(a, b, L)$ as one subtraction. In this table the half-width is
-$B/2$ at every station: the weir search does not widen the channel in bends.
+running totals then gives any $V(u, v, L)$ as one subtraction. In this table the half-width is
+$B/2$ at every station: the weir search does not widen the channel in bends. The station at the very
+end of the baseline is in no pool ($s < v$ leaves it out), so the table counts one station fewer
+than the baseline has.
 
 **The structure cost** of a weir with lift $l$ is $F + P\, l^{\,p}$ (`structure_fixed`,
 `structure_per_lift`, `structure_power`; 100,000, 200,000 and 1 by default). These defaults are in
@@ -346,24 +381,27 @@ the units of the cut cost. They are not prices: with weights of 1 they say a wei
 
 **The flood cost** (`flood_cost_per_ha`, 0 by default). $A_{\text{flood}}$ is the land a pool
 floods. The ground within `flood_distance_m` (1,500 m) of the baseline is put on a grid of
-`flood_cell_m` (25 m) cells. A cell counts as flooded by a pool at level $L$ from $a$ to $b$ when all
-of these hold:
+`flood_cell_m` (25 m) cells; a cell's ground is the DEM at its centre. A cell counts as flooded by a
+pool at level $L$ from $u$ to $v$ when all of these hold:
 
 1. its centre is outside the river polygon;
 2. its ground is below $L$;
 3. it is joined to the river through cells that are below $L$ or in the river, each sharing a side
    with the next. A hollow with a rim at or above $L$ all round it stays dry;
-4. the point of the baseline nearest to it has a chainage in $[a, b)$.
+4. the point of the baseline nearest to it has a chainage in $[u, v)$.
 
 No bund is assumed beside a weir: low ground near a weir that joins the river on the far side of it
 counts. Ground past the edge of the grid or of the DEM is not counted, so the area is a lower bound
 when the water reaches that edge; the tool then warns.
 
 **The bank limit** (`max_above_bank_m`, off by default) is a hard limit. No pool may stand more than
-this height above **bank-full** anywhere along it. Bank-full is an estimate from the DEM. In each
-500 m of baseline, on each side of the line, take the ground of the cells that touch the river
-polygon. The bank level of that side is the 25th percentile of those levels. Bank-full of the 500 m
-is the lower of the two sides. A pool that breaks the limit costs infinity, so the search never
+this height above **bank-full** anywhere along it. Bank-full is an estimate from the DEM, made on the
+same 25 m grid. A **bank cell** is a cell outside the river polygon with a cell inside it among its
+eight neighbours. It is on the left or the right of the baseline by where it lies from the nearest
+point of the baseline, and in the 500 m of baseline that holds that point. In each 500 m, the bank
+level of a side is the 25th percentile of the ground of its bank cells (a side needs three). Bank-full
+of the 500 m is the lower of the two sides. A stretch with no bank cells takes its level from its
+neighbours. A pool that breaks the limit costs infinity, so the search never
 takes it. When no cascade can reach the top level inside the limit, the stage stops and names the
 reach that blocks it. It never returns a cascade outside the limit.
 
@@ -374,7 +412,7 @@ The search is a **dynamic programme**: a shortest path on a graph with no cycles
 - **State** $(j, L)$: a weir stands at site $j$ and holds the pool above it at level $L$. The start
   is $(0, L_0)$: no weir yet, at the downstream end.
 - **Move** $(i, L) \to (j, L + l)$ for a later site $j > i$ and a lift $l$ of the menu, when the two
-  sites are at least `min_spacing_m` apart. Its cost is $R(s_i, s_j, L) + F + P\, l^{\,p}$: the pool
+  sites are at least `min_spacing_m` apart (the downstream end counts as a site for this). Its cost is $R(s_i, s_j, L) + F + P\, l^{\,p}$: the pool
   between the two weirs, and the new weir.
 - **End.** From any state $(j, L)$ with $L \ge L_{\text{top}}$, add the last pool
   $R(s_j, s_{\text{end}}, L)$.
@@ -394,8 +432,8 @@ it, and the recurrence gives the optimum over every cascade the sites and the me
 exact for the cost above, on the candidate sites and lifts given. It says nothing about sites or
 lifts that were not offered.
 
-**The work.** With $n$ sites, $h$ levels and $q$ lifts the search makes at most
-$\tfrac{1}{2} n (n+1)\, h\, q$ moves, each a table read. In the example that is at most
+**The work.** With $N$ sites, $N_L$ levels and $N_l$ lifts the search makes at most
+$\frac{1}{2} N (N+1)\, N_L\, N_l$ moves, each a table read. In the example that is at most
 $21 \times 18 \times 4$ = 1,512<!--=cascade.moves_bound-->. The long part is the table: one pass of
 the sections for each level.
 
@@ -429,11 +467,20 @@ bank-full is an estimate from the DEM: in each 500 m of line, the 25th percentil
 The check of the total: cut 309,031<!--=base.cascade.reach_cost--> plus structures
 1,700,000<!--=base.cascade.structures--> gives 2,009,031<!--=base.cascade.total_cost-->.
 
+Three notes on the printed table. The tool prints hectares to one decimal: the total is
+7.25<!--=base.flood.flooded_ha--> ha. The heights above bank-full are printed at the two ends of each
+pool only; the limit is tested on the greatest height anywhere along the pool, which the design file
+holds (the top pool's is −0.14<!--=base.flood.pool5.max_above_bank_m--> m, between its ends). "Over the
+DEM river level" is the pool level less the middle value of the DEM over the river cells, in the
+500 m at each end of the pool: a rough depth of water over the DEM's river.
+
 ![Long section: the ground on the line, the pool levels, the bed levels and the four weirs](figures/long-section.svg)
 
 *Figure 4. The long section of the base run. The black line is the DEM on the design line: the river
-bed in the river, the plain and the rise where the line crosses the neck. Drawn by us from the
-stations of the volumes stage.*
+bed in the river, the plain and the rise where the line crosses the neck. Chainage here is along the
+design line, which is 14 m longer than the baseline, and a level steps at the first station of the
+new pool: so the weir at 4,000 m of baseline shows near 4,040 m. Drawn by us from the stations of
+the volumes stage.*
 
 Read the result against the cost. The top pool must reach 6.5 m and the largest lift is 2 m, so at
 least four weirs are needed. A higher pool always cuts less, and nothing in this run's cost counts
@@ -454,8 +501,8 @@ the whole pool.
 A pool's line starts and ends on the baseline's point and heading at the two ends of the pool (it is
 **pinned** there), so that the lines of two pools meet with no kink. Options below relax this.
 
-The pool search does not steer round no-go areas. When the channel of its line enters one, the
-check `no_go_clear` fails and says so.
+The pool search does not steer round **no-go areas** (ground the engineer has marked as closed to
+the channel). When the channel of its line enters one, the check `no_go_clear` fails and says so.
 
 ### The lattice
 
@@ -501,8 +548,10 @@ Each move is costed by sweeping a simple channel section along it. This is the *
 is not the measure of section 3 ([section 7](#7-what-the-cost-does-not-know-and-results-to-doubt)
 compares them).
 
-Sections are taken across the move about every 10 m (every 12 m on the straight); let $\Delta s$ be
-their true spacing. The setting `ds_step_m` (8 m) thins them only when it is larger than that. Each section is a **rake** of samples every `rake_step_m` ($\Delta o$ = 4 m) out to
+Sections are taken across the move about every 10 m (every 12 m on the straight); let $\delta$ be
+their true spacing. A section stands at the end of each step of $\delta$ along the move, square to
+the move's heading there, and stands for that step. (The setting `ds_step_m` thins the sections only
+when it is set above 10 m.) Each section is a **rake** of samples every `rake_step_m` ($\Delta o$ = 4 m) out to
 `rake_half_m` (250 m) either side of the line. With these defaults the samples stand at 2, 6, 10,
 14 m and so on either side: none is on the line itself, and the 8 samples within the half-width of
 the example (15.2 m) stand for 32 m of a bottom that is 30.4 m wide. The ground $z_g$ is read from
@@ -519,18 +568,22 @@ Here $b = B/2$ on every move, with no widening in bends.
 
 The cost of the move is
 
-$$c_{\text{move}} = \Delta o\, \Delta s \sum_{\text{samples}} w\, c \;+\; \lambda\, \ell \;+\; \mu\, a_{\text{land}}$$
+$$c_{\text{move}} = \Delta o\, \delta \sum_{\text{samples}} w\, c \;+\; \lambda\, \ell \;+\; \mu\, a_{\text{land}}$$
 
 - $w = w_{\text{wet}}$ for a sample inside the river polygon and $w_{\text{dry}}$ outside it.
 - $\ell$ is the length of the move and $\lambda$ the **cost per metre of line** (`length_weight`,
   0 by default).
 - $a_{\text{land}}$ is the land the move takes and $\mu$ the **land cost** (`land_weight`, 0 by
-  default). The land taken is $\Delta o\, \Delta s$ times the number of samples with
+  default). The land taken is $\Delta o\, \delta$ times the number of samples with
   $o \le b + mD$ that are outside the river polygon. $b + mD$ is the half-width of the channel at
   the water surface, so this is the plan area of the channel outside the river, cut or no cut.
 
 A sample with no known ground (off the DEM or off the search grid) has no cut. A move is refused when
 fewer than 60 % of its bottom samples are on known ground.
+
+The search grid is filled once for each pool: the DEM is read, as in section 3, at the centre of
+every 2 m cell, and the search then interpolates between those centres. The baseline is costed with
+the same section, as a chain of straights between its points, with sections about every 2 m.
 
 **Why the two extra weights exist.** Ground below the bed level costs nothing to cut. A pool can
 drown a wide plain deeper than the bed. Then, with $\lambda = \mu = 0$, a line over the drowned plain
@@ -542,10 +595,10 @@ to the depth $D$ prices a m² of land like a cut of the full depth over that m²
 ### The search
 
 The search is **A\***. From the start state it keeps a list of states reached, each with the least
-cost found to reach it, $g$. It takes the state with the least $g + h$, tries the seven moves from
+cost found to reach it, $g$. It takes the state with the least $g + e$, tries the seven moves from
 it, and stops when it takes the end.
 
-**The estimate $h$** of the cost still to pay is the straight distance to the end times a cost per
+**The estimate $e$** of the cost still to pay is the straight distance to the end times a cost per
 metre, $c_{\min}$. $c_{\min}$ is the cheapest metre the search can find before it starts: it costs a
 12 m straight at points 24 m apart in the corridor (4,000 points at most), in 8 headings, and takes
 the least. When the cheapest ground is free, $c_{\min} = \lambda$, and with $\lambda = 0$ the
@@ -628,16 +681,19 @@ the line ends on the baseline's point and heading exactly.
 
 When no closing path is found, the search falls back to a state within 6 m and one heading step of
 the end, and the pool is marked as not closed. Such a pool is searched again with its end moved
-along the baseline, in steps of a quarter of $R_{\min}$, up to four steps downstream and then four
-upstream. The first end that closes is used, and a warning names the pool and the move. Only the end
+along the baseline, in steps of a quarter of $R_{\min}$, up to four steps forward along the chainage and then four
+back. The first end that closes is used, and a warning names the pool and the move. Only the end
 of the search moves; the weir and the level stay. If no end closes, the line is used only when its
 join holds $R_{\min}$ and does not cross itself; else the pool keeps its baseline.
 
 **A pinned end has a cost.** The line must reach one exact point on one exact heading, through arcs
-of $R_{\min}$. In the example, the pool from 2,000 m to 3,000 m costs
+of $R_{\min}$. In the example, the pool from 2,000 m to 3,000 m has a search cost of
 13,223<!--=base.pool3.cost--> with both ends pinned. With its upstream end free to pass anywhere on a
-gate across the river (below), the same pool costs
-1,022<!--=free-seams-0.pool3.cost-->.
+gate across the river (below), the same pool has a search cost of
+1,022<!--=free-seams-0.pool3.cost-->. These are search costs. By the volumes stage the freed end
+saves 6,019<!--=free-seams-0.volumes.total_saved_m3--> m³ of
+383,263<!--=base.volumes.total_m3--> m³, or 1.6<!--=free-seams-0.volumes.total_saved_pct--> %
+([section 9](#free-seams)).
 
 ### Long pools, seams and weir sites
 
@@ -726,6 +782,13 @@ with `--strict` the command exits with an error.
 
 Each item says what the cost misses, where you can see it in the example, and what you can do.
 
+**First, what is outside the method altogether.** OWD's optimisation has no hydraulics. It has no
+discharge, no backwater, no velocity, no flood flow and no weir capacity. A pool is still water at
+one level from weir to weir. "Flooded land" is ground below that still level. Nothing ties a pool
+level to the natural water: in the example the top pool, at 6.5 m, is 1 m below the natural water at
+the upstream end, and the search does not know it. Sediment, locks, lockage water, foundations and
+price are outside it too. Check all of these by other means.
+
 **1. Ground the pool drowns below the bed level costs nothing.**<!--test: crates/owd-core/tests/lattice_land_cost.rs::land_is_charged_where_nothing_is_cut_and_never_inside_the_river-->
 The cut is $\max(z_g - z_b, 0)$, so ground below the bed is free, river or plain. A line over a
 drowned plain costs the same as a line in the river. *What to do:* set the land cost
@@ -791,7 +854,8 @@ closing path. A line at a small angle to the grid is a staircase of 22.5° arcs.
 for needless small S-bends on the plan; try `n_heading` = 24 or 32.
 
 **10. A pinned end is costly.**<!--test: crates/owd-cli/tests/optimisation_doc.rs::free_seams_with_no_weir_straight_gives_the_documents_numbers-->
-The example: 13,223 pinned against 1,022 with a free end, for the same pool. A pinned point on a
+The example: a search cost of 13,223 pinned against 1,022 with a free end, for the same pool (1.6 %
+of the volume of the whole line, by the volumes stage). A pinned point on a
 bend forces a curve of $R_{\min}$ beside it; a pinned point off the river forces the line off the
 river there. *What to do:* choose weir sites on straights; try `--free-seams`.
 
@@ -865,7 +929,8 @@ $$\mathbf{r}(s) = \mathbf{r}_0(s) + d(s)\, \mathbf{N}(s)$$
 
 ![The sideways shift: the line is the seed line plus an offset d(s)](figures/shift.svg)
 
-*Figure 9. The seed line and the shifted line. Drawn by us.*
+*Figure 9. The seed line and the shifted line. The seed is drawn as a smooth curve here; the planned
+seed is arcs and straights. Drawn by us.*
 
 The unknowns are the offsets at the stations of the seed. They are found by dynamic programming
 along the seed: the state at a station is the offset there (and the offset one station back, so that
@@ -889,6 +954,16 @@ formula and checks it with numbers. Three things follow from it:
 Because the line is an offset of a line that follows the river, and the offsets are bounded, the
 line stays in the river's corridor by construction.
 
+**An open point: the joins of the seed.** The seed is arcs and straights, so its curvature $k_0$
+jumps at every join and $k_0'$ does not exist there. The first derivative above is
+$\mathbf{r}' = (1 - k_0 d)\,\mathbf{T} + d'\,\mathbf{N}$, so the heading of the shifted line differs
+from the seed's by the angle $\arctan\bigl(d' / (1 - k_0 d)\bigr)$. Where $k_0$ jumps, that angle
+jumps too, unless $d = 0$ or $d' = 0$ at the join. A straight that meets an arc of 300 m, shifted by
+$d$ = 20 m with $d'$ = 0.1, has a kink of 0.4° at the join. So the formula alone does not make the
+shifted line smooth. The method must do one of these at each join: hold $d' = 0$ there, or build the
+seed with a transition between its pieces. This document does not yet say which. It must say so,
+with a test, when the method is built.
+
 ## 9 Test it yourself
 
 Change one input at a time on the example and see what moves. Each run below starts from the same
@@ -910,11 +985,11 @@ full.
 
 ### The cost per metre
 
-To choose a value, compare it with the cut of one metre of channel through dry ground. In the
-example the plain is 2.5 m above the natural water, so a bed 3.25 m below that water is 5.75 m below
-the plain, and a metre of channel cuts about $30.4 \times 5.75 + 3 \times 5.75^2$ = 274 m³. A cost
-per metre of 300 prices a metre of line a little above that; 1,000 prices it at more than three
-times that.
+To choose a value, compare it with the cut of one metre of channel through dry ground. As a rough
+figure: where a pool stands at the natural water level, the plain is 2.5 m above the pool and so
+5.75 m above the bed, and a metre of channel with one slope of 1 : 3 cuts about
+$30.4 \times 5.75 + 3 \times 5.75^2$ = 274 m³. A cost per metre of 300 prices a metre of line a
+little above that; 1,000 prices it at more than three times that.
 
 At 300 per metre, 3<!--=length-300.line.n_replaced--> pools are re-routed and the line is
 29 m shorter (6,667<!--=length-300.line.length_m--> m against
@@ -967,7 +1042,8 @@ and the fourth 1.0<!--=flood-20000.weir4.lift_m--> m in place of 0.5 m. The pool
 0.56<!--=flood-20000.flood.pool4.flooded_ha--> ha in place of 6.5 ha. The weir search's cut rises
 from 309,031<!--=base.flood.cut_cost--> to 330,944<!--=flood-20000.flood.cut_cost--> m³: that
 difference is what the lower pool costs in cut. At 20,000 per hectare the 5.94 ha are worth
-118,750<!--=flood-20000.saving_if_lowered-->, more than the cut, so the pool is lowered. In the volumes stage the dry cut rises
+118,750<!--=flood-20000.saving_if_lowered-->, more than the cut, so the pool is lowered. The structure cost is the same in both cascades (four
+weirs with lifts that add to 6.5 m), so here the trade is between cut and flooded land alone. In the volumes stage the dry cut rises
 by 12<!--=flood-20000.volumes.dry_change_pct--> %.
 
 ![Flood cost: flooded land per pool at 0, 3,000 and 20,000 per hectare](figures/sensitivity-flood.svg)
@@ -982,8 +1058,9 @@ us from the run files.*
 ### A bank limit
 
 With a limit of 0 m above bank-full, the pool at 6.0 m (0.39 m above bank-full) is not allowed. The
-search gives the same cascade as the flood cost of 20,000 did. The highest pool now stands
-−0.11<!--=bank-0.flood.worst_above_bank_m--> m against bank-full: 0.11 m below it.
+search gives the same cascade as the flood cost of 20,000 did. That pool, now at 5.5 m, stands
+−0.11<!--=bank-0.flood.pool4.max_above_bank_m--> m against bank-full: 0.11 m below it. No pool is
+nearer to bank-full.
 
 ![Each pool's greatest height above bank-full, with and without the limit](figures/sensitivity-bank.svg)
 
@@ -1000,14 +1077,20 @@ owd: warning: Pool lattice: the weir site at 1000 m is pinned to the baseline's 
 ```
 
 The rule behind it: a weir site is freed only when the pools on both sides of it then use their
-searched lines. Here the pool below each weir still costs more than its baseline, so it would keep
-the baseline, and a free end would meet nothing.
+searched lines. Here the pool that ends at each weir site (the one at lower chainage) still costs
+more than its baseline, so it would keep the baseline, and a free end would meet nothing.
+
+Read the tool's words with care here. In these warnings it calls the pool at lower chainage
+"upstream" and the one at higher chainage "downstream". In this example chainage runs upstream, so
+the tool's "upstream" pool is the one downstream of the weir. Take the two words in these warnings
+as "before" and "after" along the chainage.
 
 With `--weir-straight 0` a weir site is a plain gate. The weir site at 3,000 m goes free. The pool
-below it (2,000 m to 3,000 m) now costs 1,022<!--=free-seams-0.pool3.cost--> in place of
+that ends on it (2,000 m to 3,000 m) now costs 1,022<!--=free-seams-0.pool3.cost--> in place of
 13,223<!--=base.pool3.cost-->, beats its baseline and is used. The dry cut changes by
 −7.9<!--=free-seams-0.volumes.dry_change_pct--> %, to
-111,227<!--=free-seams-0.volumes.excav_m3--> m³. The other three weir sites stay pinned, with their
+111,227<!--=free-seams-0.volumes.excav_m3--> m³, and the whole cut by
+6,019<!--=free-seams-0.volumes.total_saved_m3--> m³. The other three weir sites stay pinned, with their
 reasons.
 
 ![Free seams with no weir straight: the line through the weir site at 3,000 m](figures/sensitivity-free-seams.svg)
@@ -1019,7 +1102,9 @@ costs, not a line to build.
 
 ## 10 How this document stays true
 
-The document is checked by tests, so that a change to the method that leaves it behind fails.
+The document is checked by tests, so that a change to the method that leaves it behind fails. This
+section is for those who keep the document; an engineer who only reads it can skip to
+[Report a finding](#report-a-finding).
 
 | What | How it is held | When it runs |
 |---|---|---|
@@ -1062,6 +1147,7 @@ A security problem goes through the private route in the project's security poli
 | **Benched** | Of one side of a section: cut with a berm and an upper slope above the pool level (section 3). |
 | **Cascade** | A set of weirs with their lifts, and so the pool levels, along the line. |
 | **Chainage** | Distance along a line from its downstream end, in metres. |
+| **Channel prism** | The channel below the pool level: the bed and the two under-water slopes. |
 | **Closing path** | The arc, straight and arc that end a pool's line exactly on its end point and heading. |
 | **Corridor** | The ground within `corridor_half_m` of the baseline; where a pool is searched. |
 | **Cut Model A** | The section of section 3. The default of the volumes stage. |
@@ -1070,13 +1156,16 @@ A security problem goes through the private route in the project's security poli
 | **Gate** | With free seams: the stretch of a cross-line the line may pass at a seam or weir site. |
 | **Lattice** | The set of moves and states of the pool search. The tool calls the search's line "Pool lattice". |
 | **Lift** | The step in water level at a weir. |
+| **No-go area** | Ground the engineer has marked as closed to the channel. The pool search reports it and does not steer by it. |
 | **Pinned** | Held to the baseline's point and heading. |
 | **Pool** | A stretch of the line at one water level, between two weirs (or a weir and an end). |
 | **Rake** | One row of samples across the line in the search cost. |
 | **River polygon** | The outline of the river's water. Inside is "wet"; outside is "dry" or "land". |
 | **$R_{\min}$** | The minimum radius of the design line, from the rule set. |
+| **Rule set** | A design standard written as rules that OWD applies: it gives the width, the depth, the minimum radius and the bend widening for a vessel. |
 | **Seam** | A boundary between two pieces of one long pool. |
 | **Search cost** | The cost the pool search reads (section 5). Not a volume. |
 | **Stale** | Of a stage: an input or an earlier result changed after it ran. |
 | **Station** | A point of the line where the volumes stage takes a section, every 25 m. |
+| **Tallest face** | The greatest height of ground above the pool level at a point that is cut. |
 | **Weight** | A factor of the cost, set by the engineer. Not a price unless you make it one. |

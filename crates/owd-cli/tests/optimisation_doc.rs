@@ -97,11 +97,19 @@ fn same(a: &Value, b: &Value) -> bool {
 
 /// Hold a table to `expected`: the same names, in any order, each with the same default. `name_col`
 /// and `default_col` are the columns of the name and of the default.
-fn hold(rows: &[Vec<String>], expected: &[(&str, Value)], name_col: usize, default_col: usize, what: &str) {
+fn hold(
+    rows: &[Vec<String>],
+    expected: &[(&str, Value)],
+    name_col: usize,
+    default_col: usize,
+    what: &str,
+) {
     let mut wrong = Vec::new();
     for (name, value) in expected {
         match rows.iter().find(|r| r[name_col] == *name) {
-            None => wrong.push(format!("`{name}` is not in the table (the engine has {value})")),
+            None => wrong.push(format!(
+                "`{name}` is not in the table (the engine has {value})"
+            )),
             Some(r) => match serde_json::from_str::<Value>(&r[default_col]) {
                 Ok(shown) if same(&shown, value) => {}
                 _ => wrong.push(format!(
@@ -113,7 +121,10 @@ fn hold(rows: &[Vec<String>], expected: &[(&str, Value)], name_col: usize, defau
     }
     for r in rows {
         if !expected.iter().any(|(n, _)| *n == r[name_col]) {
-            wrong.push(format!("`{}` is in the table and not in the engine", r[name_col]));
+            wrong.push(format!(
+                "`{}` is in the table and not in the engine",
+                r[name_col]
+            ));
         }
     }
     assert!(
@@ -214,7 +225,13 @@ fn the_optimise_settings_table_holds_the_engines_names_and_defaults() {
         ("cell_m", json!(cell_m)),
         ("check_chord_m", json!(check_chord_m)),
     ];
-    hold(&table(&appendices(), "optimise"), &expected, 0, 3, "settings of the optimise stage");
+    hold(
+        &table(&appendices(), "optimise"),
+        &expected,
+        0,
+        3,
+        "settings of the optimise stage",
+    );
 }
 
 /// A flag the table names is a flag of the command: the help of `owd optimise` and of
@@ -239,7 +256,11 @@ fn every_flag_in_the_settings_tables_is_a_flag_of_the_command() {
             let found = h
                 .lines()
                 .any(|l| l.trim_start().split([' ', '=']).next() == Some(flag.as_str()));
-            assert!(found, "`owd {cmd}` has no flag `{flag}` (setting `{}`)", row[0]);
+            assert!(
+                found,
+                "`owd {cmd}` has no flag `{flag}` (setting `{}`)",
+                row[0]
+            );
         }
     }
 }
@@ -262,7 +283,13 @@ fn the_volumes_settings_table_holds_the_engines_names_and_defaults() {
         ("wet_slope", json!(wet_slope)),
         ("half_width_m", json!(half_width_m)),
     ];
-    hold(&table(&appendices(), "volumes"), &expected, 0, 3, "settings of the volumes stage");
+    hold(
+        &table(&appendices(), "volumes"),
+        &expected,
+        0,
+        3,
+        "settings of the volumes stage",
+    );
 }
 
 #[test]
@@ -300,8 +327,14 @@ fn the_table_of_fixed_values_holds_the_engines() {
     } = LatticeConfig::new(r_min).validated().unwrap();
     // Stated in the text of section 5, not in the table: the search always closes on the end
     // pose, and it drops no state by a bound.
-    assert!(close_goal, "section 5 says every pool's search ends through a closing path");
-    assert!(prune_bound.is_infinite(), "section 5 names no pruning bound");
+    assert!(
+        close_goal,
+        "section 5 says every pool's search ends through a closing path"
+    );
+    assert!(
+        prune_bound.is_infinite(),
+        "section 5 names no pruning bound"
+    );
     let spec = SectionSpec::new(HalfWidthSpec::Fixed(15.0));
     let expected = [
         ("straight_len_m", json!(straight_len_m.unwrap() / pitch_m)),
@@ -318,7 +351,10 @@ fn the_table_of_fixed_values_holds_the_engines() {
         ("bounds_margin_m", json!(bounds_margin_m)),
         ("min_valid_fraction", json!(spec.min_valid_fraction)),
         ("DEFAULT_C_MIN_STRIDE_M", json!(DEFAULT_C_MIN_STRIDE_M)),
-        ("DEFAULT_C_MIN_MAX_SAMPLES", json!(DEFAULT_C_MIN_MAX_SAMPLES)),
+        (
+            "DEFAULT_C_MIN_MAX_SAMPLES",
+            json!(DEFAULT_C_MIN_MAX_SAMPLES),
+        ),
         ("GATE_MIDDLE_BIAS", json!(GATE_MIDDLE_BIAS)),
         ("BOUNDARY_STEP_FRACTION", json!(BOUNDARY_STEP_FRACTION)),
         ("BOUNDARY_STEPS", json!(BOUNDARY_STEPS)),
@@ -331,7 +367,13 @@ fn the_table_of_fixed_values_holds_the_engines() {
         ("BANK_PERCENTILE", json!(BANK_PERCENTILE)),
         ("BANK_MIN_CELLS", json!(BANK_MIN_CELLS)),
     ];
-    hold(&table(&appendices(), "fixed"), &expected, 1, 3, "values fixed in the engine");
+    hold(
+        &table(&appendices(), "fixed"),
+        &expected,
+        1,
+        3,
+        "values fixed in the engine",
+    );
 }
 
 // ----- the numbers ---------------------------------------------------------------------------
@@ -375,17 +417,24 @@ fn every_tagged_number_is_the_examples_at_the_precision_shown() {
         for (key, shown, decimals) in tagged(&text, file) {
             count += 1;
             let Some(value) = numbers.get(&key).and_then(|e| e["value"].as_f64()) else {
-                wrong.push(format!("{file}: `{key}` is not a number of example/numbers.json"));
+                wrong.push(format!(
+                    "{file}: `{key}` is not a number of example/numbers.json"
+                ));
                 continue;
             };
             // The number shown is the stored number rounded to the decimals shown.
             let half = 0.5 * 10f64.powi(-(decimals as i32));
             if (shown - value).abs() > half * (1.0 + 1e-9) + 1e-12 {
-                wrong.push(format!("{file}: `{key}` is shown as {shown}; the example gives {value}"));
+                wrong.push(format!(
+                    "{file}: `{key}` is shown as {shown}; the example gives {value}"
+                ));
             }
         }
     }
-    assert!(count >= 150, "only {count} tagged numbers: the tags were lost");
+    assert!(
+        count >= 150,
+        "only {count} tagged numbers: the tags were lost"
+    );
     assert!(
         wrong.is_empty(),
         "docs/optimisation: numbers that are not the example's (run \
@@ -403,7 +452,9 @@ fn every_block_of_printed_output_is_in_the_stored_output_of_its_run() {
     let mut rest = text.as_str();
     while let Some((_, after)) = rest.split_once("<!-- file: ") {
         let (name, after) = after.split_once(" -->").expect("the marker is closed");
-        let (_, after) = after.split_once("```text\n").expect("a text block follows the marker");
+        let (_, after) = after
+            .split_once("```text\n")
+            .expect("a text block follows the marker");
         let (block, after) = after.split_once("```").expect("the block is closed");
         let stored = read(&doc_dir().join(name));
         let mut lines = stored.lines();
@@ -417,15 +468,23 @@ fn every_block_of_printed_output_is_in_the_stored_output_of_its_run() {
         blocks += 1;
         rest = after;
     }
-    assert!(blocks >= 4, "only {blocks} blocks of printed output are marked");
+    assert!(
+        blocks >= 4,
+        "only {blocks} blocks of printed output are marked"
+    );
 }
 
 // ----- the anchors ---------------------------------------------------------------------------
 
 /// The text of `text` from the heading that starts with `from` to the one that starts with `to`.
 fn between<'a>(text: &'a str, from: &str, to: &str) -> &'a str {
-    let a = text.find(from).unwrap_or_else(|| panic!("no heading `{from}`"));
-    let b = text[a..].find(to).unwrap_or_else(|| panic!("no heading `{to}`")) + a;
+    let a = text
+        .find(from)
+        .unwrap_or_else(|| panic!("no heading `{from}`"));
+    let b = text[a..]
+        .find(to)
+        .unwrap_or_else(|| panic!("no heading `{to}`"))
+        + a;
     &text[a..b]
 }
 
@@ -449,7 +508,10 @@ fn every_guarantee_and_every_doubt_names_a_test_that_exists() {
             wrong.push(format!("no anchor: {}", &line[..line.len().min(90)]));
         }
     }
-    assert!(claims >= 25, "only {claims} guarantees and doubts were found");
+    assert!(
+        claims >= 25,
+        "only {claims} guarantees and doubts were found"
+    );
     let mut anchors = 0;
     let mut rest = text.as_str();
     while let Some((_, after)) = rest.split_once("<!--test: ") {
@@ -524,7 +586,11 @@ fn the_links_of_the_document_resolve() {
                 continue;
             }
             let (path, anchor) = target.split_once('#').unwrap_or((target, ""));
-            let to = if path.is_empty() { dir.join(file) } else { dir.join(path) };
+            let to = if path.is_empty() {
+                dir.join(file)
+            } else {
+                dir.join(path)
+            };
             if !to.exists() {
                 wrong.push(format!("{file}: `{target}`: no such file"));
                 continue;
@@ -540,7 +606,11 @@ fn the_links_of_the_document_resolve() {
         readme.contains("](docs/optimisation/README.md)"),
         "the README's optimise section links docs/optimisation/README.md"
     );
-    assert!(wrong.is_empty(), "docs/optimisation: broken links:\n{}", wrong.join("\n"));
+    assert!(
+        wrong.is_empty(),
+        "docs/optimisation: broken links:\n{}",
+        wrong.join("\n")
+    );
 }
 
 /// The status table names every part as in a release, in the development branch, or planned; and
@@ -556,7 +626,9 @@ fn the_status_table_and_the_notice_of_the_planned_method_are_there() {
     assert!(rows.len() >= 15, "the status table has {} rows", rows.len());
     for r in &rows {
         assert!(
-            r.contains("In release ") || r.contains("In the development branch") || r.contains("Planned, not built"),
+            r.contains("In release ")
+                || r.contains("In the development branch")
+                || r.contains("Planned, not built"),
             "a row of the status table has no status: {r}"
         );
     }
@@ -632,7 +704,9 @@ fn rerun(name: &str) {
             continue;
         }
         held += 1;
-        let pointer = entry["pointer"].as_str().expect("a number of a run has a pointer");
+        let pointer = entry["pointer"]
+            .as_str()
+            .expect("a number of a run has a pointer");
         let now = design.pointer(pointer).cloned().unwrap_or(Value::Null);
         let stored = &entry["value"];
         let ok = match (now.as_f64(), stored.as_f64()) {
@@ -640,10 +714,15 @@ fn rerun(name: &str) {
             _ => now == *stored,
         };
         if !ok {
-            wrong.push(format!("{key} ({pointer}): the example stored {stored}, this build gives {now}"));
+            wrong.push(format!(
+                "{key} ({pointer}): the example stored {stored}, this build gives {now}"
+            ));
         }
     }
-    assert!(held > 20, "numbers.json holds only {held} numbers of the run `{name}`");
+    assert!(
+        held > 20,
+        "numbers.json holds only {held} numbers of the run `{name}`"
+    );
     assert!(
         wrong.is_empty(),
         "the run `{name}` of the worked example no longer gives the document's numbers. If the \

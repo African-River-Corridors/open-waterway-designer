@@ -42,6 +42,11 @@ def curvature_check(length=1200.0, h=0.05):
         a = 1.0 - k0(s) * d(s)
         formula = (a * (k0(s) * a + d2(s)) + d1(s) * (dk0(s) * d(s) + 2.0 * k0(s) * d1(s))) / (a * a + d1(s) ** 2) ** 1.5
         worst = max(worst, abs(numeric - formula))
+    # The range of the formula over the whole length, every metre.
+    for j in range(int(length) + 1):
+        s = float(j)
+        a = 1.0 - k0(s) * d(s)
+        formula = (a * (k0(s) * a + d2(s)) + d1(s) * (dk0(s) * d(s) + 2.0 * k0(s) * d1(s))) / (a * a + d1(s) ** 2) ** 1.5
         k_lo, k_hi = min(k_lo, formula), max(k_hi, formula)
     return {
         "worst_difference_per_m": worst,

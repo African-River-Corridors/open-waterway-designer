@@ -184,6 +184,24 @@ def station_by_hand(st):
     return rows, dredge, dry, bench, reach
 
 
+def station_radii(xy):
+    """The radius the bend widening reads at each station (section 3)."""
+    n = len(xy)
+    raw = []
+    for i in range(n):
+        (ax, ay), (bx, by), (cx, cy) = xy[max(0, i - 2)], xy[i], xy[min(n - 1, i + 2)]
+        area = abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) / 2.0
+        if min(n - 1, i + 2) < max(0, i - 2) + 2 or area < 1e-6:
+            raw.append(math.inf)
+        else:
+            raw.append(math.hypot(bx - ax, by - ay) * math.hypot(cx - bx, cy - by) * math.hypot(ax - cx, ay - cy) / (4.0 * area))
+    out = []
+    for i in range(n):
+        near = [r for r in raw[max(0, i - 2):i + 3] if math.isfinite(r)]
+        out.append(sum(near) / len(near) if near else math.inf)
+    return out
+
+
 def collect(spec):
     numbers = {}
 
@@ -246,6 +264,21 @@ def collect(spec):
               "excav_area_m2", "max_face_h_m", "bench_left", "bench_right"):
         put(f"station.{k}", st[k], run="base", pointer=f"{sec}/stations/{i}/{k}")
     rows, dredge, dry, bench, reach = station_by_hand(st)
+    # The same formulas at every station that keeps its section, and the half-width at them all.
+    for k in kept:
+        _, d_k, e_k, _, _ = station_by_hand(stations[k])
+        for mine, tool in ((d_k, stations[k]["dredge_area_m2"]), (e_k, stations[k]["excav_area_m2"])):
+            if abs(mine - tool) > 1e-6 * max(1.0, abs(tool)):
+                sys.exit(f"station {stations[k]['chainage_m']:.1f} m by hand gives {mine}; the tool gives {tool}")
+    put("station.by_hand.stations_checked", len(kept), derived="the stations of the base run that keep their section, each worked by the formulas of section 3")
+    radii = station_radii([(s_["x"], s_["y"]) for s_ in stations])
+    loa, r_min_ = at(base, "/stages/sizing/results/loa_m"), at(base, "/stages/sizing/results/min_bend_radius_m")
+    half = at(base, "/stages/sizing/results/bottom_width_straight_m") / 2.0
+    for s_, r_ in zip(stations, radii):
+        b_ = half + (loa * loa / (4.0 * max(r_, r_min_)) if r_ < 2000.0 else 0.0)
+        if abs(b_ - s_["half_width_m"]) > 1e-6:
+            sys.exit(f"station {s_['chainage_m']:.1f} m: the half-width by hand is {b_}; the tool gives {s_['half_width_m']}")
+    put("station.by_hand.radius_m", radii[i], derived="the mean, over five stations, of the radius of the circle through a station and the stations two before and two after")
     put("station.by_hand.dredge_area_m2", dredge, derived="station.csv: the sum of the cut of the wet samples, times 1 m")
     put("station.by_hand.dry_area_m2", dry, derived="station.csv: the sum of the cut of the dry samples, times 1 m")
     put("station.by_hand.slope_reach_m", reach, derived="half-width + 3 x depth")
@@ -286,6 +319,9 @@ def collect(spec):
         derived="the weir search's cut at 20,000 per ha less the base run's")
     put("flood-20000.flooded_saved_ha", saved, derived="flooded land of the base run less that of the run at 20,000 per ha")
     put("flood-3000.saving_if_lowered", 3000.0 * saved, derived="3,000 x the hectares saved")
+    total_saved = g("base.volumes.total_m3") - g("free-seams-0.volumes.total_m3")
+    put("free-seams-0.volumes.total_saved_m3", total_saved, derived="total cut of the base run less that of the run with free seams and no weir straight")
+    put("free-seams-0.volumes.total_saved_pct", 100.0 * total_saved / g("base.volumes.total_m3"), derived="that saving over the base run's total cut, in percent")
     put("flood-20000.saving_if_lowered", 20000.0 * saved, derived="20,000 x the hectares saved")
     import derivations
     for k, v in derivations.curvature_check().items():

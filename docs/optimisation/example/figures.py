@@ -163,7 +163,7 @@ def weirs_on(pl, g, size=11):
         x, y = pl.p(q)
         nx, ny = -math.sin(th), math.cos(th)
         pl.svg.line(x - 14 * nx, y + 14 * ny, x + 14 * nx, y - 14 * ny, INK, 3)
-        pl.svg.text(x + 18 * nx, y - 18 * ny + 4, f"weir {c:,.0f} m", size, anchor="middle")
+        pl.svg.text(x + 30 * nx, y - 30 * ny + 4, f"weir {c:,.0f} m", size, anchor="middle")
 
 
 def legend(svg, x, y, items):
@@ -176,8 +176,8 @@ def legend(svg, x, y, items):
 def fig_pipeline():
     svg = Svg(960, 300, "The chain of stages and what passes between them")
     boxes = [("Sizing", "vessel + rule set"), ("Alignment", "rolling circle"), ("Weir search", "sites, lifts, levels"),
-             ("Pool search", "line in each pool"), ("Volumes", "sections, m³"), ("Checks", "pass or fail")]
-    passes = ["B, D, R_min", "baseline", "pools, levels", "design line", "areas, volumes"]
+             ("Pool search", "line in each pool"), ("Checks", "R_min, joins, loops"), ("Volumes", "sections, m³")]
+    passes = ["B, D, R_min", "baseline", "pools, levels", "design line", "line, pool levels"]
     x, w, y, h, gap = 20, 128, 110, 64, 30
     for i, (a, b) in enumerate(boxes):
         bx = x + i * (w + gap)
@@ -190,7 +190,7 @@ def fig_pipeline():
             svg.text(bx + w + gap / 2, y - 8 if i % 2 == 0 else y + h + 18, passes[i], 11, RED, "middle")
             svg.line(bx + w + gap / 2, y - 4 if i % 2 == 0 else y + h + 6, bx + w + gap / 2, y + h / 2, RED, 0.6, "2 2")
     ins = [(0, "vessel, draught, rules"), (1, "river centreline, polygon"), (2, "DEM, sites, lifts, weights"),
-           (3, "DEM, river polygon, weights"), (4, "DEM, pool levels")]
+           (3, "DEM, river polygon, weights"), (5, "DEM, river polygon")]
     for i, t in ins:
         bx = x + i * (w + gap) + w / 2
         svg.arrow(bx, 40, bx, y)
@@ -248,7 +248,7 @@ def fig_pool_plan(base, facts):
     pl.scale_bar(200)
     legend(svg, 250, 446, [("baseline: rolling circle", TEAL, "6 3", 1.8)])
     legend(svg, 450, 446, [("searched line (used)", RED, None, 2)])
-    legend(svg, 640, 446, [("rise: 90 m and 180 m rings", OCHRE, None, 1)])
+    legend(svg, 640, 446, [("rise: rings 90 m and 180 m from its top", OCHRE, None, 1)])
     svg.save("pool-plan.svg")
 
 
@@ -329,7 +329,7 @@ def fig_primitives(numbers):
     for i in range(16):
         a = i * bs
         svg.line(ox, oy, ox + 60 * math.cos(a), oy - 60 * math.sin(a), RULE, 1)
-    svg.text(ox, oy - 72, "16 headings, 22.5° apart", 11, INK2, "middle")
+    svg.text(ox, oy + 84, "16 headings, 22.5° apart", 11, INK2, "middle")
     cols = [RED, OCHRE, GREEN]
     for m, c in zip((1.0, 1.5, 3.0), cols):
         r = rmin * m
@@ -337,14 +337,19 @@ def fig_primitives(numbers):
             pts = [P(q) for q in arc(0, 0, 0, r, sgn, r * bs)]
             svg.path(pts, c=c, w=2)
             svg.circle(pts[-1][0], pts[-1][1], 3, fill=c, c=c)
-        up = m != 1.0
-        end = P(arc(0, 0, 0, r, 1 if up else -1, r * bs)[-1])
-        svg.text(end[0] + 8, end[1] + (-6 if up else 16), f"R = {m:g} R_min = {r:,.1f} m, arc {r * bs:,.1f} m", 11, c)
+        label = f"R = {m:g} R_min = {r:,.1f} m, arc {r * bs:,.1f} m"
+        top, low = P(arc(0, 0, 0, r, 1, r * bs)[-1]), P(arc(0, 0, 0, r, -1, r * bs)[-1])
+        if m == 1.0:
+            svg.text(top[0] - 4, top[1] - 22, label, 11, c, "end")
+        elif m == 1.5:
+            svg.text(low[0] + 14, low[1] + 30, label, 11, c)
+        else:
+            svg.text(top[0] + 8, top[1] - 6, label, 11, c)
     st = [P(q) for q in arc(0, 0, 0, 1, 0, 24)]
     svg.path(st, c=INK, w=3)
     svg.circle(st[-1][0], st[-1][1], 3, fill=INK)
-    svg.line(st[-1][0], st[-1][1], ox + 30, oy + 118, INK, 0.5, "2 2")
-    svg.text(ox + 30, oy + 132, "straight, 24 m (twice the pitch)", 11, anchor="middle")
+    svg.line(st[-1][0], st[-1][1], ox + 150, oy + 104, INK, 0.5, "2 2")
+    svg.text(ox + 150, oy + 118, "straight, 24 m (twice the pitch)", 11, anchor="middle")
     svg.circle(ox, oy, 4, fill=INK)
     svg.text(ox - 10, oy - 10, "state (x, y, heading)", 11, anchor="end")
     gx, gy = 720, 300
@@ -426,7 +431,7 @@ def bars(svg, x, y, w, h, groups, series, colours, vmax, unit, fmt="{:,.0f}"):
     for j, s in enumerate(series):
         svg.rect(x + 10 + j * 190, y - 26, 14, 12, fill=colours[j], c=INK, sw=0.6)
         svg.text(x + 30 + j * 190, y - 15, s, 11)
-    svg.text(x - 44, y + h / 2, unit, 11, rot=-90, anchor="middle")
+    svg.text(x - 72, y + h / 2, unit, 11, rot=-90, anchor="middle")
 
 
 def pool_rows(doc):
@@ -439,7 +444,7 @@ def fig_pool_costs(base):
     for p in pool_rows(base):
         note = "searched line used" if p["used"] else "baseline kept"
         groups.append((f"{p['start_m']:,.0f} to {p['end_m']:,.0f} m", [p["cost"], p["baseline_cost"]], note))
-    bars(svg, 90, 60, 840, 270, groups, ["searched line", "baseline (rolling circle)"], [RED_W, TEAL_W], 140000, "search cost (m³ at weight 1)")
+    bars(svg, 110, 60, 820, 270, groups, ["searched line", "baseline (rolling circle)"], [RED_W, TEAL_W], 140000, "search cost (m³ at weight 1)")
     svg.save("pool-costs.svg")
 
 
@@ -452,7 +457,7 @@ def fig_length(runs):
         n = d["details"]["n_replaced"]
         from_len = sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(d["line"]["coordinates"], d["line"]["coordinates"][1:]))
         groups.append((f"cost per metre {label}", [v["dredge_m3"], v["excav_m3"]], f"{n} of 5 pools re-routed; line {from_len:,.0f} m"))
-    bars(svg, 100, 60, 820, 270, groups, ["dredge, m³", "dry cut, m³"], [TEAL_W, OCHRE_W], 600000, "volume, m³")
+    bars(svg, 110, 60, 820, 270, groups, ["dredge, m³", "dry cut, m³"], [TEAL_W, OCHRE_W], 600000, "volume, m³")
     svg.save("sensitivity-length.svg")
 
 
@@ -513,7 +518,7 @@ def fig_flood(runs):
             vals.append(q["flooded_ha"])
             lv.append(f"{q['level_m']:.1f}")
         groups.append((f"{p['start_m']:,.0f} to {p['end_m']:,.0f} m", vals, "levels " + " / ".join(lv) + " m"))
-    bars(svg, 90, 60, 840, 270, groups, [f"flood cost {l}" for l, _ in names], [TEAL_W, GREEN_W, OCHRE_W], 8.0, "flooded land, ha", "{:.2f}")
+    bars(svg, 110, 60, 820, 270, groups, [f"flood cost {l}" for l, _ in names], [TEAL_W, GREEN_W, OCHRE_W], 8.0, "flooded land, ha", "{:.2f}")
     svg.save("sensitivity-flood.svg")
 
 
@@ -610,7 +615,7 @@ def fig_shift():
     svg.text(p[0] + 66 * math.cos(th), p[1] + 66 * math.sin(th) + 14, "T (along the seed)", 11, TEAL)
     svg.arrow(p[0], p[1], p[0] + 60 * math.sin(th), p[1] - 60 * math.cos(th), INK)
     svg.text(p[0] + 64 * math.sin(th) + 4, p[1] - 64 * math.cos(th), "N (to the left)", 11)
-    legend(svg, 80, 40, [("seed line r₀(s): arcs and straights, curvature k₀(s)", TEAL, "6 3", 1.8), ("shifted line r(s) = r₀(s) + d(s) N(s), curvature k(s)", RED, None, 2.2)])
+    legend(svg, 80, 40, [("seed line r₀(s), curvature k₀(s) (drawn smooth here)", TEAL, "6 3", 1.8), ("shifted line r(s) = r₀(s) + d(s) N(s), curvature k(s)", RED, None, 2.2)])
     svg.text(80, 350, "The offsets d at each station are the unknowns. The limit is on k(s), the curvature of the red line, not of the seed.", 12)
     svg.save("shift.svg")
 

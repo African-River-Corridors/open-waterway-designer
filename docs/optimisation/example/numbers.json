@@ -1141,11 +1141,11 @@
  },
  "curvature.k_max_per_m": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
-  "value": 0.003560047830395562
+  "value": 0.0036146488752280045
  },
  "curvature.k_min_per_m": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
-  "value": 0.0010472062944459192
+  "value": 0.0010466940356742887
  },
  "curvature.seed_tightest_radius_m": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
@@ -1153,7 +1153,7 @@
  },
  "curvature.tightest_radius_m": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
-  "value": 280.8951024371177
+  "value": 276.652044090153
  },
  "curvature.worst_difference_per_m": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
@@ -1161,7 +1161,7 @@
  },
  "curvature.worst_relative": {
   "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
-  "value": 1.1911736911728021e-05
+  "value": 1.1731804281035504e-05
  },
  "flood-20000.base_level_m": {
   "pointer": "/stages/optimise/results/base_level_m",
@@ -2715,6 +2715,14 @@
   "pointer": "/stages/volumes/results/total_m3",
   "run": "free-seams-0",
   "value": 377244.09640530974
+ },
+ "free-seams-0.volumes.total_saved_m3": {
+  "derived": "total cut of the base run less that of the run with free seams and no weir straight",
+  "value": 6018.990144208306
+ },
+ "free-seams-0.volumes.total_saved_pct": {
+  "derived": "that saving over the base run's total cut, in percent",
+  "value": 1.5704591324973964
  },
  "free-seams-0.volumes.widening_m3": {
   "pointer": "/stages/volumes/results/widening_m3",
@@ -5183,6 +5191,10 @@
   "derived": "station.csv: the sum of the cut of the dry samples, times 1 m",
   "value": 151.3433961724661
  },
+ "station.by_hand.radius_m": {
+  "derived": "the mean, over five stations, of the radius of the circle through a station and the stations two before and two after",
+  "value": 478.2804782136013
+ },
  "station.by_hand.samples": {
   "derived": "station.csv: the number of rows",
   "value": 401
@@ -5190,6 +5202,10 @@
  "station.by_hand.slope_reach_m": {
   "derived": "half-width + 3 x depth",
   "value": 28.7265497072898
+ },
+ "station.by_hand.stations_checked": {
+  "derived": "the stations of the base run that keep their section, each worked by the formulas of section 3",
+  "value": 21
  },
  "station.chainage_m": {
   "pointer": "/stages/volumes/results/sections/stations/140/chainage_m",

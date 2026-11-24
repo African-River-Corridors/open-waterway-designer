@@ -42,7 +42,9 @@ fn grid(ground: &dyn Fn(f64, f64) -> f64, wet: bool) -> TerrainGrid {
 
 fn straight() -> Prim {
     let cfg = LatticeConfig::new(255.0).validated().unwrap();
-    lattice_primitives(&cfg).pop().expect("the last move is the straight")
+    lattice_primitives(&cfg)
+        .pop()
+        .expect("the last move is the straight")
 }
 
 fn spec() -> SectionSpec {
@@ -68,7 +70,13 @@ fn unknown_ground_costs_no_cut_and_a_move_needs_six_tenths_of_its_bottom_known()
 
     // Unknown beyond the bottom (the side slopes, both sides): the move stands, and costs the
     // bottom only: 8 samples x 4 m x 4.25 m.
-    let no_slopes = |_: f64, y: f64| if y.abs() > HALF_WIDTH_M { f64::NAN } else { 1.0 };
+    let no_slopes = |_: f64, y: f64| {
+        if y.abs() > HALF_WIDTH_M {
+            f64::NAN
+        } else {
+            1.0
+        }
+    };
     let (bottom, ok) = search_cost_per_m(&grid(&no_slopes, false), &spec());
     assert!(ok);
     assert!((bottom - 8.0 * 4.0 * 4.25).abs() < 1e-6, "{bottom}");
@@ -79,12 +87,18 @@ fn unknown_ground_costs_no_cut_and_a_move_needs_six_tenths_of_its_bottom_known()
     let two_lost = |_: f64, y: f64| if y > 3.0 { f64::NAN } else { 1.0 };
     let (c, ok) = search_cost_per_m(&grid(&two_lost, false), &spec());
     assert!(ok);
-    assert!(c < all, "unknown ground must not be charged: {c} against {all}");
+    assert!(
+        c < all,
+        "unknown ground must not be charged: {c} against {all}"
+    );
 
     // Unknown from -1 m: one whole side is lost, 4 of 8 are known (0.5 < 0.6): refused.
     let three_lost = |_: f64, y: f64| if y > -1.0 { f64::NAN } else { 1.0 };
     let (_, ok) = search_cost_per_m(&grid(&three_lost, false), &spec());
-    assert!(!ok, "a move with under six tenths of its bottom known is refused");
+    assert!(
+        !ok,
+        "a move with under six tenths of its bottom known is refused"
+    );
 
     // With the land cost on, unknown ground outside the river is land like any other.
     let mut land = spec();
@@ -105,7 +119,10 @@ fn unknown_ground_costs_no_cut_and_a_move_needs_six_tenths_of_its_bottom_known()
 fn the_search_section_is_not_cut_model_a() {
     let (wl, grade) = (0.0, -DEPTH_M);
     let offsets: Vec<f64> = (-200..=200).map(f64::from).collect();
-    let sides: Vec<i8> = offsets.iter().map(|&o| if o < 0.0 { -1 } else { 1 }).collect();
+    let sides: Vec<i8> = offsets
+        .iter()
+        .map(|&o| if o < 0.0 { -1 } else { 1 })
+        .collect();
     let model_a = |z: f64, wet: bool| -> (f64, f64) {
         let (d, e, _) = section_area(
             &vec![z; offsets.len()],
@@ -132,13 +149,19 @@ fn the_search_section_is_not_cut_model_a() {
     assert!(ok);
     // By hand: bottom 32 h, and two slopes of 1 : 3 up to the ground, 3 h^2 together.
     let search_by_hand = 32.0 * h + 3.0 * h * h;
-    assert!(within(search, search_by_hand, 0.03), "{search} against {search_by_hand}");
+    assert!(
+        within(search, search_by_hand, 0.03),
+        "{search} against {search_by_hand}"
+    );
     let (_, dry) = model_a(10.0, false);
     // By hand: bottom 32 h; under-water slopes 2 (9.75 h - 9.75^2 / 6); berms 2 x 2 x 10; upper
     // slopes 2 x (10 x 15 / 2).
     let a_by_hand = 32.0 * h + 2.0 * (9.75 * h - 9.75 * 9.75 / 6.0) + 40.0 + 150.0;
     assert!(within(dry, a_by_hand, 0.03), "{dry} against {a_by_hand}");
-    assert!(search > 1.08 * dry, "the two sections differ: {search} against {dry}");
+    assert!(
+        search > 1.08 * dry,
+        "the two sections differ: {search} against {dry}"
+    );
 
     // In the river, 1 m below the pool level (2.25 m above the bed): the search cuts the bottom
     // only; Cut Model A cuts the two under-water slopes too.
@@ -147,7 +170,10 @@ fn the_search_section_is_not_cut_model_a() {
     assert!((search - 32.0 * 2.25).abs() < 1e-6, "{search}");
     let (dredge, _) = model_a(-1.0, true);
     let a_by_hand = 32.0 * 2.25 + 2.0 * (2.25 * 6.75 / 2.0);
-    assert!(within(dredge, a_by_hand, 0.05), "{dredge} against {a_by_hand}");
+    assert!(
+        within(dredge, a_by_hand, 0.05),
+        "{dredge} against {a_by_hand}"
+    );
     assert!(dredge > 1.15 * search);
 }
 
@@ -166,7 +192,10 @@ fn the_default_lattice_has_sixteen_headings_three_radii_and_a_straight_of_twice_
         for (p, sign) in [(&prims[2 * i], 1.0), (&prims[2 * i + 1], -1.0)] {
             assert_eq!(p.r, r_min * m);
             assert!(p.r >= r_min);
-            assert!((p.end.2 - sign * step).abs() < 1e-12, "an arc turns one heading step");
+            assert!(
+                (p.end.2 - sign * step).abs() < 1e-12,
+                "an arc turns one heading step"
+            );
             assert!((p.arc_len - p.r * step).abs() < 1e-9);
         }
     }
@@ -177,5 +206,8 @@ fn the_default_lattice_has_sixteen_headings_three_radii_and_a_straight_of_twice_
 
     let mut tight = LatticeConfig::new(r_min);
     tight.radius_multiples = vec![0.9, 1.0];
-    assert!(tight.validated().is_err(), "a radius under R_min is refused");
+    assert!(
+        tight.validated().is_err(),
+        "a radius under R_min is refused"
+    );
 }

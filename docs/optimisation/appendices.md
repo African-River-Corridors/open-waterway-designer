@@ -22,7 +22,7 @@ Everything of the worked example is in `docs/optimisation/example/`.
 | `figures.py` | Draws the figures in `docs/optimisation/figures/` from the run files. |
 | `derivations.py` | The numerical check of appendix C. |
 | `numbers.json` | Every number the document quotes, by key, with the run and the place in the design file it was read from, or how it was derived. |
-| `station.csv` | The section of the station of section 3, sample by sample: offset, ground, in the river or not, cut face, cut. |
+| `station.csv` | The section of the station of section 3, sample by sample: offset, ground, in the river or not, cut face, cut. Kept in the repository. |
 | `runs/*.txt` | What the tool printed in each run, untouched. |
 
 ### Run it all
@@ -39,7 +39,9 @@ The script needs Python 3 and nothing else. It writes the design files to
 
 ### Run it by hand
 
-From `docs/optimisation/example/`, with `owd` on your path:
+Copy the folder `docs/optimisation/example/` to a place of your own and work there, with `owd` on
+your path. The design file names its DEM by a path beside it, so the DEM is copied first. `--date`
+fixes the date written into the file, so two runs give the same file.
 
 ```bash
 cp inputs/dem.tif dem.tif
@@ -92,31 +94,35 @@ A design file (`.owd`) is JSON. The numbers of this document are read from these
 |---|---|
 | Channel size | `stages.sizing.results` |
 | Baseline and its checks | `stages.alignment.results` |
-| Weirs, lifts, levels and costs | `stages.optimise.results.cascade` |
+| Weirs, lifts, levels and costs | `stages.optimise.results.cascade`. Its `reach_cost` is the cut plus the flood cost; with a flood cost on, the cut alone is `cascade.flood.cut_cost`. |
 | Flooded land and bank-full, per pool | `stages.optimise.results.cascade.flood` |
 | Design line and its checks | `stages.optimise.results.design_line.line`, `.checks` |
 | Each pool's search: cost, baseline cost, used or not, why not | `stages.optimise.results.design_line.details.pools` |
 | Joins, seams and weir sites | `stages.optimise.results.design_line.details.joins`, `.seams`, `.weirs` |
 | Volumes | `stages.volumes.results` |
-| Stations and their areas | `stages.volumes.results.sections.stations` |
+| Stations and their areas | `stages.volumes.results.sections.stations`: one record a station, with `chainage_m`, `half_width_m`, `water_level_m`, `invert_m` (the bed level), `dredge_area_m2`, `excav_area_m2` (dry cut) |
+| The section of a station | `profile` in the station's record: `offsets_m`, `terrain_m`, `wet` (in the river polygon) and `cut_face_m` (rounded to 1 cm). Kept only for the station nearest each 500 m of line and at a few tight bends: 21 of the 268 stations of the base run. |
 
 `numbers.json` gives the exact place of each number as a JSON pointer.
 
 ### The station by hand
 
-`station.csv` holds the 401 samples of the station of section 3. To check it yourself, sum the last
+`station.csv` holds the 401 samples of the station of section 3: the station's `profile` from
+`base.owd`, with the cut face and the cut worked from the formulas. To check it yourself, sum the last
 column over the rows with `in_river` = 1 for the dredge area, and over the rows with `in_river` = 0
 for the dry cut area; each sample stands for 1 m. The script works the `face_m` and `cut_m` columns
 from the formulas of section 3, not from the tool's areas, and stops with an error if the sums
-differ from the tool's by more than one part in a million.
+differ from the tool's by more than one part in a million. It does the same for every station that
+keeps a section, and checks the half-width formula of section 3 at all 268 stations. The areas of
+the other stations cannot be checked from the file alone: for those you need the DEM and the line.
 
 ## B Settings
 
 ### Settings of the optimise stage
 
 Give a setting with its flag on `owd optimise`, where it has one. A setting with no flag is set in
-the design file, under `stages.optimise.settings` (`set_setting.py` does this), or in the app. A
-name the stage does not know is refused.
+the design file, under `stages.optimise.settings` (`set_setting.py` does this), or in OWD's web app.
+A name the stage does not know is refused.
 
 A test holds the names and defaults of this table to the engine's.
 
@@ -129,7 +135,7 @@ A test holds the names and defaults of this table to the engine's.
 | `terminal_min_level_m` | none | m | `0.5` | The top pool must be at or above this level. The level cap is this plus the largest lift. |
 | `min_spacing_m` | none | m | `0` | The least distance between two weirs. |
 | `base_level_m` | `--base-level` | m | `null` | The water level below the first weir. `null`: the design's water level at the start of the line. |
-| `k_best` | none | count | `5` | How many ranked endings the weir search keeps. The stage uses the best. |
+| `k_best` | none | count | `5` | The weir search keeps this many of its best cascades, each with a different last weir or top level. The stage uses the best one. |
 | `wet_weight` | `--wet-weight` | cost per m³ | `1` | The weight of dredge (cut inside the river polygon), in both searches. |
 | `dry_weight` | `--dry-weight` | cost per m³ | `1` | The weight of dry cut (cut outside the river polygon), in both searches. |
 | `length_weight` | `--length-weight` | cost per m | `0` | The cost of one metre of line, in the pool search. 0 is off. |
@@ -149,7 +155,7 @@ A test holds the names and defaults of this table to the engine's.
 | `side_slope` | none | horizontal per vertical | `3` | The side slope $m$ of the pool search's section. |
 | `rake_half_m` | none | m | `250` | How far each rake of the pool search reaches either side of the line. |
 | `rake_step_m` | none | m | `4` | The spacing of the samples of a rake. |
-| `ds_step_m` | none | m | `8` | The least spacing of the sections along a move, when larger than the move's own sample spacing. |
+| `ds_step_m` | none | m | `8` | Thins the sections along a move. It has no effect unless it is set above 10 m, the spacing the sections already have. |
 | `pitch_m` | none | m | `12` | The grid the states are snapped to. The straight is twice this. |
 | `n_heading` | none | count | `16` | The number of headings. Each arc turns by one step of 360° over this. |
 | `radius_multiples` | none | none | `[1, 1.5, 3]` | The radii of the arcs, as multiples of $R_{\min}$. None may be below 1. |
@@ -272,12 +278,16 @@ themselves by finite differences and compares with the formula at 120 stations.
 | | Value |
 |---|---:|
 | Tightest radius of the seed, m | 333.3<!--=curvature.seed_tightest_radius_m--> |
-| Tightest radius of the shifted line, by the formula, m | 280.9<!--=curvature.tightest_radius_m--> |
+| Tightest radius of the shifted line, by the formula, over its whole length, m | 276.7<!--=curvature.tightest_radius_m--> |
 | Largest difference between the formula and the finite differences, as a share of the largest curvature | 0.000012<!--=curvature.worst_relative--> |
 
 The two agree to about one part in 100,000, which is the accuracy of the finite differences. The
-shift tightens this seed from 333 m to 281 m: a limit on the seed's radius alone would not have
+shift tightens this seed from 333 m to 277 m: a limit on the seed's radius alone would not have
 caught it.
+
+This check uses a seed whose curvature changes smoothly. A seed of arcs and straights has jumps of
+curvature at its joins, where $k_0'$ does not exist; section 8 says what that means for the shifted
+line.
 
 ### C.2 The length of an arc that turns one heading step
 
@@ -298,14 +308,14 @@ are four candidates.
 
 For a candidate, put the centre of the first circle at distance $R$ from $A$, to the left of its
 heading for a left turn and to the right for a right turn; the same for the second circle at $B$.
-Let $\ell$ be the distance between the two centres and $\varphi_c$ the direction from the first to
+Let $q$ be the distance between the two centres and $\varphi_c$ the direction from the first to
 the second.
 
-- **Both arcs turn the same way.** The straight is the outer common tangent. Its length is $\ell$
+- **Both arcs turn the same way.** The straight is the outer common tangent. Its length is $q$
   and its heading is $\varphi = \varphi_c$.
 - **The arcs turn opposite ways.** The straight is the inner common tangent. It exists when
-  $\ell \ge 2R$. Its length is $\sqrt{\ell^2 - 4R^2}$, and its heading is
-  $\varphi = \varphi_c \pm \arctan\bigl(2R / \sqrt{\ell^2 - 4R^2}\bigr)$, plus for a left turn first.
+  $q \ge 2R$. Its length is $\sqrt{q^2 - 4R^2}$, and its heading is
+  $\varphi = \varphi_c \pm \arctan\bigl(2R / \sqrt{q^2 - 4R^2}\bigr)$, plus for a left turn first.
 
 The first arc turns from the heading of $A$ to $\varphi$, and the second from $\varphi$ to the
 heading of $B$, each in its own direction. A candidate is dropped when the two turns add to more
@@ -317,7 +327,7 @@ taken. Its heading is continuous at both joins because the straight is tangent t
 
 Suppose every metre of any line costs at least $c_{\min}$. A line from a state to the end is at
 least as long as the straight distance $\rho$ between them. So its cost is at least $c_{\min}\, \rho$,
-and the estimate $h = c_{\min}\, \rho$ never exceeds the true cost to go. With such an estimate A\*
+and the estimate $e = c_{\min}\, \rho$ never exceeds the true cost to go. With such an estimate A\*
 takes the end only when no cheaper way to it remains.
 
 The cost per metre of line $\lambda$ fits this: every metre pays $\lambda$, so $c_{\min}$ includes
