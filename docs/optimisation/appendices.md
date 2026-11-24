@@ -155,7 +155,7 @@ A test holds the names and defaults of this table to the engine's.
 | `side_slope` | none | horizontal per vertical | `3` | The side slope $m$ of the pool search's section. |
 | `rake_half_m` | none | m | `250` | How far each rake of the pool search reaches either side of the line. |
 | `rake_step_m` | none | m | `4` | The spacing of the samples of a rake. |
-| `ds_step_m` | none | m | `8` | Thins the sections along a move. It has no effect unless it is set above 10 m, the spacing the sections already have. |
+| `ds_step_m` | none | m | `8` | The spacing of the sections of the search cost. On the baseline it is the spacing. On a move it has no effect unless it is set above 10 m, the spacing a move's sections already have. |
 | `pitch_m` | none | m | `12` | The grid the states are snapped to. The straight is twice this. |
 | `n_heading` | none | count | `16` | The number of headings. Each arc turns by one step of 360° over this. |
 | `radius_multiples` | none | none | `[1, 1.5, 3]` | The radii of the arcs, as multiples of $R_{\min}$. None may be below 1. |

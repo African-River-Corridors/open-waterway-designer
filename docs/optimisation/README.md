@@ -550,8 +550,8 @@ compares them).
 
 Sections are taken across the move about every 10 m (every 12 m on the straight); let $\delta$ be
 their true spacing. A section stands at the end of each step of $\delta$ along the move, square to
-the move's heading there, and stands for that step. (The setting `ds_step_m` thins the sections only
-when it is set above 10 m.) Each section is a **rake** of samples every `rake_step_m` ($\Delta o$ = 4 m) out to
+the move's heading there, and stands for that step. (On a move, the setting `ds_step_m` thins the
+sections only when it is set above 10 m.) Each section is a **rake** of samples every `rake_step_m` ($\Delta o$ = 4 m) out to
 `rake_half_m` (250 m) either side of the line. With these defaults the samples stand at 2, 6, 10,
 14 m and so on either side: none is on the line itself, and the 8 samples within the half-width of
 the example (15.2 m) stand for 32 m of a bottom that is 30.4 m wide. The ground $z_g$ is read from
@@ -583,7 +583,8 @@ fewer than 60 % of its bottom samples are on known ground.
 
 The search grid is filled once for each pool: the DEM is read, as in section 3, at the centre of
 every 2 m cell, and the search then interpolates between those centres. The baseline is costed with
-the same section, as a chain of straights between its points, with sections about every 2 m.
+the same section, as a chain of straights between its points, with a section at least every 8 m
+(`ds_step_m`).
 
 **Why the two extra weights exist.** Ground below the bed level costs nothing to cut. A pool can
 drown a wide plain deeper than the bed. Then, with $\lambda = \mu = 0$, a line over the drowned plain
