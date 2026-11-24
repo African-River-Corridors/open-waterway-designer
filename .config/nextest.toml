@@ -50,7 +50,8 @@ not (
     (binary_id(owd-format::optimise) & test(=a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown)) |
     (binary_id(owd-format::optimise) & test(=a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported)) |
     (binary_id(owd-core::lattice_land_cost) & test(=a_land_weight_keeps_the_line_in_the_river_on_a_drowned_plain)) |
-    (binary_id(owd-format::optimise) & test(=a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes))
+    (binary_id(owd-format::optimise) & test(=a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes)) |
+    (binary_id(owd-cli::optimisation_doc) & test(/_the_documents_numbers$/))
 )
 '''
 

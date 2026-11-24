@@ -1,5 +1,5 @@
 $ owd new example.owd --title Example River --date 2026-11-24
-created setup.owd: "Example River"
+created example.owd: "Example River"
 $ owd import example.owd --centreline inputs/centreline.geojson --polygon inputs/river-polygon.geojson --dem dem.tif --water-level 0.0 --water-slope -0.001
 project CRS: EPSG:32630
 centreline: 751 positions, from EPSG:32630

@@ -128,6 +128,10 @@
   "run": "bank-0",
   "value": -0.14247659991388328
  },
+ "bank-0.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": -0.11321687148213222
+ },
  "bank-0.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
   "run": "bank-0",
@@ -392,6 +396,18 @@
   "run": "bank-0",
   "value": 6.5
  },
+ "bank-0.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "bank-0.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 226307.82945893737
+ },
+ "bank-0.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "bank-0.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "bank-0",
@@ -526,6 +542,10 @@
   "run": "base",
   "value": 1700000.0
  },
+ "base.cascade.structures": {
+  "derived": "the sum of the four structure costs",
+  "value": 1700000.0
+ },
  "base.cascade.total_cost": {
   "pointer": "/stages/optimise/results/cascade/total_cost",
   "run": "base",
@@ -620,6 +640,10 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "base",
   "value": -0.14247659991388328
+ },
+ "base.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
  },
  "base.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -960,6 +984,18 @@
   "run": "base",
   "value": 107
  },
+ "base.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "base.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 211610.06091922097
+ },
+ "base.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "base.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "base",
@@ -979,10 +1015,22 @@
   "run": "base",
   "value": 120751.96749882789
  },
+ "base.volumes.length_counted_m": {
+  "derived": "stations x 25 m",
+  "value": 6700.0
+ },
+ "base.volumes.length_over_pct": {
+  "derived": "stations x 25 m over the line length, less one, in percent",
+  "value": 0.058400246899936725
+ },
  "base.volumes.max_face_h_m": {
   "pointer": "/stages/volumes/results/max_face_h_m",
   "run": "base",
   "value": 3.5059304320332227
+ },
+ "base.volumes.station_spacing_m": {
+  "derived": "design line length / (stations - 1)",
+  "value": 25.078986768608626
  },
  "base.volumes.stations": {
   "pointer": "/stages/volumes/results/stations",
@@ -1079,6 +1127,42 @@
   "run": "base",
   "value": 200000.0
  },
+ "cascade.levels": {
+  "derived": "levels 0 to 8.5 m in steps of 0.5 m",
+  "value": 18
+ },
+ "cascade.moves_bound": {
+  "derived": "pairs of sites x levels x lifts",
+  "value": 1512
+ },
+ "cascade.sites": {
+  "derived": "the candidate sites of the example",
+  "value": 6
+ },
+ "curvature.k_max_per_m": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 0.003560047830395562
+ },
+ "curvature.k_min_per_m": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 0.0010472062944459192
+ },
+ "curvature.seed_tightest_radius_m": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 333.3333333333333
+ },
+ "curvature.tightest_radius_m": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 280.8951024371177
+ },
+ "curvature.worst_difference_per_m": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 4.240635314884007e-08
+ },
+ "curvature.worst_relative": {
+  "derived": "derivations.py: the curvature of a shifted line, formula against finite differences",
+  "value": 1.1911736911728021e-05
+ },
  "flood-20000.base_level_m": {
   "pointer": "/stages/optimise/results/base_level_m",
   "run": "flood-20000",
@@ -1098,6 +1182,10 @@
   "pointer": "/stages/optimise/results/cascade/total_cost",
   "run": "flood-20000",
   "value": 2057193.8692051522
+ },
+ "flood-20000.cut_added_m3": {
+  "derived": "the weir search's cut at 20,000 per ha less the base run's",
+  "value": 21912.48373790196
  },
  "flood-20000.flood.cut_cost": {
   "pointer": "/stages/optimise/results/cascade/flood/cut_cost",
@@ -1188,6 +1276,14 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "flood-20000",
   "value": -0.14247659991388328
+ },
+ "flood-20000.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": -0.11321687148213222
+ },
+ "flood-20000.flooded_saved_ha": {
+  "derived": "flooded land of the base run less that of the run at 20,000 per ha",
+  "value": 5.9375
  },
  "flood-20000.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -1453,6 +1549,22 @@
   "run": "flood-20000",
   "value": 6.5
  },
+ "flood-20000.saving_if_lowered": {
+  "derived": "20,000 x the hectares saved",
+  "value": 118750.0
+ },
+ "flood-20000.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "flood-20000.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 226307.82945893737
+ },
+ "flood-20000.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "flood-20000.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "flood-20000",
@@ -1681,6 +1793,10 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "flood-3000",
   "value": -0.14247659991388328
+ },
+ "flood-3000.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
  },
  "flood-3000.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -1946,6 +2062,22 @@
   "run": "flood-3000",
   "value": 6.5
  },
+ "flood-3000.saving_if_lowered": {
+  "derived": "3,000 x the hectares saved",
+  "value": 17812.5
+ },
+ "flood-3000.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "flood-3000.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 211610.06091922097
+ },
+ "flood-3000.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "flood-3000.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "flood-3000",
@@ -2174,6 +2306,10 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "free-seams-0",
   "value": -0.14247659991388328
+ },
+ "free-seams-0.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
  },
  "free-seams-0.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -2453,6 +2589,18 @@
   "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
   "run": "free-seams-0",
   "value": 6.5
+ },
+ "free-seams-0.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 3
+ },
+ "free-seams-0.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 196883.565141264
+ },
+ "free-seams-0.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
  },
  "free-seams-0.site1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/weirs/0/at_m",
@@ -2763,6 +2911,10 @@
   "run": "free-seams",
   "value": -0.14247659991388328
  },
+ "free-seams.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
+ },
  "free-seams.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
   "run": "free-seams",
@@ -3026,6 +3178,18 @@
   "pointer": "/stages/optimise/results/design_line/details/pools/4/water_level_m",
   "run": "free-seams",
   "value": 6.5
+ },
+ "free-seams.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "free-seams.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 211610.06091922097
+ },
+ "free-seams.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
  },
  "free-seams.site1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/weirs/0/at_m",
@@ -3336,6 +3500,10 @@
   "run": "land",
   "value": -0.14247659991388328
  },
+ "land.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
+ },
  "land.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
   "run": "land",
@@ -3365,6 +3533,11 @@
   "pointer": "/stages/optimise/results/design_line/details/joins/1/radius_ok",
   "run": "land",
   "value": true
+ },
+ "land.land.footprint_width_m": {
+  "pointer": "/stages/optimise/results/design_line/details/land_footprint_width_m",
+  "run": "land",
+  "value": 49.900000000000006
  },
  "land.line.length_m": {
   "derived": "the length of the design line's polyline",
@@ -3650,6 +3823,18 @@
   "run": "land",
   "value": 6.5
  },
+ "land.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 4
+ },
+ "land.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 284412.6719277483
+ },
+ "land.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "land.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "land",
@@ -3769,6 +3954,30 @@
   "run": "land",
   "value": 200000.0
  },
+ "lattice.arc_m.1": {
+  "derived": "radius x 2 pi / 16",
+  "value": 100.13826583317466
+ },
+ "lattice.arc_m.1.5": {
+  "derived": "radius x 2 pi / 16",
+  "value": 150.20739874976198
+ },
+ "lattice.arc_m.3": {
+  "derived": "radius x 2 pi / 16",
+  "value": 300.41479749952396
+ },
+ "lattice.radius_m.1": {
+  "derived": "R_min x the radius multiple",
+  "value": 255.0
+ },
+ "lattice.radius_m.1.5": {
+  "derived": "R_min x the radius multiple",
+  "value": 382.5
+ },
+ "lattice.radius_m.3": {
+  "derived": "R_min x the radius multiple",
+  "value": 765.0
+ },
  "length-1000.base_level_m": {
   "pointer": "/stages/optimise/results/base_level_m",
   "run": "length-1000",
@@ -3878,6 +4087,10 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "length-1000",
   "value": -0.14247659991388328
+ },
+ "length-1000.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
  },
  "length-1000.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -4198,6 +4411,18 @@
   "run": "length-1000",
   "value": 6.5
  },
+ "length-1000.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 0
+ },
+ "length-1000.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 6843160.6477768
+ },
+ "length-1000.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "length-1000.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "length-1000",
@@ -4426,6 +4651,10 @@
   "pointer": "/stages/optimise/results/cascade/flood/pools/4/max_above_bank_m",
   "run": "length-300",
   "value": -0.14247659991388328
+ },
+ "length-300.flood.worst_above_bank_m": {
+  "derived": "the greatest height of a pool above bank-full",
+  "value": 0.3867831285178678
  },
  "length-300.join1.at_m": {
   "pointer": "/stages/optimise/results/design_line/details/joins/0/at_m",
@@ -4746,6 +4975,18 @@
   "run": "length-300",
   "value": 6.5
  },
+ "length-300.search.dearer": {
+  "derived": "the number of pools whose searched line costs more than the baseline",
+  "value": 2
+ },
+ "length-300.search.final_cost": {
+  "derived": "the search cost of the design line: each pool's cost if its line is used, else its baseline's",
+  "value": 2221233.107986972
+ },
+ "length-300.search.pools": {
+  "derived": "the number of pools",
+  "value": 5
+ },
  "length-300.volumes.cut_through_m3": {
   "pointer": "/stages/volumes/results/cut_through_m3",
   "run": "length-300",
@@ -4898,6 +5139,10 @@
   "run": "base",
   "value": 2.5
  },
+ "size.half_width_m": {
+  "derived": "half of the bottom width",
+  "value": 15.200000000000001
+ },
  "size.loa_m": {
   "pointer": "/stages/sizing/results/loa_m",
   "run": "base",
@@ -4907,6 +5152,14 @@
   "pointer": "/stages/sizing/results/min_bend_radius_m",
   "run": "base",
   "value": 255.0
+ },
+ "size.prism_area_m2": {
+  "derived": "(bottom width + 3 x depth) x depth",
+  "value": 130.4875
+ },
+ "size.top_width_m": {
+  "derived": "bottom width + 2 x 3 x depth",
+  "value": 49.900000000000006
  },
  "station.bench_left": {
   "pointer": "/stages/volumes/results/sections/stations/140/bench_left",

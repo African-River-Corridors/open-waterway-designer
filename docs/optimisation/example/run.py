@@ -20,6 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent.parent
 OUT = HERE / "out"
@@ -126,6 +128,8 @@ def pins_of(doc):
     pins.append(("line.no_self_crossing", f"{line}/checks/no_self_crossing/ok"))
     pins.append(("line.n_replaced", f"{line}/details/n_replaced"))
     details = res["design_line"]["details"]
+    if "land_footprint_width_m" in details:
+        pins.append(("land.footprint_width_m", f"{line}/details/land_footprint_width_m"))
     for i, p in enumerate(details["pools"]):
         for k in ("start_m", "end_m", "water_level_m", "cost", "baseline_cost", "used", "goal_closed",
                   "expansions", "land_area_m2", "baseline_land_area_m2", "line_length_m"):
@@ -197,6 +201,17 @@ def collect(spec):
         put(f"{name}.volumes.dry_change_pct", 0.0, derived="filled below")
         numbers[f"{name}.volumes.dry_change_pct"]["_dry"] = dry
 
+        pools = res["design_line"]["details"]["pools"]
+        put(f"{name}.search.final_cost", sum(p["cost"] if p["used"] else p["baseline_cost"] for p in pools),
+            derived="the search cost of the design line: each pool's cost if its line is used, else its baseline's")
+        put(f"{name}.search.dearer", sum(1 for p in pools if p["cost"] > p["baseline_cost"]),
+            derived="the number of pools whose searched line costs more than the baseline")
+        put(f"{name}.search.pools", len(pools), derived="the number of pools")
+        flood = res["cascade"].get("flood")
+        if flood:
+            put(f"{name}.flood.worst_above_bank_m", max(p["max_above_bank_m"] for p in flood["pools"]),
+                derived="the greatest height of a pool above bank-full")
+
     base = json.loads((OUT / "base.owd").read_text(encoding="utf-8"))
     base_dry = at(base, "/stages/volumes/results/excav_m3")
     for name in spec["runs"]:
@@ -246,6 +261,35 @@ def collect(spec):
         w = csv.writer(f)
         w.writerow(["offset_m", "ground_m", "in_river", "face_m", "cut_m"])
         w.writerows(rows)
+    rmin = numbers["size.min_bend_radius_m"]["value"]
+    for m in (1.0, 1.5, 3.0):
+        put(f"lattice.radius_m.{m:g}", rmin * m, derived="R_min x the radius multiple")
+        put(f"lattice.arc_m.{m:g}", rmin * m * 2.0 * math.pi / 16.0, derived="radius x 2 pi / 16")
+    depth, hb = numbers["size.design_depth_m"]["value"], numbers["size.bottom_width_straight_m"]["value"] / 2.0
+    put("size.half_width_m", hb, derived="half of the bottom width")
+    put("size.top_width_m", 2.0 * (hb + 3.0 * depth), derived="bottom width + 2 x 3 x depth")
+    put("size.prism_area_m2", (2.0 * hb + 3.0 * depth) * depth, derived="(bottom width + 3 x depth) x depth")
+    sites = len(json.loads((HERE / "runs.json").read_text())["optimise"][5].split(","))
+    put("cascade.sites", sites, derived="the candidate sites of the example")
+    put("cascade.levels", int(round(8.5 / 0.5)) + 1, derived="levels 0 to 8.5 m in steps of 0.5 m")
+    put("cascade.moves_bound", (sites + 1) * sites // 2 * (int(round(8.5 / 0.5)) + 1) * 4,
+        derived="pairs of sites x levels x lifts")
+    n_st = numbers["base.volumes.stations"]["value"]
+    line_len = numbers["base.line.length_m"]["value"]
+    put("base.volumes.station_spacing_m", line_len / (n_st - 1), derived="design line length / (stations - 1)")
+    put("base.volumes.length_counted_m", n_st * 25.0, derived="stations x 25 m")
+    put("base.volumes.length_over_pct", 100.0 * (n_st * 25.0 / line_len - 1.0), derived="stations x 25 m over the line length, less one, in percent")
+    put("base.cascade.structures", sum(numbers[f"base.weir{i}.structure_cost"]["value"] for i in range(1, 5)), derived="the sum of the four structure costs")
+    g = lambda k: numbers[k]["value"]
+    saved = g("base.flood.flooded_ha") - g("flood-20000.flood.flooded_ha")
+    put("flood-20000.cut_added_m3", g("flood-20000.flood.cut_cost") - g("base.flood.cut_cost"),
+        derived="the weir search's cut at 20,000 per ha less the base run's")
+    put("flood-20000.flooded_saved_ha", saved, derived="flooded land of the base run less that of the run at 20,000 per ha")
+    put("flood-3000.saving_if_lowered", 3000.0 * saved, derived="3,000 x the hectares saved")
+    put("flood-20000.saving_if_lowered", 20000.0 * saved, derived="20,000 x the hectares saved")
+    import derivations
+    for k, v in derivations.curvature_check().items():
+        put(f"curvature.{k}", v, derived="derivations.py: the curvature of a shifted line, formula against finite differences")
     (HERE / "numbers.json").write_text(json.dumps(numbers, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return numbers
 
@@ -255,12 +299,13 @@ def main():
     ap.add_argument("--owd")
     ap.add_argument("--only", help="run one run again (the others must be in out/)")
     ap.add_argument("--no-figures", action="store_true")
+    ap.add_argument("--collect", action="store_true", help="read out/ again; run nothing")
     args = ap.parse_args()
     owd = find_owd(args.owd)
     spec = json.loads((HERE / "runs.json").read_text(encoding="utf-8"))
-    base_doc = setup(owd, spec)
+    base_doc = OUT / "example.owd" if args.collect else setup(owd, spec)
     for name in spec["runs"]:
-        if args.only in (None, name):
+        if not args.collect and args.only in (None, name):
             print(f"run {name} ...", flush=True)
             run_one(owd, spec, name, base_doc)
     numbers = collect(spec)
