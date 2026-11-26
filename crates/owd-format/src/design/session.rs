@@ -558,10 +558,18 @@ impl Session {
             dep["crs"] = self.doc["project"]["crs"].clone();
             // Only the volumes read the bed model (spec 0012): a new depth leaves the stages
             // before them fresh.
+            // The window method of the optimise stage (OPT-5) cuts with the volumes stage's section
+            // on the volumes stage's ground: it reads the bed model and the volumes settings too.
+            let windows = stage == Stage::Optimise
+                && self.doc["stages"]["optimise"]["settings"]["method"] == "windows";
             if stage != Stage::Volumes
+                && !windows
                 && let Some(inputs) = dep["inputs"].as_object_mut()
             {
                 inputs.remove("bed_model");
+            }
+            if windows {
+                dep["windows_section"] = self.doc["stages"]["volumes"]["settings"].clone();
             }
             // No stage reads the reference line (spec 0016): storing it leaves them fresh. The
             // volumes read the assumed bed, which is centred on it (#398).
@@ -574,7 +582,7 @@ impl Session {
                 // Nor the rates table (ticket 12): only the cost reads it, and cost is not stored.
                 inputs.remove(super::cost::INPUT);
             }
-            if stage == Stage::Volumes
+            if (stage == Stage::Volumes || windows)
                 && self.bed_model_value().is_some()
                 && let Some(a) = self.bed_axis_hash()
             {

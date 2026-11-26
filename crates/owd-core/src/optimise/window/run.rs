@@ -423,6 +423,13 @@ fn run_all<J: Sync, T: Send>(jobs: &[J], threads: usize, f: impl Fn(&J) -> T + S
         .collect()
 }
 
+/// The adopt rule (OPT-5 3.10): a line costing `new` replaces one costing `old` when it is at least
+/// `threshold` cheaper (0.01: 1 %), and cheaper at all (a stretch that costs nothing has nothing to
+/// gain).
+pub fn adopts(new: f64, old: f64, threshold: f64) -> bool {
+    new < old && new <= (1.0 - threshold) * old
+}
+
 /// The pose `d` metres back from `p` along its heading.
 fn back(p: Pose, d: f64) -> Pose {
     (p.0 - d * libm::cos(p.2), p.1 - d * libm::sin(p.2), p.2)
@@ -769,8 +776,7 @@ fn run_window(
     let found_ok = !lc.is_loop(cfg.turn_limit_deg, cfg.length_ratio_limit)
         && radius_pass
         && inside(&found_line);
-    // At least `t` cheaper, and cheaper at all (a stretch that costs nothing has nothing to gain).
-    let wins = |new: f64, old: f64| new < old && new <= (1.0 - t) * old;
+    let wins = |new: f64, old: f64| adopts(new, old, t);
     let found_wins = wins(m_found.cost, m_pstart.cost);
     let pstart_wins = polished_start && wins(m_pstart.cost, full_start.cost);
     let (adopted, piece, reason, kept_local): (Adopted, Option<Vec<Pt>>, &'static str, Vec<Pt>) =

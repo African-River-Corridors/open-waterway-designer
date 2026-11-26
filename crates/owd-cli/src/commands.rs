@@ -1266,6 +1266,9 @@ pub struct OptimiseFlags {
     pub min_straight: Option<f64>,
     pub weir_straight: Option<f64>,
     pub model: Option<String>,
+    pub method: Option<String>,
+    pub window_length: Option<f64>,
+    pub threads: Option<i64>,
 }
 
 fn number_list(flag: &str, list: &str) -> core::result::Result<Vec<f64>, Failure> {
@@ -1317,6 +1320,22 @@ pub fn optimise(
     if let Some(m) = &flags.model {
         overrides.insert("cut_model".into(), json!(m));
     }
+    if let Some(m) = &flags.method {
+        overrides.insert("method".into(), json!(m));
+    }
+    // The window optimiser's own flags (OPT-5): a window length widens the band to take it.
+    let mut windows = serde_json::Map::new();
+    if let Some(l) = flags.window_length {
+        windows.insert("window_target_m".into(), json!(l));
+        windows.insert("window_min_m".into(), json!(l.min(800.0)));
+        windows.insert("window_max_m".into(), json!(l.max(2500.0)));
+    }
+    if let Some(t) = flags.threads {
+        windows.insert("threads".into(), json!(t));
+    }
+    if !windows.is_empty() {
+        overrides.insert("windows".into(), Value::Object(windows));
+    }
     if let Some(l) = &flags.sites {
         overrides.insert(
             "candidate_sites_m".into(),
@@ -1346,7 +1365,7 @@ pub fn optimise(
     let lines = session.design_lines();
     let option = lines
         .iter()
-        .find(|o| o["method"] == "lattice")
+        .find(|o| o["method"] == "lattice" || o["method"] == "windows")
         .cloned()
         .unwrap_or(Value::Null);
     // The sanity warnings, a pool join that breaks R_min among them (issue #6).
@@ -1389,6 +1408,9 @@ pub fn optimise(
         c["r_min_m"].as_f64().unwrap_or(f64::NAN),
         if radius { "ok" } else { "FAILS R_min" }
     );
+    if option["method"] == "windows" {
+        human = windows_text(&option, radius);
+    }
     if let Some(at) = c["no_self_crossing"]["first_crossing_m"].as_f64() {
         human.push_str(&format!(
             "\nthe line crosses itself near {at:.0} m along the line: FAILS no_self_crossing"
@@ -2776,4 +2798,49 @@ pub fn reach_with(
             code: 1,
         })
     }
+}
+
+/// What `owd optimise --method windows` says: the totals, then one line per window.
+fn windows_text(option: &Value, radius: bool) -> String {
+    let d = &option["details"];
+    let c = &option["checks"];
+    let t = &d["totals"];
+    let f = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
+    let mut out = format!(
+        "Window optimiser: {} of {} window(s) adopted; cost {:.0} -> {:.0} ({:.1} % saved){}; \
+         minimum radius {:.0} m on a {:.0} m chord against R_min {:.0} m: {}; {:.0} s",
+        d["n_adopted"],
+        d["n_windows"],
+        f(&t["start"]["cost"]),
+        f(&t["result"]["cost"]),
+        f(&t["saving_pct"]),
+        match (
+            t["start"]["total_m3"].as_f64(),
+            t["result"]["total_m3"].as_f64()
+        ) {
+            (Some(a), Some(b)) => format!(", plain cut {a:.0} -> {b:.0} m3"),
+            _ => String::new(),
+        },
+        f(&c["measured_min_radius_m"]),
+        f(&c["radius_check_chord_m"]),
+        f(&c["r_min_m"]),
+        if radius { "ok" } else { "FAILS R_min" },
+        f(&d["seconds"]),
+    );
+    for w in d["windows"].as_array().into_iter().flatten() {
+        out.push_str(&format!(
+            "\n  window {} (pass {}) {:.0}-{:.0} m: {:.0} -> {} {} ({})",
+            w["id"],
+            w["pass"],
+            f(&w["start_m"]),
+            f(&w["end_m"]),
+            f(&w["full_start"]["cost"]),
+            w["full_found"]["cost"]
+                .as_f64()
+                .map_or("-".to_string(), |v| format!("{v:.0}")),
+            w["adopted"].as_str().unwrap_or("?"),
+            w["reason"].as_str().unwrap_or("?"),
+        ));
+    }
+    out
 }

@@ -430,6 +430,19 @@ enum Command {
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
+        /// `lattice` (the weir cascade, then the pool lattice; the default) or `windows` (the
+        /// window optimiser: the alignment's line redesigned in windows of 1 to 2 km, each priced
+        /// with the volumes stage's own section and adopted only when it saves at least 1 %; the
+        /// pools and weirs stay as they are).
+        #[arg(long, value_name = "METHOD")]
+        method: Option<String>,
+        /// With `--method windows`: the window length aimed for, in metres (default 1,500; the
+        /// band is 800 to 2,500 m, widened to take it).
+        #[arg(long, value_name = "METRES")]
+        window_length: Option<f64>,
+        /// With `--method windows`: how many windows to search at once (default: every core).
+        #[arg(long, value_name = "N")]
+        threads: Option<i64>,
         #[command(flatten)]
         out: Out,
     },
@@ -1484,6 +1497,9 @@ pub fn main() -> ExitCode {
             flood_distance,
             flood_report,
             model,
+            method,
+            window_length,
+            threads,
             out,
         } => commands::optimise(
             &doc,
@@ -1509,6 +1525,9 @@ pub fn main() -> ExitCode {
                 flood_distance,
                 flood_report,
                 model,
+                method,
+                window_length,
+                threads,
             },
             &out.output,
             out.json,

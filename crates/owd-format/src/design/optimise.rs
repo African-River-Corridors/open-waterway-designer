@@ -141,6 +141,11 @@ pub struct OptimiseSettings {
     pub min_straight_m: f64,
     pub cell_m: f64,
     pub check_chord_m: Option<f64>,
+    /// `lattice` (the default: the weir cascade, then the pool lattice) or `windows` (the window
+    /// optimiser, OPT-5, on the alignment's line). Written only when it is not `lattice`.
+    pub method: String,
+    /// The window optimiser's settings: written (as `windows`) only with the window method.
+    pub windows: super::optimise_windows::WindowSettings,
 }
 
 impl Default for OptimiseSettings {
@@ -187,6 +192,8 @@ impl Default for OptimiseSettings {
             min_straight_m: 0.0,
             cell_m: 2.0,
             check_chord_m: None,
+            method: "lattice".into(),
+            windows: super::optimise_windows::WindowSettings::default(),
         }
     }
 }
@@ -271,6 +278,12 @@ impl OptimiseSettings {
         }
         if self.min_straight_m != 0.0 {
             v["min_straight_m"] = json!(self.min_straight_m);
+        }
+        // The method (OPT-5), and the window optimiser's settings with it, only when it is not the
+        // pool lattice: a design that never chose it hashes as before.
+        if self.method != "lattice" {
+            v["method"] = json!(self.method);
+            v["windows"] = self.windows.to_value();
         }
         v
     }
@@ -486,6 +499,19 @@ impl OptimiseSettings {
                 }
                 "cell_m" => out.cell_m = f(k)?,
                 "check_chord_m" => out.check_chord_m = maybe(k)?,
+                "method" => {
+                    out.method = match v.as_str() {
+                        Some(m @ ("lattice" | "windows")) => m.to_string(),
+                        _ => {
+                            return Err(DesignError::Input(
+                                "the setting `method` must be `lattice` (the weir cascade and the \
+                                 pool lattice) or `windows` (the window optimiser)"
+                                    .into(),
+                            ));
+                        }
+                    }
+                }
+                "windows" => out.windows = out.windows.apply(v)?,
                 other => {
                     return Err(DesignError::Input(format!(
                         "the optimise stage has no setting `{other}`"
@@ -593,6 +619,18 @@ impl Session {
         let _ = owd_core::types::grid::take_grid_read();
 
         let typed = self.optimise_settings(overrides)?;
+        // The window optimiser (OPT-5): no cascade, the alignment's line redesigned window by window.
+        if typed.method == super::optimise_windows::WINDOWS {
+            if typed.flood_on() {
+                return Err(DesignError::Input(
+                    "the flood cost, the bank limit and the flood report belong to the weir \
+                     cascade, which the window method does not run: use `method` `lattice` for \
+                     them"
+                        .into(),
+                ));
+            }
+            return self.run_optimise_windows(&typed, terrain);
+        }
         // Flooded land and bank-full are read from the ground levels. With no DEM the stage runs on
         // plan area and chooses no weirs, so there is no pool to price or to limit: a flood cost, a
         // limit above bank-full or the flood report is refused, never dropped.
@@ -1074,39 +1112,7 @@ impl Session {
         // The lattice does not steer by the constraints yet (spec 0017 ticket 16, line refinement):
         // its line reports what its footprint enters and fails `no_go_clear` when it enters a no-go
         // area or hard-exclusion ground, as every design line does (ticket 13).
-        if let Some(c) = self.constraints()?.filter(|c| !c.is_empty()) {
-            let raster = match self.stage_multiplier() {
-                Ok(r) => r,
-                Err(path) => {
-                    return Err(refuse(format!(
-                        "OPTIMISE_NO_MULTIPLIER: the cut-rate multiplier raster `{path}` is not \
-                         there to read: put it beside the design, or set it again"
-                    )));
-                }
-            };
-            let epsg = self.multiplier_epsg();
-            let weight = match &raster {
-                Some(r) => Some((
-                    super::constraints::multiplier_sampler(r, epsg)
-                        .map_err(super::rule_sets::stage_error)?,
-                    super::constraints::multiplier_cell_m(r, epsg)
-                        .map_err(super::rule_sets::stage_error)?,
-                )),
-                None => None,
-            };
-            let m = weight
-                .as_ref()
-                .map(|(w, cell_m)| super::constraints::Multiplier {
-                    at: w as TerrainSampler,
-                    cell_m: *cell_m,
-                });
-            super::design_line::mark_constraints(
-                &mut refined,
-                &self.channel_size()?,
-                &c,
-                m.as_ref(),
-            );
-        }
+        self.mark_optimised_constraints(&mut refined)?;
         // The design line's own sanity check, one warning for each pool (or piece) whose search
         // hit its limit (issue #559), and one for each pool join that does not hold R_min (issue #6).
         if let Some(w) = refined.sanity["warnings"].as_array_mut() {
@@ -1184,6 +1190,45 @@ impl Session {
         st["engine_version"] = json!(ENGINE_VERSION);
         let h = self.dependency_hash(Stage::Optimise);
         self.doc["stages"]["optimise"]["depends_on"] = json!(h);
+        Ok(())
+    }
+}
+
+impl Session {
+    /// Mark what an optimised line's footprint enters (the no-go areas, hard-exclusion ground), as
+    /// every design line does (ticket 13). Nothing when the design has no constraints.
+    pub(super) fn mark_optimised_constraints(
+        &self,
+        refined: &mut super::design_line::DesignLine,
+    ) -> Result<(), DesignError> {
+        if let Some(c) = self.constraints()?.filter(|c| !c.is_empty()) {
+            let raster = match self.stage_multiplier() {
+                Ok(r) => r,
+                Err(path) => {
+                    return Err(refuse(format!(
+                        "OPTIMISE_NO_MULTIPLIER: the cut-rate multiplier raster `{path}` is not \
+                         there to read: put it beside the design, or set it again"
+                    )));
+                }
+            };
+            let epsg = self.multiplier_epsg();
+            let weight = match &raster {
+                Some(r) => Some((
+                    super::constraints::multiplier_sampler(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                    super::constraints::multiplier_cell_m(r, epsg)
+                        .map_err(super::rule_sets::stage_error)?,
+                )),
+                None => None,
+            };
+            let m = weight
+                .as_ref()
+                .map(|(w, cell_m)| super::constraints::Multiplier {
+                    at: w as TerrainSampler,
+                    cell_m: *cell_m,
+                });
+            super::design_line::mark_constraints(refined, &self.channel_size()?, &c, m.as_ref());
+        }
         Ok(())
     }
 }

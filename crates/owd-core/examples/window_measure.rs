@@ -123,6 +123,28 @@ fn main() {
                 &rule(44.0, 60.0, r_min),
             );
         }
+        "budget" => {
+            // One window of the given length on a gentle sine river: the search's states,
+            // expansions and seconds, and the saving.
+            let km: f64 = args.get(2).and_then(|a| a.parse().ok()).unwrap_or(1.0);
+            let r_min: f64 = args.get(3).and_then(|a| a.parse().ok()).unwrap_or(180.0);
+            let f = fx::sine_river(km * 1000.0, 2000.0, 150.0, 60.0);
+            let mut cfg = WindowConfig::defaults(r_min, 60.0, 44.0, depth);
+            cfg.window_target_m = km * 1000.0;
+            cfg.window_min_m = cfg.window_min_m.min(km * 1000.0);
+            cfg.window_max_m = cfg.window_max_m.max(km * 1000.0 + 1.0);
+            cfg.second_pass = false;
+            cfg.window_time_s = 3600.0;
+            if args.get(4).is_some_and(|a| a == "nopolish") {
+                cfg.polish = None;
+            }
+            run(
+                &format!("budget {km} km R_min {r_min}"),
+                &f,
+                &cfg,
+                &rule(44.0, 60.0, r_min),
+            );
+        }
         other => eprintln!("unknown case {other}"),
     }
 }
