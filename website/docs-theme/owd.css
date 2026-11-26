@@ -78,3 +78,8 @@ body { background: var(--paper); }
 
 .md-typeset .admonition, .md-typeset details { border-left-width: var(--lw-design); box-shadow: none; font-size: .8rem; background: var(--surface); color: var(--ink); }
 .md-footer-meta { border-top: var(--lw-thick) solid var(--ink); }
+
+/* Formulas (MathML, made at build time by hooks.py) and the figures of a page. */
+.owd-math { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+.md-typeset math { font-size: 1.08em; }
+.md-typeset img[src$=".svg"] { display: block; width: 100%; height: auto; margin: 1em 0 0.25em; border: 1px solid var(--rule); background: #ffffff; }

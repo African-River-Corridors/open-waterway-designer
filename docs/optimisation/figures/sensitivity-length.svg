@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 400" font-family="'Public Sans', system-ui, sans-serif" role="img" aria-label="Cost per metre: dredge, dry cut and pools re-routed">
+<title>Cost per metre: dredge, dry cut and pools re-routed</title>
+<rect width="960" height="400" fill="#ffffff"/>
+<line x1="110.0" y1="330.0" x2="930.0" y2="330.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="104.0" y="334.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">0</text>
+<line x1="110.0" y1="262.5" x2="930.0" y2="262.5" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="104.0" y="266.5" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">150,000</text>
+<line x1="110.0" y1="195.0" x2="930.0" y2="195.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="104.0" y="199.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">300,000</text>
+<line x1="110.0" y1="127.5" x2="930.0" y2="127.5" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="104.0" y="131.5" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">450,000</text>
+<line x1="110.0" y1="60.0" x2="930.0" y2="60.0" stroke="#d8caa6" stroke-width="0.5"/>
+<text x="104.0" y="64.0" font-size="11" fill="#1f1e1b" text-anchor="end" font-weight="normal">600,000</text>
+<rect x="151.0" y="211.9" width="93.7" height="118.1" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="197.8" y="207.9" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">262,511</text>
+<rect x="246.7" y="275.7" width="93.7" height="54.3" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="293.5" y="271.7" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">120,752</text>
+<text x="246.7" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">cost per metre 0 (base)</text>
+<text x="246.7" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">1 of 5 pools re-routed; line 6,696 m</text>
+<rect x="424.3" y="211.6" width="93.7" height="118.4" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="471.2" y="207.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">263,216</text>
+<rect x="520.0" y="265.2" width="93.7" height="64.8" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="566.8" y="261.2" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">144,060</text>
+<text x="520.0" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">cost per metre 300 per m</text>
+<text x="520.0" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">3 of 5 pools re-routed; line 6,667 m</text>
+<rect x="697.7" y="238.1" width="93.7" height="91.9" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="744.5" y="234.1" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">204,319</text>
+<rect x="793.3" y="91.6" width="93.7" height="238.4" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="840.2" y="87.6" font-size="10" fill="#1f1e1b" text-anchor="middle" font-weight="normal">529,851</text>
+<text x="793.3" y="346.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal">cost per metre 1,000 per m</text>
+<text x="793.3" y="361.0" font-size="10" fill="#55524b" text-anchor="middle" font-weight="normal">5 of 5 pools re-routed; line 6,289 m</text>
+<rect x="120.0" y="34.0" width="14.0" height="12.0" fill="#9fcad1" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="140.0" y="45.0" font-size="11" fill="#1f1e1b" text-anchor="start" font-weight="normal">dredge, m³</text>
+<rect x="310.0" y="34.0" width="14.0" height="12.0" fill="#f1c37f" stroke="#1f1e1b" stroke-width="0.6" rx="0"/>
+<text x="330.0" y="45.0" font-size="11" fill="#1f1e1b" text-anchor="start" font-weight="normal">dry cut, m³</text>
+<text x="38.0" y="195.0" font-size="11" fill="#1f1e1b" text-anchor="middle" font-weight="normal" transform="rotate(-90 38.0 195.0)">volume, m³</text>
+<text x="952" y="392" font-size="10" fill="#55524b" text-anchor="end">Drawn by us, not by OWD</text>
+</svg>

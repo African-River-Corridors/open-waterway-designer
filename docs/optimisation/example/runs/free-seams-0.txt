@@ -1,0 +1,16 @@
+$ owd optimise free-seams-0.owd --lifts 0.5,1,1.5,2 --sites 1000,2000,3000,4000,5000,6000 --flood-report --free-seams --weir-straight 0
+weirs: 1000 m -> pool 2.0 m, 2000 m -> pool 4.0 m, 3000 m -> pool 6.0 m, 4000 m -> pool 6.5 m
+Pool lattice: 2 pool(s) re-routed, minimum radius 255 m on a 85 m chord against R_min 255 m: ok
+flooded land outside the river polygon: 7.2 ha, flood cost 0 at 0 per ha (cut cost 309031)
+bank-full is an estimate from the DEM: in each 500 m of line, the 25th percentile of the ground in the cells that touch the river polygon, on each side of the line, and the lower of the two sides
+  pool (m along the line) | level m | lift m | flooded ha | above bank-full m, lower / upper end | over the DEM river level m, lower / upper end
+  0 to 1000 | 0.00 | - | 0.0 | -2.58 / -3.11 | 1.58 / 1.01
+  1000 to 2000 | 2.00 | 2.00 | 0.0 | -1.64 / -2.06 | 2.49 / 1.98
+  2000 to 3000 | 4.00 | 2.00 | 0.2 | -0.61 / -1.07 | 3.48 / 3.06
+  3000 to 4000 | 6.00 | 2.00 | 6.5 | 0.39 / -0.94 | 4.08 / 3.22
+  4000 to 6682 | 6.50 | 0.50 | 0.5 | -0.94 / -3.35 | 3.29 / 0.89
+owd: warning: Pool lattice: the weir site at 1000 m is pinned to the baseline's point and heading: with a free end here, the pool or piece upstream would keep its baseline (the line there is straight for 10 m against 0 m asked; the baseline's local radius there is 639 m)
+owd: warning: Pool lattice: the weir site at 2000 m is pinned to the baseline's point and heading: with a free end here, the pool or piece upstream would keep its baseline (the line there is straight for 0 m against 0 m asked; the baseline's local radius there is 639 m)
+owd: warning: Pool lattice: the weir site at 4000 m is pinned to the baseline's point and heading: started from the free pose here, the pool or piece downstream would keep its baseline (the line there is straight for 1 m against 0 m asked; the baseline's local radius there is 430 m)
+$ owd volumes free-seams-0.owd
+Pool lattice: dredge 266017 m3, dry cut 111227 m3, tallest face 3.5 m

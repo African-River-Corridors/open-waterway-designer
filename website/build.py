@@ -7,7 +7,8 @@ website/README.md for why).
 Steps:
   1. Copy the static pages and assets to _site/.
   2. Assemble the docs Markdown into _docs/: the repo's own files, not copies kept in git.
-     Links between the docs are kept; links to other repo files go to GitHub.
+     Links between the docs are kept; links to other repo files go to GitHub. The figures a page
+     shows (ASSETS) are copied beside it.
   3. Run mkdocs (website/mkdocs.yml) into _site/docs/.
 
 Optional: --app-dist <dir> adds the built web app (app/dist-web, from `npm run build:web`):
@@ -51,6 +52,13 @@ PAGES = {
     "docs/rules/codification.md": "codification.md",
     "docs/examples/sassandra.md": "examples/sassandra.md",
     "docs/reports.md": "reports.md",
+    "docs/optimisation/README.md": "optimisation.md",
+    "docs/optimisation/appendices.md": "optimisation-appendices.md",
+}
+# Repo folder -> folder in the docs, copied as it is: the figures a page shows. A link into one of
+# these stays on the site; a link to any other repo file goes to GitHub.
+ASSETS = {
+    "docs/optimisation/figures": "optimisation-figures",
 }
 for folder in ("docs/adr", "docs/specs"):
     for md in sorted((REPO / folder).glob("*.md")):
@@ -68,6 +76,10 @@ def rewrite_link(target: str, source: str, dest: str) -> str:
     if resolved in PAGES:
         rel = os.path.relpath(PAGES[resolved], os.path.dirname(dest) or ".")
         return rel + anchor
+    for folder, served in ASSETS.items():
+        if resolved.startswith(folder + "/") and (REPO / resolved).is_file():
+            inside = served + resolved[len(folder):]
+            return os.path.relpath(inside, os.path.dirname(dest) or ".") + anchor
     if (REPO / resolved).is_dir():
         return TREE + resolved + anchor
     if (REPO / resolved).exists():
@@ -83,6 +95,8 @@ def assemble_docs() -> None:
         out = DOCS_SRC / dest
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(text, encoding="utf-8")
+    for folder, served in ASSETS.items():
+        shutil.copytree(REPO / folder, DOCS_SRC / served)
     assets = DOCS_SRC / "assets"
     shutil.copytree(WEBSITE / "assets" / "logo", assets / "logo")
     shutil.copytree(WEBSITE / "fonts", assets / "fonts")  # tokens.css finds them at fonts/

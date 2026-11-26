@@ -3,12 +3,18 @@
 on_config: expands a nav entry "adr/" or "specs/" into every page in that folder, so a new ADR or
 spec shows up without editing mkdocs.yml.
 
+on_page_content: turns every formula into MathML (the docs write formulas as $...$ and $$...$$, as
+GitHub reads them; `pymdownx.arithmatex` marks them, and `latex2mathml` converts them here). A page
+then needs no script and no request to show its formulas. A formula that cannot be converted fails
+the build.
+
 on_post_page: makes every relative URL an absolute, clean /owd/docs/... path. The ARC site
 serves the docs at /owd/docs with no trailing slash, where a relative URL would resolve against
 the wrong folder. Clean means no ".html": the ARC site redirects ".html" URLs, and GitHub Pages
 serves page.html for /page.
 """
 
+import html
 import json
 import re
 from pathlib import Path
@@ -17,6 +23,27 @@ from urllib.parse import urljoin, urlsplit
 PREFIX = "/owd/docs/"
 ATTR = re.compile(r'\b(href|src)="([^"]*)"')
 CONFIG = re.compile(r'(<script id="__config" type="application/json">)(.*?)(</script>)', re.S)
+
+
+MATH = re.compile(r'<(span|div) class="arithmatex">(.*?)</\1>', re.S)
+
+
+def to_mathml(m):
+    from latex2mathml.converter import convert
+
+    tex = html.unescape(m[2]).strip()
+    block = m[1] == "div"
+    opener, closer = ("\\[", "\\]") if block else ("\\(", "\\)")
+    if not (tex.startswith(opener) and tex.endswith(closer)):
+        raise ValueError(f"a formula is not wrapped as expected: {tex[:60]!r}")
+    mathml = convert(tex[2:-2].strip(), display="block" if block else "inline")
+    if block:
+        return f'<div class="owd-math">{mathml}</div>'
+    return mathml
+
+
+def on_page_content(html_text, page, config, files):
+    return MATH.sub(to_mathml, html_text)
 
 
 def on_config(config):
