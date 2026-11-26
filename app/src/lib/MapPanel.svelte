@@ -290,8 +290,11 @@
       if (map.getLayer("cut-depth")) map.removeLayer("cut-depth");
       if (map.getSource("cut")) map.removeSource("cut");
       if (terrain && terrain.cut != null && key) {
-        // Further out than zoom 8 a channel is thinner than a pixel: nothing is asked for there.
-        map.addSource("cut", { type: "raster", tiles: [cutTemplate(terrain.id, terrain.cut)], tileSize: 256, minzoom: 8, maxzoom: Math.max(terrain.max_zoom, 9), bounds: terrain.bounds });
+        // Further out than zoom 8 a channel is thinner than a pixel: nothing is asked for there. The cut is
+        // worked out at each pixel from the stations, not read from the DEM's cells, so tiles are made three
+        // zoom levels past the DEM's own: zoomed in close, the colour's edge follows the daylight line and not
+        // a staircase of DEM-sized pixels.
+        map.addSource("cut", { type: "raster", tiles: [cutTemplate(terrain.id, terrain.cut)], tileSize: 256, minzoom: 8, maxzoom: Math.min(Math.max(terrain.max_zoom + 3, 9), 22), bounds: terrain.bounds });
         // Over the imagery, the shading, the contours and the river polygon; under the lines of the design.
         map.addLayer({ id: "cut-depth", type: "raster", source: "cut", paint: { "raster-opacity": 0.85, "raster-resampling": "nearest", "raster-fade-duration": 0 } }, "banks");
       }
