@@ -289,7 +289,7 @@ pub fn polish(
                 }
             }
             let gained = before - f;
-            if !(gained > set.ftol * f.abs()) {
+            if gained.partial_cmp(&(set.ftol * f.abs())) != Some(core::cmp::Ordering::Greater) {
                 step *= 0.5;
                 if step < set.xtol_m {
                     break;
@@ -367,7 +367,7 @@ mod tests {
         let segments = 6;
         let mut c = vec![0.0; segments + 3];
         for (j, v) in c.iter_mut().enumerate().take(segments + 1).skip(2) {
-            *v = (j as f64).sin() * 10.0;
+            *v = libm::sin(j as f64) * 10.0;
         }
         let d = |s: f64| {
             let (span, w) = basis(s, 600.0, segments);

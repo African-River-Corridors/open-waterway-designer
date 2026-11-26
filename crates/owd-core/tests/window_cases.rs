@@ -222,7 +222,7 @@ fn s8_a_weir_is_a_seam_the_line_runs_straight_through() {
         .map(|p| {
             let t = (p[0] - 2300.0) / 800.0;
             let d = if (0.0..=1.0).contains(&t) {
-                15.0 * (1.0 - (2.0 * std::f64::consts::PI * t).cos())
+                15.0 * (1.0 - libm::cos(2.0 * std::f64::consts::PI * t))
             } else {
                 0.0
             };
@@ -345,5 +345,9 @@ fn s9_held_to_the_river_the_line_makes_no_new_departure() {
     assert!(outside(&free.line) > 20.0, "free: {}", outside(&free.line));
     cfg.stay_in_river = true;
     let held = run(&f, &cfg);
-    assert!(outside(&held.line) <= cfg.cell_m, "held: {}", outside(&held.line));
+    assert!(
+        outside(&held.line) <= cfg.cell_m,
+        "held: {}",
+        outside(&held.line)
+    );
 }

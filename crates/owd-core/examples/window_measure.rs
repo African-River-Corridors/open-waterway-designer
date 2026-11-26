@@ -75,7 +75,20 @@ fn run(name: &str, f: &WindowFixture, cfg: &WindowConfig, rule: &HalfWidthRule) 
             w.full_start.max_face_h_m,
             w.full_found.map(|m| (m.max_face_h_m * 10.0).round() / 10.0),
         );
+        println!(
+            "     unknown ground {:.2} %, lengths start {:.0} found {:?}",
+            w.unknown_ground_pct,
+            w.full_start.length_m,
+            w.full_found.map(|m| m.length_m.round())
+        );
     }
+    println!(
+        "  end to end: unknown ground {:.2} % / {:.2} %, lengths {:.0} -> {:.0}",
+        100.0 * out.start_total.unknown_share,
+        100.0 * out.result_total.unknown_share,
+        out.start_total.length_m,
+        out.result_total.length_m
+    );
     for wn in &out.warnings {
         println!("  warning: {wn}");
     }
@@ -144,6 +157,47 @@ fn main() {
                 &cfg,
                 &rule(44.0, 60.0, r_min),
             );
+        }
+        "s4" => {
+            // A long S with a ridge inside its first bend, searched in windows of at most
+            // `window_max_m`, with and without the second pass.
+            let r_min = 300.0;
+            let f = fx::long_s(900.0, 1.4, 60.0, 600.0, 20.0);
+            for (max, pass2) in [(1000.0_f64, false), (1000.0, true), (4500.0, false)] {
+                let mut cfg = WindowConfig::defaults(r_min, loa, bw, depth);
+                cfg.window_min_m = 700.0;
+                cfg.window_target_m = max.min(1500.0);
+                cfg.window_max_m = max;
+                cfg.second_pass = pass2;
+                cfg.window_time_s = 1800.0;
+                run(
+                    &format!("S4 max {max} pass2 {pass2}"),
+                    &f,
+                    &cfg,
+                    &rule(bw, loa, r_min),
+                );
+            }
+        }
+        "s11" => {
+            // S2 at (pitch 12, 64 headings) and (pitch 8, 96 headings).
+            let r_min = 300.0;
+            for (pitch, n) in [(12.0, 64), (8.0, 96)] {
+                let f = fx::bend_against_spur(250.0, 60.0, 800.0, r_min);
+                let mut cfg = WindowConfig::defaults(r_min, loa, bw, depth);
+                cfg.window_max_m = 4000.0;
+                cfg.lattice.pitch_m = pitch;
+                cfg.lattice.straight_len_m = Some(2.0 * pitch);
+                cfg.lattice.n_heading = n;
+                cfg.lattice.goal_pos_tol_m = None;
+                cfg.lattice = cfg.lattice.clone().validated().expect("valid");
+                cfg.window_time_s = 1800.0;
+                run(
+                    &format!("S11 pitch {pitch} headings {n}"),
+                    &f,
+                    &cfg,
+                    &rule(bw, loa, r_min),
+                );
+            }
         }
         other => eprintln!("unknown case {other}"),
     }

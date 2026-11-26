@@ -504,7 +504,14 @@ fn run_window(
         Some(v) => LevelAt::Fixed(v),
         None => LevelAt::ByPoint(&level_fn),
     };
-    let grid_terrain = |xs: &[f64], ys: &[f64]| grid.sample_ground(xs, ys);
+    // The window's ground for the full measure: the grid, read on the side of the river's edge
+    // each sample is on (the cutter tests the same polygon).
+    let grid_terrain = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
+        xs.iter()
+            .zip(ys)
+            .map(|(&x, &y)| grid.sample_ground_split(x, y, inp.river_index.contains_xy([x, y])))
+            .collect()
+    };
     let cutter = SectionCutter::new(
         inp.river_index,
         cfg.section.depth_m,

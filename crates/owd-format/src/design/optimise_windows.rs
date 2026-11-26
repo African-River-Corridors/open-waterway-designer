@@ -571,7 +571,7 @@ impl Session {
                     .into_iter()
                     .filter(|r| *r >= r_min)
                     .collect();
-                if !r.iter().any(|x| *x == r_min) {
+                if !r.contains(&r_min) {
                     r.insert(0, r_min);
                 }
                 r

@@ -256,5 +256,5 @@ fn the_window_method_keeps_the_pools_of_a_fresh_lattice_run_and_its_weirs_are_se
 }
 
 fn dist(a: Pt, b: Pt) -> f64 {
-    (a[0] - b[0]).hypot(a[1] - b[1])
+    ((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1])).sqrt()
 }
