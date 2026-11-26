@@ -174,6 +174,17 @@ fn status_lists_what_is_named_and_checks_the_dem_hash_against_the_design() {
     assert_eq!(v["items"][1]["state"], "there");
     assert_eq!(v["problems"].as_array().unwrap().len(), 0);
 
+    // `--full` hashes every byte as well (COG-1): the design recorded a full hash, and it matches.
+    let o = owd(&["project", "status", folder, "--json", "--full"]);
+    assert_eq!(code(&o), 0, "{}", err(&o));
+    let v: Value = serde_json::from_str(&out(&o)).unwrap();
+    assert_eq!(v["dem"]["method"], "full");
+    assert_eq!(v["dem"]["full"], "matches");
+    assert_eq!(
+        v["dem"]["full_sha256"],
+        json(&d.join("design/reach-a.owd"))["inputs"]["dem"]["sha256"]
+    );
+
     // Another DEM under the same name: the hash differs, exit code 1.
     let dem = d.join("terrain/reach-a-dem.tif");
     let mut bytes = std::fs::read(&dem).unwrap();

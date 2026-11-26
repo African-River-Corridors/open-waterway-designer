@@ -180,13 +180,24 @@ fn a_dem_of_1_2_billion_cells_is_opened_and_a_100_km_line_runs_within_the_cache(
         "opening read the directories only: {open_s} s"
     );
     assert_eq!((dem.width(), dem.height()), (w, h));
-    assert!(dem.layout().big, "a file of this size is a BigTIFF");
+    // Compressed, the file is a BigTIFF only if it passes 4 GiB; the offsets past 4 GiB are proved
+    // in `sectioned.rs` by layout.
+    let size = std::fs::metadata(&path).unwrap().len();
+    assert_eq!(
+        dem.layout().big,
+        size > u64::from(u32::MAX) - 1024,
+        "{size} bytes"
+    );
     let sampler = dem_sampler(&dem, Some(32630)).unwrap();
     let pts = line(Y1 - 5_000.0, 100_000.0, w as f64 * cell);
     let started = Instant::now();
     let (dredge, excav) = volumes(&pts, &sampler);
     let run_s = started.elapsed().as_secs_f64();
-    assert!(dredge > 0.0 && excav >= 0.0);
+    // No river polygon is given, so every cut counts as dry cut.
+    assert!(
+        dredge == 0.0 && excav > 0.0,
+        "dredge {dredge}, dry cut {excav}"
+    );
     let st = dem.cache_stats();
     assert!(
         st.peak_bytes <= DEFAULT_CACHE_BYTES,
