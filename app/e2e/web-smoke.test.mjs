@@ -2456,13 +2456,18 @@ describe("OWD web smoke tests", () => {
       const g = (await p.call("channel_geometry")).geometry;
       const info = await p.call("terrain_info");
       const water = await p.call("pool_water_info");
-      // The deepest dry cut between the daylight lines: high ground the channel is cut through.
+      // The deepest dry cut on the cut slopes: high ground the channel is cut through. Each bank's daylight line
+      // runs only where that bank is cut, so each daylight point is paired with the nearest point of the
+      // water's edge on its own bank, and the slope between them is searched.
       const day = g.daylight;
+      const edges = [...g.water_surface.left, ...g.water_surface.right].flat();
+      const nearest = (q) => edges.reduce((a, e) => ((e[0] - q[0]) ** 2 + (e[1] - q[1]) ** 2 < (a[0] - q[0]) ** 2 + (a[1] - q[1]) ** 2 ? e : a));
       let best = null;
-      for (let i = 2; i < day.left[0].length - 2; i += 1) {
+      for (const q of [...day.left, ...day.right].flat()) {
+        const w = nearest(q);
         for (const t of [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]) {
-          const lon = day.left[0][i][0] + (day.right[0][i][0] - day.left[0][i][0]) * t;
-          const lat = day.left[0][i][1] + (day.right[0][i][1] - day.left[0][i][1]) * t;
+          const lon = q[0] + (w[0] - q[0]) * t;
+          const lat = q[1] + (w[1] - q[1]) * t;
           const c = await p.call("cut_at", { lon, lat });
           if (c && c.kind === "dry" && (!best || c.depth_m > best.c.depth_m)) best = { lon, lat, c };
         }

@@ -483,6 +483,8 @@ export interface MapStructures {
   model: LockModel;
   pools: PoolReach[];
   weirs: WeirSite[];
+  /** The steps of the water level along the design line: each has its weir (a check the map shows). */
+  level_steps: number;
 }
 /** Made by the session on demand from the water level along the design line: nothing of it is in the design file. */
 export const mapStructures = () => invoke<MapStructures>("map_structures");
