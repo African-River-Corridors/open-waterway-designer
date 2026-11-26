@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+pub mod blob;
 pub mod terrain;
 
 type Js<T> = Result<T, JsValue>;
