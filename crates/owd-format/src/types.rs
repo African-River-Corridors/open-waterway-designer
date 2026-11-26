@@ -123,8 +123,13 @@ impl RiverPolygon {
 pub struct ElevationModel {
     /// Path relative to the document.
     pub path: String,
-    /// SHA-256 of the file, in hex.
-    pub sha256: String,
+    /// SHA-256 of the file, in hex. A large sectioned file is recorded by `quick_check` instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    /// The quick check of a large sectioned file (COG-1): its length and a hash of its structure
+    /// and a sample of its blocks, so checking it does not read it all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quick_check: Option<QuickCheck>,
     /// The raster's CRS: `EPSG:nnnn`, or `unknown`.
     pub crs: String,
     /// The value that marks no data, if the file has one.
@@ -132,6 +137,17 @@ pub struct ElevationModel {
     /// The user marks the raster as holding the river bed below the water level.
     #[serde(default, skip_serializing_if = "is_false")]
     pub holds_bathymetry: bool,
+}
+
+/// The quick check of a large sectioned DEM (`owd_format::sectioned::identity`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct QuickCheck {
+    /// The method, `owd-quick-1`.
+    pub method: String,
+    /// The file's length in bytes.
+    pub length: u64,
+    /// SHA-256, in hex, of the length, the structure and the sampled blocks.
+    pub sha256: String,
 }
 
 fn is_false(b: &bool) -> bool {

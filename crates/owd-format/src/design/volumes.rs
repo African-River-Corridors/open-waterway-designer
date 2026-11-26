@@ -6,7 +6,7 @@
 use super::geojson::all_positions;
 use super::hash::sha256_hex;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
-use crate::geotiff::Dem;
+use crate::sectioned::{ByteSource, Terrain, identity};
 use crate::types::{TerrainSampler, WaterProfile};
 use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Polygon, Pt};
@@ -128,15 +128,46 @@ impl Session {
         self.doc["inputs"]["dem"]["path"].as_str()
     }
 
-    /// Reference a DEM: its path relative to the document, the SHA-256 of its bytes, its CRS and its
-    /// nodata value. The bytes are not kept. The stages that depend on the inputs show as stale.
-    pub fn set_dem(&mut self, path: &str, bytes: &[u8], dem: &Dem) {
-        self.doc["inputs"]["dem"] = json!({
-            "path": path,
-            "sha256": sha256_hex(bytes),
-            "crs": super::terrain::dem_crs_name(dem),
-            "nodata": dem.nodata,
-        });
+    /// Reference a DEM: its path relative to the document, its identity, its CRS and its nodata
+    /// value. The bytes are not kept. The stages that depend on the inputs show as stale.
+    ///
+    /// The identity is the SHA-256 of every byte, as always, except for a large sectioned file (a
+    /// tiled TIFF of [`crate::sectioned::SECTIONED_FROM_BYTES`] or more), which is recorded by its
+    /// quick check (`quick_check`: method, length, hash; see [`crate::sectioned::identity`]) so
+    /// that checking it does not read the whole file.
+    pub fn set_dem<S: ByteSource + ?Sized>(
+        &mut self,
+        path: &str,
+        file: &S,
+        dem: &(impl Terrain + ?Sized),
+    ) {
+        let file: &dyn ByteSource = &file;
+        let recorded = identity::record(file, crate::sectioned::SECTIONED_FROM_BYTES);
+        self.doc["inputs"]["dem"] = match recorded {
+            Ok(identity::Recorded::Quick { length, sha256 }) => json!({
+                "path": path,
+                "quick_check": {
+                    "method": identity::QUICK_METHOD,
+                    "length": length,
+                    "sha256": sha256,
+                },
+                "crs": super::terrain::dem_crs_name(dem),
+                "nodata": dem.nodata(),
+            }),
+            Ok(identity::Recorded::Full(sha)) => json!({
+                "path": path,
+                "sha256": sha,
+                "crs": super::terrain::dem_crs_name(dem),
+                "nodata": dem.nodata(),
+            }),
+            // A file that cannot be read now: recorded by a hash no file has, so it never matches.
+            Err(_) => json!({
+                "path": path,
+                "sha256": "0".repeat(64),
+                "crs": super::terrain::dem_crs_name(dem),
+                "nodata": dem.nodata(),
+            }),
+        };
     }
 
     /// Mark the DEM as holding the river bed below the water level (surveyed bathymetry), or take
@@ -170,22 +201,55 @@ impl Session {
         }
     }
 
-    /// Compare the file the caller found at [`Session::dem_path`] with the recorded hash.
-    pub fn dem_check(&self, bytes: Option<&[u8]>) -> DemCheck {
+    /// Compare the file the caller found at [`Session::dem_path`] with the recorded identity: the
+    /// SHA-256 of every byte (read once, a piece at a time, and kept by a [`DemFile`]), or the
+    /// quick check of a large sectioned file (its length first, then the hash of its structure
+    /// and a sample of its blocks).
+    ///
+    /// [`DemFile`]: crate::sectioned::DemFile
+    pub fn dem_check<S: ByteSource + ?Sized>(&self, file: Option<&S>) -> DemCheck {
         let Some(dem) = self.doc["inputs"]["dem"].as_object() else {
             return DemCheck::NoDem;
         };
-        match bytes {
-            None => DemCheck::Missing,
-            Some(b) if Some(sha256_hex(b).as_str()) == dem["sha256"].as_str() => DemCheck::Matches,
-            Some(_) => DemCheck::Changed,
+        let Some(file) = file else {
+            return DemCheck::Missing;
+        };
+        let file: &dyn ByteSource = &file;
+        let same = if let Some(want) = dem.get("sha256").and_then(Value::as_str) {
+            let got = match (file.as_slice(), file.identities()) {
+                (Some(b), None) => Ok(sha256_hex(b)),
+                (_, Some(ids)) => ids.full(file),
+                (None, None) => identity::sha256_streaming(file, &mut |_, _| {}),
+            };
+            got.is_ok_and(|g| g == want)
+        } else if let Some(q) = dem.get("quick_check") {
+            let length = q["length"].as_u64();
+            let want = q["sha256"].as_str();
+            length == Some(file.len())
+                && q["method"] == identity::QUICK_METHOD
+                && match file.identities() {
+                    Some(ids) => ids.quick(file),
+                    None => identity::quick_check(file),
+                }
+                .is_ok_and(|(_, g)| Some(g.as_str()) == want)
+        } else {
+            false
+        };
+        if same {
+            DemCheck::Matches
+        } else {
+            DemCheck::Changed
         }
     }
 
     /// A stage's status given the DEM file the caller found. The recorded hash is in the document, so
     /// a changed or missing file is not visible to [`Session::stage_status`]: here a fresh `volumes`
     /// stage whose DEM does not match shows as stale.
-    pub fn stage_status_with_dem(&self, stage: Stage, bytes: Option<&[u8]>) -> StageStatus {
+    pub fn stage_status_with_dem<S: ByteSource + ?Sized>(
+        &self,
+        stage: Stage,
+        bytes: Option<&S>,
+    ) -> StageStatus {
         let status = self.stage_status(stage);
         let dem_bad = matches!(self.dem_check(bytes), DemCheck::Missing | DemCheck::Changed);
         if stage == Stage::Volumes && status == StageStatus::Fresh && dem_bad {
@@ -196,7 +260,10 @@ impl Session {
     }
 
     /// Every stage's status, given the DEM file the caller found.
-    pub fn status_with_dem(&self, bytes: Option<&[u8]>) -> super::session::Status {
+    pub fn status_with_dem<S: ByteSource + ?Sized>(
+        &self,
+        bytes: Option<&S>,
+    ) -> super::session::Status {
         super::session::Status {
             stages: Stage::ALL
                 .iter()

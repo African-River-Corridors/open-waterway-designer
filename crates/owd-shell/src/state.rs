@@ -10,7 +10,7 @@ use owd_format::design::sections::Stations;
 use owd_format::design::{
     AlignMethod, DesignError, NoteKind, OpenNote, Role, Session, Stage, StageStatus,
 };
-use owd_format::geotiff::{Dem, read_bytes};
+use owd_format::sectioned::{DemFile, Terrain, TerrainRef};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -27,9 +27,10 @@ pub struct AppState {
     /// ask the user to act are in `warnings` too; the rest are information.
     open_notes: Vec<OpenNote>,
     /// The DEM the document names, when the shell found it next to the document and it reads.
-    dem: Option<Arc<Dem>>,
-    /// The DEM file's bytes, for the hash check, and where it was read from.
-    dem_bytes: Option<Arc<Vec<u8>>>,
+    dem: Option<TerrainRef>,
+    /// The DEM file (its bytes in memory, or a file read by range: COG-1), for the identity
+    /// check, and where it was read from.
+    dem_src: Option<DemFile>,
     dem_file: Option<PathBuf>,
     /// The stage now running on a worker, if any.
     running: Option<(Stage, Arc<RunControl>)>,
@@ -53,10 +54,30 @@ pub struct AppState {
 /// How many bank edits can be undone.
 const UNDO_LIMIT: usize = 50;
 
+/// The memory of a sectioned DEM's cache of decoded blocks under the terrain limit `limit`
+/// (`None`: the reader's default cache).
+fn cache_budget(limit: Option<u64>) -> u64 {
+    limit.unwrap_or(owd_format::sectioned::terrain::DEFAULT_CACHE_BYTES)
+}
+
+/// The terrain in `file`: in sections when it is a large tiled file (its cache within `limit`),
+/// else whole, with `limit` as the most a whole grid may take (COG-1).
+pub fn open_dem(
+    file: &DemFile,
+    limit: Option<u64>,
+) -> Result<TerrainRef, owd_format::geotiff::GeoTiffError> {
+    owd_format::sectioned::open_terrain(
+        file.source().clone(),
+        owd_format::sectioned::SECTIONED_FROM_BYTES,
+        limit.unwrap_or_else(owd_format::geotiff::grid_limit),
+        cache_budget(limit),
+    )
+}
+
 /// The stations to fetch or make off the main thread.
 pub struct WalkJob {
     session: Session,
-    dem: Option<Arc<Dem>>,
+    dem: Option<TerrainRef>,
     epsg: Option<u32>,
     option: String,
     key: String,
@@ -238,7 +259,7 @@ impl AppState {
             warnings: Vec::new(),
             open_notes: Vec::new(),
             dem: None,
-            dem_bytes: None,
+            dem_src: None,
             dem_file: None,
             running: None,
             walk: None,
@@ -260,7 +281,17 @@ impl AppState {
     /// [`AppState::open`] for a caller that owns the DEM file's bytes: they are kept as they are,
     /// not copied (a large DEM in the browser, where memory is short).
     pub fn open_owned(path: &Path, text: &str, dem: Option<Vec<u8>>) -> Result<AppState, String> {
-        let dem_bytes = dem.as_deref();
+        AppState::open_with_file(path, text, dem.map(DemFile::from_bytes))
+    }
+
+    /// [`AppState::open`] with the DEM as a file read by range (COG-1): a large tiled file is never
+    /// read whole, only the blocks the stages and the map ask for.
+    pub fn open_with_file(
+        path: &Path,
+        text: &str,
+        dem: Option<DemFile>,
+    ) -> Result<AppState, String> {
+        let dem_bytes = dem.as_ref();
         owd_format::design::check_file_name(&path.to_string_lossy()).map_err(message)?;
         let mut session = Session::open(text).map_err(message)?;
         // A file from format 0.4 records no mouth: with no water level to tell, its DEM tells, when
@@ -271,7 +302,7 @@ impl AppState {
                 .map(|c| c as u32);
             let dem = owd_format::design::stage_terrain(&session, dem_bytes)
                 .ok()
-                .and_then(|b| read_bytes(b).ok());
+                .and_then(|f| open_dem(f, None).ok());
             let sampler = dem
                 .as_ref()
                 .and_then(|d| owd_format::design::terrain::dem_sampler(d, epsg).ok());
@@ -299,8 +330,8 @@ impl AppState {
             dirty: false,
             warnings,
             open_notes,
-            dem: dem_bytes.and_then(|b| read_bytes(b).ok()).map(Arc::new),
-            dem_bytes: dem.map(Arc::new),
+            dem: dem_bytes.and_then(|f| open_dem(f, None).ok()),
+            dem_src: dem,
             dem_file,
             running: None,
             walk: None,
@@ -323,7 +354,7 @@ impl AppState {
     pub fn open_in_project(
         design: &Path,
         text: &str,
-        dem: Option<(&Path, Vec<u8>)>,
+        dem: Option<(&Path, DemFile)>,
         date: &str,
     ) -> Result<(AppState, Option<String>), String> {
         let Some((dem_file, bytes)) = dem else {
@@ -331,20 +362,17 @@ impl AppState {
         };
         if AppState::dem_path(text).is_none() {
             let mut state = AppState::open_owned(design, text, None)?;
-            state.load_dem(dem_file, bytes, date)?;
+            state.load_dem_file(dem_file, bytes, date)?;
             let note = format!(
                 "The design did not name a DEM: it now names the project's, `{}`. Save to keep that.",
                 state.session.dem_path().unwrap_or("?")
             );
             return Ok((state, Some(note)));
         }
-        let mut state = AppState::open_owned(design, text, Some(bytes))?;
+        let mut state = AppState::open_with_file(design, text, Some(bytes))?;
         // The terrain rule's one reader says whether this is the file the design recorded.
-        let same_file = owd_format::design::stage_terrain(
-            &state.session,
-            state.dem_bytes.as_deref().map(|b| b.as_slice()),
-        )
-        .is_ok();
+        let same_file =
+            owd_format::design::stage_terrain(&state.session, state.dem_src.as_ref()).is_ok();
         let mut note = None;
         if same_file {
             let before = state.session.dem_path().map(str::to_string);
@@ -462,7 +490,7 @@ impl AppState {
     pub fn stretches_geojson(&self) -> Result<Value, String> {
         let text = self
             .session
-            .export_stretches_geojson(true, self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .export_stretches_geojson(true, self.dem_src.as_ref())
             .map_err(message)?;
         serde_json::from_str(&text).map_err(|e| e.to_string())
     }
@@ -501,8 +529,7 @@ impl AppState {
 
     /// The option comparison table and the checks list, from the session.
     pub fn option_table(&self) -> Value {
-        self.session
-            .option_table(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+        self.session.option_table(self.dem_src.as_ref())
     }
 
     /// The plan map's geometry in WGS84, from the session.
@@ -525,7 +552,7 @@ impl AppState {
     }
 
     /// The DEM, to draw the offline hillshade from. `None` when there is none to read.
-    pub fn dem(&self) -> Option<Arc<Dem>> {
+    pub fn dem(&self) -> Option<TerrainRef> {
         self.dem.clone()
     }
 
@@ -622,6 +649,12 @@ impl AppState {
     /// Reference a DEM file and keep it for the stages. A DEM the stages could not sample is
     /// refused, with the CRS named. It is marked `user` in the provenance, dated `date`.
     pub fn load_dem(&mut self, file: &Path, bytes: Vec<u8>, date: &str) -> Result<(), String> {
+        self.load_dem_file(file, DemFile::from_bytes(bytes), date)
+    }
+
+    /// [`AppState::load_dem`] for a file read by range (COG-1): a large tiled file is opened in
+    /// sections, so loading reads its directories and nothing more.
+    pub fn load_dem_file(&mut self, file: &Path, bytes: DemFile, date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
         let base = self.path.as_deref().and_then(Path::parent);
         let rel = match base {
@@ -632,13 +665,13 @@ impl AppState {
         let terrain = crate::import::Terrain {
             path: &rel,
             name: &name,
-            bytes: &bytes,
+            file: &bytes,
             limit_bytes: self.terrain_limit,
         };
         let done = crate::import::import(&mut self.session, &[], Some(terrain), date)
             .map_err(|e| with_limit_hint(e.to_string()))?;
-        self.dem = done.dem.map(Arc::new);
-        self.dem_bytes = Some(Arc::new(bytes));
+        self.dem = done.dem;
+        self.dem_src = Some(bytes);
         self.dem_file = Some(file.to_path_buf());
         self.warnings.clear();
         // The warnings went; the information about the older format stays until the design is saved.
@@ -666,13 +699,14 @@ impl AppState {
             ));
         }
         self.terrain_limit = limit;
+        // A sectioned DEM: the limit is the memory of its cache of decoded blocks, not the file.
+        if let Some(sec) = self.dem.as_ref().and_then(|d| d.sectioned()) {
+            sec.set_cache_budget(cache_budget(limit));
+        }
         if self.dem.is_none()
-            && let Some(bytes) = &self.dem_bytes
+            && let Some(file) = &self.dem_src
         {
-            let within = limit.unwrap_or_else(owd_format::geotiff::grid_limit);
-            self.dem = owd_format::geotiff::read_bytes_within(bytes, within)
-                .ok()
-                .map(Arc::new);
+            self.dem = open_dem(file, limit).ok();
         }
         Ok(())
     }
@@ -989,8 +1023,8 @@ impl AppState {
 
     /// The DEM, only when it is the file whose hash the design recorded: the terrain rule
     /// ([`owd_format::design::stage_terrain`]) says whether to use the DEM the shell holds.
-    fn usable_dem(&self) -> Option<Arc<Dem>> {
-        let bytes = self.dem_bytes.as_deref().map(|b| b.as_slice());
+    fn usable_dem(&self) -> Option<TerrainRef> {
+        let bytes = self.dem_src.as_ref();
         owd_format::design::stage_terrain(&self.session, bytes)
             .ok()
             .and(self.dem.clone())
@@ -1129,7 +1163,7 @@ impl AppState {
     /// --geojson --wgs84` on the saved file.
     pub fn export_geojson(&self) -> Result<String, String> {
         self.session
-            .export_geojson(true, self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .export_geojson(true, self.dem_src.as_ref())
             .map_err(message)
     }
 
@@ -1141,7 +1175,7 @@ impl AppState {
 
     /// The inputs of the drawing sheets of an option (spec 0004, ticket 8), to run off the lock.
     pub fn sheets_job(&self, option: &str) -> crate::sheets::SheetsJob {
-        crate::sheets::SheetsJob::new(self.session.to_text(), self.dem_bytes.clone(), option)
+        crate::sheets::SheetsJob::new(self.session.to_text(), self.dem_src.clone(), option)
     }
 
     /// The inputs of the reports of the design (spec 0014, ticket 6), to run off the lock. `option`
@@ -1151,13 +1185,12 @@ impl AppState {
         option: Option<&str>,
         ask: crate::report::ReportAsk,
     ) -> crate::report::ReportJob {
-        crate::report::ReportJob::new(self.session.to_text(), self.dem_bytes.clone(), option, ask)
+        crate::report::ReportJob::new(self.session.to_text(), self.dem_src.clone(), option, ask)
     }
 
     /// The quantity table as CSV, from the session. The same text as `owd export --csv`.
     pub fn export_csv(&self) -> String {
-        self.session
-            .export_csv(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+        self.session.export_csv(self.dem_src.as_ref())
     }
 
     /// The DEM path is stored relative to the document: say it again from the folder `path` is in.
@@ -1236,7 +1269,7 @@ impl AppState {
         self.dirty = true;
     }
 
-    pub(crate) fn usable_dem_for_reach(&self) -> Option<Arc<Dem>> {
+    pub(crate) fn usable_dem_for_reach(&self) -> Option<TerrainRef> {
         self.usable_dem()
     }
 
@@ -1244,7 +1277,7 @@ impl AppState {
     pub fn snapshot(&self) -> Value {
         let status: Vec<Value> = self
             .session
-            .status_with_dem(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .status_with_dem(self.dem_src.as_ref())
             .stages
             .iter()
             .map(|(stage, st)| {
@@ -1615,7 +1648,7 @@ mod tests {
         let data = (0..w * h)
             .map(|i| 40.0 + 6.0 * ((i % w) as f64 / 6.0).sin() + 4.0 * ((i / w) as f64 / 2.0).cos())
             .collect();
-        let dem = Dem {
+        let dem = owd_format::geotiff::Dem {
             width: w,
             height: h,
             data,
@@ -2021,9 +2054,13 @@ mod tests {
         let dem = Path::new("no-such-project/terrain/reach-a-dem.tif");
         // A design with no DEM takes the project's, named from the design's own folder.
         let empty = AppState::new_design("T", "2026-11-20").save_text();
-        let (mut s, note) =
-            AppState::open_in_project(design, &empty, Some((dem, dem_bytes())), "2026-11-20")
-                .unwrap();
+        let (mut s, note) = AppState::open_in_project(
+            design,
+            &empty,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
         assert_eq!(
             s.snapshot()["document"]["inputs"]["dem"]["path"],
             "../terrain/reach-a-dem.tif"
@@ -2047,9 +2084,13 @@ mod tests {
             AppState::dem_path(&text).as_deref(),
             Some("reach-a-dem.tif")
         );
-        let (s, note) =
-            AppState::open_in_project(design, &text, Some((dem, dem_bytes())), "2026-11-20")
-                .unwrap();
+        let (s, note) = AppState::open_in_project(
+            design,
+            &text,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
         assert_eq!(
             s.snapshot()["document"]["inputs"]["dem"]["path"],
             "../terrain/reach-a-dem.tif"
@@ -2060,9 +2101,13 @@ mod tests {
 
         // The relation already right: nothing changes, nothing to save.
         let right = s.save_text();
-        let (s, note) =
-            AppState::open_in_project(design, &right, Some((dem, dem_bytes())), "2026-11-20")
-                .unwrap();
+        let (s, note) = AppState::open_in_project(
+            design,
+            &right,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
         assert!(!s.is_dirty());
         assert_eq!(note, None);
 
@@ -2070,8 +2115,13 @@ mod tests {
         let mut other = dem_bytes();
         let n = other.len();
         other[n - 1] ^= 0xff;
-        let (s, note) =
-            AppState::open_in_project(design, &text, Some((dem, other)), "2026-11-20").unwrap();
+        let (s, note) = AppState::open_in_project(
+            design,
+            &text,
+            Some((dem, DemFile::from_bytes(other))),
+            "2026-11-20",
+        )
+        .unwrap();
         assert_eq!(note, None);
         assert!(!s.is_dirty());
         assert_eq!(

@@ -160,6 +160,10 @@ enum ProjectSub {
         /// Print a machine-readable result as JSON.
         #[arg(long)]
         json: bool,
+        /// Also hash every byte of the DEM (SHA-256), read a piece at a time with progress: the
+        /// check that catches what the quick check of a large sectioned DEM cannot.
+        #[arg(long)]
+        full: bool,
     },
 }
 
@@ -1059,6 +1063,46 @@ enum Command {
         #[command(subcommand)]
         sub: ProjectSub,
     },
+    /// A DEM file: what it holds, and a sectioned copy that OWD reads a block at a time, whatever
+    /// its size (a cloud-optimised GeoTIFF).
+    Dem {
+        #[command(subcommand)]
+        sub: DemSub,
+    },
+}
+
+#[derive(Subcommand)]
+enum DemSub {
+    /// Print what a GeoTIFF holds: size, cells, cell size, CRS, layout (strips or tiles), tile
+    /// size, compression, sample type, overviews, nodata, and whether OWD reads it in sections.
+    Info {
+        /// The GeoTIFF.
+        file: String,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Write a sectioned copy of a DEM: 512 x 512 tiles, DEFLATE with the predictor that suits the
+    /// sample type, 32-bit floats, overviews by averaging at each factor of two down to about
+    /// 256 cells, nodata kept, BigTIFF when it needs it, directories and overviews first. Written
+    /// a band of rows at a time, so the raster is never all in memory. A file that is already
+    /// sectioned with overviews is left alone unless `--force`.
+    Prepare {
+        /// The GeoTIFF to copy.
+        input: String,
+        /// The sectioned copy to write.
+        #[arg(short = 'o', long = "output")]
+        output: String,
+        /// Keep the input's sample type instead of 32-bit floats.
+        #[arg(long)]
+        keep_type: bool,
+        /// Write a copy even when the input is already sectioned with overviews.
+        #[arg(long)]
+        force: bool,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Parse the arguments, run the command and give the exit code. The `owd` binary calls this.
@@ -1632,7 +1676,19 @@ pub fn main() -> ExitCode {
                 title,
                 json,
             } => crate::project::init(&folder, title.as_deref(), json),
-            ProjectSub::Status { folder, json } => crate::project::status(&folder, json),
+            ProjectSub::Status { folder, json, full } => {
+                crate::project::status(&folder, json, full)
+            }
+        },
+        Command::Dem { sub } => match sub {
+            DemSub::Info { file, json } => crate::dem::info(&file, json),
+            DemSub::Prepare {
+                input,
+                output,
+                keep_type,
+                force,
+                json,
+            } => crate::dem::prepare(&input, &output, keep_type, force, json),
         },
     };
     match result {

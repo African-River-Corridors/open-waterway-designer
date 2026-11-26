@@ -64,7 +64,7 @@ impl Session {
     /// - `checks`: one per option and check it has (`R_min` always; `fits_in_water`,
     ///   `join_guard` and `no_feasible_line` when they apply), failures first: `option_id`,
     ///   `option`, `check`, `passed` and a `detail` in words.
-    pub fn option_table(&self, dem: Option<&[u8]>) -> Value {
+    pub fn option_table<S: crate::sectioned::ByteSource + ?Sized>(&self, dem: Option<&S>) -> Value {
         let mut rows = Vec::new();
         let mut checks = Vec::new();
         for o in self.options_list() {
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn a_failing_design_line_keeps_its_numbers() {
         let s = session_with(json!([option("b", false, 222.0)]));
-        let t = s.option_table(None);
+        let t = s.option_table(None::<&[u8]>);
         let ids: Vec<&str> = t["rows"]
             .as_array()
             .unwrap()
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn the_checks_list_has_failures_first_with_the_numbers_in_words() {
         let s = session_with(json!([option("b", false, 222.0)]));
-        let c = s.option_table(None)["checks"].clone();
+        let c = s.option_table(None::<&[u8]>)["checks"].clone();
         assert_eq!(c[0]["option_id"], "b");
         assert_eq!(c[0]["passed"], false);
         assert_eq!(
@@ -234,7 +234,8 @@ mod tests {
             "minimum radius 222 m of the design line against the ruleset's 330 m, read on a 110 m chord"
         );
         let a =
-            session_with(json!([option("a", true, 400.0)])).option_table(None)["checks"].clone();
+            session_with(json!([option("a", true, 400.0)])).option_table(None::<&[u8]>)["checks"]
+                .clone();
         assert_eq!(a[0]["passed"], true);
     }
 
@@ -248,7 +249,7 @@ mod tests {
                 .join("../../examples/web/river-example.owd"),
         )
         .unwrap();
-        let t = Session::open(&text).unwrap().option_table(None);
+        let t = Session::open(&text).unwrap().option_table(None::<&[u8]>);
         let row = &t["rows"][0];
         assert_eq!(row["radius_ok"], true, "{row}");
         assert_eq!(
@@ -333,7 +334,7 @@ mod tests {
 
     #[test]
     fn a_design_with_no_options_has_an_empty_table() {
-        let t = session_with(json!([])).option_table(None);
+        let t = session_with(json!([])).option_table(None::<&[u8]>);
         assert_eq!(t["rows"], json!([]));
         assert_eq!(t["checks"], json!([]));
     }

@@ -4,7 +4,7 @@
 // it was before the run. Errors thrown by the session are strings; they become rejected promises.
 import { Host as WorkerHost } from "./host";
 import type { FileDropEvent, Platform, ReachProgress } from "./types";
-import { PROJECT_FILE, allowed, demProgress, forget, handleFolder, itemState, listing, readAll, remember, remembered, type DirHandleLike, type ProjectFolder } from "../project";
+import { PROJECT_FILE, allowed, forget, handleFolder, itemState, listing, readAll, remember, remembered, type DirHandleLike, type ProjectFolder } from "../project";
 
 /** The design worker, and the requests waiting on it (host.ts). */
 const newHost = (onProgress: (n: number) => void, onReach: (p: ReachProgress) => void) => new WorkerHost(() => new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), onProgress, onReach);
@@ -102,8 +102,10 @@ export async function createWebPlatform(): Promise<Platform> {
   let host = newHost(onProgress, onReach);
   await host.rpc("ping");
 
-  /** The DEM the session holds, kept so a restart can give it back. */
-  let dem: Uint8Array | null = null;
+  /** The DEM the session holds, kept so a restart can give it back: the file itself, never its
+   * bytes. The worker reads only the blocks it needs from it (COG-1), so a large sectioned DEM is
+   * never loaded whole. */
+  let dem: Blob | null = null;
   /** The Rule Set files loaded in this session, kept so a restart loads them again (#499). */
   const ruleSetTexts: string[] = [];
   /** Whether the design has unsaved changes, as the last snapshot said (or as it was before a restart). */
@@ -276,15 +278,13 @@ export async function createWebPlatform(): Promise<Platform> {
     const designFile = await folder.read(info.design);
     if (!designFile) throw `The project names the design ${info.design}, but that file is not in the folder "${folder.name}".`;
     const text = await designFile.text();
-    let bytes: Uint8Array | null = null;
     const demFile = info.dem ? await folder.read(info.dem) : null;
-    if (demFile) bytes = await readAll(demFile, demProgress(say));
-    say(bytes ? "Loading the design and the DEM…" : "Loading the design…");
+    say(demFile ? "Loading the design and the DEM…" : "Loading the design…");
     const before = project;
     project = { folder, info };
     try {
-      const snap = await change<{ dirty: boolean; title: string; file_name: string }>("open_project", info.design, text, bytes ? info.dem : undefined, bytes ?? undefined);
-      dem = bytes;
+      const snap = await change<{ dirty: boolean; title: string; file_name: string }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
+      dem = demFile;
       handle = null;
       carriedDirty = false;
       chosen = null;
@@ -320,10 +320,9 @@ export async function createWebPlatform(): Promise<Platform> {
     const file = await p.folder.read(path);
     if (!file) throw `${path} is not in the project folder "${p.folder.name}".`;
     if (key === "dem") {
-      const bytes = await readAll(file, demProgress(say));
       say("Loading the DEM…");
-      const snap = await change("load_dem", path, bytes);
-      dem = bytes;
+      const snap = await change("load_dem_file", path, file);
+      dem = file;
       return snap;
     }
     if (key === "water_pools") return change("set_water_pools", await file.text());
@@ -331,12 +330,12 @@ export async function createWebPlatform(): Promise<Platform> {
   }
 
   /** Bring back the design as it stood before a run, in a new worker. */
-  async function restart(before: { name: string; text: string; dem: Uint8Array | null; dirty: boolean }) {
+  async function restart(before: { name: string; text: string; dem: Blob | null; dirty: boolean }) {
     host = newHost(onProgress, onReach);
     await host.rpc("ping");
     dem = before.dem;
     for (const text of ruleSetTexts) await host.rpc("load_rule_set_text", text);
-    await host.rpc("open_text", before.name, before.text, before.dem ?? undefined);
+    await host.rpc("open_text_file", before.name, before.text, before.dem ?? undefined);
     carriedDirty = before.dirty;
   }
 
@@ -405,12 +404,13 @@ export async function createWebPlatform(): Promise<Platform> {
   async function loadInput(role: string, given: unknown) {
     const file = given instanceof File ? given : await pickFile(role === "dem" ? ".tif,.tiff" : ".geojson,.json,.gpkg");
     if (!file) return null;
-    const bytes = await bytesOf(file);
     if (role === "dem") {
-      const snap = await change("load_dem", file.name, bytes);
-      dem = bytes;
+      // The file itself goes to the worker, which reads the blocks it needs (COG-1).
+      const snap = await change("load_dem_file", file.name, file);
+      dem = file;
       return snap;
     }
+    const bytes = await bytesOf(file);
     return change("load_input", role, file.name, bytes, undefined);
   }
 
@@ -418,11 +418,11 @@ export async function createWebPlatform(): Promise<Platform> {
     if (!confirmDiscard()) return null;
     const base = import.meta.env.BASE_URL;
     const [text, tif] = await Promise.all([fetch(`${base}examples/${EXAMPLE}`).then((r) => (r.ok ? r.text() : Promise.reject(`cannot load the example (${r.status})`))), fetch(`${base}examples/${EXAMPLE_DEM}`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(`cannot load the example DEM (${r.status})`)))]);
-    dem = new Uint8Array(tif);
+    dem = new Blob([tif]);
     handle = null;
     project = null;
     carriedDirty = false;
-    return change("open_text", EXAMPLE, text, dem);
+    return change("open_text_file", EXAMPLE, text, dem);
   }
 
   const commands: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {

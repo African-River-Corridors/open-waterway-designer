@@ -6,17 +6,20 @@
 
 use owd_format::drawing::{self, DrawOptions, SheetOutput};
 use serde_json::{Value, json};
-use std::sync::Arc;
 
 /// The inputs of the sheets, taken under the lock so the drawing runs off it.
 pub struct SheetsJob {
     design: String,
-    dem: Option<Arc<Vec<u8>>>,
+    dem: Option<owd_format::sectioned::DemFile>,
     option: String,
 }
 
 impl SheetsJob {
-    pub(crate) fn new(design: String, dem: Option<Arc<Vec<u8>>>, option: &str) -> SheetsJob {
+    pub(crate) fn new(
+        design: String,
+        dem: Option<owd_format::sectioned::DemFile>,
+        option: &str,
+    ) -> SheetsJob {
         SheetsJob {
             design,
             dem,
@@ -30,12 +33,8 @@ impl SheetsJob {
             option: Some(self.option.clone()),
             ..DrawOptions::default()
         };
-        let sheets = drawing::sheets_from_text(
-            &self.design,
-            self.dem.as_deref().map(Vec::as_slice),
-            &options,
-        )
-        .map_err(|e| e.to_string())?;
+        let sheets = drawing::sheets_from_text(&self.design, self.dem.as_ref(), &options)
+            .map_err(|e| e.to_string())?;
         sheets
             .iter()
             .map(|s| {

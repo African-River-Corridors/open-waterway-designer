@@ -253,7 +253,7 @@ fn the_dem_warning_names_a_missing_or_changed_file() {
     });
     let s = Session::open(&serde_json::to_string(&doc).unwrap()).unwrap();
     assert_eq!(s.dem_warning(Some(b"abc")), None);
-    assert!(s.dem_warning(None).unwrap().contains("missing"));
+    assert!(s.dem_warning(None::<&[u8]>).unwrap().contains("missing"));
     assert!(s.dem_warning(Some(b"abd")).unwrap().contains("changed"));
 }
 

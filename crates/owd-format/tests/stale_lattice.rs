@@ -77,7 +77,7 @@ fn a_fresh_lattice_line_is_the_design_line_and_a_stale_one_is_not() {
     // The map and the exports read the same line.
     let map = s.map_geometry().unwrap();
     assert_eq!(map["options"][0]["id"], "rolling-circle");
-    let gj: Value = serde_json::from_str(&s.export_geojson(false, None).unwrap()).unwrap();
+    let gj: Value = serde_json::from_str(&s.export_geojson(false, None::<&[u8]>).unwrap()).unwrap();
     assert_eq!(gj["features"][0]["properties"]["id"], "rolling-circle");
     // The session says so, in words, for `owd status`.
     let note = s.stale_refined_line_note().expect("a note");

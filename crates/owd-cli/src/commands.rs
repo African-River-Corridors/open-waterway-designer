@@ -5,6 +5,7 @@ use owd_format::design::alignment::WIDTH_ONLY;
 use owd_format::design::export::{failed_checks, no_feasible_line, notes_of};
 use owd_format::design::geopackage;
 use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
+use owd_format::sectioned::{DemFile, TerrainRef};
 use owd_format::types::TerrainSampler;
 use serde_json::{Value, json};
 use std::io::{Read, Write};
@@ -88,6 +89,7 @@ fn print_sanity(name: &str, v: &Value) {
 
 /// A failed command: its message and exit code (1 a stale-stage refusal, a failed check of a
 /// checking command, or with `--strict` a failed option check; 2 a usage or input error).
+#[derive(Debug)]
 pub struct Failure {
     pub message: String,
     pub code: u8,
@@ -216,10 +218,10 @@ fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     if session.old_mouth_pending() {
         let dem = session
             .dem_path()
-            .and_then(|p| std::fs::read(doc_dir(path).join(p)).ok())
+            .and_then(|p| dem_file(&doc_dir(path).join(p)).ok())
             .and_then(|b| {
                 let b = owd_format::design::stage_terrain(&session, Some(&b)).ok()?;
-                owd_format::geotiff::read_bytes(b).ok()
+                owd_shell::state::open_dem(b, None).ok()
             });
         let sampler = dem
             .as_ref()
@@ -306,7 +308,7 @@ fn pathdiff(base: &Path, target: &Path) -> String {
 /// Returns the session and the DEM file's bytes, if the file exists.
 pub(crate) fn open_with_dem(
     doc: &str,
-) -> core::result::Result<(Session, Option<Vec<u8>>), Failure> {
+) -> core::result::Result<(Session, Option<DemFile>), Failure> {
     with_dem(doc, open(doc)?)
 }
 
@@ -314,22 +316,27 @@ pub(crate) fn open_with_dem(
 fn with_dem(
     doc: &str,
     session: Session,
-) -> core::result::Result<(Session, Option<Vec<u8>>), Failure> {
+) -> core::result::Result<(Session, Option<DemFile>), Failure> {
     let bytes = session
         .dem_path()
-        .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok());
-    if let Some(w) = session.dem_warning(bytes.as_deref()) {
+        .and_then(|p| dem_file(&doc_dir(doc).join(p)).ok());
+    if let Some(w) = session.dem_warning(bytes.as_ref()) {
         eprintln!("owd: warning: {w}");
     }
     Ok((session, bytes))
 }
 
-/// The DEM as a terrain sampler, for the stages that need one.
-pub(crate) fn read_dem(
-    bytes: &[u8],
-    what: &str,
-) -> core::result::Result<owd_format::geotiff::Dem, Failure> {
-    owd_format::geotiff::read_bytes(bytes).map_err(|e| input_error(format!("{what}: {e}")))
+/// A DEM file, read by range: a large tiled file is never read whole (COG-1).
+pub(crate) fn dem_file(path: &std::path::Path) -> std::io::Result<DemFile> {
+    owd_format::sectioned::source::FileSource::open(path)
+        .map(|f| DemFile::new(std::sync::Arc::new(f)))
+        .map_err(std::io::Error::other)
+}
+
+/// The DEM as a terrain, for the stages that need one: in sections when it is a large tiled file,
+/// else read whole within the terrain limit.
+pub(crate) fn read_dem(file: &DemFile, what: &str) -> core::result::Result<TerrainRef, Failure> {
+    owd_shell::state::open_dem(file, None).map_err(|e| input_error(format!("{what}: {e}")))
 }
 
 fn project_epsg(session: &Session) -> Option<u32> {
@@ -474,17 +481,18 @@ pub fn import_toward(
     let mut session = open(doc)?;
     let items: Vec<(Role, &str)> = texts.iter().map(|(r, t)| (*r, t.as_str())).collect();
     let bytes = match &dem {
-        Some(path) => {
-            Some(std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?)
-        }
+        Some(path) => Some(
+            dem_file(std::path::Path::new(path))
+                .map_err(|e| input_error(format!("cannot read {path}: {e}")))?,
+        ),
         None => None,
     };
     let dem_path = dem.as_deref().map(|p| relative_dem_path(doc, p));
     let terrain = match (&dem, &dem_path, &bytes) {
-        (Some(name), Some(path), Some(bytes)) => Some(owd_shell::import::Terrain {
+        (Some(name), Some(path), Some(file)) => Some(owd_shell::import::Terrain {
             path,
             name,
-            bytes,
+            file,
             limit_bytes: None,
         }),
         _ => None,
@@ -515,10 +523,10 @@ pub fn import_toward(
             Some(d) => Some(d),
             None => session
                 .dem_path()
-                .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok())
+                .and_then(|p| dem_file(&doc_dir(doc).join(p)).ok())
                 .and_then(|b| {
                     let b = owd_format::design::stage_terrain(&session, Some(&b)).ok()?;
-                    owd_format::geotiff::read_bytes(b).ok()
+                    owd_shell::state::open_dem(b, None).ok()
                 }),
         };
         let sampler = match &dem {
@@ -1118,11 +1126,11 @@ pub fn align(
         AlignMethod::Reroute => {
             let bytes = session
                 .dem_path()
-                .and_then(|p| std::fs::read(doc_dir(doc).join(p)).ok());
+                .and_then(|p| dem_file(&doc_dir(doc).join(p)).ok());
             stage_dem(
                 &mut session,
                 doc,
-                bytes.as_deref(),
+                bytes.as_ref(),
                 &flags.dem,
                 "align --method reroute",
             )?
@@ -1208,15 +1216,16 @@ pub fn align(
 fn stage_dem(
     session: &mut Session,
     doc: &str,
-    bytes: Option<&[u8]>,
+    bytes: Option<&DemFile>,
     flag: &Option<String>,
     command: &str,
-) -> core::result::Result<Option<owd_format::geotiff::Dem>, Failure> {
+) -> core::result::Result<Option<TerrainRef>, Failure> {
     use owd_format::design::NoTerrain;
     if let Some(path) = flag {
-        let b = std::fs::read(path).map_err(|e| input_error(format!("cannot read {path}: {e}")))?;
+        let b = dem_file(std::path::Path::new(path))
+            .map_err(|e| input_error(format!("cannot read {path}: {e}")))?;
         let d = read_dem(&b, path)?;
-        session.set_dem(&relative_dem_path(doc, path), &b, &d);
+        session.set_dem(&relative_dem_path(doc, path), &b, &*d);
         return Ok(Some(d));
     }
     let stage = command.split_whitespace().next().unwrap_or(command);
@@ -1317,7 +1326,7 @@ pub fn optimise(
     if let Some(l) = &flags.lifts {
         overrides.insert("lifts_m".into(), json!(number_list("--lifts", l)?));
     }
-    let dem = stage_dem(&mut session, doc, bytes.as_deref(), &flags.dem, "optimise")?;
+    let dem = stage_dem(&mut session, doc, bytes.as_ref(), &flags.dem, "optimise")?;
     let sampler = match &dem {
         Some(d) => Some(
             owd_format::design::terrain::dem_sampler(d, project_epsg(&session))
@@ -1493,7 +1502,7 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
             holds_bathymetry: false,
         },
     )?;
-    let dem = stage_dem(&mut session, doc, bytes.as_deref(), &flags.dem, "volumes")?;
+    let dem = stage_dem(&mut session, doc, bytes.as_ref(), &flags.dem, "volumes")?;
     let sampler = match &dem {
         Some(d) => Some(
             owd_format::design::terrain::dem_sampler(d, project_epsg(&session))
@@ -1739,7 +1748,9 @@ pub fn fetch_dem_watched(
                 b
             }
         };
-        dems.push((read_dem(&bytes, &rel)?, bytes.clone()));
+        let tile = owd_format::geotiff::read_bytes(&bytes)
+            .map_err(|e| input_error(format!("{rel}: {e}")))?;
+        dems.push((tile, bytes.clone()));
         records.push(crate::fetch::record(t, mirror, &rel, &bytes));
     }
 
@@ -1888,13 +1899,13 @@ pub fn export(
     // Volumes numbers that no longer hold are exported with their status, never as fresh.
     let text = match (geojson, stretches) {
         (true, false) => session
-            .export_geojson(wgs84, bytes.as_deref())
+            .export_geojson(wgs84, bytes.as_ref())
             .map_err(from_design)?,
-        (false, false) => session.export_csv(bytes.as_deref()),
+        (false, false) => session.export_csv(bytes.as_ref()),
         (true, true) => session
-            .export_stretches_geojson(wgs84, bytes.as_deref())
+            .export_stretches_geojson(wgs84, bytes.as_ref())
             .map_err(from_design)?,
-        (false, true) => session.export_stretches_csv(bytes.as_deref()),
+        (false, true) => session.export_stretches_csv(bytes.as_ref()),
     };
     write(output.unwrap_or("-"), &text)
 }
@@ -2014,7 +2025,7 @@ pub fn draw(doc: &str, flags: DrawFlags, json_mode: bool) -> Result {
         (None, None) => drawing::Background::Relief,
     };
     let sheets =
-        drawing::sheets_from_text_with(&session.to_text(), bytes.as_deref(), &options, &background)
+        drawing::sheets_from_text_with(&session.to_text(), bytes.as_ref(), &options, &background)
             .map_err(from_draw)?;
     if flags.documents_only {
         let text = serde_json::to_string_pretty(&drawing::documents_json(&sheets))
@@ -2084,7 +2095,7 @@ impl otd::Files for FolderFiles {
 pub fn run(doc: &str, output: &Option<String>, json_mode: bool) -> Result {
     let (mut session, bytes) = open_with_dem(doc)?;
     // The DEM is used only when it is the file whose hash was recorded.
-    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_ref()) {
         Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
         Err(_) => None,
     };
@@ -2175,7 +2186,7 @@ pub fn validate(doc: &str, json_mode: bool) -> Result {
 
 pub fn status(doc: &str, json_mode: bool) -> Result {
     let (session, bytes) = with_dem(doc, open_unconfirmed(doc)?)?;
-    let st = session.status_with_dem(bytes.as_deref());
+    let st = session.status_with_dem(bytes.as_ref());
     let mut human: Vec<String> = st
         .stages
         .iter()
@@ -2233,7 +2244,7 @@ pub fn status(doc: &str, json_mode: bool) -> Result {
         "stale": stale,
         "design_line": options.first(),
         "notes": line_note.into_iter().collect::<Vec<_>>(),
-        "warnings": session.dem_warning(bytes.as_deref()).into_iter().collect::<Vec<_>>(),
+        "warnings": session.dem_warning(bytes.as_ref()).into_iter().collect::<Vec<_>>(),
     });
     if fits != StageStatus::NotRun {
         result["fits"] = json!(if fits == StageStatus::Stale {

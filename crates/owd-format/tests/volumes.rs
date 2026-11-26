@@ -186,10 +186,15 @@ fn a_changed_dem_file_warns_on_open_and_marks_volumes_stale() {
     );
 
     // A missing file is a warning and a stale stage too.
-    assert_eq!(saved.dem_check(None), DemCheck::Missing);
-    assert!(saved.dem_warning(None).unwrap().contains("missing"));
+    assert_eq!(saved.dem_check(None::<&[u8]>), DemCheck::Missing);
+    assert!(
+        saved
+            .dem_warning(None::<&[u8]>)
+            .unwrap()
+            .contains("missing")
+    );
     assert_eq!(
-        saved.stage_status_with_dem(Stage::Volumes, None),
+        saved.stage_status_with_dem(Stage::Volumes, None::<&[u8]>),
         StageStatus::Stale
     );
 }

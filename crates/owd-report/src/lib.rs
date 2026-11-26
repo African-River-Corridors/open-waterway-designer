@@ -17,6 +17,7 @@ mod trace;
 
 use owd_format::design::Session;
 use owd_format::design::screening::SCREENING_NOTICE;
+use owd_format::sectioned::ByteSource;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -228,7 +229,13 @@ pub fn extension(format: Format) -> &'static str {
 }
 
 /// Build the report a request asks for, from the design text and the DEM bytes.
-pub fn build(design: &str, dem: Option<&[u8]>, req: &Request) -> Result<Report, ReportError> {
+pub fn build<S: ByteSource + ?Sized>(
+    design: &str,
+    dem: Option<&S>,
+    req: &Request,
+) -> Result<Report, ReportError> {
+    let held = dem;
+    let dem: Option<&dyn ByteSource> = held.as_ref().map(|d| d as &dyn ByteSource);
     let session = Session::open(design).map_err(|e| ReportError::Design(e.to_string()))?;
     let ctx = Context::new(&session, dem, req.option.as_deref())?;
     let number = format!("OWD-{}-{}", design_code(&ctx.title), req.kind.code());
@@ -299,7 +306,7 @@ pub fn build(design: &str, dem: Option<&[u8]>, req: &Request) -> Result<Report, 
 pub(crate) struct Context<'a> {
     pub session: &'a Session,
     pub doc: &'a Value,
-    pub dem: Option<&'a [u8]>,
+    pub dem: Option<&'a dyn ByteSource>,
     pub title: String,
     /// The chosen design line option (from `options`), if the design has one.
     pub option: Option<Value>,
@@ -308,7 +315,7 @@ pub(crate) struct Context<'a> {
 impl<'a> Context<'a> {
     fn new(
         session: &'a Session,
-        dem: Option<&'a [u8]>,
+        dem: Option<&'a dyn ByteSource>,
         asked: Option<&str>,
     ) -> Result<Context<'a>, ReportError> {
         let doc = session.document();

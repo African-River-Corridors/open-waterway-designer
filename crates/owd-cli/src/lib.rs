@@ -7,6 +7,7 @@ pub mod cli;
 pub mod commands;
 pub mod constraints;
 pub mod cost;
+pub mod dem;
 pub mod design_line;
 pub mod envelope;
 pub mod fetch;

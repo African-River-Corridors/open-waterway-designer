@@ -30,7 +30,7 @@
 use super::session::DesignError;
 use super::structures::PoolWaterIn;
 use super::terrain_tile::{TILE, TileMaker, check, encode_png};
-use crate::geotiff::Dem;
+use crate::sectioned::{Terrain, TerrainRef};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -151,7 +151,7 @@ impl Cache {
 /// The flood mask of one DEM and one set of pools, and the tiles made from it.
 #[derive(Debug)]
 pub struct PoolWater {
-    dem: Arc<Dem>,
+    dem: TerrainRef,
     factor: usize,
     width: usize,
     /// The pool of each mask cell, as an index into `levels`; [`NO_POOL`] for none.
@@ -179,20 +179,14 @@ struct Seed {
 }
 
 /// The DEM cells of mask cell (`mi`, `mj`) whose level is below `level`.
-fn below(dem: &Dem, factor: usize, mi: usize, mj: usize, level: f64) -> u16 {
+/// Read at full resolution (COG-1: a sectioned DEM reads only the blocks under the mask cells the
+/// flood reaches).
+fn below(dem: &dyn Terrain, factor: usize, mi: usize, mj: usize, level: f64) -> u16 {
     let (r1, c1) = (
-        ((mj + 1) * factor).min(dem.height),
-        ((mi + 1) * factor).min(dem.width),
+        ((mj + 1) * factor).min(dem.height()),
+        ((mi + 1) * factor).min(dem.width()),
     );
-    let mut n = 0u32;
-    for r in mj * factor..r1 {
-        let row = &dem.data[r * dem.width + mi * factor..r * dem.width + c1];
-        for &v in row {
-            if v < level && dem.nodata != Some(v) {
-                n += 1;
-            }
-        }
-    }
+    let n = dem.count_below(mj * factor, r1, mi * factor, c1, level);
     n.min(u32::from(UNKNOWN) - 1) as u16
 }
 
@@ -215,13 +209,13 @@ impl PoolWater {
             return Err(refuse("the pools of the design cannot be read"));
         }
         let dem = maker.dem().clone();
-        let (w, h) = (dem.width, dem.height);
+        let (w, h) = (dem.width(), dem.height());
         let factor = (libm::ceil(libm::sqrt((w * h) as f64 / cells.max(1) as f64)) as usize).max(1);
         let (mw, mh) = (w.div_ceil(factor), h.div_ceil(factor));
-        let [a, _, c, _, e, f] = dem.geotransform;
+        let [a, _, c, _, e, f] = dem.geotransform();
         let k = factor as f64;
         // The side of a DEM cell on the ground, metres. A DEM in degrees: at the latitude of each row.
-        let degrees = dem.epsg == Some(4326);
+        let degrees = dem.epsg() == Some(4326);
         let row_lat = |row: f64| (f + e * row).to_radians();
         let cell_x = |row: f64| {
             if degrees {
@@ -437,7 +431,7 @@ impl PoolWater {
                     continue;
                 }
                 wet[cell] = below(
-                    &dem,
+                    &*dem,
                     factor,
                     cell % mw,
                     cell / mw,
@@ -458,7 +452,7 @@ impl PoolWater {
                     return;
                 }
                 if wet[n] == UNKNOWN {
-                    wet[n] = below(&dem, factor, n % mw, n / mw, levels[usize::from(p)]);
+                    wet[n] = below(&*dem, factor, n % mw, n / mw, levels[usize::from(p)]);
                 }
                 if wet[n] > 0 {
                     state[n] |= FLOODED;
@@ -493,7 +487,7 @@ impl PoolWater {
                 flooded_cells += 1;
                 let p = usize::from(pool[cell]);
                 if wet[cell] == UNKNOWN {
-                    wet[cell] = below(&dem, factor, i, j, levels[p]);
+                    wet[cell] = below(&*dem, factor, i, j, levels[p]);
                 }
                 let area = f64::from(wet[cell]) * cell_m2;
                 flooded[p] += area;
@@ -547,19 +541,19 @@ impl PoolWater {
     }
 
     /// The DEM the mask was made for.
-    pub fn dem(&self) -> &Arc<Dem> {
+    pub fn dem(&self) -> &TerrainRef {
         &self.dem
     }
 
     /// The water at a point in the DEM's CRS: `(pool index, water level, ground)`. `None` on dry
     /// ground and off the DEM.
     fn water(&self, px: f64, py: f64) -> Option<(usize, f64, f64)> {
-        let [a, _, c, _, e, f] = self.dem.geotransform;
+        let [a, _, c, _, e, f] = self.dem.geotransform();
         let (col, row) = ((px - c) / a, (py - f) / e);
         if !(col >= 0.0
             && row >= 0.0
-            && col < self.dem.width as f64
-            && row < self.dem.height as f64)
+            && col < self.dem.width() as f64
+            && row < self.dem.height() as f64)
         {
             return None;
         }
@@ -710,6 +704,7 @@ mod tests {
     use super::super::crs::Crs;
     use super::super::terrain_tile::{decode_png, pixel_lon_lat};
     use super::*;
+    use crate::geotiff::Dem;
 
     const X0: f64 = 500_000.0;
     const Y0: f64 = 600_000.0;

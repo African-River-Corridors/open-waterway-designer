@@ -192,7 +192,7 @@ fn the_stretches_export_as_csv_and_geojson_lines_with_the_notice_basis_and_verdi
         .iter()
         .map(|sc| sc["constraint_stretches"].as_array().unwrap().len())
         .sum();
-    let csv = s.export_stretches_csv(None);
+    let csv = s.export_stretches_csv(None::<&[u8]>);
     let lines: Vec<&str> = csv.lines().collect();
     assert_eq!(lines[0], "# Screening \u{2014} not for construction");
     assert!(lines[1].contains("unverified"));
@@ -204,7 +204,7 @@ fn the_stretches_export_as_csv_and_geojson_lines_with_the_notice_basis_and_verdi
         .unwrap();
     assert_eq!(lines.len() - header - 1, n);
     let gj: Value =
-        serde_json::from_str(&s.export_stretches_geojson(false, None).unwrap()).unwrap();
+        serde_json::from_str(&s.export_stretches_geojson(false, None::<&[u8]>).unwrap()).unwrap();
     assert_eq!(gj["screening"], "Screening \u{2014} not for construction");
     let features = gj["features"].as_array().unwrap();
     assert_eq!(features.len(), n);
@@ -214,7 +214,7 @@ fn the_stretches_export_as_csv_and_geojson_lines_with_the_notice_basis_and_verdi
         assert_eq!(f["properties"]["screening"], gj["screening"]);
     }
     let wgs: Value =
-        serde_json::from_str(&s.export_stretches_geojson(true, None).unwrap()).unwrap();
+        serde_json::from_str(&s.export_stretches_geojson(true, None::<&[u8]>).unwrap()).unwrap();
     if let Some(f) = wgs["features"].as_array().unwrap().first() {
         let lon = f["geometry"]["coordinates"][0][0].as_f64().unwrap();
         assert!(lon.abs() < 4.0, "{lon}");

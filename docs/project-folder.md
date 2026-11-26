@@ -61,7 +61,7 @@ The design file never holds the project folder's name or its place on your disk.
 
 1. reads `owd-project.json`;
 2. opens the design it names;
-3. loads the DEM it names, with a line that says how far the read is.
+3. loads the DEM it names. A large sectioned DEM (a tiled GeoTIFF) is not read whole: the browser keeps the file and reads the blocks it needs as you work, so it opens at once. See [Large DEMs](large-dems.md).
 
 After that:
 

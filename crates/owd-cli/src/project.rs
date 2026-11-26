@@ -5,6 +5,7 @@
 use crate::commands::{self, Failure, Result, input_error, say};
 use owd_format::design::{NoTerrain, Session, stage_terrain};
 use owd_format::project::{self, FOLDERS, PROJECT_FILE, Project};
+use owd_format::sectioned::ByteSource;
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -188,7 +189,7 @@ fn point_design_at_dem(dir: &Path, design: &str, dem: &str) -> Option<String> {
     {
         return None;
     }
-    let bytes = std::fs::read(dir.join(dem)).ok()?;
+    let bytes = commands::dem_file(&dir.join(dem)).ok()?;
     if stage_terrain(&session, Some(&bytes)).is_err() {
         return None;
     }
@@ -201,7 +202,12 @@ fn point_design_at_dem(dir: &Path, design: &str, dem: &str) -> Option<String> {
 
 /// `owd project status`: what the text file names, whether each is there, and whether the DEM is
 /// the one the design recorded. Exit code 1 when a named file is missing or the DEM differs.
-pub fn status(folder: &str, json_mode: bool) -> Result {
+///
+/// With `full`, every byte of the DEM is hashed too (streamed, with progress on stderr), and the
+/// hash is compared with the full hash the design recorded, when it recorded one: a large
+/// sectioned DEM is recorded by its quick check, which misses a change made in place to a block it
+/// does not sample (see `owd_format::sectioned::identity`).
+pub fn status(folder: &str, json_mode: bool, full: bool) -> Result {
     let dir = Path::new(folder);
     if !dir.is_dir() {
         return Err(input_error(format!("`{folder}` is not a folder")));
@@ -241,10 +247,12 @@ pub fn status(folder: &str, json_mode: bool) -> Result {
         match Session::open(&text) {
             Err(e) => problems.push(format!("the design `{design}` does not open: {e}")),
             Ok(session) => {
-                let dem_bytes = project.dem().and_then(|d| std::fs::read(dir.join(d)).ok());
+                let dem_bytes = project
+                    .dem()
+                    .and_then(|d| commands::dem_file(&dir.join(d)).ok());
                 let recorded = session.dem_path().map(str::to_string);
                 // The terrain rule's one reader compares the file with the recorded hash.
-                let check = stage_terrain(&session, dem_bytes.as_deref()).map(|_| ());
+                let check = stage_terrain(&session, dem_bytes.as_ref()).map(|_| ());
                 let (word, line) = match (project.dem(), check) {
                     (None, Err(NoTerrain::NotNamed)) => ("no_dem", "DEM hash: the design records no DEM".to_string()),
                     (None, _) => (
@@ -287,6 +295,49 @@ pub fn status(folder: &str, json_mode: bool) -> Result {
                 }
                 dem_check =
                     json!({"hash": word, "recorded_path": recorded, "path_matches": path_ok});
+                let quick = session.document()["inputs"]["dem"]
+                    .get("quick_check")
+                    .is_some();
+                dem_check["method"] = json!(if quick { "quick" } else { "full" });
+                if full && let Some(file) = &dem_bytes {
+                    let total = file.len();
+                    let mut last = 0u64;
+                    let sha = owd_format::sectioned::identity::sha256_streaming(
+                        file,
+                        &mut |done, total| {
+                            if !json_mode && (done - last >= 256 << 20 || done == total) {
+                                last = done;
+                                eprintln!(
+                                    "owd: hashing the DEM: {} of {} MiB",
+                                    done >> 20,
+                                    total >> 20
+                                );
+                            }
+                        },
+                    )
+                    .map_err(input_error)?;
+                    let recorded_full = session.document()["inputs"]["dem"]["sha256"].as_str();
+                    let verdict = match recorded_full {
+                        Some(r) if r == sha => "matches",
+                        Some(_) => {
+                            problems.push(
+                                "the DEM's full hash differs from the hash the design recorded"
+                                    .into(),
+                            );
+                            "differs"
+                        }
+                        None => "not_recorded",
+                    };
+                    human.push(match verdict {
+                        "matches" => format!("DEM full hash ({total} bytes): matches"),
+                        "differs" => format!("DEM full hash ({total} bytes): DIFFERS: {sha}"),
+                        _ => format!(
+                            "DEM full hash ({total} bytes): {sha} (the design records the quick check, not a full hash)"
+                        ),
+                    });
+                    dem_check["full_sha256"] = json!(sha);
+                    dem_check["full"] = json!(verdict);
+                }
             }
         }
     }

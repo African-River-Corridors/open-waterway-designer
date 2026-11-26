@@ -238,7 +238,10 @@ pub fn report(ctx: &Context, requested_by: Option<&str>) -> (Vec<Value>, Vec<Val
         ),
     ];
     if let Some(stored) = d["inputs"]["dem"]["sha256"].as_str() {
-        let given = ctx.dem.map(sha256_hex);
+        let given = ctx.dem.and_then(|d| match d.identities() {
+            Some(ids) => ids.full(d).ok(),
+            None => owd_format::sectioned::identity::sha256_streaming(d, &mut |_, _| {}).ok(),
+        });
         let verdict = match ctx.session.dem_check(ctx.dem) {
             DemCheck::Matches => "they match",
             DemCheck::Changed => "they differ: the DEM changed since the volumes ran",
@@ -254,6 +257,45 @@ pub fn report(ctx: &Context, requested_by: Option<&str>) -> (Vec<Value>, Vec<Val
                 vec![
                     "Of the bytes given".into(),
                     given.unwrap_or_else(|| "none given".into()),
+                ],
+                vec!["Result".into(), verdict.into()],
+            ],
+        ));
+    }
+    if let Some(q) = d["inputs"]["dem"]["quick_check"].as_object() {
+        // A large sectioned DEM is recorded by its quick check (COG-1): its length and the hash
+        // of its structure and a sample of its blocks.
+        let given = ctx
+            .dem
+            .and_then(|d| owd_format::sectioned::identity::quick_check(d).ok());
+        let verdict = match ctx.session.dem_check(ctx.dem) {
+            DemCheck::Matches => "they match",
+            DemCheck::Changed => "they differ: the DEM changed since the volumes ran",
+            DemCheck::Missing => "no DEM was given",
+            DemCheck::NoDem => "the design has no DEM",
+        };
+        let show = |len: Option<u64>, h: Option<&str>| match (len, h) {
+            (Some(l), Some(h)) => format!("{l} bytes; {h}"),
+            _ => "none given".into(),
+        };
+        body_inputs.push(table(
+            "dem-table",
+            "The DEM file (quick check: length, structure and a sample of blocks)",
+            &["Check", "Length and hash"],
+            vec![
+                vec![
+                    "Recorded in the design".into(),
+                    show(
+                        q.get("length").and_then(Value::as_u64),
+                        q.get("sha256").and_then(Value::as_str),
+                    ),
+                ],
+                vec![
+                    "Of the file given".into(),
+                    show(
+                        given.as_ref().map(|g| g.0),
+                        given.as_ref().map(|g| g.1.as_str()),
+                    ),
                 ],
                 vec!["Result".into(), verdict.into()],
             ],

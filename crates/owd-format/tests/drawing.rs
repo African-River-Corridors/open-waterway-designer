@@ -243,7 +243,7 @@ fn the_title_block_names_the_design_the_option_and_the_revision() {
 fn the_design_must_be_ready_and_the_dem_must_be_there() {
     let (text, dem) = example();
     let o = DrawOptions::default();
-    let e = drawing::sheets_from_text(&text, None, &o)
+    let e = drawing::sheets_from_text(&text, None::<&[u8]>, &o)
         .unwrap_err()
         .to_string();
     assert!(e.contains("is missing"), "{e}");

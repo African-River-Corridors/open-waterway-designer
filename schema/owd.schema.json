@@ -71,9 +71,34 @@
           }
         },
         "dem": {
-          "description": "The DEM is referenced, never embedded: path relative to the document, SHA-256 of the file, its CRS and nodata value.",
+          "description": "The DEM is referenced, never embedded: path relative to the document, SHA-256 of the file (or, for a large sectioned file, its quick check: length and a hash of its structure and a sample of its blocks), its CRS and nodata value.",
           "oneOf": [
             { "type": "null" },
+            {
+              "type": "object",
+              "required": ["path", "quick_check", "crs", "nodata"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "quick_check": {
+                  "description": "COG-1: a tiled GeoTIFF of 64 MiB or more is recorded by its length and the SHA-256 of its header, its directories and every value they point to, and the stored bytes of a sample of blocks (every block of an image of 64 or fewer, else 32 spaced evenly). It misses a change made in place to a block it does not sample; `owd project status --full` hashes every byte.",
+                  "type": "object",
+                  "required": ["method", "length", "sha256"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "method": { "const": "owd-quick-1" },
+                    "length": { "type": "integer", "minimum": 0 },
+                    "sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+                  }
+                },
+                "crs": { "type": "string" },
+                "nodata": { "type": ["number", "null"] },
+                "holds_bathymetry": {
+                  "description": "As for a DEM recorded by its SHA-256.",
+                  "const": true
+                }
+              }
+            },
             {
               "type": "object",
               "required": ["path", "sha256", "crs", "nodata"],

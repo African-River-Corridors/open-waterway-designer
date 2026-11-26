@@ -482,26 +482,29 @@ impl SheetOutput {
 
 /// Draw a design given as text, with the bytes of the DEM file it names (if any). The DEM must be
 /// the file whose hash the design recorded: a drawn section is what the volumes stage summed.
-pub fn sheets_from_text(
+pub fn sheets_from_text<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
 ) -> Result<Vec<Sheet>, DrawError> {
     sheets_from_text_with(design, dem, options, &Background::Relief)
 }
 
 /// [`sheets_from_text`], with the plan sheets drawn over `background`.
-pub fn sheets_from_text_with(
+pub fn sheets_from_text_with<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {
     let session = Session::open(design)?;
     let name = session.dem_path().unwrap_or("DEM").to_string();
     let grid = match session.dem_check(dem) {
-        DemCheck::Matches => crate::geotiff::read_bytes(dem.unwrap_or_default())
-            .map_err(|e| DrawError::Input(format!("{name}: {e}")))?,
+        DemCheck::Matches => match dem {
+            Some(d) => crate::sectioned::terrain_of(&d)
+                .map_err(|e| DrawError::Input(format!("{name}: {e}")))?,
+            None => return Err(DrawError::Input(format!("{name}: missing"))),
+        },
         DemCheck::Changed => {
             return Err(DrawError::Input(format!(
                 "the DEM `{name}` has changed since its hash was recorded: run `owd volumes --dem {name}` first"
@@ -526,9 +529,9 @@ pub fn sheets_from_text_with(
 }
 
 /// Every file of every sheet of a design: the one call that `owd draw` and `owd.draw` share.
-pub fn files_from_text(
+pub fn files_from_text<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
 ) -> Result<Vec<(String, Vec<u8>)>, DrawError> {
     let mut out = Vec::new();

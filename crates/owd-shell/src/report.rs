@@ -6,7 +6,6 @@
 
 use owd_report::{Control, Format, Kind, Request, extension};
 use serde_json::Value;
-use std::sync::Arc;
 
 /// What the user asks for: one kind or `all`, one format or `all`, and document control.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +46,7 @@ impl ReportAsk {
 /// The inputs of the reports, taken under the lock so the reports are made off it.
 pub struct ReportJob {
     design: String,
-    dem: Option<Arc<Vec<u8>>>,
+    dem: Option<owd_format::sectioned::DemFile>,
     option: Option<String>,
     ask: ReportAsk,
 }
@@ -55,7 +54,7 @@ pub struct ReportJob {
 impl ReportJob {
     pub(crate) fn new(
         design: String,
-        dem: Option<Arc<Vec<u8>>>,
+        dem: Option<owd_format::sectioned::DemFile>,
         option: Option<&str>,
         ask: ReportAsk,
     ) -> ReportJob {
@@ -94,9 +93,8 @@ impl ReportJob {
                 control: control.clone(),
                 requested_by: Some(self.ask.requested_by.clone()),
             };
-            let report =
-                owd_report::build(&self.design, self.dem.as_deref().map(Vec::as_slice), &req)
-                    .map_err(|e| e.to_string())?;
+            let report = owd_report::build(&self.design, self.dem.as_ref(), &req)
+                .map_err(|e| e.to_string())?;
             for &f in &formats {
                 let r = report.render(f).map_err(|e| e.to_string())?;
                 out.push((format!("{}.{}", report.stem(), extension(f)), r.bytes));

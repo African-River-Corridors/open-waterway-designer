@@ -8,6 +8,8 @@ import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import { remote } from "webdriverio";
 import { serve } from "./web-server.mjs";
 
@@ -69,6 +71,9 @@ async function folder(b, files, name = FOLDER) {
         for (const n of names) at = await at.getDirectoryHandle(n, { create: true });
         const w = await (await at.getFileHandle(file, { create: true })).createWritable();
         await w.write(typeof data === "string" ? data : Uint8Array.from(atob(data.base64), (c) => c.charCodeAt(0)));
+        // A file made larger with zeros after its end (a TIFF reads the same): a large file without
+        // sending its bytes through the driver.
+        if (typeof data !== "string" && data.padTo) await w.truncate(data.padTo);
         await w.close();
       }
       window.__pickerAsked = [];
@@ -139,7 +144,9 @@ describe("OWD web: the project folder", () => {
     assert.equal(snap.stages.map((s) => `${s.name}:${s.status}`).join(" "), "sizing:fresh alignment:fresh optimise:not_run volumes:fresh");
     assert.notEqual(await b.execute(async () => await window.__owdPlatform.call("terrain_info")), null, "the DEM is in memory");
     const progress = await b.execute(() => window.__progress);
-    assert.ok(progress.some((l) => /Reading the DEM/.test(l)), `a progress line for the DEM read: ${JSON.stringify(progress)}`);
+    // The DEM is not read whole first (COG-1): the worker keeps the file and reads what it needs.
+    assert.ok(progress.some((l) => /Loading the design and the DEM/.test(l)), `a progress line for the load: ${JSON.stringify(progress)}`);
+    assert.ok(!progress.some((l) => /Reading the DEM: .* of .* MB/.test(l)), `no read-the-whole-file progress: ${JSON.stringify(progress)}`);
     assert.equal(await exists(b, "project-progress"), false, "the progress line goes when the project is open");
     assert.equal(await exists(b, "error"), false);
 
@@ -346,5 +353,97 @@ describe("OWD web: the project folder", () => {
     assert.equal(await (await b.$("button=Open")).isExisting(), true);
     assert.equal(await exists(b, "load-dem"), true);
     assert.equal(await exists(b, "error"), false);
+  });
+});
+
+describe("OWD web: a large sectioned DEM (COG-1)", () => {
+  /** The example DEM made sectioned by `owd dem prepare`, then made 80 MiB with zeros after its end, so
+   * the app reads it in sections (a tiled file of 64 MiB or more). Same cells as the example DEM. */
+  const sectioned = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-cog1-"));
+    const out = path.join(dir, "river-dem-sectioned.tif");
+    execFileSync(process.env.OWD_CLI, ["dem", "prepare", path.join(FIXTURES, "river-dem.tif"), "-o", out, "--json"]);
+    const bytes = fs.readFileSync(out);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { base64: bytes.toString("base64"), padTo: 80 * 1024 * 1024 };
+  };
+  const call = (b, command, args = {}) => b.execute(async (c, a) => await window.__owdPlatform.call(c, a), command, args);
+
+  it("opens at once, reads in blocks, and gives the volumes, sections, map and contours of the same DEM read whole", async () => {
+    const b = await start();
+    // The design on its own DEM, read whole: the volumes and a cross-section to compare with.
+    await folder(b, standardFiles());
+    await openProject(b);
+    await opened(b);
+    await call(b, "run_stage", { stage: "volumes" });
+    const whole = await snapshot(b);
+    const option = (await call(b, "map_geometry")).options[0].id;
+    const sectionWhole = await call(b, "cross_section", { option, chainage: 300 });
+
+    // The same project with the sectioned DEM: opened in one step, with no read of the whole file.
+    await folder(b, standardFiles({ "terrain/reach-a-dem.tif": sectioned() }), `${FOLDER}-cog`);
+    // The first design is unsaved (its DEM path was pointed at the project's): discard it.
+    await b.execute(() => {
+      window.confirm = () => true;
+    });
+    const t0 = Date.now();
+    await openProject(b);
+    await until(b, "the sectioned DEM's project", async () => (await snapshot(b)).warnings.some((w) => /has changed since its hash was recorded/.test(w)));
+    const openMs = Date.now() - t0;
+    assert.ok(openMs < 15000, `opened in ${openMs} ms`);
+    const progress = await b.execute(() => window.__progress);
+    assert.ok(!progress.some((l) => /Reading the DEM: .* of .* MB/.test(l)), JSON.stringify(progress));
+    // Another file than the design recorded: Use this DEM records it, by its quick check.
+    let snap = await snapshot(b);
+    assert.ok(snap.warnings.some((w) => /has changed since its hash was recorded/.test(w)), JSON.stringify(snap.warnings));
+    await call(b, "project_load", { key: "dem" });
+    snap = await snapshot(b);
+    assert.deepEqual(snap.warnings, []);
+    assert.equal(snap.document.inputs.dem.quick_check.method, "owd-quick-1");
+    assert.equal(snap.document.inputs.dem.quick_check.length, 80 * 1024 * 1024);
+    assert.equal(snap.document.inputs.dem.sha256, undefined);
+
+    // Volumes and a section: the numbers of the DEM read whole (both read full resolution).
+    await call(b, "run_stage", { stage: "volumes" });
+    snap = await snapshot(b);
+    assert.deepEqual(snap.document.stages.volumes.results, whole.document.stages.volumes.results);
+    assert.deepEqual(await call(b, "cross_section", { option, chainage: 300 }), sectionWhole);
+
+    // The map: terrain info, a terrain tile, a contour tile and the hillshade, from the blocks.
+    const info = await call(b, "terrain_info");
+    assert.notEqual(info, null);
+    const [w, s, e, n] = info.bounds;
+    const z = Math.min(info.max_zoom, 14);
+    const lon = (w + e) / 2;
+    const lat = (s + n) / 2;
+    const x = Math.floor(((lon + 180) / 360) * 2 ** z);
+    const y = Math.floor(((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) * 2 ** z);
+    const tile = await call(b, "terrain_tile", { z, x, y });
+    assert.ok(Object.keys(tile).length > 100, "a terrain tile");
+    const contours = await call(b, "contour_tile", { z, x, y, interval: 1 });
+    assert.ok(Object.keys(contours ?? {}).length > 0, "contour lines");
+    assert.notEqual(await call(b, "hillshade"), null);
+    assert.equal(await exists(b, "error"), false);
+  });
+
+  it("a DEM in strips over the terrain limit is refused plainly, naming owd dem prepare", async () => {
+    const b = await start();
+    await folder(b, standardFiles(), `${FOLDER}-limit`);
+    // The limit, set very low, stands for a browser's memory: 0.0001 GiB is about 107 kB, under the
+    // 268,800 bytes the example's 33,600 cells need read whole.
+    await call(b, "set_terrain_limit", { gib: "0.0001" });
+    await openProject(b);
+    await opened(b);
+    const said = await b.execute(async () => {
+      try {
+        await window.__owdPlatform.call("project_load", { key: "dem" });
+        return "loaded";
+      } catch (e) {
+        return String(e);
+      }
+    });
+    assert.match(said, /too large/);
+    assert.match(said, /strips, not tiles/);
+    assert.match(said, /owd dem prepare/);
   });
 });

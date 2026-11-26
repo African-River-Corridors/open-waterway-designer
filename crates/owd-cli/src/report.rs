@@ -81,8 +81,8 @@ pub fn report(flags: ReportFlags) -> Result {
                     .join(" "),
             ),
         };
-        let report = owd_report::build(&text, dem.as_deref(), &req)
-            .map_err(|e| input_error(e.to_string()))?;
+        let report =
+            owd_report::build(&text, dem.as_ref(), &req).map_err(|e| input_error(e.to_string()))?;
         let mut files = Vec::new();
         let mut warnings = Vec::new();
         for &format in &formats {

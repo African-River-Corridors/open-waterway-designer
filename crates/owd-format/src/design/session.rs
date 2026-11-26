@@ -6,7 +6,7 @@
 
 use super::crs::{Crs, Utm};
 use super::geojson::{self, Role};
-use super::hash::{hash_value, sha256_hex};
+use super::hash::hash_value;
 use super::river::{RiverGeometry, RiverIn, river};
 use super::rule_sets::default_settings;
 use super::schema;
@@ -612,17 +612,20 @@ impl Session {
 
     /// A warning when the DEM the document names is missing or is not the file whose hash was
     /// recorded. `bytes` is the file the caller found at the recorded path, if any.
-    pub fn dem_warning(&self, bytes: Option<&[u8]>) -> Option<String> {
+    pub fn dem_warning<S: crate::sectioned::ByteSource + ?Sized>(
+        &self,
+        bytes: Option<&S>,
+    ) -> Option<String> {
         let dem = self.doc["inputs"]["dem"].as_object()?;
         let path = dem["path"].as_str().unwrap_or("?");
-        match bytes {
-            None => Some(format!(
+        match self.dem_check(bytes) {
+            super::volumes::DemCheck::Missing => Some(format!(
                 "the DEM `{path}` is missing: the volumes may no longer hold"
             )),
-            Some(b) if Some(sha256_hex(b).as_str()) != dem["sha256"].as_str() => Some(format!(
+            super::volumes::DemCheck::Changed => Some(format!(
                 "the DEM `{path}` has changed since its hash was recorded: the volumes may no longer hold"
             )),
-            Some(_) => None,
+            _ => None,
         }
     }
 
