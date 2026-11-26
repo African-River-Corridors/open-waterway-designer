@@ -339,6 +339,18 @@ how far it stands above bank-full at its lower end, its upper end and at its wor
 depth over the DEM's river level at each end. `owd optimise` prints the table; the app shows it under
 the Optimise row.
 
+**Paying for flooded buildings (`building_cost`).** With a buildings file loaded (`owd import
+--buildings FILE`, `inputs.buildings` in a project, or Buildings in the app's Data), `building_cost`
+(`owd optimise --building-cost X`, or the Optimise row in the app) is the cost of one building a pool
+floods, in the units of the cut cost. It is the engineer's price, for example a resettlement cost, not
+a fact. A building counts when its point is in land the pool floods by the rule above and the water
+there is at least `building_min_depth_m` deep (`--building-min-depth`, default 0.3 m). Buildings below
+the confidence threshold (default 0.7) or the smallest area are counted apart and never costed. Off
+(0) by default: the search is then unchanged. With buildings loaded the flood report also lists the
+buildings and the settlement land each pool floods, and the first 20 flooded buildings by place.
+`owd volumes` and the screening report say which buildings the cut takes, comes within 50 m of, or
+cuts off on a meander island. See [Buildings, places and settlements](docs/buildings-and-places.md).
+
 *A wider lift menu.* The default lifts are 0.5 and 1 m. Set your own with `--lifts`, for example
 `--lifts 1,2,3,4,5,6,7,8,9,10,11,12`, and candidate sites with `--sites` or the setting
 `site_step_m`. A menu of 1 to 12 m with a site every 500 m on a 240 km river is searched in under a
