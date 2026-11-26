@@ -558,6 +558,19 @@ export interface FeaturesFlooded {
   min_depth_m: number;
 }
 export const featuresFlooded = (key: FeatureKey, pool: number, minDepth: number) => invoke<FeaturesFlooded>("features_flooded", { key, pool, minDepth });
+/** The buildings and the channel (BLD-1): in the cut, near it, severed; null with no buildings or channel. */
+export interface BuildingConflicts {
+  taken: number;
+  near: number;
+  severed: number;
+  taken_apart: number;
+  near_apart: number;
+  severed_apart: number;
+  near_cut_m: number;
+  from_volumes: boolean;
+  fids: { taken: number[]; near: number[]; severed: number[] };
+}
+export const buildingConflicts = () => invoke<BuildingConflicts | null>("building_conflicts");
 /** A feature file as the map draws it, or null when none is attached. */
 export const featureMap = (key: FeatureKey) => invoke<FeatureMap | null>("feature_map", { key });
 /** Load one input. With no path the user picks a file (a dropped file is a path on the desktop, a File in a browser); null comes back on cancel. Rejects with the session's reason. */
@@ -597,7 +610,7 @@ export interface OptimiseSettings {
   weir_straight_m?: number | null;
 }
 /** A flood setting of the optimise stage the app may set. */
-export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m";
+export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m" | "building_cost";
 /** What one pool of the weir cascade floods (`results.cascade.flood.pools`, written when a flood setting is on). */
 export interface PoolFlood {
   start_m: number;
@@ -618,7 +631,10 @@ export interface CascadeFlood {
   flooded_ha: number;
   flood_cost: number;
   flood_cost_per_ha: number;
-  pools: PoolFlood[];
+  pools: (PoolFlood & { buildings_flooded?: number; settlement_flooded_ha?: number })[];
+  /** BLD-1: the buildings the pools flood by the weir search's rule, when buildings are loaded. */
+  buildings?: { flooded: number; loaded: number; building_cost: number; cost_per_building: number; min_depth_m: number; flooded_below_confidence: number; flooded_below_area: number; first: { id: string; lon_lat: [number, number]; pool: number }[] };
+  settlement_flooded_ha?: number;
 }
 /** The join settings of the optimise stage that the app sets (OPT-3). */
 export type JoinSetting = "seams_on_straights" | "free_seams" | "seam_window_m" | "min_straight_m" | "weir_straight_m";

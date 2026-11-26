@@ -1209,6 +1209,9 @@ impl AppState {
         ask: crate::report::ReportAsk,
     ) -> crate::report::ReportJob {
         crate::report::ReportJob::new(self.session.to_text(), self.dem_src.clone(), option, ask)
+            .with_extras(owd_report::Extras {
+                building_conflicts: self.building_conflicts(),
+            })
     }
 
     /// The quantity table as CSV, from the session. The same text as `owd export --csv`.
@@ -1629,6 +1632,19 @@ impl AppState {
             owd_format::design::crs::Crs::Utm(u) => u.inverse_all(&pts).unwrap_or_default(),
             owd_format::design::crs::Crs::Wgs84 => pts,
         }
+    }
+
+    /// The buildings and the channel (BLD-1): in the cut, near it, severed. `None` with no
+    /// buildings loaded or no channel yet.
+    pub fn building_conflicts(&self) -> Option<Value> {
+        self.session.features(FeatureInput::Buildings)?;
+        let channel = self.channel_stations().ok()?;
+        self.session.building_conflicts(&channel)
+    }
+
+    /// [`AppState::building_conflicts`] on a channel the caller holds.
+    pub fn building_conflicts_on(&self, channel: &owd_format::design::channel::Channel) -> Option<Value> {
+        self.session.building_conflicts(channel)
     }
 
     /// Whether each feature of `input` is counted (for buildings: passes the confidence and area

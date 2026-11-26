@@ -446,6 +446,27 @@ impl Session {
         Ok(card.to_string())
     }
 
+    /// The buildings and the channel (BLD-1), as JSON: in the cut, near it, on land a cut-through
+    /// severs; `null` with no buildings or no channel yet. Read on the channel's stations, made once
+    /// per design.
+    pub fn building_conflicts(&mut self) -> String {
+        let ckey = self.state.channel_key();
+        if self.stations.as_ref().is_none_or(|(k, _)| *k != ckey) {
+            self.stations = self
+                .state
+                .channel_stations()
+                .ok()
+                .map(|c| (ckey, std::sync::Arc::new(c)));
+        }
+        match &self.stations {
+            Some((_, c)) => self
+                .state
+                .building_conflicts_on(c)
+                .map_or_else(|| "null".into(), |v| v.to_string()),
+            None => "null".into(),
+        }
+    }
+
     /// Which features of `key` the map's pool water `pool` covers at least `min_depth_m` deep, as
     /// JSON: `{fids, depths, pools: [{number, flooded, counted}]}`. `counted`: the buildings that
     /// pass the confidence and area filters. This is the map's flood mask, which differs from the

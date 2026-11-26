@@ -1129,7 +1129,7 @@
       </dl>
     </section>
   {/if}
-  <MapFeatures map={featureMap} {ready} {features} ticks={{ buildings: ticks.buildings, places: ticks.places, settlements: ticks.settlements }} poolOn={shows("pool-water") && poolWaterDrawn === "on"} {poolWater} minDepth={features?.buildings?.min_depth_m ?? 0.3} bind:flooded={buildingsFlooded} {terrainOn} exaggeration={prefs.exaggeration} />
+  <MapFeatures map={featureMap} {ready} {features} ticks={{ buildings: ticks.buildings, places: ticks.places, settlements: ticks.settlements }} poolOn={shows("pool-water") && poolWaterDrawn === "on"} {poolWater} minDepth={features?.buildings?.min_depth_m ?? 0.3} bind:flooded={buildingsFlooded} {terrainOn} exaggeration={prefs.exaggeration} channelKey={channel?.key ?? ""} />
   {#if weirShown && structures}
     <StructureCard weir={weirShown} {structures} {poolWater} onClose={() => (selectedWeir = null)} />
   {/if}

@@ -10,7 +10,7 @@
   import type * as maplibregl from "maplibre-gl";
   import type * as GeoJSON from "geojson";
   import * as api from "./api";
-  import type { FeatureKey, FeatureMap, FeaturesFlooded, PoolWaterInfo, Snapshot } from "./api";
+  import type { BuildingConflicts, FeatureKey, FeatureMap, FeaturesFlooded, PoolWaterInfo, Snapshot } from "./api";
   import { token } from "./theme";
   import { DOT_ZOOM, FOOTPRINT_ZOOM, PLACE_BLOCK_NOTE, PLACE_KINDS, cardRows, kindsPresent, parsePlaceImageId, placeBlock, placeImageId, placeKind, placeSortKey, ringCentre, shortName, type FeatureCard, type PlaceBlock, type PlaceKind } from "./features";
   import { extrusionHeight } from "./structures";
@@ -26,6 +26,7 @@
     flooded = $bindable(null),
     terrainOn = false,
     exaggeration = 1,
+    channelKey = "",
   }: {
     map: maplibregl.Map | undefined;
     ready: boolean;
@@ -41,7 +42,14 @@
     /** The map is in 3D: the places' blocks stand up. */
     terrainOn?: boolean;
     exaggeration?: number;
+    /** Changes when the channel may have changed: the buildings' place against the cut is asked again. */
+    channelKey?: string;
   } = $props();
+  /** The buildings and the channel (BLD-1): in the cut, near it, severed. A report, not a cost. */
+  let conflicts = $state<BuildingConflicts | null>(null);
+  const TAKEN = "#b2182b";
+  const NEAR = "#fdae6b";
+  const SEVERED = "#8073ac";
   /** The places' placeholder blocks, flat (BLD-1 groundwork for 3D models). */
   let blocks: (PlaceBlock & { fid: number })[] = [];
   let blocksKey = "";
@@ -79,7 +87,12 @@
     m.addLayer({ id: "buildings-density", type: "heatmap", source: "building-points", maxzoom: DOT_ZOOM + 1, layout: vis(t.buildings), paint: { "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 8, 6, DOT_ZOOM + 1, 14], "heatmap-intensity": 0.6, "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], DOT_ZOOM, 0.85, DOT_ZOOM + 1, 0], "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.2, "rgba(242,232,207,0.55)", 0.6, "rgba(253,174,107,0.8)", 1, "rgba(228,87,46,0.95)"] } }, before);
     m.addLayer({ id: "buildings-dots", type: "circle", source: "building-points", minzoom: DOT_ZOOM, layout: vis(t.buildings), paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], DOT_ZOOM, 1.8, FOOTPRINT_ZOOM, 3], "circle-color": ["case", state, FLOODED, CREAM], "circle-stroke-color": INK, "circle-stroke-width": 0.75, "circle-pitch-alignment": "map", "circle-opacity": ["interpolate", ["linear"], ["zoom"], FOOTPRINT_ZOOM, 1, FOOTPRINT_ZOOM + 0.5, ["case", ["==", ["get", "point"], true], 1, 0]], "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], FOOTPRINT_ZOOM, 1, FOOTPRINT_ZOOM + 0.5, ["case", ["==", ["get", "point"], true], 1, 0]] } }, before);
     m.addLayer({ id: "buildings-fill", type: "fill", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "fill-color": ["case", state, FLOODED, CREAM], "fill-opacity": 0.8 } }, before);
-    m.addLayer({ id: "buildings-outline", type: "line", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "line-color": INK, "line-width": ["case", state, 1.6, 0.8] } }, before);
+    // The cut conflict style: the edge says how the building stands against the channel's cut.
+    const cut = ["coalesce", ["feature-state", "cut"], ""] as unknown as maplibregl.ExpressionSpecification;
+    const cutColour = ["match", cut, "taken", TAKEN, "near", NEAR, "severed", SEVERED, INK] as unknown as maplibregl.ExpressionSpecification;
+    m.addLayer({ id: "buildings-outline", type: "line", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "line-color": cutColour, "line-width": ["match", cut, "taken", 2.6, "near", 2, "severed", 2, ["case", state, 1.6, 0.8]] } }, before);
+    m.setPaintProperty("buildings-dots", "circle-stroke-color", cutColour);
+    m.setPaintProperty("buildings-dots", "circle-stroke-width", ["match", cut, "", 0.75, 1.8]);
     // A bridge's deck and a quay's slab: a placeholder block, pale with a dark edge like the weirs; in 3D it stands up.
     m.addLayer({ id: "places-blocks", type: "fill", source: "places-blocks", layout: vis(t.places), paint: { "fill-color": CREAM, "fill-outline-color": INK, "fill-opacity": 0.9 } });
     m.addLayer({ id: "places-blocks-3d", type: "fill-extrusion", source: "places-blocks-3d", layout: vis(t.places), paint: { "fill-extrusion-color": CREAM, "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "base"], "fill-extrusion-opacity": 1 } });
@@ -169,6 +182,8 @@
       if (fs.length) m.once("idle", () => ((buildingsMs = Math.round(performance.now() - start)), (buildingsState = "on")));
       floodedKey = "";
       untrack(markFlooded);
+      conflictsKey = "";
+      untrack(markConflicts);
     } else if (key === "points_of_interest") {
       const pts = fs.map((f) => {
         const kind = placeKind(f.properties.kind);
@@ -191,6 +206,26 @@
     } else {
       (m.getSource("settlements") as maplibregl.GeoJSONSource).setData((data ?? empty) as unknown as GeoJSON.FeatureCollection);
     }
+  }
+
+  let conflictsKey = "";
+  let conflictsAsk = 0;
+  /** Mark each building's place against the cut, as the engine reads it from the channel's stations. */
+  function markConflicts() {
+    const m = map;
+    if (!m || !added) return;
+    const key = features?.buildings?.attached ? `${channelKey}|${drawnSha.buildings}|${features.buildings.near_cut_m}` : "";
+    if (key === conflictsKey) return;
+    conflictsKey = key;
+    const ask = ++conflictsAsk;
+    const apply = (c: BuildingConflicts | null) => {
+      if (ask !== conflictsAsk) return;
+      for (const s of ["buildings", "building-points"]) if (m.getSource(s)) for (const kind of ["taken", "near", "severed"] as const) for (const fid of conflicts?.fids[kind] ?? []) m.setFeatureState({ source: s, id: fid }, { cut: "" });
+      conflicts = c;
+      for (const s of ["buildings", "building-points"]) for (const kind of ["near", "severed", "taken"] as const) for (const fid of c?.fids[kind] ?? []) m.setFeatureState({ source: s, id: fid }, { cut: kind });
+    };
+    if (!key) return apply(null);
+    api.buildingConflicts().then(apply, () => apply(null));
   }
 
   /** Stand the places' blocks up in the 3D view: the top at the deck level (or the given height above the
@@ -292,6 +327,11 @@
     untrack(markFlooded);
   });
   $effect(() => {
+    void channelKey;
+    void features?.buildings?.near_cut_m;
+    untrack(markConflicts);
+  });
+  $effect(() => {
     void terrainOn;
     void exaggeration;
     untrack(() => {
@@ -306,7 +346,14 @@
   const TITLES: Record<string, string> = { buildings: "Building", points_of_interest: "Place", settlements: "Settlement" };
 </script>
 
-<div hidden data-testid="map-features" data-buildings={buildingsState} data-buildings-ms={buildingsMs ?? ""} data-places={placesCount} data-place-images={placeImages} data-flooded={flooded ? flooded.fids.length : ""} data-place-kinds={kinds.join(" ")} data-place-blocks={blocksDrawn}></div>
+<div hidden data-testid="map-features" data-buildings={buildingsState} data-buildings-ms={buildingsMs ?? ""} data-places={placesCount} data-place-images={placeImages} data-flooded={flooded ? flooded.fids.length : ""} data-place-kinds={kinds.join(" ")} data-place-blocks={blocksDrawn} data-cut-taken={conflicts?.taken ?? ""} data-cut-near={conflicts?.near ?? ""} data-cut-severed={conflicts?.severed ?? ""}></div>
+{#if ticks.buildings && conflicts && conflicts.taken + conflicts.near + conflicts.severed > 0}
+  <ul class="kinds cut" data-testid="building-cut-legend" aria-label="Buildings against the channel">
+    <li><span class="edge" style="border-color: {TAKEN}"></span>In the cut: {conflicts.taken}</li>
+    <li><span class="edge" style="border-color: {NEAR}"></span>Within {conflicts.near_cut_m} m: {conflicts.near}</li>
+    <li><span class="edge" style="border-color: {SEVERED}"></span>On severed land: {conflicts.severed}</li>
+  </ul>
+{/if}
 {#if ticks.places && kinds.length}
   <ul class="kinds" data-testid="place-legend" aria-label="Kinds of place">
     {#each kinds as k}<li data-kind={k}><span class="mark {PLACE_KINDS.find((x) => x.kind === k)?.shape}">{PLACE_KINDS.find((x) => x.kind === k)?.letter}</span>{PLACE_KINDS.find((x) => x.kind === k)?.label}</li>{/each}
@@ -338,5 +385,7 @@
   .kinds li { display: flex; align-items: center; gap: var(--sp-1); }
   .mark { display: inline-grid; place-items: center; width: 12px; height: 12px; background: #f2e8cf; border: 1.5px solid #2b2925; color: #2b2925; font-size: 8px; font-weight: 700; line-height: 1; }
   .mark.circle { border-radius: 50%; width: 9px; height: 9px; }
+  .kinds.cut { right: auto; left: 10px; bottom: auto; top: 10px; }
+  .edge { display: inline-block; width: 10px; height: 10px; border: 2.5px solid; background: #f2e8cf; }
   .mark.diamond { transform: rotate(45deg) scale(0.8); }
 </style>

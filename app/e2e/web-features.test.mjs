@@ -57,17 +57,14 @@ async function pick(b, open, file) {
   await picker.waitForExist({ timeout: 5000 });
   await picker.setValue(file);
 }
-/** Load a feature file through the same command as Load… and drag and drop. */
-const loadFeatures = (b, role, name, data) =>
-  b.execute(
-    async (role, name, text) => {
-      const file = new File([text], name, { type: "application/geo+json" });
-      return (await window.__owdPlatform.call("load_input", { role, path: file })) !== null;
-    },
-    role,
-    name,
-    JSON.stringify(data),
-  );
+/** Load a feature file through its row's Load… button and the file chooser, as a user does. */
+async function loadFeatures(b, role, name, data) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "owd-web-features-file-"));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, JSON.stringify(data));
+  await pick(b, async () => (await tid(b, `load-${role}`)).click(), file);
+  return true;
+}
 const box = (b, id) =>
   b.execute((i) => {
     const c = document.querySelector(`[data-testid="layer-${i}"]`);
@@ -108,7 +105,9 @@ describe("buildings, places and settlements (BLD-1)", () => {
     // 400 buildings within 300 m of the river: recorded by reference, so the design stays small.
     const sizeBefore = (await savedText(b)).length;
     assert.equal(await loadFeatures(b, "buildings", "buildings.geojson", buildings(400, { reach: 300 })), true);
-    await until(b, "the buildings row", async () => /^400 \(\d+ counted\)$/.test(await text(b, "data-buildings")));
+    await until(b, "the buildings row", async () => /^400 \(\d+ counted\)$/.test(await text(b, "data-buildings"))).catch(async (e) => {
+      throw new Error(`${e.message}: the row reads "${await text(b, "data-buildings")}"; ${JSON.stringify(await b.execute(async () => (await window.__owdPlatform.call("snapshot")).feature_inputs))}`);
+    });
     const rec = (await b.execute(async () => (await window.__owdPlatform.call("snapshot")).document.inputs.buildings));
     assert.deepEqual([rec.path, rec.count, rec.crs, rec.min_confidence], ["buildings.geojson", 400, "WGS 84", 0.7]);
     assert.ok((await savedText(b)).length - sizeBefore < 400, "the design grows by the reference only");
@@ -146,12 +145,14 @@ describe("buildings, places and settlements (BLD-1)", () => {
       m.jumpTo({ center: f.geometry.coordinates, zoom: 16 });
     }, fids[0]);
     await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()));
-    await b.execute((fid) => {
+    const at = await b.execute((fid) => {
       const m = window.__owdMap;
       const f = m.getSource("building-points").serialize().data.features.find((x) => x.properties.fid === fid);
-      const ll = { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] };
-      m.fire("click", { point: m.project(ll), lngLat: ll });
+      const p = m.project({ lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1] });
+      const r = m.getCanvas().getBoundingClientRect();
+      return { x: Math.round(r.left + p.x), y: Math.round(r.top + p.y) };
     }, fids[0]);
+    await b.action("pointer").move({ x: at.x, y: at.y, origin: "viewport" }).down().up().perform();
     await until(b, "the building card", () => exists(b, "feature-card"));
     const card = await text(b, "feature-card");
     for (const want of [/Area\s+\d+ m²/, /Confidence\s+0\.\d\d/, /Ground level\s+-?\d+\.\d\d m/, /Pool water level\s+\d\.\d\d m \(pool \d\)/, /Depth of flooding\s+\d+\.\d\d m/, /To the design line\s+\d+ m/, /To the (daylight line|channel's water edge)/, /Machine-detected footprint, not a survey/]) assert.match(card, want);
@@ -173,21 +174,105 @@ describe("buildings, places and settlements (BLD-1)", () => {
     assert.match(await text(b, "data-buildings"), /^missing: buildings\.geojson$/);
   });
 
+
+  it("places with their names, kinds and blocks, and settlements with the share a pool floods: loaded by Load…, decluttered with the larger place kept, a legend of the kinds, click cards, and the design text unchanged by the ticks", async () => {
+    const b = await start();
+    const doc = poolsDesign();
+    await pick(b, async () => (await b.$("button=Open")).click(), doc);
+    await until(b, "the design", async () => (await text(b, "file-label")).includes("river-pools.owd"));
+    await pick(b, async () => (await tid(b, "load-dem")).click(), path.join(FIXTURES, "river-dem.tif"));
+    await until(b, "the DEM", async () => (await text(b, "data-dem")).includes("river-dem.tif"));
+    await loadFeatures(b, "points_of_interest", "places.geojson", places());
+    await until(b, "the places row", async () => (await text(b, "data-points_of_interest")) === "6 places");
+    await loadFeatures(b, "settlements", "settlements.geojson", settlements());
+    await until(b, "the settlements row", async () => (await text(b, "data-settlements")) === "2 settlements");
+    const textBefore = await savedText(b);
+
+    // Places start on; their names are pictures the page draws, one per distinct kind and name.
+    await until(b, "the places on the map", async () => Number(await featuresAttr(b, "data-places")) === 6);
+    assert.equal(await featuresAttr(b, "data-place-kinds"), "community bridge quay other");
+    assert.equal(await featuresAttr(b, "data-place-blocks"), "2");
+    await until(b, "the legend", () => exists(b, "place-legend"));
+    assert.equal((await text(b, "place-legend")).replace(/\s+/g, " ").trim(), "Community B Bridge Q Quay Other");
+    const riverbend = places().features[0].geometry.coordinates;
+    await b.execute((c) => void window.__owdMap.jumpTo({ center: c, zoom: 17 }), riverbend);
+    await until(b, "every name drawn", async () => Number(await featuresAttr(b, "data-place-images")) >= 6, 30000);
+    const ids = await b.execute(() => window.__owdMap.listImages().filter((i) => i.startsWith("owd-place:")).sort());
+    for (const want of ["owd-place:community:Riverbend", "owd-place:community:Little Ford", "owd-place:bridge:Old Crossing", "owd-place:quay:North Wharf", "owd-place:other:Pump House"]) assert.ok(ids.includes(want), `${want} in ${ids}`);
+    assert.equal(new Set(ids).size, ids.length);
+    // Further out Riverbend (45.5 ha) and Little Ford (2.1 ha), 36 m apart, collide: the larger stays.
+    await b.execute((c) => void window.__owdMap.jumpTo({ center: c, zoom: 13 }), riverbend);
+    await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()));
+    await new Promise((r) => setTimeout(r, 500));
+    const shown = await b.execute(() => window.__owdMap.queryRenderedFeatures({ layers: ["places"] }).map((f) => f.properties.img));
+    assert.ok(shown.includes("owd-place:community:Riverbend"), `${shown}`);
+    assert.ok(!shown.includes("owd-place:community:Little Ford"), `${shown}`);
+    // The bridge's block: a deck along its bearing, 120 m by 8 m, marked a placeholder.
+    const deck = await b.execute(() => window.__owdMap.getSource("places-blocks").serialize().data.features.find((f) => f.properties.kind === "bridge"));
+    const ring = deck.geometry.coordinates[0];
+    const lat = (ring[1][1] - ring[0][1]) * 111320;
+    assert.ok(Math.abs(lat - 120) < 0.01, `${lat}`);
+    assert.equal(deck.properties.note, "placeholder model, not a design");
+
+    // The pool water on; a click on Riverbend reads its name, kind, properties, ground, water and line.
+    await (await tid(b, "layers-button")).click();
+    await (await tid(b, "layer-pool-water")).click();
+    await until(b, "the pool water", async () => (await (await tid(b, "plan-map")).getAttribute("data-pool-water")) === "on", 120000);
+    const clickAt = async (lonlat) => {
+      await b.execute((ll) => void window.__owdMap.jumpTo({ center: ll, zoom: 16 }), lonlat);
+      await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded()));
+      await new Promise((r) => setTimeout(r, 400));
+      const at = await b.execute((ll) => {
+        const m = window.__owdMap;
+        const p = m.project({ lng: ll[0], lat: ll[1] });
+        const r = m.getCanvas().getBoundingClientRect();
+        return { x: Math.round(r.left + p.x), y: Math.round(r.top + p.y) };
+      }, lonlat);
+      await b.action("pointer").move({ x: at.x, y: at.y, origin: "viewport" }).down().up().perform();
+    };
+    await clickAt(riverbend);
+    await until(b, "the place card", async () => (await exists(b, "feature-card")) && /Riverbend/.test(await text(b, "feature-card")));
+    const card = await text(b, "feature-card");
+    for (const want of [/Place: Riverbend/, /Kind\s+Community/, /area_ha\s+45\.5/, /parts\s+3/, /Ground level\s+(-?\d+\.\d\d m|unknown)/, /(Flooding\s+dry|Depth of flooding)/, /To the design line\s+\d+ m/, /Chainage of the nearest point\s+\d+\.\d{3} km/]) assert.match(card, want);
+    await (await tid(b, "feature-card-close")).click();
+
+    // Settlements: off at first; ticked, a click inside one reads the share of it the pool water covers.
+    assert.deepEqual(await box(b, "settlements"), { checked: false, disabled: false, row: "Settlements" });
+    await (await tid(b, "layer-settlements")).click();
+    await (await tid(b, "layer-places")).click();
+    const inside = settlements().features[0].geometry.coordinates[0];
+    await clickAt([(inside[0][0] + inside[2][0]) / 2, (inside[0][1] + inside[2][1]) / 2]);
+    await until(b, "the settlement card", () => exists(b, "feature-card"));
+    assert.match(await text(b, "feature-card"), /Area flooded\s+\d+ %/);
+    assert.match(await text(b, "feature-card"), /Area\s+16\.0 ha/);
+    if (SHOTS) await b.saveScreenshot(path.join(SHOTS, "web-places.png"));
+
+    // The ticks never touch the design.
+    await (await tid(b, "layer-settlements")).click();
+    await (await tid(b, "layer-places")).click();
+    await (await tid(b, "layer-pool-water")).click();
+    assert.equal(await savedText(b), textBefore);
+  });
+
   it("measures the map with 36,000 buildings: the time to show them, and the frame time while panning", async (t) => {
     const b = await start();
+    // Software WebGL is slow: the measuring script may take minutes.
+    await b.setTimeout({ script: 600000 });
     await (await tid(b, "open-example")).click();
     await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
     const data = buildings(36000, { reach: 1500 });
     const t0 = Date.now();
     assert.equal(await loadFeatures(b, "buildings", "buildings-36k.geojson", data), true);
+    await until(b, "the 36,000 buildings in the design", async () => (await text(b, "data-buildings")).startsWith("36,000"), 120000);
     const loadMs = Date.now() - t0;
     await (await tid(b, "layers-button")).click();
     await until(b, "the buildings tick", async () => !(await box(b, "buildings")).disabled);
     await (await tid(b, "layer-buildings")).click();
     await until(b, "36,000 buildings on the map", async () => (await featuresAttr(b, "data-buildings")) === "on", 120000);
     const showMs = Number(await featuresAttr(b, "data-buildings-ms"));
-    // Frames while panning at three zoom levels: the density, the dots and the footprints.
-    const frames = await b.execute(async () => {
+    // Frames while panning at three zoom levels (the density, the dots and the footprints), with the
+    // buildings shown and, as the baseline, hidden.
+    const pan = () => b.execute(async () => {
       const m = window.__owdMap;
       const out = {};
       for (const z of [11, 13, 15]) {
@@ -195,7 +280,7 @@ describe("buildings, places and settlements (BLD-1)", () => {
         await new Promise((r) => m.once("idle", r));
         const times = [];
         let last = performance.now();
-        const step = (k) =>
+        const step = () =>
           new Promise((r) => {
             m.panBy([40, 0], { animate: false });
             requestAnimationFrame(() => {
@@ -205,14 +290,17 @@ describe("buildings, places and settlements (BLD-1)", () => {
               r();
             });
           });
-        for (let k = 0; k < 30; k++) await step(k);
+        for (let k = 0; k < 30; k++) await step();
         times.sort((a, b) => a - b);
         out[z] = { median_ms: Math.round(times[15] * 10) / 10, p90_ms: Math.round(times[27] * 10) / 10 };
       }
       return out;
     });
-    t.diagnostic(`36,000 buildings: load into the design ${loadMs} ms; tiled and shown ${showMs} ms; frames while panning (software WebGL) ${JSON.stringify(frames)}`);
-    fs.writeFileSync(path.join(os.tmpdir(), "owd-buildings-36k-measure.json"), JSON.stringify({ loadMs, showMs, frames }, null, 2));
+    const frames = await pan();
+    await (await tid(b, "layer-buildings")).click();
+    const baseline = await pan();
+    t.diagnostic(`36,000 buildings: load into the design ${loadMs} ms; tiled and shown ${showMs} ms; frames while panning (software WebGL) with the buildings ${JSON.stringify(frames)}, without ${JSON.stringify(baseline)}`);
+    fs.writeFileSync(path.join(os.tmpdir(), "owd-buildings-36k-measure.json"), JSON.stringify({ loadMs, showMs, frames, baseline }, null, 2));
     assert.ok(showMs < 60000, `${showMs} ms`);
   });
 });
