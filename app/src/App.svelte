@@ -633,7 +633,7 @@
           // A GeoTIFF is the DEM wherever it lands; vector data must land on its own row.
           if (/\.tiff?$/i.test(e.name)) load("dem", e.file);
           else if (role) load(role, e.file);
-          else error = "Drop the file on the row it belongs to: left bank, right bank, river polygon or centreline.";
+          else error = "Drop the file on the row it belongs to: left bank, right bank, river polygon, centreline, buildings, places or settlements.";
         }
       })
       .then((un) => undo.push(un))
@@ -780,7 +780,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} onJoinSetting={joinSetting} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} onJoinSetting={joinSetting} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} onFeatureAction={(a) => fileAction(a)} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>

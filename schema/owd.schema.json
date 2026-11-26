@@ -309,6 +309,45 @@
             }
           }
         },
+        "buildings": {
+          "description": "BLD-1: a buildings file (GeoJSON Polygons or Points, WGS84 or WGS84 / UTM), referenced like the DEM and never embedded: path relative to the document, SHA-256, the number of buildings and the source CRS. `min_confidence` (0 to 1): a building below it is counted apart and never costed; `min_area_m2`: likewise for a smaller building; `near_cut_m`: the distance within which a building is reported as near the cut. Absent: no buildings.",
+          "type": "object",
+          "required": ["path", "sha256", "count", "crs"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+            "count": { "type": "integer", "minimum": 1 },
+            "crs": { "type": "string" },
+            "min_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+            "min_area_m2": { "type": "number", "minimum": 0 },
+            "near_cut_m": { "type": "number", "minimum": 0 }
+          }
+        },
+        "points_of_interest": {
+          "description": "BLD-1: a points of interest file (GeoJSON Points, or Polygons and LineStrings labelled at a representative point; properties `name` and `kind`), referenced like the DEM and never embedded. Absent: none.",
+          "type": "object",
+          "required": ["path", "sha256", "count", "crs"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+            "count": { "type": "integer", "minimum": 1 },
+            "crs": { "type": "string" }
+          }
+        },
+        "settlements": {
+          "description": "BLD-1: a settlements file (GeoJSON Polygons), referenced like the DEM and never embedded. Absent: none.",
+          "type": "object",
+          "required": ["path", "sha256", "count", "crs"],
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "sha256": { "type": "string", "minLength": 64, "maxLength": 64 },
+            "count": { "type": "integer", "minimum": 1 },
+            "crs": { "type": "string" }
+          }
+        },
         "constraints": {
           "description": "Spec 0017 ticket 13: the run's constraints (`schema/stages/inputs.constraints.1.schema.json`). `no_go`: polygons in the project CRS (an outer ring and holes, each a list of [x, y] points), each with a unique name and a kind; the re-route treats them as impassable and every design line reports those it touches. `cut_rate_multiplier`: a raster referenced like the DEM (path relative to the document, SHA-256, CRS, nodata), whose cell value multiplies the cut rate in that cell; no data means 1. Absent: no constraints.",
           "type": "object",

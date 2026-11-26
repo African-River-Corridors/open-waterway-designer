@@ -235,6 +235,28 @@ enum Command {
         /// the pool starts. Its level holds to the next line; nothing is read between two levels.
         #[arg(long, value_name = "FILE")]
         water_pools: Option<String>,
+        /// Building footprints (GeoJSON Polygons or Points, or a GeoPackage; WGS84 or the project
+        /// CRS), with `area_m2` and `confidence` when the source gives them. Referenced by
+        /// relative path and SHA-256, never copied into the design. Needs the river first.
+        #[arg(long, value_name = "FILE")]
+        buildings: Option<String>,
+        /// Points of interest (GeoJSON Points, or Polygons and LineStrings labelled at a point),
+        /// with `name` and `kind`. Referenced like --buildings.
+        #[arg(long, value_name = "FILE")]
+        points_of_interest: Option<String>,
+        /// Settlement polygons (GeoJSON Polygons). Referenced like --buildings.
+        #[arg(long, value_name = "FILE")]
+        settlements: Option<String>,
+        /// A building with a confidence below this (0 to 1) is counted apart and never costed
+        /// (default 0.7).
+        #[arg(long, value_name = "0..1")]
+        building_min_confidence: Option<f64>,
+        /// A building smaller than this, m2, is counted apart and never costed (default 0).
+        #[arg(long, value_name = "M2")]
+        building_min_area: Option<f64>,
+        /// Buildings within this distance of the cut are reported as near it, metres (default 50).
+        #[arg(long, value_name = "METRES")]
+        building_near_cut: Option<f64>,
         /// The point the river flows towards, as longitude and latitude (WGS84). Both banks are run
         /// towards it and named left and right looking downstream, whatever way they were drawn
         /// or named. Each bank imported records it in its provenance.
@@ -1148,6 +1170,12 @@ pub fn main() -> ExitCode {
             water_slope,
             water_table,
             water_pools,
+            buildings,
+            points_of_interest,
+            settlements,
+            building_min_confidence,
+            building_min_area,
+            building_near_cut,
             downstream,
             mouth,
             banks: None,
@@ -1169,6 +1197,12 @@ pub fn main() -> ExitCode {
                 table: water_table,
                 pools: water_pools,
                 holds_bathymetry,
+            },
+            commands::FeatureFlags {
+                files: [buildings, points_of_interest, settlements],
+                min_confidence: building_min_confidence,
+                min_area_m2: building_min_area,
+                near_cut_m: building_near_cut,
             },
             &out.output,
             out.json,

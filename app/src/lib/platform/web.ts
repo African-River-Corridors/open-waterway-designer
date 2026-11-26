@@ -69,6 +69,9 @@ function pickFile(accept: string): Promise<File | null> {
 /** The part of a FileSystemFileHandle that saving uses. */
 type SaveHandle = { name: string; createWritable: () => Promise<{ write: (t: string) => Promise<void>; close: () => Promise<void> }> };
 
+/** The feature inputs (BLD-1), by their key in the design and in `owd-project.json`. */
+const FEATURE_KEYS: string[] = ["buildings", "points_of_interest", "settlements"];
+
 const bytesOf = async (file: File) => new Uint8Array(await file.arrayBuffer());
 
 /** What `owd-project.json` says, as the engine read it (`project_read`). */
@@ -106,6 +109,9 @@ export async function createWebPlatform(): Promise<Platform> {
    * bytes. The worker reads only the blocks it needs from it (COG-1), so a large sectioned DEM is
    * never loaded whole. */
   let dem: Blob | null = null;
+  /** The feature files the session holds (BLD-1: buildings, points of interest, settlements), kept so a
+   * restart can attach them again: the path or name the session recorded them under, and the file. */
+  let features: Record<string, { name: string; file: Blob }> = {};
   /** The Rule Set files loaded in this session, kept so a restart loads them again (#499). */
   const ruleSetTexts: string[] = [];
   /** Whether the design has unsaved changes, as the last snapshot said (or as it was before a restart). */
@@ -283,8 +289,28 @@ export async function createWebPlatform(): Promise<Platform> {
     const before = project;
     project = { folder, info };
     try {
-      const snap = await change<{ dirty: boolean; title: string; file_name: string }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
+      let snap = await change<{ dirty: boolean; title: string; file_name: string; project_note?: string | null }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
       dem = demFile;
+      features = {};
+      // The buildings, points of interest and settlements the project names (BLD-1): attached when the
+      // design names them (a file that changed keeps its warning), loaded when it names none.
+      const notes: string[] = snap.project_note ? [snap.project_note] : [];
+      for (const key of FEATURE_KEYS) {
+        const path = info.items.find((i) => i.key === key)?.path;
+        const file = path ? await folder.read(path) : null;
+        if (!path || !file) continue;
+        say(`Loading ${path}…`);
+        const named = !!(await json<{ document: { inputs: Record<string, unknown> } }>("snapshot")).document.inputs[key];
+        try {
+          snap = await change(named ? "attach_features" : "load_features", key, path, await readAll(file));
+          features[key] = { name: path, file };
+          if (!named) notes.push(`The design did not name ${path}: it now does. Save to keep that.`);
+        } catch (e) {
+          if (!named) notes.push(`${path} was not loaded: ${String(e)}`);
+          snap = await change("snapshot");
+        }
+      }
+      snap.project_note = notes.length ? notes.join(" ") : null;
       handle = null;
       carriedDirty = false;
       chosen = null;
@@ -303,11 +329,14 @@ export async function createWebPlatform(): Promise<Platform> {
     const snap = await json<{ warnings: string[]; document: { inputs: Record<string, unknown> } }>("snapshot");
     const inputs = snap.document.inputs;
     const demChanged = snap.warnings.some((w) => w.includes("has changed since its hash was recorded"));
-    const inDesign = (key: string) => (key === "design" ? true : key === "dem" ? !!inputs.dem && dem !== null : key === "water_pools" ? !!inputs.water_level : !!inputs[key]);
+    const attached = (snap as unknown as { feature_inputs?: Record<string, { attached: boolean }> }).feature_inputs ?? {};
+    const inDesign = (key: string) => (key === "design" ? true : key === "dem" ? !!inputs.dem && dem !== null : key === "water_pools" ? !!inputs.water_level : FEATURE_KEYS.includes(key) ? !!attached[key]?.attached : !!inputs[key]);
     const items = [];
     for (const item of p.info.items) {
       const there = item.path ? (await p.folder.read(item.path)) !== null : false;
-      items.push({ ...item, state: itemState(item.key, item.path, there, inDesign(item.key), demChanged) });
+      // A feature file the design names but could not attach from the folder is another file.
+      const changed = FEATURE_KEYS.includes(item.key) ? !!inputs[item.key] && !attached[item.key]?.attached : demChanged;
+      items.push({ ...item, state: itemState(item.key, item.path, there, inDesign(item.key), changed) });
     }
     return { title: p.info.title ?? p.folder.name, folder: p.folder.name, design: p.info.design, items };
   }
@@ -326,6 +355,12 @@ export async function createWebPlatform(): Promise<Platform> {
       return snap;
     }
     if (key === "water_pools") return change("set_water_pools", await file.text());
+    if (FEATURE_KEYS.includes(key)) {
+      say(`Loading ${path}…`);
+      const snap = await change("load_features", key, path, await readAll(file));
+      features[key] = { name: path, file };
+      return snap;
+    }
     return change("load_input", key, path.split("/").pop(), await readAll(file), undefined);
   }
 
@@ -336,6 +371,7 @@ export async function createWebPlatform(): Promise<Platform> {
     dem = before.dem;
     for (const text of ruleSetTexts) await host.rpc("load_rule_set_text", text);
     await host.rpc("open_text_file", before.name, before.text, before.dem ?? undefined);
+    for (const [key, f] of Object.entries(features)) await host.rpc("attach_features", key, f.name, await readAll(f.file)).catch(() => {});
     carriedDirty = before.dirty;
   }
 
@@ -404,6 +440,11 @@ export async function createWebPlatform(): Promise<Platform> {
   async function loadInput(role: string, given: unknown) {
     const file = given instanceof File ? given : await pickFile(role === "dem" ? ".tif,.tiff" : ".geojson,.json,.gpkg");
     if (!file) return null;
+    if (FEATURE_KEYS.includes(role)) {
+      const snap = await change("load_features", role, file.name, await readAll(file));
+      features[role] = { name: file.name, file };
+      return snap;
+    }
     if (role === "dem") {
       // The file itself goes to the worker, which reads the blocks it needs (COG-1).
       const snap = await change("load_dem_file", file.name, file);
@@ -419,6 +460,7 @@ export async function createWebPlatform(): Promise<Platform> {
     const base = import.meta.env.BASE_URL;
     const [text, tif] = await Promise.all([fetch(`${base}examples/${EXAMPLE}`).then((r) => (r.ok ? r.text() : Promise.reject(`cannot load the example (${r.status})`))), fetch(`${base}examples/${EXAMPLE_DEM}`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(`cannot load the example DEM (${r.status})`)))]);
     dem = new Blob([tif]);
+    features = {};
     handle = null;
     project = null;
     carriedDirty = false;
@@ -439,6 +481,7 @@ export async function createWebPlatform(): Promise<Platform> {
     new_file: async () => {
       if (!confirmDiscard()) return null;
       dem = null;
+      features = {};
       handle = null;
       project = null;
       carriedDirty = false;
@@ -450,6 +493,7 @@ export async function createWebPlatform(): Promise<Platform> {
       if (!file) return null;
       const text = await file.text();
       dem = null;
+      features = {};
       handle = null;
       project = null;
       carriedDirty = false;
@@ -512,6 +556,12 @@ export async function createWebPlatform(): Promise<Platform> {
     cross_section: (a) => json("cross_section", a.option, a.chainage),
     station_near: (a) => host.rpc("station_near", a.option, a.lon, a.lat),
     load_input: (a) => loadInput(a.role as string, a.path),
+    clear_features: async (a) => {
+      delete features[a.key as string];
+      return change("clear_features", a.key);
+    },
+    set_building_filters: (a) => change("set_building_filters", JSON.stringify(a.filters ?? {})),
+    feature_map: (a) => json("feature_map", a.key),
     set_water: (a) => change("set_water", a.level, a.fall),
     set_alignment_settings: (a) => change("set_alignment_settings", a.method, JSON.stringify(a.settings)),
     set_optimise_settings: (a) => change("set_optimise_settings", JSON.stringify(a.settings)),

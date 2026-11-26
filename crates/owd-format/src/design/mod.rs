@@ -14,6 +14,7 @@ pub mod dem_source;
 pub mod design_line;
 pub mod envelope;
 pub mod export;
+pub mod features;
 pub mod fits;
 pub mod geojson;
 pub mod geopackage;

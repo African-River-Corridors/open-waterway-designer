@@ -6,6 +6,7 @@
 
 use crate::run::{Outcome, RunControl, RunJob};
 use owd_format::design::bank_edit::BankEdit;
+use owd_format::design::features::{BuildingFilters, FeatureInput};
 use owd_format::design::sections::Stations;
 use owd_format::design::{
     AlignMethod, DesignError, NoteKind, OpenNote, Role, Session, Stage, StageStatus,
@@ -49,6 +50,19 @@ pub struct AppState {
     /// The Rule Set files loaded in this shell, as text, for the life of the shell: every design
     /// opened later loads them too (ticket #491).
     rule_set_texts: Vec<String>,
+    /// Where each feature file (BLD-1: buildings, points of interest, settlements) was read from,
+    /// so a save elsewhere says its path again from there. By [`FeatureInput`] order.
+    feature_files: [Option<PathBuf>; 3],
+    /// Each feature file as the map draws it (WGS84 GeoJSON text), made when it is loaded or
+    /// attached. Never stored: the design holds only the reference.
+    feature_maps: [Option<Arc<String>>; 3],
+}
+
+/// A feature file as the map draws it (WGS84 GeoJSON text).
+fn feature_map(input: FeatureInput, bytes: &[u8]) -> Result<Arc<String>, String> {
+    let text = owd_format::design::features::file_text(input, bytes).map_err(message)?;
+    let v = owd_format::design::features::map_geojson(input, &text)?;
+    Ok(Arc::new(v.to_string()))
 }
 
 /// How many bank edits can be undone.
@@ -268,6 +282,8 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         }
     }
 
@@ -321,6 +337,11 @@ impl AppState {
             .map(|n| n.text.clone())
             .collect();
         warnings.extend(session.dem_warning(dem_bytes));
+        // A feature file the design names is attached by the host after the open (BLD-1); until
+        // then it shows as missing.
+        for input in FeatureInput::ALL {
+            warnings.extend(session.features_warning(input, None));
+        }
         let dem_file = session
             .dem_path()
             .map(|rel| path.parent().unwrap_or(Path::new(".")).join(rel));
@@ -340,6 +361,8 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         })
     }
 
@@ -1194,12 +1217,135 @@ impl AppState {
     }
 
     /// The DEM path is stored relative to the document: say it again from the folder `path` is in.
-    /// Only the path changes; the DEM's hash stays, so no stage goes stale.
+    /// Only the path changes; the DEM's hash stays, so no stage goes stale. The feature files too.
     fn point_dem_from(&mut self, path: &Path) {
         if let Some(file) = &self.dem_file {
             let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
             self.session.set_dem_path(&rel);
         }
+        for input in FeatureInput::ALL {
+            if let Some(file) = &self.feature_files[input as usize] {
+                let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
+                self.session.set_features_path(input, &rel);
+            }
+        }
+    }
+
+    /// Reference a feature file (BLD-1) and keep its features: `file` is where it was read from
+    /// (from the project folder in the browser), its path recorded from the design's folder. A
+    /// refusal changes nothing.
+    pub fn load_features(
+        &mut self,
+        input: FeatureInput,
+        file: &Path,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let base = self.path.as_deref().and_then(Path::parent);
+        let rel = match base {
+            Some(b) => relative_to(b, file),
+            None => file.to_string_lossy().into_owned(),
+        };
+        let mut s = self.session.clone();
+        s.set_features(input, &rel, bytes).map_err(message)?;
+        let map = feature_map(input, bytes)?;
+        self.session = s;
+        self.feature_maps[input as usize] = Some(map);
+        self.feature_files[input as usize] = Some(file.to_path_buf());
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Attach the feature file the design names, found by the host at its recorded path (or at
+    /// `file`, the project's path for it). A file that is not the one recorded is refused, and its
+    /// warning stays.
+    pub fn attach_features(
+        &mut self,
+        input: FeatureInput,
+        file: Option<&Path>,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        match self.session.attach_features(input, bytes) {
+            Ok(()) => {
+                self.feature_maps[input as usize] = Some(feature_map(input, bytes)?);
+                if let Some(f) = file {
+                    self.feature_files[input as usize] = Some(f.to_path_buf());
+                }
+                self.drop_feature_warnings(input);
+                Ok(())
+            }
+            Err(e) => {
+                self.drop_feature_warnings(input);
+                self.warnings
+                    .extend(self.session.features_warning(input, Some(bytes)));
+                Err(message(e))
+            }
+        }
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, input: FeatureInput) -> Result<(), String> {
+        self.refuse_while_running()?;
+        if self.session.feature_record(input).is_none() {
+            return Ok(());
+        }
+        self.session.clear_features(input);
+        self.feature_files[input as usize] = None;
+        self.feature_maps[input as usize] = None;
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the building filters (confidence, area, distance from the cut).
+    pub fn set_building_filters(&mut self, f: BuildingFilters) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session.set_building_filters(f).map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, each feature numbered `fid` as the
+    /// session numbers it. `None` when the design has none attached.
+    pub fn feature_map(&self, input: FeatureInput) -> Option<Arc<String>> {
+        self.session.features(input)?;
+        self.feature_maps[input as usize].clone()
+    }
+
+    pub fn features(
+        &self,
+        input: FeatureInput,
+    ) -> Option<&Arc<owd_format::design::features::FeatureSet>> {
+        self.session.features(input)
+    }
+
+    /// [`AppState::set_building_filters`] from JSON: the keys given change, the others stay.
+    pub fn set_building_filters_json(&mut self, v: &Value) -> Result<(), String> {
+        let mut f = self.session.building_filters();
+        for (k, slot) in [
+            ("min_confidence", &mut f.min_confidence),
+            ("min_area_m2", &mut f.min_area_m2),
+            ("near_cut_m", &mut f.near_cut_m),
+        ] {
+            match &v[k] {
+                Value::Null => {}
+                x => {
+                    *slot = x
+                        .as_f64()
+                        .ok_or_else(|| format!("`{k}` must be a number"))?
+                }
+            }
+        }
+        self.set_building_filters(f)
+    }
+
+    fn drop_feature_warnings(&mut self, input: FeatureInput) {
+        let Some(path) = self.session.features_path(input).map(str::to_string) else {
+            return;
+        };
+        let tag = format!("`{path}`");
+        self.warnings.retain(|w| !w.contains(&tag));
     }
 
     /// The text to write at `path`: the design with its DEM path said from that folder.
@@ -1327,6 +1473,8 @@ impl AppState {
         snap["rule_set_problem"] = json!(self.session.rule_set_problem().map(message));
         // The stages "Run stale" would run now, in order: the surfaces step through these and
         // never work the list out from the statuses (one run loop).
+        // The buildings, points of interest and settlements the design names (BLD-1).
+        snap["feature_inputs"] = self.session.feature_inputs();
         snap["due"] = json!(
             self.session
                 .due_stages()

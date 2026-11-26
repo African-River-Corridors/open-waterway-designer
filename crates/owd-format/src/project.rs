@@ -29,7 +29,10 @@ pub const EXPORTS: &str = "exports";
 
 /// The source data a project may list under `inputs`, with the words the app and the CLI show and
 /// the standard place each is looked for when a folder has no text file yet.
-pub const INPUTS: [(&str, &str, &str); 5] = [
+///
+/// The last three (BLD-1) are optional files a design names by reference; a new project file
+/// writes only the first [`CORE_INPUTS`], so its text is as before.
+pub const INPUTS: [(&str, &str, &str); 8] = [
     ("centreline", "Centreline", "inputs/centreline.geojson"),
     (
         "river_polygon",
@@ -39,7 +42,17 @@ pub const INPUTS: [(&str, &str, &str); 5] = [
     ("left_bank", "Left bank", "inputs/left-bank.geojson"),
     ("right_bank", "Right bank", "inputs/right-bank.geojson"),
     ("water_pools", "Water levels by pool", "inputs/pools.csv"),
+    ("buildings", "Buildings", "inputs/buildings.geojson"),
+    (
+        "points_of_interest",
+        "Points of interest",
+        "inputs/points-of-interest.geojson",
+    ),
+    ("settlements", "Settlements", "inputs/settlements.geojson"),
 ];
+
+/// The inputs a new project file lists (as null): the first five of [`INPUTS`].
+pub const CORE_INPUTS: usize = 5;
 
 /// Why a project file was refused, in plain words.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -131,7 +144,7 @@ impl Project {
     /// A new project file with a title and nothing listed.
     pub fn new(title: &str) -> Project {
         let mut inputs = Map::new();
-        for (key, _, _) in INPUTS {
+        for (key, _, _) in INPUTS.iter().take(CORE_INPUTS) {
             inputs.insert(key.to_string(), Value::Null);
         }
         let mut raw = Map::new();

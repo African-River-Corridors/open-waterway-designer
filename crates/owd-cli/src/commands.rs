@@ -236,7 +236,35 @@ fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     }
     load_rule_set_files(&mut session)?;
     attach_multiplier(path, &mut session);
+    attach_features(path, &mut session);
     Ok(session)
+}
+
+/// Attach the feature files the design names (BLD-1: buildings, points of interest, settlements),
+/// from beside the document, when each is the file whose hash was recorded. Otherwise say so on
+/// stderr, as for the DEM: what reads them then goes without them, or refuses by name.
+fn attach_features(doc: &str, session: &mut Session) {
+    use owd_format::design::features::FeatureInput;
+    for input in FeatureInput::ALL {
+        let Some(p) = session.features_path(input).map(str::to_string) else {
+            continue;
+        };
+        let bytes = std::fs::read(doc_dir(doc).join(&p)).ok();
+        let warning = session.features_warning(input, bytes.as_deref());
+        if let (None, Some(b)) = (&warning, &bytes)
+            && let Err(e) = session.attach_features(input, b)
+        {
+            if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("owd: warning: {e}");
+            }
+            continue;
+        }
+        if let Some(w) = warning
+            && !QUIET.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            eprintln!("owd: warning: {w}");
+        }
+    }
 }
 
 /// Attach the cut-rate multiplier raster the design names (spec 0017 ticket 13), from beside the
@@ -422,7 +450,86 @@ pub fn import(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
-    import_toward(doc, inputs, None, None, dem, water, output, json_mode)
+    import_toward(
+        doc,
+        inputs,
+        None,
+        None,
+        dem,
+        water,
+        FeatureFlags::default(),
+        output,
+        json_mode,
+    )
+}
+
+/// The feature files of `owd import` (BLD-1): `--buildings`, `--points-of-interest`,
+/// `--settlements`, and the building filters.
+#[derive(Default)]
+pub struct FeatureFlags {
+    /// By `FeatureInput` order.
+    pub files: [Option<String>; 3],
+    pub min_confidence: Option<f64>,
+    pub min_area_m2: Option<f64>,
+    pub near_cut_m: Option<f64>,
+}
+
+impl FeatureFlags {
+    fn any(&self) -> bool {
+        self.files.iter().any(Option::is_some)
+            || self.min_confidence.is_some()
+            || self.min_area_m2.is_some()
+            || self.near_cut_m.is_some()
+    }
+}
+
+/// Record and read each feature file given, then the building filters; the lines to say.
+fn import_features(
+    doc: &str,
+    session: &mut Session,
+    f: &FeatureFlags,
+) -> core::result::Result<Vec<String>, Failure> {
+    use owd_format::design::features::FeatureInput;
+    let mut lines = Vec::new();
+    for (input, file) in FeatureInput::ALL.into_iter().zip(&f.files) {
+        let Some(file) = file else { continue };
+        let bytes =
+            std::fs::read(file).map_err(|e| input_error(format!("cannot read {file}: {e}")))?;
+        let rel = relative_dem_path(doc, file);
+        let set = session
+            .set_features(input, &rel, &bytes)
+            .map_err(from_design)?;
+        let mut line = format!(
+            "{}: {} features, from {}",
+            input.key(),
+            set.features.len(),
+            set.crs
+        );
+        if set.skipped > 0 {
+            line.push_str(&format!(" ({} with no geometry left out)", set.skipped));
+        }
+        lines.push(line);
+    }
+    if f.min_confidence.is_some() || f.min_area_m2.is_some() || f.near_cut_m.is_some() {
+        let mut b = session.building_filters();
+        if let Some(v) = f.min_confidence {
+            b.min_confidence = v;
+        }
+        if let Some(v) = f.min_area_m2 {
+            b.min_area_m2 = v;
+        }
+        if let Some(v) = f.near_cut_m {
+            b.near_cut_m = v;
+        }
+        session.set_building_filters(b).map_err(from_design)?;
+    }
+    if let Some(b) = session.feature_inputs().get("buildings") {
+        lines.push(format!(
+            "buildings counted: {} (below the confidence threshold {}: {}; below the smallest area {} m2: {})",
+            b["counted"], b["min_confidence"], b["below_confidence"], b["min_area_m2"], b["below_area"]
+        ));
+    }
+    Ok(lines)
 }
 
 /// `owd import` with the point the river flows towards (`--downstream LON,LAT`) and the river mouth
@@ -435,6 +542,7 @@ pub fn import_toward(
     mouth: Option<&str>,
     dem: Option<String>,
     water: WaterFlags,
+    features: FeatureFlags,
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
@@ -472,9 +580,9 @@ pub fn import_toward(
         || water.slope.is_some()
         || water.table.is_some()
         || water.pools.is_some();
-    if texts.is_empty() && dem.is_none() && !has_water && mouth.is_none() {
+    if texts.is_empty() && dem.is_none() && !has_water && mouth.is_none() && !features.any() {
         return Err(input_error(
-            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem, a water level or --mouth",
+            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem, a water level, --mouth or --buildings",
         ));
     }
     // The document is read first when it is on stdin: stdin can be read once.
@@ -545,6 +653,7 @@ pub fn import_toward(
         mouth_note = Some(r);
     }
     apply_water(&mut session, &water)?;
+    let feature_lines = import_features(doc, &mut session, &features)?;
     if dem.is_some() && water.holds_bathymetry {
         session
             .set_dem_holds_bathymetry(true)
@@ -571,6 +680,7 @@ pub fn import_toward(
             ));
             lines.extend(m.notes.iter().map(|n| format!("note: {n}")));
         }
+        lines.extend(feature_lines.iter().cloned());
         // What the bank checks found, after the other lines.
         lines.extend(report.warnings.iter().map(|w| format!("warning: {w}")));
         lines.join("\n")
@@ -587,6 +697,7 @@ pub fn import_toward(
         json!({
             "ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json,
             "warnings": report.warnings,
+            "features": session.feature_inputs(),
             "mouth": mouth_note.as_ref().map(|m| json!({
                 "point": m.point, "turned": m.turned, "notes": m.notes,
             })),

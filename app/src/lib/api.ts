@@ -183,6 +183,8 @@ export interface Snapshot {
     /** Where each generated or loaded input came from (spec 0012). Absent for a design with none. */
     provenance?: Partial<Record<ProvenanceInput, Provenance>>;
   };
+  /** The buildings, points of interest and settlements the design names (BLD-1), by key. */
+  feature_inputs?: Partial<Record<FeatureKey, FeatureInputInfo>>;
   /** True when a bank edit can be undone. */
   can_undo_bank_edit?: boolean;
   /** The terrain memory limit set on this machine, in bytes; null: the default. */
@@ -516,7 +518,36 @@ export const poolWaterAt = (id: number, lon: number, lat: number) => invoke<Wate
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 
-export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem";
+export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem" | FeatureKey;
+/** The feature inputs (BLD-1): files the design names by path and hash, never copies. */
+export type FeatureKey = "buildings" | "points_of_interest" | "settlements";
+export const FEATURE_KEYS: FeatureKey[] = ["buildings", "points_of_interest", "settlements"];
+/** One feature input as the snapshot shows it. */
+export interface FeatureInputInfo {
+  path: string;
+  sha256: string;
+  count: number;
+  crs: string;
+  label: string;
+  /** The file is attached: the map and the reports can read it. */
+  attached: boolean;
+  min_confidence?: number;
+  min_area_m2?: number;
+  near_cut_m?: number;
+  /** Buildings only, when attached: costed, and counted apart. */
+  counted?: number;
+  below_confidence?: number;
+  below_area?: number;
+}
+export const clearFeatures = (key: FeatureKey) => invoke<Snapshot>("clear_features", { key });
+export const setBuildingFilters = (filters: { min_confidence?: number; min_area_m2?: number; near_cut_m?: number }) => invoke<Snapshot>("set_building_filters", { filters });
+/** A feature file as the map draws it: WGS84, each feature numbered `fid` as the session numbers it. */
+export interface FeatureMap {
+  type: "FeatureCollection";
+  features: { type: "Feature"; geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> & { fid: number; id: string } }[];
+}
+/** A feature file as the map draws it, or null when none is attached. */
+export const featureMap = (key: FeatureKey) => invoke<FeatureMap | null>("feature_map", { key });
 /** Load one input. With no path the user picks a file (a dropped file is a path on the desktop, a File in a browser); null comes back on cancel. Rejects with the session's reason. */
 export const loadInput = (role: InputRole, path?: string | File) => invoke<Snapshot | null>("load_input", { role, path: path ?? null });
 /** The water level at the river's start, and optionally a fall per metre (both as typed). */

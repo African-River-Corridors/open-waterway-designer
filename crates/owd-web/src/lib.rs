@@ -116,6 +116,11 @@ fn endpoints(json: &str) -> Result<owd_shell::reach::ReachEndpoints, String> {
     Ok(owd_shell::reach::ReachEndpoints::from_json(&v))
 }
 
+fn feature_input(key: &str) -> Result<owd_format::design::features::FeatureInput, String> {
+    owd_format::design::features::FeatureInput::from_key(key)
+        .ok_or_else(|| format!("`{key}` is not a feature input"))
+}
+
 fn point(v: &Value) -> Result<[f64; 2], String> {
     match (v[0].as_f64(), v[1].as_f64()) {
         (Some(a), Some(b)) => Ok([a, b]),
@@ -366,6 +371,43 @@ impl Session {
         let text = ok(input::vector_text(name, bytes, layer.as_deref()))?;
         let date = today();
         self.edit(|s| s.load_inputs(&[(role, text)], &date))
+    }
+
+    /// Load a feature file (BLD-1: `buildings`, `points_of_interest` or `settlements`): the design
+    /// records it by path and hash, as `owd import --buildings` does. `name` is its path from the
+    /// project folder (or its file name).
+    pub fn load_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.load_features(input, Path::new(name), &bytes))
+    }
+
+    /// Attach the feature file the design names, from the bytes the page found (a project's file).
+    /// Refused when it is not the file whose hash was recorded.
+    pub fn attach_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.attach_features(input, Some(Path::new(name)), &bytes))
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.clear_features(input))
+    }
+
+    /// Set the building filters, as JSON `{min_confidence, min_area_m2, near_cut_m}`.
+    pub fn set_building_filters(&mut self, filters: &str) -> Js<String> {
+        let v: Value =
+            ok(serde_json::from_str(filters).map_err(|e| format!("not building filters: {e}")))?;
+        self.edit(|s| s.set_building_filters_json(&v))
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, or `null` when none is attached.
+    pub fn feature_map(&self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        Ok(self
+            .state
+            .feature_map(input)
+            .map_or_else(|| "null".to_string(), |m| m.as_str().to_string()))
     }
 
     /// Edit a bank (spec 0012). `edit` is JSON, see `owd_shell::input::bank_edit_of`.
