@@ -1486,6 +1486,175 @@ impl AppState {
     }
 }
 
+/// The buildings, points of interest and settlements against the design (BLD-1): what a click on
+/// one reads, and the channel's stations they are measured against.
+impl AppState {
+    /// The channel of the design line with its stations, as the cut test reads it: the volumes
+    /// stage's own stations and daylight lines when they are fresh on the DEM held.
+    pub fn channel_stations(&self) -> Result<owd_format::design::channel::Channel, String> {
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok(),
+            None => None,
+        };
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
+        self.session.channel(terrain).map_err(message)
+    }
+
+    /// The ground at points in the project CRS, from the DEM held (NaN off it, or with none).
+    pub fn ground_at(&self, pts: &[[f64; 2]]) -> Vec<f64> {
+        let dem = self.usable_dem();
+        let sampler = dem
+            .as_deref()
+            .and_then(|d| owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok());
+        match sampler {
+            Some(s) => {
+                let (xs, ys): (Vec<f64>, Vec<f64>) = pts.iter().map(|p| (p[0], p[1])).unzip();
+                s(&xs, &ys)
+            }
+            None => vec![f64::NAN; pts.len()],
+        }
+    }
+
+    /// What a click on feature `fid` of `input` reads, as JSON: its id, name, kind and other
+    /// properties, area and confidence (and whether it is counted), the ground there, its distance
+    /// to the design line and the chainage of the nearest point, and its place across the cut
+    /// (`channel`, when the caller has it). The water there is the caller's to add.
+    pub fn feature_card(
+        &self,
+        input: FeatureInput,
+        fid: usize,
+        channel: Option<&owd_format::design::channel::Channel>,
+    ) -> Result<Value, String> {
+        use owd_format::design::feature_place::{CutIndex, cut_relation, line_distance};
+        let set = self
+            .session
+            .features(input)
+            .ok_or_else(|| format!("no {} file is loaded", input.label().to_lowercase()))?;
+        let f = set
+            .features
+            .get(fid)
+            .ok_or_else(|| format!("there is no feature {fid}"))?;
+        let num = |v: f64| if v.is_finite() { json!(v) } else { Value::Null };
+        let mut card = json!({
+            "input": input.key(),
+            "fid": fid,
+            "id": f.id,
+            "name": f.name,
+            "kind": f.kind,
+            "properties": f.props,
+            "lon_lat": f.lon_lat,
+            "area_m2": num(f.area_m2),
+            "confidence": num(f.confidence),
+            "ground_m": num(self.ground_at(&[f.at])[0]),
+        });
+        if input == FeatureInput::Buildings {
+            let filters = self.session.building_filters();
+            card["below_confidence"] = json!(filters.below_confidence(f));
+            card["below_area"] = json!(filters.below_area(f));
+        }
+        if input == FeatureInput::Settlements {
+            card["area_ha"] = num(f.area_m2 / 10_000.0);
+        }
+        if let Some(line) = owd_format::design::final_line_of(self.session.document()) {
+            let (d, ch) = line_distance(&line.line.0, f.at);
+            card["line_distance_m"] = num(d);
+            card["line_chainage_m"] = num(ch);
+        }
+        if let Some(ch) = channel {
+            let near = self.session.building_filters().near_cut_m;
+            let index = CutIndex::new(ch);
+            card["cut"] = match index.locate(f.at, near.max(500.0)) {
+                Some(p) => json!({
+                    "chainage_m": p.chainage_m,
+                    "offset_m": p.offset_m,
+                    "outside_m": p.outside_m,
+                    "daylight": p.daylight,
+                    "from_volumes": ch.from_volumes,
+                    "relation": match cut_relation(&p, f.area_m2, near) {
+                        Some(owd_format::design::feature_place::CutRelation::Taken) => "taken",
+                        Some(owd_format::design::feature_place::CutRelation::Near) => "near",
+                        None => "clear",
+                    },
+                }),
+                None => Value::Null,
+            };
+        }
+        Ok(card)
+    }
+
+    /// Points spread evenly over settlement `fid` (about `n`, on a square grid), in WGS84: what the
+    /// share of it the pool water covers is counted on.
+    pub fn settlement_samples(&self, fid: usize, n: usize) -> Vec<[f64; 2]> {
+        use owd_format::design::features::polygon_contains;
+        let Some(f) = self
+            .session
+            .features(FeatureInput::Settlements)
+            .and_then(|s| s.features.get(fid))
+        else {
+            return Vec::new();
+        };
+        let area: f64 = f.area_m2.max(1.0);
+        let step = (area / n.max(1) as f64).sqrt().max(1.0);
+        let mut pts = Vec::new();
+        for poly in &f.polygons {
+            let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+            for p in &poly.exterior {
+                x0 = x0.min(p[0]);
+                y0 = y0.min(p[1]);
+                x1 = x1.max(p[0]);
+                y1 = y1.max(p[1]);
+            }
+            let mut y = y0 + step / 2.0;
+            while y < y1 {
+                let mut x = x0 + step / 2.0;
+                while x < x1 {
+                    if polygon_contains(poly, [x, y]) {
+                        pts.push([x, y]);
+                    }
+                    x += step;
+                }
+                y += step;
+            }
+        }
+        let Some(utm) = self
+            .project_epsg()
+            .and_then(|e| owd_format::design::crs::Crs::from_epsg(e).ok())
+        else {
+            return Vec::new();
+        };
+        match utm {
+            owd_format::design::crs::Crs::Utm(u) => u.inverse_all(&pts).unwrap_or_default(),
+            owd_format::design::crs::Crs::Wgs84 => pts,
+        }
+    }
+
+    /// Whether each feature of `input` is counted (for buildings: passes the confidence and area
+    /// filters; every place and settlement is), by `fid`.
+    pub fn features_counted(&self, input: FeatureInput) -> Vec<bool> {
+        let f = self.session.building_filters();
+        self.session
+            .features(input)
+            .map(|s| {
+                s.features
+                    .iter()
+                    .map(|b| input != FeatureInput::Buildings || f.counts(b))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The representative point of every feature of `input` in WGS84, by `fid`; empty with none.
+    pub fn feature_points(&self, input: FeatureInput) -> Vec<[f64; 2]> {
+        self.session
+            .features(input)
+            .map(|s| s.features.iter().map(|f| f.lon_lat).collect())
+            .unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Label: property

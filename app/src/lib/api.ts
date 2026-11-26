@@ -538,6 +538,8 @@ export interface FeatureInputInfo {
   counted?: number;
   below_confidence?: number;
   below_area?: number;
+  /** Buildings: the least depth of water that counts one as flooded (the optimise setting). */
+  min_depth_m?: number;
 }
 export const clearFeatures = (key: FeatureKey) => invoke<Snapshot>("clear_features", { key });
 export const setBuildingFilters = (filters: { min_confidence?: number; min_area_m2?: number; near_cut_m?: number }) => invoke<Snapshot>("set_building_filters", { filters });
@@ -546,6 +548,16 @@ export interface FeatureMap {
   type: "FeatureCollection";
   features: { type: "Feature"; geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> & { fid: number; id: string } }[];
 }
+/** What a click on feature `fid` reads, with the water of pool water `pool` there when given. */
+export const featureCard = (key: FeatureKey, fid: number, pool: number | null) => invoke<import("./features").FeatureCard>("feature_card", { key, fid, pool });
+/** Which features the map's pool water covers at least `minDepth` deep, and how many by pool. */
+export interface FeaturesFlooded {
+  fids: number[];
+  depths: number[];
+  pools: { number: number; flooded: number; counted: number }[];
+  min_depth_m: number;
+}
+export const featuresFlooded = (key: FeatureKey, pool: number, minDepth: number) => invoke<FeaturesFlooded>("features_flooded", { key, pool, minDepth });
 /** A feature file as the map draws it, or null when none is attached. */
 export const featureMap = (key: FeatureKey) => invoke<FeatureMap | null>("feature_map", { key });
 /** Load one input. With no path the user picks a file (a dropped file is a path on the desktop, a File in a browser); null comes back on cancel. Rejects with the session's reason. */

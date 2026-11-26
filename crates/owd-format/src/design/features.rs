@@ -825,6 +825,12 @@ impl Session {
                     .filter(|b| !f.below_confidence(b) && f.below_area(b))
                     .count();
                 v["counted"] = json!(set.features.len() - below_conf - below_area);
+                // The least depth that counts a building as flooded: the optimise setting.
+                v["min_depth_m"] = json!(
+                    self.doc["stages"]["optimise"]["settings"]["building_min_depth_m"]
+                        .as_f64()
+                        .unwrap_or(super::optimise::BUILDING_MIN_DEPTH_M)
+                );
                 v["below_confidence"] = json!(below_conf);
                 v["below_area"] = json!(below_area);
             }

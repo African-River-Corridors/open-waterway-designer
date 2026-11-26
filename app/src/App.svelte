@@ -788,7 +788,7 @@
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
       <div class="maparea" data-testid="map-area">
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} {channel} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} {channel} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline features={snap?.feature_inputs} />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">

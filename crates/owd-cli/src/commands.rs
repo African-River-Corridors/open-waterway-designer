@@ -1674,13 +1674,36 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
             }
         ));
     }
+    // The buildings and the channel (BLD-1): a report, read from the volumes' own stations.
+    let conflicts = session
+        .channel(sampler.as_ref().map(|s| s as TerrainSampler))
+        .ok()
+        .and_then(|c| session.building_conflicts(&c));
+    if let Some(c) = &conflicts {
+        human.push(building_conflict_line(c));
+    }
     say(
         dest == "-",
         json_mode,
         &human.join("\n"),
-        json!({"ok": all_ok, "design_line": json_rows.first()}),
+        json!({"ok": all_ok, "design_line": json_rows.first(), "buildings": conflicts}),
     );
     option_checks_outcome(&fails.join("; "))
+}
+
+/// The buildings and the channel in one line (BLD-1).
+pub(crate) fn building_conflict_line(c: &Value) -> String {
+    let n = |k: &str| c[k].as_u64().unwrap_or(0);
+    format!(
+        "buildings: {} in the cut, {} within {} m of it, {} on land a cut-through severs (and {}, {}, {} below the confidence or area thresholds); a report, not a cost",
+        n("taken"),
+        n("near"),
+        c["near_cut_m"],
+        n("severed"),
+        n("taken_apart"),
+        n("near_apart"),
+        n("severed_apart")
+    )
 }
 
 /// Largest number of tiles one `fetch-dem` will take: a reach this wide wants a DEM of its own.

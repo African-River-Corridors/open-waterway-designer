@@ -562,6 +562,8 @@ export async function createWebPlatform(): Promise<Platform> {
     },
     set_building_filters: (a) => change("set_building_filters", JSON.stringify(a.filters ?? {})),
     feature_map: (a) => json("feature_map", a.key),
+    feature_card: (a) => json("feature_card", a.key, a.fid, (a.pool as number | null) ?? undefined),
+    features_flooded: (a) => json("features_flooded", a.key, a.pool, a.minDepth),
     set_water: (a) => change("set_water", a.level, a.fall),
     set_alignment_settings: (a) => change("set_alignment_settings", a.method, JSON.stringify(a.settings)),
     set_optimise_settings: (a) => change("set_optimise_settings", JSON.stringify(a.settings)),
