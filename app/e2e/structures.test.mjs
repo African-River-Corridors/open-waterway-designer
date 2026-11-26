@@ -2,7 +2,7 @@
 // Run: node --test e2e/structures.test.mjs
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, chamberText, extrusionFeatures, extrusionHeight, km, parsePoolUrl, partCentre, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stopColour, waterReadout, weirLabel } from "../src/lib/structures.ts";
+import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, chamberText, levelChangeText, stepsCheck, extrusionFeatures, extrusionHeight, km, parsePoolUrl, partCentre, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stopColour, waterReadout, weirLabel } from "../src/lib/structures.ts";
 
 const square = (x, y, half) => [[x - half, y - half], [x + half, y - half], [x + half, y + half], [x - half, y + half], [x - half, y - half]];
 const model = { note: PLACEHOLDER_NOTE, vessel_length_m: 85, vessel_beam_m: 9.5, chamber_length_m: 102, chamber_width_m: 11.5, wall_thickness_m: 3, wall_freeboard_m: 1.5, default_weir_length_m: 100, rules: "" };
@@ -23,6 +23,20 @@ describe("the words of the weirs and pools", () => {
     assert.equal(chamberText(list), "102.0 m × 11.5 m");
     assert.match(chamberText({ ...list, model: { ...model, chamber_length_m: null, chamber_width_m: null } }), /no lock drawn/);
     assert.equal(PLACEHOLDER_NOTE, "placeholder model, not a design");
+  });
+});
+
+describe("the check that every step of the level has its weir (map fault 2)", () => {
+  it("counts the steps and the weirs drawn, and flags a step with no weir", () => {
+    assert.deepEqual(stepsCheck({ ...list, level_steps: 1 }), { text: "1 level step, 1 weir drawn", ok: true });
+    assert.deepEqual(stepsCheck({ ...list, weirs: [weir, weir], level_steps: 2 }), { text: "2 level steps, 2 weirs drawn", ok: true });
+    assert.equal(stepsCheck({ ...list, level_steps: 2 }).ok, false);
+    assert.deepEqual(stepsCheck(null), { text: "0 level steps, 0 weirs drawn", ok: true });
+  });
+  it("says in the weir card where the level changes and that a bypassed loop is not modelled apart", () => {
+    const t = levelChangeText(weir);
+    assert.match(t, /steps from 42\.0 m to 49\.0 m on the line across the design line at km 110\.3/);
+    assert.match(t, /bypassed meander\) is not modelled apart/);
   });
 });
 

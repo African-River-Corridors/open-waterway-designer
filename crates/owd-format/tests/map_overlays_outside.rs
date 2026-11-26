@@ -48,7 +48,7 @@ fn dem(nodata_ring: bool) -> TerrainRef {
             X0 + (c as f64 + 0.5) * CELL,
             Y0 + H as f64 * CELL - (r as f64 + 0.5) * CELL,
         );
-        if nodata_ring && (c < 50 || c >= W - 50) {
+        if nodata_ring && !(50..W - 50).contains(&c) {
             return -9999.0;
         }
         ground(x, y)

@@ -154,6 +154,8 @@ pub struct PoolWater {
     dem: TerrainRef,
     factor: usize,
     width: usize,
+    height: usize,
+    edges: Edges,
     /// The pool of each mask cell, as an index into `levels`; [`NO_POOL`] for none.
     pool: Vec<u16>,
     /// [`FLOODED`] and [`RIVER`] of each mask cell.
@@ -176,6 +178,88 @@ struct Seed {
     x: f32,
     y: f32,
     pool: u16,
+    /// The segment of the design line it lies on.
+    seg: u32,
+}
+
+/// The design line on the mask, kept to place the edge between two pools exactly: in a mask cell
+/// where two pools meet, each pixel takes the pool of the nearest point of the line, worked out
+/// at the pixel and not at the cell, so the water's level steps on the weir's cross-line itself.
+#[derive(Debug)]
+struct Edges {
+    /// The points of the design line, in mask cells (`None`: off the projection).
+    pts: Vec<Option<[f64; 2]>>,
+    chainage_m: Vec<f64>,
+    /// Each pool's reach of the line: `(from_m, to_m)`.
+    reaches: Vec<(f64, f64)>,
+    /// The side of a mask cell in metres, west to east and north to south.
+    sx: f64,
+    sy: f64,
+    /// For each mask cell with a cell of another pool (or of none) beside it: the segment of
+    /// the line nearest to the cell.
+    near: HashMap<u32, u32>,
+}
+
+/// The pool of design-line chainage `s` among `reaches`; [`NO_POOL`] for none.
+fn pool_of_chainage(reaches: &[(f64, f64)], s: f64) -> u16 {
+    let n = reaches.len();
+    reaches
+        .iter()
+        .position(|p| s >= p.0 - 1e-6 && s < p.1)
+        .or_else(|| (n > 0 && (s - reaches[n - 1].1).abs() < 1e-6).then_some(n - 1))
+        .map_or(NO_POOL, |i| i as u16)
+}
+
+impl Edges {
+    /// The pool of the nearest point of the line to (`mx`, `my`), a point in mask cells, read
+    /// from the segments nearest the 3 by 3 cells around cell (`ci`, `cj`). `None` when no cell
+    /// there is an edge cell. Beyond either end of the line: [`NO_POOL`].
+    fn pool_at(&self, mx: f64, my: f64, ci: usize, cj: usize, mw: usize, mh: usize) -> Option<u16> {
+        let last = self.pts.len().checked_sub(2)?;
+        let mut best: Option<(f64, u16)> = None;
+        for dj in -1isize..=1 {
+            for di in -1isize..=1 {
+                let (ni, nj) = (ci as isize + di, cj as isize + dj);
+                if ni < 0 || nj < 0 || ni >= mw as isize || nj >= mh as isize {
+                    continue;
+                }
+                let Some(&seg) = self.near.get(&((nj as usize * mw + ni as usize) as u32)) else {
+                    continue;
+                };
+                let seg = seg as usize;
+                for k in seg.saturating_sub(1)..=(seg + 1).min(last) {
+                    let (Some(a), Some(b)) = (self.pts[k], self.pts[k + 1]) else {
+                        continue;
+                    };
+                    let (dx, dy) = ((b[0] - a[0]) * self.sx, (b[1] - a[1]) * self.sy);
+                    let (px, py) = ((mx - a[0]) * self.sx, (my - a[1]) * self.sy);
+                    let len2 = dx * dx + dy * dy;
+                    let raw = if len2 > 0.0 {
+                        (px * dx + py * dy) / len2
+                    } else {
+                        0.0
+                    };
+                    let t = raw.clamp(0.0, 1.0);
+                    let (ex, ey) = (px - t * dx, py - t * dy);
+                    let d2 = ex * ex + ey * ey;
+                    if best.is_some_and(|(d, _)| d <= d2) {
+                        continue;
+                    }
+                    // Beyond the line across either end, the model stops.
+                    let beyond = (k == 0 && raw < 0.0) || (k == last && raw > 1.0);
+                    let pool = if beyond {
+                        NO_POOL
+                    } else {
+                        let s =
+                            self.chainage_m[k] + t * (self.chainage_m[k + 1] - self.chainage_m[k]);
+                        pool_of_chainage(&self.reaches, s)
+                    };
+                    best = Some((d2, pool));
+                }
+            }
+        }
+        best.map(|(_, p)| p)
+    }
 }
 
 /// The DEM cells of mask cell (`mi`, `mj`) whose level is below `level`.
@@ -264,6 +348,7 @@ impl PoolWater {
                     x: (p0[0] + t * (p1[0] - p0[0])) as f32,
                     y: (p0[1] + t * (p1[1] - p0[1])) as f32,
                     pool: pool_of(s),
+                    seg: i as u32,
                 });
             }
             joined = true;
@@ -376,6 +461,32 @@ impl PoolWater {
                 }
             }
         }
+        // The edge cells: a cell with a cell of another pool (or of none) beside it keeps the
+        // segment nearest to it, so a pixel there is given its pool exactly (see `Edges`).
+        let mut edge_near: HashMap<u32, u32> = HashMap::new();
+        for j in 0..mh {
+            for i in 0..mw {
+                let cell = j * mw + i;
+                if near[cell] == NONE {
+                    continue;
+                }
+                let p = pool[cell];
+                let differs = (j.saturating_sub(1)..=(j + 1).min(mh - 1)).any(|nj| {
+                    (i.saturating_sub(1)..=(i + 1).min(mw - 1)).any(|ni| pool[nj * mw + ni] != p)
+                });
+                if differs {
+                    edge_near.insert(cell as u32, seeds[near[cell] as usize].seg);
+                }
+            }
+        }
+        let edges = Edges {
+            pts: pts.clone(),
+            chainage_m: input.chainage_m.clone(),
+            reaches: input.pools.iter().map(|p| (p.1, p.2)).collect(),
+            sx,
+            sy,
+            near: edge_near,
+        };
         let peak_bytes = near.len() * 9 + seeds.len() * core::mem::size_of::<Seed>();
         drop(near);
         drop(seeds);
@@ -511,6 +622,8 @@ impl PoolWater {
             dem,
             factor,
             width: mw,
+            height: mh,
+            edges,
             stats: MaskStats {
                 factor,
                 width: mw,
@@ -557,11 +670,34 @@ impl PoolWater {
         {
             return None;
         }
-        let cell = (row as usize / self.factor) * self.width + col as usize / self.factor;
-        if self.state[cell] & FLOODED == 0 {
-            return None;
-        }
-        let p = usize::from(self.pool[cell]);
+        let (ci, cj) = (col as usize / self.factor, row as usize / self.factor);
+        let cell = cj * self.width + ci;
+        let k = self.factor as f64;
+        let p = match self
+            .edges
+            .pool_at(col / k, row / k, ci, cj, self.width, self.height)
+        {
+            // Where two pools meet: the pool of the nearest point of the line, at this pixel,
+            // and water only when that pool's water reaches this cell or one beside it.
+            Some(p) => {
+                let reached = (cj.saturating_sub(1)..=(cj + 1).min(self.height - 1)).any(|nj| {
+                    (ci.saturating_sub(1)..=(ci + 1).min(self.width - 1)).any(|ni| {
+                        let n = nj * self.width + ni;
+                        self.pool[n] == p && self.state[n] & FLOODED != 0
+                    })
+                });
+                if !reached {
+                    return None;
+                }
+                usize::from(p)
+            }
+            None => {
+                if self.state[cell] & FLOODED == 0 {
+                    return None;
+                }
+                usize::from(self.pool[cell])
+            }
+        };
         let level = *self.levels.get(p)?;
         let ground = self.dem.sample_bilinear(px, py);
         (ground < level).then_some((p, level, ground))
@@ -868,6 +1004,33 @@ mod tests {
         assert_eq!(at(&w, &maker, 2100.0, 0.0), None);
         assert!(at(&w, &maker, 10.0, 0.0).is_some());
         assert!(at(&w, &maker, 1990.0, 0.0).is_some());
+    }
+
+    #[test]
+    fn on_a_coarse_mask_the_level_steps_on_the_weirs_cross_line_to_the_metre() {
+        let maker = TileMaker::new(valley()).unwrap();
+        // Mask cells of 35 m: the weir at 1000 m lies inside a cell (from 990 m to 1025 m).
+        let w = PoolWater::with_budget(&maker, &pools(false), 2000).unwrap();
+        assert!(w.stats().factor >= 7, "{:?}", w.stats());
+        for y in [-50.0, -20.0, 0.0, 20.0, 50.0] {
+            for (x, pool, level) in [
+                (998.0, 1, 8.0),
+                (1002.0, 2, 10.0),
+                (980.0, 1, 8.0),
+                (1020.0, 2, 10.0),
+            ] {
+                let wet = at(&w, &maker, x, y).unwrap_or_else(|| panic!("water at {x}, {y}"));
+                assert_eq!((wet.pool, wet.water_level_m), (pool, level), "at {x}, {y}");
+            }
+        }
+        // The upper pool's water does not pass the line: at 1 m deep on its own side, dry beyond.
+        assert_eq!(at(&w, &maker, 998.0, 80.0), None);
+        assert!(at(&w, &maker, 1002.0, 80.0).is_some());
+        // Beyond the line's two ends there is no water, to the metre.
+        assert_eq!(at(&w, &maker, -2.0, 0.0), None);
+        assert!(at(&w, &maker, 2.0, 0.0).is_some());
+        assert_eq!(at(&w, &maker, 2002.0, 0.0), None);
+        assert!(at(&w, &maker, 1998.0, 0.0).is_some());
     }
 
     #[test]
