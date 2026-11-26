@@ -118,8 +118,8 @@
     });
   }
 
-  /** A 1 x 1 transparent PNG. */
-  const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  /** A 1 x 1 PNG, fully clear (alpha 0). The picture here before was half-clear blue: it washed every cut tile with no cut in it. */
+  const BLANK = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNgYGBgAAAABQABeqhXUAAAAABJRU5ErkJggg==";
 
   let host: HTMLDivElement;
   let map: maplibregl.Map | undefined;
