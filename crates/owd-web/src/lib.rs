@@ -489,7 +489,7 @@ impl Session {
         let mut by_pool: std::collections::BTreeMap<usize, (usize, usize)> = Default::default();
         for (i, w) in at.iter().enumerate() {
             let Some(w) = w else { continue };
-            if !(w.depth_m >= min_depth_m) {
+            if w.depth_m.is_nan() || w.depth_m < min_depth_m {
                 continue;
             }
             fids.push(i);

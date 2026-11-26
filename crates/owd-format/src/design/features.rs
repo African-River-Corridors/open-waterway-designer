@@ -259,7 +259,9 @@ pub fn representative_point(poly: &Polygon) -> Pt {
         }
     }
     xs.sort_by(f64::total_cmp);
-    xs.chunks_exact(2)
+    xs.as_chunks::<2>()
+        .0
+        .iter()
         .max_by(|p, q| (p[1] - p[0]).total_cmp(&(q[1] - q[0])))
         .map(|p| [(p[0] + p[1]) / 2.0, y])
         .unwrap_or(centroid)

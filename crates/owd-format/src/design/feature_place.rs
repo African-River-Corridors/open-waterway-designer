@@ -404,8 +404,8 @@ impl super::session::Session {
                     "counted": counted == 0,
                 })
             };
-            match index.locate(f.at, filters.near_cut_m + 200.0) {
-                Some(p) => match cut_relation(&p, f.area_m2, filters.near_cut_m) {
+            if let Some(p) = index.locate(f.at, filters.near_cut_m + 200.0) {
+                match cut_relation(&p, f.area_m2, filters.near_cut_m) {
                     Some(CutRelation::Taken) => {
                         n_taken[counted] += 1;
                         f_taken.push(i);
@@ -421,8 +421,7 @@ impl super::session::Session {
                         }
                     }
                     None => {}
-                },
-                None => {}
+                }
             }
             if cut_off[i] {
                 n_island[counted] += 1;
