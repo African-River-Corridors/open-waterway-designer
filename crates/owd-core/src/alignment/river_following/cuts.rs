@@ -11,7 +11,7 @@
 
 use super::elements::{Chain, Pose};
 use crate::geom::{Pt, linear};
-use crate::optimise::lattice::closing_path;
+use crate::optimise::lattice::{GoalAfter, closing_path};
 
 /// The generator's settings, each from R_min and the vessel.
 #[derive(Debug, Clone, PartialEq)]
@@ -131,6 +131,23 @@ fn arriving(chain: &Chain, s: f64) -> (i8, f64) {
     (0, run)
 }
 
+/// The hand of the first arc after chainage `s` and the straight run from `s` to it.
+fn leaving(chain: &Chain, s: f64) -> (i8, f64) {
+    let i = chain.element_at(s);
+    let e = &chain.elements[i];
+    if e.is_arc() {
+        return (e.hand(), 0.0);
+    }
+    let mut run = e.s1() - s;
+    for p in &chain.elements[i + 1..] {
+        if p.is_arc() {
+            return (p.hand(), run);
+        }
+        run += p.length;
+    }
+    (0, run)
+}
+
 /// The pieces of `chain` with `[a, b]` replaced by `cut` (which runs from the pose at `a` to the
 /// pose at `b`).
 pub fn splice(chain: &Chain, a: f64, b: f64, cut: &[(f64, f64)]) -> Chain {
@@ -159,6 +176,7 @@ fn path(
     b: Pose,
     r: f64,
     arriving: (i8, f64),
+    leaving: (i8, f64),
     p: &CutParams,
 ) -> Option<(Vec<(f64, f64)>, f64)> {
     let (insign, run) = if arriving.1 >= p.min_straight_m {
@@ -166,7 +184,15 @@ fn path(
     } else {
         arriving
     };
-    let pieces = closing_path(a, b, r, insign, run, p.min_straight_m)?;
+    let after = if leaving.1 >= p.min_straight_m {
+        GoalAfter::default()
+    } else {
+        GoalAfter {
+            turn: leaving.0,
+            run_m: leaving.1,
+        }
+    };
+    let pieces = closing_path(a, b, r, insign, run, p.min_straight_m, after)?;
     let mut out = Vec::with_capacity(3);
     let mut len = 0.0;
     for (rr, sgn, l) in pieces {
@@ -220,6 +246,7 @@ pub fn candidates(chain: &Chain, p: &CutParams, river_at: &dyn Fn(Pt) -> f64) ->
     let st = chain.stations(p.station_m);
     let h = total / (st.len() - 1) as f64;
     let arr: Vec<(i8, f64)> = st.iter().map(|x| arriving(chain, x.0)).collect();
+    let lea: Vec<(i8, f64)> = st.iter().map(|x| leaving(chain, x.0)).collect();
     // Per start and band, the end with the best ratio.
     let mut best: Vec<Found> = Vec::new();
     for i in 0..st.len() {
@@ -238,7 +265,7 @@ pub fn candidates(chain: &Chain, p: &CutParams, river_at: &dyn Fn(Pt) -> f64) ->
                 if stay < p.min_ratio * d || stay - d < p.min_save_m {
                     continue;
                 }
-                let Some((pieces, len)) = path(pi, pj, p.r_cut, arr[i], p) else {
+                let Some((pieces, len)) = path(pi, pj, p.r_cut, arr[i], lea[j], p) else {
                     continue;
                 };
                 let ratio = stay / len;
@@ -287,7 +314,7 @@ pub fn candidates(chain: &Chain, p: &CutParams, river_at: &dyn Fn(Pt) -> f64) ->
         }];
         for f in &p.wider {
             let r = f * p.r_cut;
-            if let Some((pc, l)) = path(pi, pj, r, arr[i], p)
+            if let Some((pc, l)) = path(pi, pj, r, arr[i], lea[j], p)
                 && sj - si - l >= p.min_save_m
                 && joins_hold(chain, si, sj, &pc, p)
             {

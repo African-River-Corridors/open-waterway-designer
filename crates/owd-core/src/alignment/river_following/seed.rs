@@ -703,6 +703,9 @@ pub struct Seed {
     /// True when the gap outside the tight bends is within the tolerance.
     pub settled: bool,
     pub tight: Vec<TightBend>,
+    /// Each circle's largest gap from the target over its region (from the middle of the bend
+    /// before to the middle of the bend after), m.
+    pub circle_gaps: Vec<f64>,
 }
 
 /// The index range of the target round circle `i` that is excused from the tolerance (a tight
@@ -1104,7 +1107,14 @@ pub fn seed_of_target(t: Target, p: &SeedParams, in_water: Option<&dyn Fn(Pt) ->
             }
         })
         .collect();
+    let circle_gaps = (0..circles.len())
+        .map(|i| {
+            let (a, b) = region(&circles, i, n);
+            max_in(&g, a, b.max(a))
+        })
+        .collect();
     Seed {
+        circle_gaps,
         chain: built.chain,
         arcs: built.arcs,
         circles,
