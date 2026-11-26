@@ -14,11 +14,11 @@ use crate::types::TerrainSampler;
 use owd_core::alignment::radius_check::{default_check_chord, min_radius_on_chord, radius_ok};
 use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Pt, linear};
+use owd_core::optimise::buildings::with_building_cost;
 use owd_core::optimise::cascade::{
     CascadeConfig, SectionOptions, build_level_table, cascade_levels, earthworks_reach_cost,
     search_cascade,
 };
-use owd_core::optimise::buildings::with_building_cost;
 use owd_core::optimise::flood::{
     BANK_FULL_ESTIMATE, BankProfile, FloodField, FloodTable, FloodTerms, explain_blocked,
     with_flood_cost,
@@ -814,7 +814,10 @@ impl Session {
                         match buildings.filter(|_| typed.building_cost != 0.0) {
                             Some(b) => search_cascade(
                                 &cfg,
-                                &with_building_cost(&flooded, b.terms(&counted, typed.building_cost)),
+                                &with_building_cost(
+                                    &flooded,
+                                    b.terms(&counted, typed.building_cost),
+                                ),
                                 &structure,
                             ),
                             None => search_cascade(&cfg, &flooded, &structure),
@@ -863,8 +866,13 @@ impl Session {
                 let building_rows = buildings.map(|b| {
                     super::flood_buildings::buildings_report(b, &pools, typed.building_cost)
                 });
-                let settlement_ha = match (flood_ground.as_ref(), self.features(super::features::FeatureInput::Settlements)) {
-                    (Some(g), Some(set)) => Some(super::flood_buildings::settlement_hectares(set, &g.0, &pools)),
+                let settlement_ha = match (
+                    flood_ground.as_ref(),
+                    self.features(super::features::FeatureInput::Settlements),
+                ) {
+                    (Some(g), Some(set)) => Some(super::flood_buildings::settlement_hectares(
+                        set, &g.0, &pools,
+                    )),
                     _ => None,
                 };
                 flood_report = flood_terms.map(|terms| {

@@ -1368,6 +1368,8 @@ pub struct OptimiseFlags {
     pub flood_cost_per_ha: Option<f64>,
     pub max_above_bank: Option<f64>,
     pub flood_distance: Option<f64>,
+    pub building_cost: Option<f64>,
+    pub building_min_depth: Option<f64>,
     pub flood_report: bool,
     pub seams_on_straights: Option<bool>,
     pub free_seams: Option<bool>,
@@ -1403,6 +1405,8 @@ pub fn optimise(
         ("flood_cost_per_ha", flags.flood_cost_per_ha),
         ("max_above_bank_m", flags.max_above_bank),
         ("flood_distance_m", flags.flood_distance),
+        ("building_cost", flags.building_cost),
+        ("building_min_depth_m", flags.building_min_depth),
         ("seam_window_m", flags.seam_window),
         ("seam_offset_m", flags.seam_offset),
         ("seam_heading_tol_deg", flags.seam_heading_tol),
@@ -1579,6 +1583,57 @@ fn flood_text(flood: &Value) -> String {
             n(&p["depth_over_river_upper_m"], 2),
         ));
     }
+    out.push_str(&buildings_text(flood));
+    out
+}
+
+/// The buildings and the settlement land the pools flood, as `owd optimise` prints them (BLD-1).
+fn buildings_text(flood: &Value) -> String {
+    let mut out = String::new();
+    let b = &flood["buildings"];
+    if b.is_object() {
+        let n = |k: &str| b[k].as_u64().unwrap_or(0);
+        out.push_str(&format!(
+            "\nbuildings flooded (the weir search's rule, water at least {} m deep): {} of {} loaded, building cost {} at {} a building; counted apart: {} below the confidence threshold {}, {} below the smallest area",
+            b["min_depth_m"], n("flooded"), n("loaded"),
+            b["building_cost"].as_f64().map_or("-".into(), |x| format!("{x:.0}")),
+            b["cost_per_building"], n("flooded_below_confidence"), b["min_confidence"], n("flooded_below_area"),
+        ));
+        if let Some(bands) = b["by_confidence"].as_object() {
+            let parts: Vec<String> = bands
+                .iter()
+                .filter(|(_, v)| v.as_u64() != Some(0))
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect();
+            if !parts.is_empty() {
+                out.push_str(&format!("\n  flooded by confidence: {}", parts.join(", ")));
+            }
+        }
+        if let Some(pools) = flood["pools"].as_array() {
+            let per: Vec<String> = pools
+                .iter()
+                .enumerate()
+                .map(|(i, p)| format!("pool {}: {}", i + 1, p["buildings_flooded"]))
+                .collect();
+            out.push_str(&format!("\n  by pool: {}", per.join(", ")));
+        }
+        for f in b["first"].as_array().into_iter().flatten() {
+            out.push_str(&format!(
+                "\n  building {} at {}, {} (pool {}, {} m along the line, {} m deep)",
+                f["id"].as_str().unwrap_or("?"),
+                f["lon_lat"][0],
+                f["lon_lat"][1],
+                f["pool"],
+                f["chainage_m"],
+                f["depth_m"]
+            ));
+        }
+    }
+    if let Some(ha) = flood["settlement_flooded_ha"].as_f64() {
+        out.push_str(&format!(
+            "\nsettlement land flooded (the weir search's rule): {ha:.1} ha; a report, not a cost"
+        ));
+    }
     out
 }
 
@@ -1689,6 +1744,23 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
         json!({"ok": all_ok, "design_line": json_rows.first(), "buildings": conflicts}),
     );
     option_checks_outcome(&fails.join("; "))
+}
+
+/// The buildings and the channel (BLD-1) for a report: the channel read on the DEM the design
+/// recorded, when it is there. `None` with no buildings loaded.
+pub(crate) fn building_conflicts_of(session: &Session, dem: Option<&DemFile>) -> Option<Value> {
+    session.features(owd_format::design::features::FeatureInput::Buildings)?;
+    let terrain = dem.and_then(|b| {
+        let b = owd_format::design::stage_terrain(session, Some(b)).ok()?;
+        owd_shell::state::open_dem(b, None).ok()
+    });
+    let sampler = terrain
+        .as_ref()
+        .and_then(|d| owd_format::design::terrain::dem_sampler(d, project_epsg(session)).ok());
+    let channel = session
+        .channel(sampler.as_ref().map(|s| s as TerrainSampler))
+        .ok()?;
+    session.building_conflicts(&channel)
 }
 
 /// The buildings and the channel in one line (BLD-1).

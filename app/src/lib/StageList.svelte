@@ -39,9 +39,19 @@
   } = $props();
   // The stored flood settings: the cost is 0 (off) and the limit is none until set, and neither is written then.
   let floodSettings = $derived(
-    snap?.document.stages.optimise.settings as { flood_cost_per_ha?: number; max_above_bank_m?: number | null } | null,
+    snap?.document.stages.optimise.settings as { flood_cost_per_ha?: number; max_above_bank_m?: number | null; building_cost?: number } | null,
   );
   let storedFloodCost = $derived(floodSettings?.flood_cost_per_ha ?? 0);
+  // BLD-1: the cost per building flooded; 0 (off) until set.
+  let storedBuildingCost = $derived(floodSettings?.building_cost ?? 0);
+  let buildingCostText = $state("");
+  let buildingCostSeen: number | null = null;
+  $effect(() => {
+    if (buildingCostSeen !== storedBuildingCost) {
+      buildingCostSeen = storedBuildingCost;
+      buildingCostText = String(storedBuildingCost);
+    }
+  });
   let storedBankLimit = $derived(floodSettings?.max_above_bank_m ?? null);
   let floodCostText = $state("");
   let bankLimitText = $state("");
@@ -264,6 +274,15 @@
           <span class="dim help" data-testid="flood-cost-help">The weir search pays this for each hectare of land a pool floods outside the river, so it stops taking the highest lift at every weir. A starting value is 3000, in the money of the cut cost; the right value is yours to set.</span>
           <span class="dim" data-testid="flood-cost-stored">Stored: {storedFloodCost}</span>
         </li>
+        <li class="sub length" data-testid="building-cost-row">
+          <label class="name">
+            Cost per building flooded (0 = off)
+            <input type="text" inputmode="decimal" data-testid="building-cost" bind:value={buildingCostText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-building-cost" disabled={busy !== null} onclick={() => onOptimiseFlood("building_cost", buildingCostText)}>Set</button>
+          <span class="dim help" data-testid="building-cost-help">The weir search pays this for each building a pool floods, so it moves weirs and lowers pools to flood fewer. It is your price, for example a resettlement cost, not a fact: it needs a buildings file in Data.</span>
+          <span class="dim" data-testid="building-cost-stored">Stored: {storedBuildingCost}</span>
+        </li>
         <li class="sub length" data-testid="bank-limit-row">
           <label class="name">
             Most a pool may stand above bank-full (m; empty = no limit)
@@ -276,9 +295,10 @@
         {#if flood}
           <li class="sub length" data-testid="flood-pools-row">
             <span data-testid="flood-total">Flooded land: {fixed(flood.flooded_ha, 1)} ha outside the river, flood cost {Math.round(flood.flood_cost).toLocaleString()}</span>
+            {#if flood.buildings}<span data-testid="flood-buildings">Buildings flooded: {flood.buildings.flooded.toLocaleString()} of {flood.buildings.loaded.toLocaleString()} (water at least {flood.buildings.min_depth_m} m deep), building cost {Math.round(flood.buildings.building_cost).toLocaleString()}; {flood.buildings.flooded_below_confidence + flood.buildings.flooded_below_area} more counted apart (below the confidence or the area).</span>{/if}
             <table class="pools" data-testid="flood-pools">
               <thead>
-                <tr><th>Pool level (m)</th><th>Lift (m)</th><th>Flooded (ha)</th><th>Above bank-full (m)</th></tr>
+                <tr><th>Pool level (m)</th><th>Lift (m)</th><th>Flooded (ha)</th><th>Above bank-full (m)</th>{#if flood.buildings}<th>Buildings</th>{/if}{#if flood.settlement_flooded_ha != null}<th>Settlement (ha)</th>{/if}</tr>
               </thead>
               <tbody>
                 {#each flood.pools as p}
@@ -287,6 +307,8 @@
                     <td>{fixed(p.lift_m, 2)}</td>
                     <td>{fixed(p.flooded_ha, 1)}{p.reaches_limit ? " or more" : ""}</td>
                     <td>{fixed(p.max_above_bank_m, 2)}</td>
+                    {#if flood.buildings}<td data-testid="flood-pool-buildings">{p.buildings_flooded ?? 0}</td>{/if}
+                    {#if flood.settlement_flooded_ha != null}<td>{fixed(p.settlement_flooded_ha ?? 0, 1)}</td>{/if}
                   </tr>
                 {/each}
               </tbody>

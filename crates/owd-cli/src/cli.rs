@@ -445,6 +445,12 @@ enum Command {
         max_above_bank: Option<f64>,
         #[arg(long, value_name = "METRES", help = optimise_flood_distance_help())]
         flood_distance: Option<f64>,
+        #[arg(long, value_name = "COST", help = optimise_building_cost_help())]
+        building_cost: Option<f64>,
+        /// A building counts as flooded only where the water at its centroid is at least this deep,
+        /// in metres (default 0.3), so a puddle does not count.
+        #[arg(long, value_name = "METRES")]
+        building_min_depth: Option<f64>,
         /// Report what each pool floods and how far it stands above bank-full, with no flood cost
         /// and no limit: the search is unchanged. The flood cost and the limit report it too.
         #[arg(long)]
@@ -1516,6 +1522,8 @@ pub fn main() -> ExitCode {
             flood_cost_per_ha,
             max_above_bank,
             flood_distance,
+            building_cost,
+            building_min_depth,
             flood_report,
             model,
             out,
@@ -1541,6 +1549,8 @@ pub fn main() -> ExitCode {
                 flood_cost_per_ha,
                 max_above_bank,
                 flood_distance,
+                building_cost,
+                building_min_depth,
                 flood_report,
                 model,
             },
@@ -1811,6 +1821,19 @@ fn optimise_flood_cost_help() -> String {
          pool, so it trades cut against flooded land and stops taking the largest lift everywhere. \
          A starting value is 3000; the right value is the engineer's to set. Needs a DEM (default \
          {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --building-cost`, with the stage's own default (BLD-1).
+fn optimise_building_cost_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().building_cost;
+    format!(
+        "The cost of one building a pool floods, in the units of the cut cost: the engineer's price, \
+         for example a resettlement cost, not a fact. The weir search adds it per building flooded \
+         (centroid in flooded land, water at least --building-min-depth deep), so it moves weirs \
+         and lowers pools to flood fewer. Needs a DEM and a buildings file (owd import --buildings) \
+         (default {}: off).",
         shown_default(&serde_json::json!(d))
     )
 }

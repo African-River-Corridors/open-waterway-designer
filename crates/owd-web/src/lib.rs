@@ -428,11 +428,19 @@ impl Session {
                 .map(|c| (ckey, std::sync::Arc::new(c)));
         }
         let channel = self.stations.as_ref().map(|(_, c)| c.clone());
-        let mut card = ok(self.state.feature_card(input, fid as usize, channel.as_deref()))?;
+        let mut card = ok(self
+            .state
+            .feature_card(input, fid as usize, channel.as_deref()))?;
         if let Some(id) = pool {
             let at = card["lon_lat"].clone();
-            let (lon, lat) = (at[0].as_f64().unwrap_or(f64::NAN), at[1].as_f64().unwrap_or(f64::NAN));
-            card["water"] = self.terrain.pool_water_at(id, lon, lat).unwrap_or(Value::Null);
+            let (lon, lat) = (
+                at[0].as_f64().unwrap_or(f64::NAN),
+                at[1].as_f64().unwrap_or(f64::NAN),
+            );
+            card["water"] = self
+                .terrain
+                .pool_water_at(id, lon, lat)
+                .unwrap_or(Value::Null);
             if input == owd_format::design::features::FeatureInput::Settlements {
                 let pts = self.state.settlement_samples(fid as usize, 400);
                 if let Ok(at) = self.terrain.pool_water_points(id, &pts)
@@ -496,7 +504,10 @@ impl Session {
             .into_iter()
             .map(|(n, (f, c))| json!({"number": n, "flooded": f, "counted": c}))
             .collect();
-        Ok(json!({"fids": fids, "depths": depths, "pools": pools, "min_depth_m": min_depth_m}).to_string())
+        Ok(
+            json!({"fids": fids, "depths": depths, "pools": pools, "min_depth_m": min_depth_m})
+                .to_string(),
+        )
     }
 
     /// Edit a bank (spec 0012). `edit` is JSON, see `owd_shell::input::bank_edit_of`.

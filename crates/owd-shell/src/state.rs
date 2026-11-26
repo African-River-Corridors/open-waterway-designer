@@ -1603,7 +1603,12 @@ impl AppState {
         let step = (area / n.max(1) as f64).sqrt().max(1.0);
         let mut pts = Vec::new();
         for poly in &f.polygons {
-            let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+            let (mut x0, mut y0, mut x1, mut y1) = (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            );
             for p in &poly.exterior {
                 x0 = x0.min(p[0]);
                 y0 = y0.min(p[1]);
@@ -1643,7 +1648,10 @@ impl AppState {
     }
 
     /// [`AppState::building_conflicts`] on a channel the caller holds.
-    pub fn building_conflicts_on(&self, channel: &owd_format::design::channel::Channel) -> Option<Value> {
+    pub fn building_conflicts_on(
+        &self,
+        channel: &owd_format::design::channel::Channel,
+    ) -> Option<Value> {
         self.session.building_conflicts(channel)
     }
 

@@ -7,7 +7,9 @@
 //! in 10 m. A row of buildings stands on the valley side at known ground levels.
 
 use owd_core::geom::{Polygon, Pt};
-use owd_core::optimise::buildings::{BuildingField, BuildingTable, BuildingTerms, with_building_cost};
+use owd_core::optimise::buildings::{
+    BuildingField, BuildingTable, BuildingTerms, with_building_cost,
+};
 use owd_core::optimise::cascade::{CascadeConfig, cascade_levels, search_cascade};
 use owd_core::optimise::flood::{BankProfile, FloodField, FloodTable, FloodTerms, with_flood_cost};
 
@@ -21,7 +23,13 @@ fn line() -> Vec<Pt> {
 
 fn river() -> Vec<Polygon> {
     vec![Polygon {
-        exterior: vec![[-100.0, -25.0], [LENGTH + 100.0, -25.0], [LENGTH + 100.0, 25.0], [-100.0, 25.0], [-100.0, -25.0]],
+        exterior: vec![
+            [-100.0, -25.0],
+            [LENGTH + 100.0, -25.0],
+            [LENGTH + 100.0, 25.0],
+            [-100.0, 25.0],
+            [-100.0, -25.0],
+        ],
         holes: vec![],
     }]
 }
@@ -77,7 +85,10 @@ fn the_count_rises_with_the_level_as_the_ground_says_and_a_hollow_stays_dry() {
     for &l in &levels {
         // The row: ground 3.5..12.5 m, flooded where the water is at least 0.3 m deep.
         // The hollow's building (ground 0.5 m) is dry until the water tops its rim (13.5 m).
-        let want = (0..10).filter(|k| l >= 3.5 + *k as f64 + 0.3 - 1e-9).count() + usize::from(l > 13.5);
+        let want = (0..10)
+            .filter(|k| l >= 3.5 + *k as f64 + 0.3 - 1e-9)
+            .count()
+            + usize::from(l > 13.5);
         assert_eq!(table.count(0.0, LENGTH, l), Some(want as u32), "level {l}");
         // The field's own count agrees with the table.
         let direct = bf.flooded(0.0, LENGTH, l, &|i| counted[i]);
@@ -99,7 +110,10 @@ fn the_count_rises_with_the_level_as_the_ground_says_and_a_hollow_stays_dry() {
 
 const SLOPE: f64 = 0.002;
 fn sloped(xs: &[f64], ys: &[f64]) -> Vec<f64> {
-    xs.iter().zip(ys).map(|(&x, &y)| valley_at(x, y, SLOPE)).collect()
+    xs.iter()
+        .zip(ys)
+        .map(|(&x, &y)| valley_at(x, y, SLOPE))
+        .collect()
 }
 
 fn cut(a: f64, b: f64, level: f64) -> Result<f64, String> {
@@ -133,7 +147,9 @@ fn valley_buildings() -> Vec<Pt> {
 fn a_rising_building_cost_never_floods_more_buildings_and_at_zero_the_search_is_unchanged() {
     // Label: property
     let sites: Vec<f64> = (1..8).map(|k| 500.0 * f64::from(k)).collect();
-    let cfg = CascadeConfig::new(sites, vec![1.0, 2.0, 4.0], LENGTH, 8.0).validated().unwrap();
+    let cfg = CascadeConfig::new(sites, vec![1.0, 2.0, 4.0], LENGTH, 8.0)
+        .validated()
+        .unwrap();
     let field = FloodField::build(&line(), &sloped, &river(), DIST, CELL).unwrap();
     let mut breaks = vec![cfg.start_m, cfg.terminal_m];
     breaks.extend(cfg.candidate_sites_m.iter().copied());
@@ -155,7 +171,10 @@ fn a_rising_building_cost_never_floods_more_buildings_and_at_zero_the_search_is_
     let flooded = with_flood_cost(&cut, flood);
     let plain = search_cascade(&cfg, &flooded, &structure).unwrap();
     let count = |c: &owd_core::optimise::cascade::Cascade| -> usize {
-        c.pools().iter().map(|&(a, b, l)| bf.flooded(a, b, l, &all).len()).sum()
+        c.pools()
+            .iter()
+            .map(|&(a, b, l)| bf.flooded(a, b, l, &all).len())
+            .sum()
     };
     let mut last = usize::MAX;
     let mut seen = Vec::new();
@@ -174,14 +193,24 @@ fn a_rising_building_cost_never_floods_more_buildings_and_at_zero_the_search_is_
             assert_eq!(&s, &plain);
         }
         let n = count(best);
-        assert!(n <= last, "cost {cost}: {n} buildings flooded, more than {last} at the lower cost");
+        assert!(
+            n <= last,
+            "cost {cost}: {n} buildings flooded, more than {last} at the lower cost"
+        );
         // The table and the field agree on the chosen pools.
-        let by_table: usize = best.pools().iter().map(|&(a, b, l)| terms.count(a, b, l)).sum();
+        let by_table: usize = best
+            .pools()
+            .iter()
+            .map(|&(a, b, l)| terms.count(a, b, l))
+            .sum();
         assert_eq!(by_table, n);
         last = n;
         seen.push(n);
     }
-    assert!(seen[0] > *seen.last().unwrap(), "the cost moves the search: {seen:?}");
+    assert!(
+        seen[0] > *seen.last().unwrap(),
+        "the cost moves the search: {seen:?}"
+    );
 }
 
 /// The scale the owner works at: 240 km of line, 40,000 buildings, 479 sites, 73 levels. Prints
@@ -194,37 +223,57 @@ fn measure_the_count_table_at_240_km() {
     use std::time::Instant;
     let length = 240_000.0;
     // A gently meandering line, so chainage is not x.
-    let line: Vec<Pt> = (0..=2400).map(|k| {
-        let x = 100.0 * f64::from(k);
-        [x, 800.0 * libm::sin(x / 5000.0)]
-    }).collect();
+    let line: Vec<Pt> = (0..=2400)
+        .map(|k| {
+            let x = 100.0 * f64::from(k);
+            [x, 800.0 * libm::sin(x / 5000.0)]
+        })
+        .collect();
     let terrain = |xs: &[f64], ys: &[f64]| -> Vec<f64> {
-        xs.iter().zip(ys).map(|(&x, &y)| {
-            let d = (y - 800.0 * libm::sin(x / 5000.0)).abs();
-            let water = 0.0002 * x;
-            if d < 40.0 { water } else { water + 2.0 + (d - 40.0) / 150.0 }
-        }).collect()
+        xs.iter()
+            .zip(ys)
+            .map(|(&x, &y)| {
+                let d = (y - 800.0 * libm::sin(x / 5000.0)).abs();
+                let water = 0.0002 * x;
+                if d < 40.0 {
+                    water
+                } else {
+                    water + 2.0 + (d - 40.0) / 150.0
+                }
+            })
+            .collect()
     };
     let river = vec![Polygon {
-        exterior: line.iter().map(|p| [p[0], p[1] - 40.0]).chain(line.iter().rev().map(|p| [p[0], p[1] + 40.0])).collect(),
+        exterior: line
+            .iter()
+            .map(|p| [p[0], p[1] - 40.0])
+            .chain(line.iter().rev().map(|p| [p[0], p[1] + 40.0]))
+            .collect(),
         holes: vec![],
     }];
     let t = Instant::now();
     let field = FloodField::build(&line, &terrain, &river, 1500.0, 25.0).unwrap();
     let field_ms = t.elapsed().as_millis();
-    let sites: Vec<f64> = (1..480).map(|k| 500.0 * f64::from(k)).filter(|c| *c < length).collect();
+    let sites: Vec<f64> = (1..480)
+        .map(|k| 500.0 * f64::from(k))
+        .filter(|c| *c < length)
+        .collect();
     let lifts: Vec<f64> = vec![0.5, 1.0];
-    let cfg = CascadeConfig::new(sites.clone(), lifts, length, 35.0).validated().unwrap();
+    let cfg = CascadeConfig::new(sites.clone(), lifts, length, 35.0)
+        .validated()
+        .unwrap();
     let levels = cascade_levels(&cfg);
     let mut breaks = vec![cfg.start_m, cfg.terminal_m];
     breaks.extend(sites.iter().copied());
     // 40,000 buildings within 1.5 km of the line, spread by a fixed rule.
-    let pts: Vec<Pt> = (0..40_000).map(|i| {
-        let x = (f64::from(i) * 5.999).rem_euclid(length);
-        let off = 60.0 + (f64::from(i) * 37.0).rem_euclid(1400.0);
-        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-        [x, 800.0 * libm::sin(x / 5000.0) + side * off]
-    }).collect();
+    let pts: Vec<Pt> = (0..40_000)
+        .map(|i| {
+            let x = (f64::from(i) * 5.999).rem_euclid(length);
+            let off = 60.0 + (f64::from(i) * 37.0).rem_euclid(1400.0);
+            let side = if i % 2 == 0 { 1.0 } else { -1.0 };
+            [x, 800.0 * libm::sin(x / 5000.0) + side * off]
+        })
+        .collect();
     let (xs, ys): (Vec<f64>, Vec<f64>) = pts.iter().map(|p| (p[0], p[1])).unzip();
     let ground = terrain(&xs, &ys);
     let t = Instant::now();
@@ -236,13 +285,25 @@ fn measure_the_count_table_at_240_km() {
     let table_ms = t.elapsed().as_secs_f64() * 1000.0;
     let flood_table = FloodTable::new(&field, &breaks, &levels);
     let banks = BankProfile::new(&field);
-    let flood = FloodTerms { field: &field, table: &flood_table, banks: &banks, cost_per_ha: 0.0, max_above_bank_m: None };
-    let cutc = |a: f64, b: f64, l: f64| -> Result<f64, String> { Ok((b - a) * libm::exp(-l / 10.0)) };
+    let flood = FloodTerms {
+        field: &field,
+        table: &flood_table,
+        banks: &banks,
+        cost_per_ha: 0.0,
+        max_above_bank_m: None,
+    };
+    let cutc =
+        |a: f64, b: f64, l: f64| -> Result<f64, String> { Ok((b - a) * libm::exp(-l / 10.0)) };
     let flooded = with_flood_cost(&cutc, flood);
     let t = Instant::now();
     let _ = search_cascade(&cfg, &flooded, &|_| 1.0e5).unwrap();
     let plain_ms = t.elapsed().as_secs_f64() * 1000.0;
-    let terms = BuildingTerms { field: &bf, table: &table, counted: &all, cost_per_building: 1.0e4 };
+    let terms = BuildingTerms {
+        field: &bf,
+        table: &table,
+        counted: &all,
+        cost_per_building: 1.0e4,
+    };
     let reach = with_building_cost(&flooded, terms);
     let t = Instant::now();
     let _ = search_cascade(&cfg, &reach, &|_| 1.0e5).unwrap();

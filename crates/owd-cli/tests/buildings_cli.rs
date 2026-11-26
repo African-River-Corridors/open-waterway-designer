@@ -73,3 +73,35 @@ fn import_records_the_buildings_and_open_checks_them() {
         String::from_utf8_lossy(&o.stderr)
     );
 }
+
+#[test]
+fn a_building_cost_is_a_flag_off_by_default_and_refused_without_a_dem() {
+    let o = run(&["optimise", "--help"]);
+    let help = String::from_utf8_lossy(&o.stdout);
+    assert!(help.contains("--building-cost"), "{help}");
+    assert!(
+        help.contains("not a fact") && help.contains("(default 0: off)"),
+        "{help}"
+    );
+    let dir = work_dir("buildings-cost-cli");
+    let doc = dir.join("design.owd");
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/synthetic-river.owd"),
+        &doc,
+    )
+    .unwrap();
+    let before = std::fs::read_to_string(&doc).unwrap();
+    let o = run(&[
+        "optimise",
+        doc.to_str().unwrap(),
+        "--building-cost",
+        "50000",
+    ]);
+    assert!(!o.status.success());
+    let e = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        e.contains("a building cost (`building_cost`) cannot be worked out without a DEM"),
+        "{e}"
+    );
+    assert_eq!(std::fs::read_to_string(&doc).unwrap(), before);
+}

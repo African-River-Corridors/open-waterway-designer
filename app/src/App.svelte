@@ -173,6 +173,8 @@
       error =
         setting === "flood_cost_per_ha"
           ? "The cost per hectare of flooded land must be a number, 0 or more."
+          : setting === "building_cost"
+          ? "The cost per building flooded must be a number, 0 or more."
           : "The limit above bank-full must be a number of metres, 0 or more, or empty for no limit.";
       return;
     }

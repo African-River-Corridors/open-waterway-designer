@@ -51,7 +51,10 @@ impl Session {
     /// The buildings the optimise stage reads: `Ok(None)` when it needs none (no building cost and
     /// no buildings named). Refused, in plain words, when a building cost is set and there are no
     /// buildings to count.
-    pub(super) fn stage_buildings(&self, cost: f64) -> Result<Option<Arc<FeatureSet>>, DesignError> {
+    pub(super) fn stage_buildings(
+        &self,
+        cost: f64,
+    ) -> Result<Option<Arc<FeatureSet>>, DesignError> {
         match (self.features_path(FeatureInput::Buildings), self.features(FeatureInput::Buildings)) {
             (_, Some(set)) => Ok(Some(set.clone())),
             (Some(path), None) if cost != 0.0 => Err(DesignError::Input(format!(
@@ -187,7 +190,12 @@ pub fn settlement_hectares(
     let mut grid: std::collections::HashMap<(i64, i64), Vec<(usize, usize)>> = Default::default();
     for (i, f) in set.features.iter().enumerate() {
         for (j, p) in f.polygons.iter().enumerate() {
-            let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+            let (mut x0, mut y0, mut x1, mut y1) = (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            );
             for q in &p.exterior {
                 x0 = x0.min(q[0]);
                 y0 = y0.min(q[1]);

@@ -67,7 +67,9 @@ impl BuildingField {
         min_depth_m: f64,
     ) -> Result<BuildingField, Refusal> {
         if !(min_depth_m.is_finite() && min_depth_m >= 0.0) {
-            return Err("the least depth that floods a building must be a number of metres >= 0".into());
+            return Err(
+                "the least depth that floods a building must be a number of metres >= 0".into(),
+            );
         }
         if ground.len() != points.len() {
             return Err("one ground level per building is needed".into());
@@ -127,10 +129,7 @@ impl BuildingField {
             .iter()
             .enumerate()
             .filter(|(i, b)| {
-                b.chainage_m >= start_m
-                    && b.chainage_m < end_m
-                    && b.flooded_at(level_m)
-                    && only(*i)
+                b.chainage_m >= start_m && b.chainage_m < end_m && b.flooded_at(level_m) && only(*i)
             })
             .map(|(i, _)| i)
             .collect()
