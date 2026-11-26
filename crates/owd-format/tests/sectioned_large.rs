@@ -104,6 +104,18 @@ fn made(name: &str, s: &Spec) -> (PathBuf, f64) {
     (path, started.elapsed().as_secs_f64())
 }
 
+/// This process's resident memory now, in MiB, from `ps` (a measurement aid; 0 when `ps` is not
+/// there).
+fn rss_mib() -> u64 {
+    std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|t| t.trim().parse::<u64>().ok())
+        .map_or(0, |kb| kb / 1024)
+}
+
 /// The valley's axis from `y0` down to `len_m` further south, a point every 50 m.
 fn line(y0: f64, len_m: f64, w_m: f64) -> Vec<[f64; 2]> {
     let n = (len_m / 50.0) as usize;
@@ -207,6 +219,7 @@ fn measure_the_owners_raster() {
     )
     .unwrap();
     let open_s = started.elapsed().as_secs_f64();
+    let rss_open = rss_mib();
     let w_m = w as f64 * cell;
     // A 200 km line: the valley is 154.5 km long, so the line runs down it and back up beside it.
     let mut pts = line(Y1 - 1_000.0, 150_000.0, w_m);
@@ -222,6 +235,7 @@ fn measure_the_owners_raster() {
     let full = volumes(&pts, &sampler);
     let full_s = started.elapsed().as_secs_f64();
     let st = dem.cache_stats();
+    let rss_full = rss_mib();
     // A 6 m DEM of the same ground, held in memory (about 0.8 GB as `f64`).
     let coarse = {
         let (cw, ch) = (w / 3, h / 3);
@@ -245,6 +259,7 @@ fn measure_the_owners_raster() {
     let started = Instant::now();
     let six = volumes(&pts, &cs);
     let six_s = started.elapsed().as_secs_f64();
+    let rss_six = rss_mib();
     let pct = |a: f64, b: f64| 100.0 * (b - a) / a.abs().max(1.0);
     eprintln!(
         "raster {w} x {h} 2 m: written in {write_s:.1} s, {size} bytes ({:.2} GiB); opened in {open_s:.3} s\n\
@@ -259,5 +274,8 @@ fn measure_the_owners_raster() {
         six.1,
         pct(full.0, six.0),
         pct(full.1, six.1),
+    );
+    eprintln!(
+        "resident memory: {rss_open} MiB after opening, {rss_full} MiB after the 2 m volumes, {rss_six} MiB with the 6 m DEM in memory and its volumes"
     );
 }

@@ -9,6 +9,8 @@ declare module "*/wasm-pkg/owd_web.js" {
     new_design(): string;
     open_text(name: string, text: string, dem?: Uint8Array): string;
     open_project(design: string, text: string, dem_path?: string, dem?: Uint8Array): string;
+    open_text_file(name: string, text: string, len?: number, read?: (start: number, len: number) => Uint8Array): string;
+    open_project_file(design: string, text: string, dem_path?: string, len?: number, read?: (start: number, len: number) => Uint8Array): string;
     project_read(text: string): string;
     project_find(listing: string): string;
     project_adopt(listing: string, title: string, design?: string, dem?: string): string;
@@ -25,6 +27,7 @@ declare module "*/wasm-pkg/owd_web.js" {
     run_stale(): string;
     load_input(role: string, name: string, bytes: Uint8Array, layer?: string): string;
     load_dem(name: string, bytes: Uint8Array): string;
+    load_dem_file(name: string, len: number, read: (start: number, len: number) => Uint8Array): string;
     set_water(level: string, fall: string): string;
     set_alignment_settings(method: string, settings: string): string;
     set_optimise_settings(settings: string): string;

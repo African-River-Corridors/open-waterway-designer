@@ -160,10 +160,10 @@ impl Session {
                 "crs": super::terrain::dem_crs_name(dem),
                 "nodata": dem.nodata(),
             }),
-            // A file that cannot be read now: recorded by nothing, so it never matches.
+            // A file that cannot be read now: recorded by a hash no file has, so it never matches.
             Err(_) => json!({
                 "path": path,
-                "sha256": "",
+                "sha256": "0".repeat(64),
                 "crs": super::terrain::dem_crs_name(dem),
                 "nodata": dem.nodata(),
             }),

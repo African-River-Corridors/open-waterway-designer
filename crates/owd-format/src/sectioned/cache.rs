@@ -1,6 +1,6 @@
 //! A least-recently-used cache of decoded blocks with a memory budget in bytes (COG-1).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
 
 /// Something the cache holds, and its size in bytes.
@@ -26,6 +26,8 @@ pub struct Lru<K, V> {
     budget: u64,
     clock: u64,
     map: HashMap<K, (u64, V)>,
+    /// The keys by when they were last used, oldest first.
+    order: BTreeMap<u64, K>,
     stats: CacheStats,
 }
 
@@ -35,6 +37,7 @@ impl<K: Hash + Eq + Copy, V: Weigh + Clone> Lru<K, V> {
             budget,
             clock: 0,
             map: HashMap::new(),
+            order: BTreeMap::new(),
             stats: CacheStats::default(),
         }
     }
@@ -62,6 +65,8 @@ impl<K: Hash + Eq + Copy, V: Weigh + Clone> Lru<K, V> {
         let now = self.clock;
         match self.map.get_mut(k) {
             Some((t, v)) => {
+                self.order.remove(t);
+                self.order.insert(now, *k);
                 *t = now;
                 self.stats.hits += 1;
                 Some(v.clone())
@@ -76,12 +81,7 @@ impl<K: Hash + Eq + Copy, V: Weigh + Clone> Lru<K, V> {
     /// Drop the oldest blocks until `extra` more bytes fit.
     fn trim(&mut self, extra: u64) {
         while self.stats.bytes + extra > self.budget && !self.map.is_empty() {
-            let Some(oldest) = self
-                .map
-                .iter()
-                .min_by_key(|(_, (t, _))| *t)
-                .map(|(k, _)| *k)
-            else {
+            let Some((_, oldest)) = self.order.pop_first() else {
                 break;
             };
             if let Some((_, v)) = self.map.remove(&oldest) {
@@ -93,7 +93,8 @@ impl<K: Hash + Eq + Copy, V: Weigh + Clone> Lru<K, V> {
 
     pub fn put(&mut self, k: K, v: V) {
         self.clock += 1;
-        if let Some((_, old)) = self.map.remove(&k) {
+        if let Some((t, old)) = self.map.remove(&k) {
+            self.order.remove(&t);
             self.stats.bytes -= old.bytes();
         }
         let n = v.bytes();
@@ -101,6 +102,7 @@ impl<K: Hash + Eq + Copy, V: Weigh + Clone> Lru<K, V> {
         self.stats.bytes += n;
         self.stats.peak_bytes = self.stats.peak_bytes.max(self.stats.bytes);
         self.map.insert(k, (self.clock, v));
+        self.order.insert(self.clock, k);
     }
 
     pub fn len(&self) -> usize {

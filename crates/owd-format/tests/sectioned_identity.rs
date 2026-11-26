@@ -115,6 +115,9 @@ fn a_large_sectioned_dem_is_recorded_by_its_quick_check_and_checked_without_read
     assert!(rec.get("sha256").is_none(), "{rec}");
     assert_eq!(rec["quick_check"]["method"], "owd-quick-1");
     assert_eq!(rec["quick_check"]["length"], file.len());
+    // The document with a quick check is a valid document: it saves and opens again.
+    let again = Session::open(&s.to_text()).unwrap();
+    assert_eq!(again.document()["inputs"]["dem"], *rec);
     let counted = owd_format::sectioned::source::CountingSource::new(large());
     assert_eq!(s.dem_check(Some(&counted)), DemCheck::Matches);
     let read = counted.bytes.load(std::sync::atomic::Ordering::Relaxed);

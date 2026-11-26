@@ -9,7 +9,7 @@
 
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{AlignMethod, Session, Stage};
-use owd_format::sectioned::TerrainRef;
+use owd_format::sectioned::{Terrain, TerrainRef};
 use owd_format::types::TerrainSampler;
 use serde_json::Value;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -82,6 +82,13 @@ impl RunJob {
             (Stage::Alignment, Some(m)) => session.align(m, &Value::Null, terrain),
             _ => session.run_stage_with(stage, terrain),
         }));
+        // A sectioned DEM that could not read a block gave NaN there: say so plainly rather than
+        // keep numbers made with ground missing (the file may have changed, or the browser lost it).
+        if let Some(e) = dem.as_ref().and_then(|d| d.read_error()) {
+            return Outcome::Failed(format!(
+                "the DEM file could not be read ({e}): load it again"
+            ));
+        }
         match ran {
             Ok(Ok(())) => Outcome::Done(Box::new(session)),
             Ok(Err(e)) => Outcome::Failed(e.to_string()),
