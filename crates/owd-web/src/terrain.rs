@@ -379,15 +379,18 @@ impl TerrainTiles {
         }
         let (water, maker) = self.water_of(id)?;
         let dem = maker.dem().clone();
+        // The ground from the level of the DEM the plain terrain of this zoom reads, so that dry
+        // ground the cut does not reach is the After terrain exactly.
+        let read = maker.level_at_zoom(z8);
         let heights = maker.at_pixels(z8, x, y, 0, maker.info().base_m as f32, |px, py| {
             if let Some(level) = water.level_at(px, py) {
                 return level;
             }
-            let ground = dem.sample_bilinear(px, py);
+            let ground = dem.sample_bilinear_level(read, px, py);
             if ground.is_finite() {
                 cut.filled_level(px, py, ground)
             } else {
-                maker.height_at(px, py)
+                maker.height_at_level(read, px, py)
             }
         });
         let png = Arc::new(

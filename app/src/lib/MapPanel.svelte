@@ -14,7 +14,7 @@
   import StructureCard from "./StructureCard.svelte";
   import MapFeatures from "./MapFeatures.svelte";
   import type { FeaturesFlooded, Snapshot } from "./api";
-  import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, extrusionFeatures, parsePoolUrl, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stopColour, waterReadout, weirLabel } from "./structures";
+  import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, extrusionFeatures, parsePoolUrl, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stepsCheck, stopColour, waterReadout, weirLabel } from "./structures";
   import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, stateTileTemplate, type TerrainPrefs } from "./terrain3d";
 
   let {
@@ -302,8 +302,11 @@
       if (map.getLayer("cut-depth")) map.removeLayer("cut-depth");
       if (map.getSource("cut")) map.removeSource("cut");
       if (terrain && terrain.cut != null && key) {
-        // Further out than zoom 8 a channel is thinner than a pixel: nothing is asked for there.
-        map.addSource("cut", { type: "raster", tiles: [cutTemplate(terrain.id, terrain.cut)], tileSize: 256, minzoom: 8, maxzoom: Math.max(terrain.max_zoom, 9), bounds: terrain.bounds });
+        // Further out than zoom 8 a channel is thinner than a pixel: nothing is asked for there. The cut is
+        // worked out at each pixel from the stations, not read from the DEM's cells, so tiles are made three
+        // zoom levels past the DEM's own: zoomed in close, the colour's edge follows the daylight line and not
+        // a staircase of DEM-sized pixels.
+        map.addSource("cut", { type: "raster", tiles: [cutTemplate(terrain.id, terrain.cut)], tileSize: 256, minzoom: 8, maxzoom: Math.min(Math.max(terrain.max_zoom + 3, 9), 22), bounds: terrain.bounds });
         // Over the imagery, the shading, the contours and the river polygon; under the lines of the design.
         map.addLayer({ id: "cut-depth", type: "raster", source: "cut", paint: { "raster-opacity": 0.85, "raster-resampling": "nearest", "raster-fade-duration": 0 } }, "banks");
       }
@@ -458,7 +461,7 @@
         e.stopPropagation();
         selectedWeir = w.number;
       });
-      weirMarkers.push(new maplibregl.Marker({ element: el, anchor: "left", offset: [-10, 0] }).setLngLat(w.position).addTo(map));
+      weirMarkers.push(new maplibregl.Marker({ element: el, anchor: "left", offset: [-10, 0], opacityWhenCovered: "1" }).setLngLat(w.position).addTo(map));
     }
     for (const p of structures?.pools ?? []) {
       const el = document.createElement("span");
@@ -1020,6 +1023,7 @@
     {/if}
     {#if shows("structures")}
       <li data-testid="legend-structures"><span class="key weir-key" aria-hidden="true"></span>weir and lock: {PLACEHOLDER_NOTE}</li>
+      <li data-testid="legend-steps-check" class:warn={!stepsCheck(structures).ok}>{stepsCheck(structures).text}{stepsCheck(structures).ok ? "" : ": a step has no weir"}</li>
     {/if}
     {#if shows("pool-levels")}
       <li data-testid="legend-pool-levels"><span class="key" aria-hidden="true"><span class="stroke pool"></span></span>pool, with its water level in metres</li>
@@ -1166,6 +1170,7 @@
   .key .stroke.dashed { border-top-style: dashed; }
   .key .stroke.thin { border-top-width: 1px; }
   .key.bed { background: color-mix(in srgb, var(--cream) 55%, var(--hillshade)); border-top: 1.5px solid var(--cream); border-bottom: 1.5px solid var(--cream); outline: 1px solid var(--plate-ink); }
+  .legend li.warn { color: var(--warn); font-weight: 600; }
   .legend li.ramp { flex-direction: column; align-items: flex-start; gap: 2px; }
   .ramp-row { display: flex; align-items: center; gap: 0; }
   .ramp-row .swatch { width: 18px; height: 10px; }

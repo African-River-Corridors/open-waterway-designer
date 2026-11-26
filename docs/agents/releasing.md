@@ -9,6 +9,9 @@ How a version is cut, so main never has to stop merging.
    `app/package-lock.json`, `app/src-tauri/tauri.conf.json`, the `engine_version` in
    `examples/synthetic-river.owd`), then run `python tools/changelog.py release 0.N.M`. Open a PR
    into the release branch.
+   Also update the status tables of the optimisation document (`docs/optimisation/README.md` and
+   the README's "How the optimisation works"): each part that this release ships moves from "In the
+   development branch" to "In release 0.N.M".
 3. **Tag** the merged release commit (`git tag -a v0.N.M <commit> -m "Release 0.N.M"`) and push the
    tag by hand. The maintainer approves every tag.
 4. **The tag runs `release.yml`.** It builds the wheels and the sdist and attaches them to a GitHub

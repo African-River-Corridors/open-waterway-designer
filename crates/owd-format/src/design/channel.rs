@@ -376,15 +376,43 @@ impl Session {
         let on_dem = |s: &ChannelStation| s.on_dem;
         let ws = channel.wet_slope;
         let daylight = if channel.has_ground && channel.from_volumes {
-            let cut = |s: &ChannelStation| {
-                s.on_dem && (s.daylight_left_m.is_some() || s.daylight_right_m.is_some())
+            // Each side on its own: a daylight line runs only along the stations where that side
+            // has a cut that meets the ground at or outside the water's edge, and ends at the last
+            // such station. A side with no cut has no line (a gap): never a line on the design
+            // line, and never a join across the channel. The polygons (not drawn as lines) are
+            // the runs where both sides have one.
+            let side = |s: &ChannelStation, left: bool| -> Option<f64> {
+                let d = if left {
+                    s.daylight_left_m
+                } else {
+                    s.daylight_right_m
+                }?;
+                let edge = s.water_edge_m(ws);
+                (s.on_dem && d.is_finite() && d.abs() >= edge - 1e-6 && (d < 0.0) == left)
+                    .then_some(d)
             };
-            Some(edges(&cut, &|s| {
-                (
-                    s.daylight_left_m.unwrap_or(0.0),
-                    s.daylight_right_m.unwrap_or(0.0),
-                )
-            })?)
+            let mut e = Edges::default();
+            for left in [true, false] {
+                let keep = |s: &ChannelStation| side(s, left).is_some();
+                for (a, b) in runs(&keep) {
+                    let pts: Vec<Pt> = st[a..b]
+                        .iter()
+                        .map(|s| s.at_offset(side(s, left).unwrap_or(0.0)))
+                        .collect();
+                    let line = utm.inverse_all(&pts).map_err(DesignError::Input)?;
+                    if left {
+                        e.left.push(line);
+                    } else {
+                        e.right.push(line);
+                    }
+                }
+            }
+            let both = |s: &ChannelStation| side(s, true).is_some() && side(s, false).is_some();
+            e.polygons = edges(&both, &|s| {
+                (side(s, true).unwrap_or(0.0), side(s, false).unwrap_or(0.0))
+            })?
+            .polygons;
+            Some(e)
         } else {
             None
         };
@@ -554,6 +582,32 @@ impl CutSurface {
             }
             corners.extend([[x0, y0], [x0, y1], [x1, y0], [x1, y1]]);
         }
+        // The segments with no cut are indexed too, in the squares the cut reaches, so a point
+        // beside a stretch with no cut finds that stretch as its nearest part of the line and is
+        // not cut. Without them, a point past the end of a cut patch read the last cut station
+        // as its nearest and was coloured in a fan out to that station's reach: a wedge of cut
+        // where the volumes found none (map faults 1 and 6).
+        let widest = reach.iter().map(|r| r.0.max(r.1)).fold(0.0f64, f64::max);
+        for i in 0..stations.len().saturating_sub(1) {
+            let (a, b) = (&stations[i], &stations[i + 1]);
+            let r = reach[i]
+                .0
+                .max(reach[i].1)
+                .max(reach[i + 1].0)
+                .max(reach[i + 1].1);
+            if r > 0.0 || ![a.x, a.y, b.x, b.y].iter().all(|v| v.is_finite()) {
+                continue;
+            }
+            let (x0, x1) = (a.x.min(b.x) - widest, a.x.max(b.x) + widest);
+            let (y0, y1) = (a.y.min(b.y) - widest, a.y.max(b.y) + widest);
+            for cx in cell(x0)..=cell(x1) {
+                for cy in cell(y0)..=cell(y1) {
+                    if let Some(v) = index.get_mut(&(cx, cy)) {
+                        v.push(i as u32);
+                    }
+                }
+            }
+        }
         let ll = utm.inverse_all(&corners).map_err(DesignError::Input)?;
         let mut bounds = [
             f64::INFINITY,
@@ -603,6 +657,8 @@ impl CutSurface {
         // The nearest segment of the line: the point's chainage and offset are read on it.
         let last = self.stations.len() - 2;
         let mut best: Option<(f64, usize, f64, f64)> = None;
+        // The nearest point beyond either end of the line, if that is nearest: no channel there.
+        let mut beyond = f64::INFINITY;
         for &i in segments {
             let i = i as usize;
             let (a, b) = (&self.stations[i], &self.stations[i + 1]);
@@ -612,8 +668,11 @@ impl CutSurface {
                 continue;
             }
             let t = ((p[0] - a.x) * dx + (p[1] - a.y) * dy) / len2;
-            // Beyond the ends of the line there is no channel.
+            // Beyond the ends of the line there is no channel: a point whose nearest part of the
+            // line is past an end is not cut, whatever a station further in reaches.
             if (i == 0 && t < 0.0) || (i == last && t > 1.0) {
+                let end = if t < 0.0 { a } else { b };
+                beyond = beyond.min(libm::hypot(p[0] - end.x, p[1] - end.y));
                 continue;
             }
             let t = t.clamp(0.0, 1.0);
@@ -627,14 +686,24 @@ impl CutSurface {
             }
         }
         let (dist, i, t, offset) = best?;
+        if beyond <= dist {
+            return None;
+        }
         let (a, b) = (&self.stations[i], &self.stations[i + 1]);
         let mix = |u: f64, v: f64| u + (v - u) * t;
         let left = offset < 0.0;
-        let reach = if left {
-            mix(self.reach[i].0, self.reach[i + 1].0)
+        let (ra, rb) = if left {
+            (self.reach[i].0, self.reach[i + 1].0)
         } else {
-            mix(self.reach[i].1, self.reach[i + 1].1)
+            (self.reach[i].1, self.reach[i + 1].1)
         };
+        // A side is cut between two stations only when both have a cut on that side: where a cut
+        // starts or ends, it ends at the last station with one, as its daylight line does. No
+        // wedge is drawn out to a station with no cut.
+        if ra <= 0.0 || rb <= 0.0 {
+            return None;
+        }
+        let reach = mix(ra, rb);
         if dist > reach {
             return None;
         }

@@ -1,0 +1,23 @@
+{
+  "river_length_m": 7500.0,
+  "river_width_m": 60.0,
+  "neck_width_m": 278.8,
+  "neck_between_chainages_m": [
+    3360.0,
+    4140.0
+  ],
+  "rise_at": [
+    502886.559,
+    600216.099
+  ],
+  "hollow_at": [
+    504374.118,
+    600160.316
+  ],
+  "dem_pixels": [
+    718,
+    196
+  ],
+  "dem_pixel_m": 10.0,
+  "water_slope_m_per_m": 0.001
+}
