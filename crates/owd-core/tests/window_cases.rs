@@ -323,3 +323,27 @@ fn s14_an_empty_band_places_seams_and_says_so() {
         assert!(w.end_m - w.start_m >= cfg.window_min_m - 1e-6 || w.end_m - w.start_m > 0.0);
     }
 }
+
+/// S9: a river S over a drowned floodplain (ground below grade beside the river, so cutting it is
+/// free) with a cost per metre of line. Free, the line leaves the river to shorten the S; held to
+/// the river (`stay_in_river`), no point of it leaves the river (to the grid's cell).
+#[test]
+fn s9_held_to_the_river_the_line_makes_no_new_departure() {
+    let r_min = 300.0;
+    let mut f = fx::long_s(700.0, 1.0, 120.0, 300.0, 0.0);
+    f.ground = Box::new(|_, _| fx::BED_M);
+    let mut cfg = coarse(r_min);
+    cfg.window_max_m = 4000.0;
+    cfg.weights.length = 50.0;
+    cfg.polish = None;
+    let free = run(&f, &cfg);
+    let outside = |line: &[[f64; 2]]| {
+        line.iter()
+            .map(|&p| owd_core::geom::overlay::point_polygon_distance(p, &f.river))
+            .fold(0.0, f64::max)
+    };
+    assert!(outside(&free.line) > 20.0, "free: {}", outside(&free.line));
+    cfg.stay_in_river = true;
+    let held = run(&f, &cfg);
+    assert!(outside(&held.line) <= cfg.cell_m, "held: {}", outside(&held.line));
+}
