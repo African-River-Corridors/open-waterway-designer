@@ -552,6 +552,24 @@ export interface OptimiseSettings {
   min_straight_m?: number;
   /** The straight through a weir site, in metres; null is two vessel lengths. */
   weir_straight_m?: number | null;
+  /** `lattice` (the weir cascade, then the pool lattice) or `windows` (the window optimiser, OPT-5). */
+  method?: OptimiseMethod;
+  /** The window optimiser's settings, the window lengths among them (metres). */
+  windows?: { window_target_m?: number; window_min_m?: number; window_max_m?: number };
+}
+/** The optimise stage's method. */
+export type OptimiseMethod = "lattice" | "windows";
+/** One window of the window optimiser, as the design line's details record it. */
+export interface WindowRow {
+  id: number;
+  pass: number;
+  start_m: number;
+  end_m: number;
+  full_start: { cost: number | null };
+  full_found: { cost: number | null } | null;
+  gain_pct: number | null;
+  adopted: "found" | "polished_start" | "none";
+  reason: string;
 }
 /** A flood setting of the optimise stage the app may set. */
 export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m";
