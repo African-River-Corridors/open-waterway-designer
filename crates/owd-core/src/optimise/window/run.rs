@@ -11,8 +11,7 @@ use super::scorer::{
 };
 use super::seams::{Seam, SeamKind, SeamRules, admissible_near, find_seams};
 use crate::alignment::loops::{first_self_crossing_m, self_crossings_m};
-use crate::geom::offset::{Cap, buffer_line};
-use crate::geom::overlay::{Op, PolygonIndex, overlay};
+use crate::geom::overlay::PolygonIndex;
 use crate::geom::{Geometry, Polygon, Pt, linear};
 use crate::optimise::lattice::{
     GoalAfter, LatticeConfig, LatticeResult, Pose, SearchGoal, SearchStart, lattice_primitives,
