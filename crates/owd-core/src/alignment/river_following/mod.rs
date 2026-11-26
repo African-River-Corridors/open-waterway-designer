@@ -5,6 +5,7 @@
 //! 3. The sideways shift: dynamic programming on the offset from the line, the shifted line's own
 //!    curvature a hard limit.
 
+pub mod cuts;
 pub mod elements;
 #[doc(hidden)]
 pub mod fixtures;
