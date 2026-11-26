@@ -1098,6 +1098,7 @@ pub fn align(
         }
         // The river centreline as it is, and a given line: no flag but `--chord` applies.
         AlignMethod::Centreline | AlignMethod::Given => {}
+        AlignMethod::RiverFollowing => {}
     }
     if let Some(v) = flags.chord {
         put("check_chord_m", json!(v));
