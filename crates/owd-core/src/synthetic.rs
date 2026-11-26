@@ -10,6 +10,7 @@ use crate::geom::offset::{self, Cap};
 use crate::geom::{GeomError, Geometry, Polygon, Pt, linear};
 
 pub mod fixtures;
+pub mod window;
 use core::f64::consts::PI;
 pub use fixtures::{
     WaterFixture, fixed_tail, narrowing_reach, open_basin_90, open_basin_max_radius, straight_canal,

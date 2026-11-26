@@ -281,6 +281,15 @@ pub struct LatticeConfig {
     /// on (m; default 200): half of it upstream of the weir's cross-line and half downstream. 0
     /// asks for no straight: the weir site is then a gate like a seam.
     pub weir_straight_m: f64,
+    /// The arcs' radii in metres, absolute (OPT-5, the window optimiser). `None` (the default):
+    /// `r_min_m x radius_multiples`, as before. Every radius must be at least `r_min_m`.
+    pub radii_m: Option<Vec<f64>>,
+    /// Each arc turns the whole number of heading bins whose length is nearest this (m), at least
+    /// one bin (OPT-5). `None` (the default): every arc turns exactly one bin, as before.
+    pub nominal_arc_m: Option<f64>,
+    /// The search stops when it holds this many states (a memory limit; OPT-5). The default,
+    /// `usize::MAX`, is no limit.
+    pub max_states: usize,
 }
 
 /// The default `LatticeConfig::seam_window_m`.
@@ -331,6 +340,9 @@ impl LatticeConfig {
             seam_offset_m: None,
             seam_heading_tol_deg: DEFAULT_SEAM_HEADING_TOL_DEG,
             weir_straight_m: DEFAULT_WEIR_STRAIGHT_M,
+            radii_m: None,
+            nominal_arc_m: None,
+            max_states: usize::MAX,
         }
     }
 
@@ -346,6 +358,23 @@ impl LatticeConfig {
             .fold(f64::INFINITY, f64::min);
         if lowest < 1.0 {
             return Err("radius_multiples must all be >= 1 so no arc is tighter than R_min".into());
+        }
+        if let Some(radii) = &self.radii_m {
+            if radii.is_empty() {
+                return Err("radii_m must hold at least one radius".into());
+            }
+            if radii.iter().any(|r| !(r.is_finite() && *r >= self.r_min_m)) {
+                return Err(
+                    "radii_m must all be finite and >= r_min_m so no arc is tighter than \
+                            R_min"
+                        .into(),
+                );
+            }
+        }
+        if let Some(l) = self.nominal_arc_m
+            && !(l.is_finite() && l > 0.0)
+        {
+            return Err("nominal_arc_m must be a finite number > 0".into());
         }
         if !matches!(
             self.heuristic.as_str(),
@@ -622,12 +651,26 @@ pub struct Prim {
 
 /// Left/right arcs at `r_min x radius_multiples` turning exactly one heading bin, plus one
 /// straight of `straight_len_m`.
+///
+/// With `radii_m` the radii are those (absolute) instead; with `nominal_arc_m` each arc turns
+/// `k = max(1, round((nominal_arc_m / R) / bin))` whole bins (OPT-5), so a chain of arcs still lands
+/// exactly on bin headings. The end pose is exact: `(sin(kl)/k, (1 - cos(kl))/k, kl)`.
 pub fn lattice_primitives(cfg: &LatticeConfig) -> Vec<Prim> {
     let mut prims = Vec::new();
     let bs = TAU / cfg.n_heading as f64;
-    for &m in &cfg.radius_multiples {
-        let r = cfg.r_min_m * m;
-        let arc_len = r * bs;
+    let radii: Vec<f64> = match &cfg.radii_m {
+        Some(r) => r.clone(),
+        None => cfg
+            .radius_multiples
+            .iter()
+            .map(|&m| cfg.r_min_m * m)
+            .collect(),
+    };
+    for r in radii {
+        let bins = cfg
+            .nominal_arc_m
+            .map_or(1, |l| std::cmp::max(1, round_i((l / r) / bs)));
+        let arc_len = r * (bins as f64 * bs);
         let n = std::cmp::max(2, round_i(arc_len / cfg.arc_step_m)) as usize;
         for sgn in [1_i8, -1] {
             let k = f64::from(sgn) / r;
@@ -878,6 +921,118 @@ impl<'a> FieldScorer<'a> {
             total += sp.land_weight * (n as f64 * cell);
         }
         (total, true)
+    }
+}
+
+// =====================================================================================
+// What a move costs: the search reads it through one trait
+// =====================================================================================
+
+/// What a lattice search pays for a move, and where a move may go. The pool lattice prices a move
+/// with [`FieldScorer`]s ([`FieldSet`]); the window optimiser (OPT-5) prices it with the volumes
+/// stage's own section ([`crate::optimise::window::scorer::MoveScorer`]). The search is the same
+/// code for both ([`solve_lattice_with`]).
+pub trait EdgeCost {
+    /// The cost of `prim` laid from `pose`, and whether it may be laid at all (enough known ground
+    /// under its bottom). The primitive's radius (`prim.r`, infinite for a straight) sets the
+    /// section it is costed with.
+    fn score(&self, prim: &Prim, pose: Pose) -> (f64, bool);
+    /// The plan area (m2) of the move's footprint outside the river polygon, when the land cost is
+    /// on; `None` when it is off (and not measured).
+    fn land_area(&self, prim: &Prim, pose: Pose) -> Option<f64>;
+    /// The cheapest cost of a metre anywhere, for the `c_min` heuristic: it must never be more
+    /// than any metre of any move costs, so the search stays exact.
+    fn c_min_per_m(&self, grid: &TerrainGrid, cfg: &LatticeConfig) -> f64;
+    /// The `reverse_dijkstra` heuristic to `goal_xy`, when this cost offers one.
+    fn reverse_heuristic(
+        &self,
+        grid: &TerrainGrid,
+        goal_xy: Pt,
+        cfg: &LatticeConfig,
+    ) -> Option<ReverseDijkstra>;
+    /// Whether a point of the line may lie at `(x, y)`, besides the grid and the corridor (the
+    /// permitted ground of a river-following line, OPT-5). Every point of every primitive, closing
+    /// path and lead straight is tested when [`EdgeCost::has_mask`] is true.
+    fn allowed(&self, _x: f64, _y: f64) -> bool {
+        true
+    }
+    /// Whether [`EdgeCost::allowed`] can say no.
+    fn has_mask(&self) -> bool {
+        false
+    }
+}
+
+/// The pool lattice's cost of a move: one [`FieldScorer`] for each half-width the search meets
+/// (one per radius: each primitive's, R_min for the closing arcs, and the straight's).
+pub struct FieldSet<'a> {
+    by_radius: Vec<(f64, FieldScorer<'a>)>,
+    section: &'a SectionSpec,
+}
+
+impl<'a> FieldSet<'a> {
+    pub fn new(
+        grid: &'a TerrainGrid,
+        grade_m: f64,
+        section: &'a SectionSpec,
+        prims: &[Prim],
+        r_min_m: f64,
+    ) -> Self {
+        let mut by_radius: Vec<(f64, FieldScorer<'a>)> = Vec::new();
+        let radii = prims.iter().map(|p| p.r).chain([r_min_m, f64::INFINITY]);
+        for r in radii {
+            if by_radius.iter().any(|(q, _)| q.to_bits() == r.to_bits()) {
+                continue;
+            }
+            let hb = section.half_width_at(r) + section.footprint_corr_m;
+            by_radius.push((r, FieldScorer::new(grid, grade_m, hb, section)));
+        }
+        Self { by_radius, section }
+    }
+
+    /// The scorer of radius `r` (that of R_min when the set holds no other).
+    fn of(&self, r: f64) -> &FieldScorer<'a> {
+        self.by_radius
+            .iter()
+            .find(|(q, _)| q.to_bits() == r.to_bits())
+            .map(|(_, s)| s)
+            .expect("the set holds a scorer for every radius the search lays")
+    }
+}
+
+impl EdgeCost for FieldSet<'_> {
+    fn score(&self, prim: &Prim, pose: Pose) -> (f64, bool) {
+        self.of(prim.r).score(prim, pose)
+    }
+
+    fn land_area(&self, prim: &Prim, pose: Pose) -> Option<f64> {
+        (self.section.land_weight != 0.0).then(|| self.of(prim.r).land_area(prim, pose))
+    }
+
+    fn c_min_per_m(&self, grid: &TerrainGrid, cfg: &LatticeConfig) -> f64 {
+        min_cost_per_metre(
+            grid,
+            self.of(f64::INFINITY),
+            cfg.n_heading,
+            cfg.pitch_m,
+            DEFAULT_C_MIN_STRIDE_M,
+            DEFAULT_C_MIN_MAX_SAMPLES,
+        )
+    }
+
+    fn reverse_heuristic(
+        &self,
+        grid: &TerrainGrid,
+        goal_xy: Pt,
+        cfg: &LatticeConfig,
+    ) -> Option<ReverseDijkstra> {
+        Some(reverse_dijkstra_heuristic(
+            grid,
+            self.of(f64::INFINITY),
+            goal_xy,
+            cfg.n_heading,
+            cfg.pitch_m,
+            cfg.pitch_m,
+        ))
     }
 }
 
@@ -1133,6 +1288,9 @@ pub struct LatticeResult {
     pub expansions: usize,
     pub n_states: usize,
     pub hit_cap: bool,
+    /// The search stopped because it held `LatticeConfig::max_states` states (`hit_cap` is then
+    /// true as well).
+    pub hit_state_cap: bool,
     pub timed_out: bool,
     /// `c_min_per_m` when the heuristic is `"c_min"`.
     pub c_min_per_m: Option<f64>,
@@ -1302,6 +1460,16 @@ fn line_steps(len: f64) -> usize {
 /// sign 0.
 type Piece = (f64, i8, f64);
 
+/// What the line does just after a pinned goal pose (OPT-5): the direction of its first curve (+1
+/// left, -1 right; 0 when none comes within `min_straight_m`, or none is known) and the straight
+/// run (m) from the goal to it. The closing path then holds `LatticeConfig::min_straight_m` across
+/// the goal as well.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct GoalAfter {
+    pub turn: i8,
+    pub run_m: f64,
+}
+
 /// The goal state: reached only through a closing path.
 const GOAL: Key = (i64::MIN, i64::MIN, usize::MAX, 0);
 
@@ -1323,6 +1491,7 @@ fn closing_path(
     insign: i8,
     run_m: f64,
     min_straight_m: f64,
+    after: GoalAfter,
 ) -> Option<[Piece; 3]> {
     let left = |th: f64| [-libm::sin(th), libm::cos(th)];
     let mut best: Option<(f64, [Piece; 3])> = None;
@@ -1363,6 +1532,20 @@ fn closing_path(
                 continue;
             }
             if insign != 0 && a1 <= 1e-9 && s2 == -insign && run_m + len < min_straight_m {
+                continue;
+            }
+        }
+        // What the line does after the goal (OPT-5): its first curve against the path's last one
+        // needs the same straight between them.
+        if min_straight_m > 0.0 && after.turn != 0 {
+            let (last, straight_after) = if a2 > 1e-9 {
+                (s2, 0.0)
+            } else if a1 > 1e-9 {
+                (s1, len)
+            } else {
+                (insign, run_m + len)
+            };
+            if last != 0 && last == -after.turn && straight_after + after.run_m < min_straight_m {
                 continue;
             }
         }
@@ -1563,41 +1746,37 @@ pub fn solve_lattice_ends(
     cfg: &LatticeConfig,
     stop: &mut dyn FnMut() -> bool,
 ) -> LatticeResult {
+    let prims = lattice_primitives(cfg);
+    // One scorer per distinct half-width: each radius the search lays has its own.
+    let cost = FieldSet::new(grid, grade_m, section, &prims, cfg.r_min_m);
+    solve_lattice_with(grid, start, goal, GoalAfter::default(), &cost, cfg, stop)
+}
+
+/// [`solve_lattice_ends`] with the cost of a move given ([`EdgeCost`]), and what the line does after
+/// a pinned goal ([`GoalAfter`]; the default is nothing known). The pool lattice calls it with its
+/// [`FieldSet`]; the window optimiser (OPT-5) with the volumes stage's own section.
+pub fn solve_lattice_with<E: EdgeCost + ?Sized>(
+    grid: &TerrainGrid,
+    start: &SearchStart,
+    goal: &SearchGoal,
+    after: GoalAfter,
+    edge: &E,
+    cfg: &LatticeConfig,
+    stop: &mut dyn FnMut() -> bool,
+) -> LatticeResult {
     let line_start = start.pose;
     let (gate, goal_pose): (Option<&Gate>, Pose) = match goal {
         SearchGoal::Pose(p) => (None, *p),
         SearchGoal::Gate(g) => (Some(g), (g.centre[0], g.centre[1], g.heading)),
     };
     let prims = lattice_primitives(cfg);
-    // One scorer per distinct half-width (rounded to 0.1 mm), as Python caches them.
-    let hbs: Vec<f64> = prims
-        .iter()
-        .map(|p| section.half_width_at(p.r) + section.footprint_corr_m)
-        .collect();
-    let scorers: Vec<FieldScorer> = hbs
-        .iter()
-        .map(|&hb| FieldScorer::new(grid, grade_m, hb, section))
-        .collect();
-    let straight_scorer = &scorers[prims.len() - 1];
-    let close_arc_scorer = FieldScorer::new(
-        grid,
-        grade_m,
-        section.half_width_at(cfg.r_min_m) + section.footprint_corr_m,
-        section,
-    );
+    let mask = edge.has_mask();
 
     let (gx0, gy0, gth) = goal_pose;
     let mut c_min_per_m = None;
     let heur = match cfg.heuristic.as_str() {
         "c_min" => {
-            let c_min = min_cost_per_metre(
-                grid,
-                straight_scorer,
-                cfg.n_heading,
-                cfg.pitch_m,
-                DEFAULT_C_MIN_STRIDE_M,
-                DEFAULT_C_MIN_MAX_SAMPLES,
-            );
+            let c_min = edge.c_min_per_m(grid, cfg);
             c_min_per_m = Some(c_min);
             match gate {
                 Some(g) => {
@@ -1611,14 +1790,10 @@ pub fn solve_lattice_ends(
                 },
             }
         }
-        "reverse_dijkstra" => Heuristic::Reverse(reverse_dijkstra_heuristic(
-            grid,
-            straight_scorer,
-            [gx0, gy0],
-            cfg.n_heading,
-            cfg.pitch_m,
-            cfg.pitch_m,
-        )),
+        "reverse_dijkstra" => match edge.reverse_heuristic(grid, [gx0, gy0], cfg) {
+            Some(r) => Heuristic::Reverse(r),
+            None => Heuristic::None,
+        },
         _ => Heuristic::None,
     };
     let w = cfg.heuristic_weight;
@@ -1670,6 +1845,7 @@ pub fn solve_lattice_ends(
             && ymin - m <= y
             && y <= ymax + m
             && (!limit || grid.in_corridor(x, y))
+            && (!mask || edge.allowed(x, y))
     };
     // The cost of a closing path from `from`; None when it leaves the grid (or, with
     // `corridor_limit`, the corridor) or meets unknown ground.
@@ -1681,12 +1857,7 @@ pub fn solve_lattice_ends(
                 continue;
             }
             let prim = piece_prim(piece, cfg.arc_step_m);
-            let sc = if piece.1 == 0 {
-                straight_scorer
-            } else {
-                &close_arc_scorer
-            };
-            let (c, ok) = sc.score(&prim, cur);
+            let (c, ok) = edge.score(&prim, cur);
             if !ok {
                 return None;
             }
@@ -1706,16 +1877,14 @@ pub fn solve_lattice_ends(
         }
         Some(total)
     };
-    // The cost of one piece from `from` under scorer `si`; None as for a closing path.
-    let tail_cost = |from: Pose, piece: Piece, si: usize| -> Option<f64> {
+    // The cost of one piece from `from` (its radius sets its section; `si` names the primitive it
+    // was cut from, or the closing arc of R_min); None as for a closing path.
+    let tail_cost = |from: Pose, piece: Piece, _si: usize| -> Option<f64> {
         if piece.2 <= 1e-9 {
             return Some(0.0);
         }
         let prim = piece_prim(piece, cfg.arc_step_m);
-        let (c, ok) = scorers
-            .get(si)
-            .unwrap_or(&close_arc_scorer)
-            .score(&prim, from);
+        let (c, ok) = edge.score(&prim, from);
         if !ok {
             return None;
         }
@@ -1823,6 +1992,7 @@ pub fn solve_lattice_ends(
         expansions: 0,
         n_states: 0,
         hit_cap: false,
+        hit_state_cap: false,
         timed_out: false,
         c_min_per_m,
         measured_min_radius_m: f64::NAN,
@@ -1857,6 +2027,11 @@ pub fn solve_lattice_ends(
             res.hit_cap = true;
             break;
         }
+        if g.len() >= cfg.max_states {
+            res.hit_cap = true;
+            res.hit_state_cap = true;
+            break;
+        }
         if expanded % 1000 == 0 && stop() {
             res.timed_out = true;
             break;
@@ -1874,6 +2049,7 @@ pub fn solve_lattice_ends(
                     insign,
                     run_of(code),
                     min_straight,
+                    after,
                 )
                 && let Some(c) = closing_cost((x, y, th), &path)
                 && gc + c < g_goal - 1e-6
@@ -1987,15 +2163,15 @@ pub fn solve_lattice_ends(
             }
             // With the limit, every point of the primitive stays inside too: a long arc must not
             // bulge out of the corridor between two states inside it.
-            if limit
-                && !p
-                    .pts
-                    .iter()
-                    .all(|q| grid.in_corridor(x + ct * q[1] - st * q[2], y + st * q[1] + ct * q[2]))
+            if (limit || mask)
+                && !p.pts.iter().all(|q| {
+                    let (qx, qy) = (x + ct * q[1] - st * q[2], y + st * q[1] + ct * q[2]);
+                    (!limit || grid.in_corridor(qx, qy)) && (!mask || edge.allowed(qx, qy))
+                })
             {
                 continue;
             }
-            let (c, ok) = scorers[pi].score(p, (x, y, th));
+            let (c, ok) = edge.score(p, (x, y, th));
             if !ok {
                 continue;
             }
@@ -2089,7 +2265,7 @@ pub fn solve_lattice_ends(
         let mut chain_cost = g_start;
         for &pi in &seq {
             let p = &prims[pi];
-            chain_cost += scorers[pi].score(p, (px, py, pth)).0;
+            chain_cost += edge.score(p, (px, py, pth)).0;
             let (ct, st) = (libm::cos(pth), libm::sin(pth));
             let (ex, ey, eth) = p.end;
             (px, py, pth) = (px + ct * ex - st * ey, py + st * ex + ct * ey, pth + eth);
@@ -2122,11 +2298,8 @@ pub fn solve_lattice_ends(
         for &(piece, si) in &tail {
             if piece.2 > 1e-9 {
                 let prim = piece_prim(piece, cfg.arc_step_m);
-                let part = scorers
-                    .get(si)
-                    .unwrap_or(&close_arc_scorer)
-                    .score(&prim, at)
-                    .0;
+                let _ = si;
+                let part = edge.score(&prim, at).0;
                 c += if part.is_finite() { part } else { 0.0 };
                 at = pose_along(at, piece.0, piece.1, piece.2);
             }
@@ -2144,6 +2317,7 @@ pub fn solve_lattice_ends(
             insign,
             run_of(last_code),
             min_straight,
+            after,
         )
         .and_then(|path| closing_cost(end, &path).map(|c| (path, c)));
         let chain_cost = chain_cost();
@@ -2175,7 +2349,8 @@ pub fn solve_lattice_ends(
     };
     // The land the line takes, read along the line as it is built (the chain from the true start,
     // then the closing path), with the scorer of each piece: what the land cost was charged on.
-    if section.land_weight != 0.0 {
+    let probe = piece_prim((f64::INFINITY, 0, 1.0), cfg.arc_step_m);
+    if edge.land_area(&probe, line_start).is_some() {
         let advance = |p: Pose, e: (f64, f64, f64)| -> Pose {
             let (ct, st) = (libm::cos(p.2), libm::sin(p.2));
             (
@@ -2188,20 +2363,15 @@ pub fn solve_lattice_ends(
         let mut area = 0.0;
         if lead > 0.0 {
             let prim = piece_prim((f64::INFINITY, 0, lead), cfg.arc_step_m);
-            area += straight_scorer.land_area(&prim, line_start);
+            area += edge.land_area(&prim, line_start).unwrap_or(0.0);
         }
         for &pi in &seq {
-            area += scorers[pi].land_area(&prims[pi], at);
+            area += edge.land_area(&prims[pi], at).unwrap_or(0.0);
             at = advance(at, prims[pi].end);
         }
-        for &(piece, si) in &close_pieces {
+        for &(piece, _) in &close_pieces {
             let prim = piece_prim(piece, cfg.arc_step_m);
-            let sc = match si {
-                Some(si) => scorers.get(si).unwrap_or(&close_arc_scorer),
-                None if piece.1 == 0 => straight_scorer,
-                None => &close_arc_scorer,
-            };
-            area += sc.land_area(&prim, at);
+            area += edge.land_area(&prim, at).unwrap_or(0.0);
             at = advance(at, prim.end);
         }
         res.land_area_m2 = Some(area);
