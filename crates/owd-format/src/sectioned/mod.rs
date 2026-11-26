@@ -39,23 +39,117 @@ pub fn open_terrain(
     limit_bytes: u64,
     cache_bytes: u64,
 ) -> Result<TerrainRef, GeoTiffError> {
-    if src.len() >= from_bytes && is_tiled(&*src) {
+    let layout = layout::Layout::read(&*src).ok();
+    let tiled = layout.as_ref().is_some_and(|l| l.images[0].tiled);
+    if src.len() >= from_bytes && tiled {
         return Ok(Arc::new(SectionedDem::open(src, cache_bytes)?));
+    }
+    // Read whole. A file whose grid would not fit is refused from its header, before it is read,
+    // with what to do: a sectioned copy is read a block at a time whatever its size.
+    if let Some(l) = &layout {
+        let img = &l.images[0];
+        let cells = img.width as u64 * img.height as u64;
+        let need = cells * 8;
+        if need > limit_bytes {
+            let how = if img.tiled {
+                "it is in tiles but small enough to read whole"
+            } else {
+                "it is in strips, not tiles, so OWD cannot read it in sections"
+            };
+            return Err(GeoTiffError::TooLarge(format!(
+                "it has {cells} cells ({} x {}); read whole it needs {:.2} GiB, over the limit of \
+                 {:.2} GiB, and {how}. Run `owd dem prepare FILE -o COPY.tif` to make \
+                 a sectioned copy, which OWD reads a block at a time",
+                img.width,
+                img.height,
+                need as f64 / f64::from(1u32 << 30),
+                limit_bytes as f64 / f64::from(1u32 << 30),
+            )));
+        }
     }
     let dem = match src.as_slice() {
         Some(b) => crate::geotiff::read_bytes_within(b, limit_bytes)?,
         None => {
-            // A whole read of a file not in memory: refused by size before it is loaded.
-            let need = src.len();
-            if need > limit_bytes {
-                return Err(GeoTiffError::TooLarge(format!(
-                    "the file is {need} bytes and is not in tiles, so it cannot be read in sections; \
-                     run `owd dem prepare` to make a sectioned copy"
-                )));
-            }
-            let bytes = src.read_vec(0, need as usize).map_err(GeoTiffError::Io)?;
+            let bytes = src
+                .read_vec(0, src.len() as usize)
+                .map_err(GeoTiffError::Io)?;
             crate::geotiff::read_bytes_within(&bytes, limit_bytes)?
         }
     };
     Ok(Arc::new(dem))
+}
+
+/// A terrain file a shell holds: where its bytes are, and its identities, each worked out once.
+/// Cheap to clone.
+#[derive(Clone)]
+pub struct DemFile {
+    source: SharedSource,
+    ids: Arc<identity::Identities>,
+}
+
+impl core::fmt::Debug for DemFile {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DemFile")
+            .field("len", &self.source.len())
+            .finish()
+    }
+}
+
+impl DemFile {
+    pub fn new(source: SharedSource) -> DemFile {
+        DemFile {
+            source,
+            ids: Arc::default(),
+        }
+    }
+
+    /// A file held in memory.
+    pub fn from_bytes(bytes: Vec<u8>) -> DemFile {
+        DemFile::new(Arc::new(bytes))
+    }
+
+    pub fn source(&self) -> &SharedSource {
+        &self.source
+    }
+}
+
+impl ByteSource for DemFile {
+    fn len(&self) -> u64 {
+        self.source.len()
+    }
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), String> {
+        self.source.read_at(offset, buf)
+    }
+    fn as_slice(&self) -> Option<&[u8]> {
+        self.source.as_slice()
+    }
+    fn identities(&self) -> Option<&identity::Identities> {
+        Some(&self.ids)
+    }
+    fn shared(&self) -> Option<SharedSource> {
+        Some(self.source.clone())
+    }
+}
+
+/// The terrain in a file: in sections when it is a large tiled file held as a [`DemFile`] (see
+/// [`open_terrain`]), else read whole, within the reader's memory limit.
+pub fn terrain_of(src: &dyn ByteSource) -> Result<TerrainRef, GeoTiffError> {
+    let limit = crate::geotiff::grid_limit();
+    match src.shared() {
+        Some(shared) => open_terrain(
+            shared,
+            SECTIONED_FROM_BYTES,
+            limit,
+            terrain::DEFAULT_CACHE_BYTES,
+        ),
+        None => match src.as_slice() {
+            Some(b) => Ok(Arc::new(crate::geotiff::read_bytes_within(b, limit)?)),
+            None => {
+                let bytes = src
+                    .read_vec(0, src.len() as usize)
+                    .map_err(GeoTiffError::Io)?;
+                Ok(Arc::new(crate::geotiff::read_bytes_within(&bytes, limit)?))
+            }
+        },
+    }
 }

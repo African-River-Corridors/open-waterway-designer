@@ -78,13 +78,13 @@ pub fn water_level_with(flags: LevelFlags, fetch: &dyn owd_reach::Fetch, at: &En
         ));
     }
     // The DEM only when it is the file whose hash was recorded.
-    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_ref()) {
         Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
         Err(_) => None,
     };
     let study = utm.epsg();
     let sampler = dem.as_ref().and_then(|d| {
-        let f: Box<dyn Fn([f64; 2]) -> f64> = match d.epsg {
+        let f: Box<dyn Fn([f64; 2]) -> f64> = match d.epsg() {
             Some(4326) => Box::new(move |p: [f64; 2]| d.sample_bilinear(p[0], p[1])),
             Some(e) if e == study => Box::new(move |p: [f64; 2]| {
                 utm.forward(p[0], p[1])

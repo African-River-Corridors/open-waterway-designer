@@ -9,7 +9,7 @@
 
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{AlignMethod, Session, Stage};
-use owd_format::geotiff::Dem;
+use owd_format::sectioned::TerrainRef;
 use owd_format::types::TerrainSampler;
 use serde_json::Value;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -43,7 +43,7 @@ pub struct RunJob {
     /// For alignment: which method to add or rerun. `None` reruns the methods run before.
     pub method: Option<AlignMethod>,
     /// The DEM, when it is the file whose hash the design recorded.
-    pub dem: Option<Arc<Dem>>,
+    pub dem: Option<TerrainRef>,
     pub project_epsg: Option<u32>,
     pub control: Arc<RunControl>,
 }

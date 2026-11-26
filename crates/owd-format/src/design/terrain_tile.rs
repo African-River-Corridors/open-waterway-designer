@@ -13,7 +13,7 @@
 
 use super::crs::Crs;
 use super::session::DesignError;
-use crate::geotiff::Dem;
+use crate::sectioned::TerrainRef;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -65,7 +65,10 @@ type Kept = (u64, Arc<Vec<u8>>);
 
 /// Makes the terrain tiles of one DEM, and keeps the last [`CACHE_TILES`] of them.
 pub struct TileMaker {
-    dem: Arc<Dem>,
+    dem: TerrainRef,
+    /// A tile pixel at zoom 0, in the DEM's CRS units: halved at each zoom level. Picks the level
+    /// of the DEM a tile reads (COG-1): the coarsest whose cell is no larger than a pixel.
+    pixel0: f64,
     /// Longitude and latitude in degrees to the DEM's CRS. `None`: the DEM is in degrees already.
     forward: Option<Forward>,
     info: TileInfo,
@@ -143,41 +146,22 @@ const LATTICE_FROM_ZOOM: u8 = 8;
 impl TileMaker {
     /// A tile maker for `dem`. Refused when the DEM does not name a CRS the tool reads, or holds
     /// no height at all.
-    pub fn new(dem: Arc<Dem>) -> Result<TileMaker, DesignError> {
+    pub fn new(dem: TerrainRef) -> Result<TileMaker, DesignError> {
         TileMaker::with_capacity(dem, CACHE_TILES)
     }
 
     /// [`TileMaker::new`] with a cache of `capacity` tiles.
-    pub fn with_capacity(dem: Arc<Dem>, capacity: usize) -> Result<TileMaker, DesignError> {
+    pub fn with_capacity(dem: TerrainRef, capacity: usize) -> Result<TileMaker, DesignError> {
         let crs = dem
-            .epsg
+            .epsg()
             .ok_or_else(|| input("the DEM does not name its CRS"))
             .and_then(|e| Crs::from_epsg(e).map_err(DesignError::Input))?;
-        let (mut min_m, mut max_m) = (f64::INFINITY, f64::NEG_INFINITY);
-        for &v in &dem.data {
-            if v.is_finite() && dem.nodata != Some(v) {
-                min_m = min_m.min(v);
-                max_m = max_m.max(v);
-            }
-        }
-        if min_m > max_m {
+        // The lowest, highest and middle height: of every cell of a DEM in memory; of a coarse
+        // overview of a sectioned one (see `Terrain::summary`).
+        let Some(summary) = dem.summary() else {
             return Err(input("the DEM holds no heights"));
-        }
-        // The median, from at most about 200,000 heights spread over the DEM.
-        let every = (dem.data.len() / 200_000).max(1);
-        let mut some: Vec<f64> = dem
-            .data
-            .iter()
-            .step_by(every)
-            .copied()
-            .filter(|v| v.is_finite() && dem.nodata != Some(*v))
-            .collect();
-        let base_m = if some.is_empty() {
-            min_m
-        } else {
-            let mid = some.len() / 2;
-            *some.select_nth_unstable_by(mid, f64::total_cmp).1
         };
+        let (min_m, max_m, base_m) = (summary.min, summary.max, summary.median);
         // The DEM's box in degrees: its edges, walked, since a straight edge in a projected CRS
         // is a curve in longitude and latitude.
         let (x0, y0, x1, y1) = dem.bounds();
@@ -208,10 +192,8 @@ impl TileMaker {
         let apron = APRON * (x1 - x0).min(y1 - y0);
         // A little more than the apron, so a tile that misses this box is flat for certain.
         let reach = box_ll(apron * 1.05)?;
-        let (half_x, half_y) = (
-            dem.geotransform[0].abs() / 2.0,
-            dem.geotransform[4].abs() / 2.0,
-        );
+        let gt = dem.geotransform();
+        let (half_x, half_y) = (gt[0].abs() / 2.0, gt[4].abs() / 2.0);
         // Just inside the last pixel centres, where the bilinear read still has its neighbours.
         let inner = [
             x0 + half_x * 1.000_001,
@@ -226,8 +208,8 @@ impl TileMaker {
         let mid_lat = (bounds[1] + bounds[3]) / 2.0;
         let cos_lat = libm::cos(mid_lat.to_radians()).max(1e-6);
         let cell_m = match crs {
-            Crs::Wgs84 => dem.geotransform[0].abs().to_radians() * R * cos_lat,
-            Crs::Utm(_) => dem.geotransform[0].abs(),
+            Crs::Wgs84 => gt[0].abs().to_radians() * R * cos_lat,
+            Crs::Utm(_) => gt[0].abs(),
         };
         // A tile pixel at zoom z is `2 pi R cos(lat) / (TILE * 2^z)` metres wide.
         let world_px = 2.0 * core::f64::consts::PI * R * cos_lat / TILE as f64;
@@ -238,8 +220,10 @@ impl TileMaker {
             Crs::Utm(u) => Some(Box::new(u.forward_fn().map_err(DesignError::Input)?)),
         };
         let flat = Arc::new(encode_png(&vec![base_m as f32; TILE * TILE])?);
+        let pixel0 = world_px * gt[0].abs() / cell_m.max(1e-9);
         Ok(TileMaker {
             dem,
+            pixel0,
             forward,
             info: TileInfo {
                 bounds,
@@ -266,8 +250,15 @@ impl TileMaker {
     }
 
     /// The DEM the tiles are cut from.
-    pub fn dem(&self) -> &Arc<Dem> {
+    pub fn dem(&self) -> &TerrainRef {
         &self.dem
+    }
+
+    /// The level of the DEM the tiles of zoom `z` read: the coarsest whose cell is no larger than
+    /// a tile pixel. Always 0 for a DEM in memory (it has one level).
+    pub fn level_at_zoom(&self, z: u8) -> usize {
+        self.dem
+            .level_for_cell(self.pixel0 / f64::from(1u32 << z.min(31)))
     }
 
     /// The number of tiles in the cache now.
@@ -286,7 +277,12 @@ impl TileMaker {
     /// height in a nodata hole; and outside the DEM the height at the nearest point of its edge,
     /// eased to the base height across the apron.
     pub fn height_at(&self, px: f64, py: f64) -> f64 {
-        let h = self.dem.sample_bilinear(px, py);
+        self.height_at_level(0, px, py)
+    }
+
+    /// [`TileMaker::height_at`] read from `level` of the DEM.
+    pub fn height_at_level(&self, level: usize, px: f64, py: f64) -> f64 {
+        let h = self.dem.sample_bilinear_level(level, px, py);
         if h.is_finite() {
             return h;
         }
@@ -300,7 +296,7 @@ impl TileMaker {
         if d == 0.0 || d >= self.apron {
             return base;
         }
-        let edge = self.dem.sample_bilinear(cx, cy);
+        let edge = self.dem.sample_bilinear_level(level, cx, cy);
         if !edge.is_finite() {
             return base;
         }
@@ -317,7 +313,10 @@ impl TileMaker {
         if !self.touches(z, x, y) {
             return Ok(vec![base; TILE * TILE]);
         }
-        Ok(self.sampled(z, x, y, 0, base, |px, py| self.height_at(px, py) as f32))
+        let level = self.level_at_zoom(z);
+        Ok(self.sampled(z, x, y, 0, base, |px, py| {
+            self.height_at_level(level, px, py) as f32
+        }))
     }
 
     /// The DEM's own heights on the grid of tile `z/x/y`, with `margin` more pixels on every
@@ -326,8 +325,9 @@ impl TileMaker {
     /// no apron, since a contour is drawn only where the ground is known.
     pub fn ground(&self, z: u8, x: u32, y: u32, margin: usize) -> Result<Vec<f32>, DesignError> {
         check(z, x, y)?;
+        let level = self.level_at_zoom(z);
         Ok(self.sampled(z, x, y, margin, f32::NAN, |px, py| {
-            self.dem.sample_bilinear(px, py) as f32
+            self.dem.sample_bilinear_level(level, px, py) as f32
         }))
     }
 
@@ -527,12 +527,13 @@ impl TileMaker {
         };
         check(z, x, y)?;
         let base = self.info.base_m as f32;
+        let level = self.level_at_zoom(z);
         Ok(self.at_pixels(z, x, y, 0, base, |px, py| {
-            let ground = self.dem.sample_bilinear(px, py);
+            let ground = self.dem.sample_bilinear_level(level, px, py);
             if ground.is_finite() {
                 overlay.level(px, py, ground)
             } else {
-                self.height_at(px, py)
+                self.height_at_level(level, px, py)
             }
         }))
     }
@@ -551,8 +552,9 @@ impl TileMaker {
             return self.ground(z, x, y, margin);
         };
         check(z, x, y)?;
+        let level = self.level_at_zoom(z);
         Ok(self.at_pixels(z, x, y, margin, f32::NAN, |px, py| {
-            let ground = self.dem.sample_bilinear(px, py);
+            let ground = self.dem.sample_bilinear_level(level, px, py);
             if ground.is_finite() {
                 overlay.level(px, py, ground)
             } else {
@@ -669,6 +671,7 @@ mod tests {
     //! Label: property
     use super::*;
     use crate::design::crs::Utm;
+    use crate::geotiff::Dem;
 
     const ZONE: Utm = Utm {
         zone: 30,

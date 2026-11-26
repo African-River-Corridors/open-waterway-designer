@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
 pub mod blob;
 pub mod terrain;
 
@@ -235,7 +236,10 @@ impl Session {
         dem: Option<Vec<u8>>,
     ) -> Js<String> {
         let dem = match (&dem_path, dem) {
-            (Some(p), Some(bytes)) => Some((Path::new(p.as_str()), bytes)),
+            (Some(p), Some(bytes)) => Some((
+                Path::new(p.as_str()),
+                owd_format::sectioned::DemFile::from_bytes(bytes),
+            )),
             _ => None,
         };
         let (opened, note) = ok(AppState::open_in_project(
@@ -850,5 +854,63 @@ impl Session {
 impl Default for Session {
     fn default() -> Self {
         Session::new()
+    }
+}
+
+/// A DEM given as a browser `File` the worker keeps (COG-1): `len` its size and `read` the worker's
+/// `(start, length) -> Uint8Array` over it. A large tiled file is then read a block at a time and
+/// never loaded whole; any other is read whole, as the bytes were before.
+#[cfg(target_arch = "wasm32")]
+fn dem_file(len: f64, read: js_sys::Function) -> owd_format::sectioned::DemFile {
+    owd_format::sectioned::DemFile::new(std::sync::Arc::new(blob::JsBlobSource::new(read, len)))
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl Session {
+    /// [`Session::load_dem`] from a file the worker keeps, read by range.
+    pub fn load_dem_file(&mut self, name: &str, len: f64, read: js_sys::Function) -> Js<String> {
+        let date = today();
+        let file = dem_file(len, read);
+        self.edit(|s| s.load_dem_file(Path::new(name), file, &date))
+    }
+
+    /// [`Session::open_text`] with the DEM as a file the worker keeps, read by range.
+    pub fn open_text_file(
+        &mut self,
+        name: &str,
+        text: &str,
+        len: Option<f64>,
+        read: Option<js_sys::Function>,
+    ) -> Js<String> {
+        let dem = len.zip(read).map(|(l, r)| dem_file(l, r));
+        let opened = ok(AppState::open_with_file(Path::new(name), text, dem))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        Ok(self.snapshot())
+    }
+
+    /// [`Session::open_project`] with the DEM as a file the worker keeps, read by range.
+    pub fn open_project_file(
+        &mut self,
+        design: &str,
+        text: &str,
+        dem_path: Option<String>,
+        len: Option<f64>,
+        read: Option<js_sys::Function>,
+    ) -> Js<String> {
+        let dem = match (&dem_path, len.zip(read)) {
+            (Some(p), Some((l, r))) => Some((Path::new(p.as_str()), dem_file(l, r))),
+            _ => None,
+        };
+        let (opened, note) = ok(AppState::open_in_project(
+            Path::new(design),
+            text,
+            dem,
+            &today(),
+        ))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        let mut snap: Value = self.state.snapshot();
+        snap["project_note"] = json!(note);
+        Ok(snap.to_string())
     }
 }

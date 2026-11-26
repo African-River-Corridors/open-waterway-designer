@@ -589,6 +589,8 @@ impl Session {
             (None, _) => None,
         };
         let plan_area = terrain.is_none();
+        // Start the count of coarser reads afresh: a grid read from an overview is said below.
+        let _ = owd_core::types::grid::take_grid_read();
 
         let typed = self.optimise_settings(overrides)?;
         // Flooded land and bank-full are read from the ground levels. With no DEM the stage runs on
@@ -1039,6 +1041,17 @@ impl Session {
             };
             details["seams"] = json!(of(JointKind::Seam));
             details["weirs"] = json!(of(JointKind::Weir));
+        }
+        // When the search grid or the flood field read their ground from an overview of a
+        // sectioned DEM (COG-1), the details say at what cell size. A DEM in memory is always read
+        // at full resolution, and the details are then as they were.
+        if let Some(cell) = owd_core::types::grid::take_grid_read() {
+            details["ground_read_cell_m"] = json!(cell);
+            details["ground_read_note"] = json!(format!(
+                "The search grid and the flood field read the ground from an overview of the DEM \
+                 with {cell} m cells, the coarsest no larger than their own cells. The volumes \
+                 read the DEM at full resolution."
+            ));
         }
         // With the corridor limit on, the details say so, with the half-width the line was held to.
         if typed.corridor_limit {

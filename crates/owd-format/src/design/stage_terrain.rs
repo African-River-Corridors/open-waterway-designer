@@ -22,10 +22,10 @@ pub enum NoTerrain {
 /// The terrain file a stage call uses: `bytes`, the file found beside the document at
 /// [`Session::dem_path`] (`None` when there is none), when it is the file whose hash was recorded.
 /// Otherwise the reason there is none.
-pub fn stage_terrain<'a>(
+pub fn stage_terrain<'a, S: crate::sectioned::ByteSource + ?Sized>(
     session: &Session,
-    bytes: Option<&'a [u8]>,
-) -> Result<&'a [u8], NoTerrain> {
+    bytes: Option<&'a S>,
+) -> Result<&'a S, NoTerrain> {
     let path = || session.dem_path().unwrap_or("DEM").to_string();
     match (session.dem_check(bytes), bytes) {
         (DemCheck::Matches, Some(b)) => Ok(b),
@@ -52,18 +52,21 @@ mod tests {
     #[test]
     fn the_named_file_with_its_hash_is_used_and_anything_else_is_named() {
         let mut s = Session::new("t", "2026-01-02");
-        assert_eq!(stage_terrain(&s, None), Err(NoTerrain::NotNamed));
+        assert_eq!(stage_terrain::<[u8]>(&s, None), Err(NoTerrain::NotNamed));
         let bytes = dem();
         s.set_dem("river-dem.tif", &bytes, &read_bytes(&bytes).unwrap());
-        assert_eq!(stage_terrain(&s, Some(&bytes)), Ok(bytes.as_slice()));
         assert_eq!(
-            stage_terrain(&s, None),
+            stage_terrain(&s, Some(bytes.as_slice())),
+            Ok(bytes.as_slice())
+        );
+        assert_eq!(
+            stage_terrain::<[u8]>(&s, None),
             Err(NoTerrain::Missing("river-dem.tif".into()))
         );
         let mut other = bytes.clone();
         other.push(0);
         assert_eq!(
-            stage_terrain(&s, Some(&other)),
+            stage_terrain(&s, Some(other.as_slice())),
             Err(NoTerrain::Changed("river-dem.tif".into()))
         );
     }

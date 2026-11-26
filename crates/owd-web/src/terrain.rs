@@ -8,7 +8,7 @@ use owd_format::design::contours::ContourCache;
 use owd_format::design::pool_water::{DEPTH_STOPS, PoolWater};
 use owd_format::design::structures::PoolWaterIn;
 use owd_format::design::terrain_tile::{TerrainState, TileMaker};
-use owd_format::geotiff::Dem;
+use owd_format::sectioned::{Terrain, TerrainRef};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -59,7 +59,7 @@ fn hex(c: [u8; 3]) -> String {
 impl TerrainTiles {
     /// The maker for `dem`, built now if the DEM is not the one the last maker was built for.
     /// `None` with no DEM.
-    fn for_dem(&mut self, dem: Option<Arc<Dem>>) -> Result<Option<&mut TileMaker>, String> {
+    fn for_dem(&mut self, dem: Option<TerrainRef>) -> Result<Option<&mut TileMaker>, String> {
         let Some(dem) = dem else {
             self.maker = None;
             self.contours.clear();
@@ -122,7 +122,7 @@ impl TerrainTiles {
     /// the tile or the design has no cut to show.
     pub fn cut_tile(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         z: u32,
         x: u32,
         y: u32,
@@ -160,7 +160,7 @@ impl TerrainTiles {
     }
 
     /// What a click on the cut reads out at (`lon`, `lat`): `null` where nothing is cut.
-    pub fn cut_at(&mut self, dem: Option<Arc<Dem>>, lon: f64, lat: f64) -> Result<Value, String> {
+    pub fn cut_at(&mut self, dem: Option<TerrainRef>, lon: f64, lat: f64) -> Result<Value, String> {
         self.for_dem(dem)?;
         let (Some(maker), Some(surface)) = (self.maker.as_ref(), self.cut.surface.as_ref()) else {
             return Ok(Value::Null);
@@ -190,7 +190,7 @@ impl TerrainTiles {
     /// What the map needs to add the terrain: `null` with no DEM in memory, else
     /// `{id, bounds: [west, south, east, north], min_m, max_m, base_m, max_zoom, tile_size,
     /// encoding}`.
-    pub fn info(&mut self, dem: Option<Arc<Dem>>) -> Result<Value, String> {
+    pub fn info(&mut self, dem: Option<TerrainRef>) -> Result<Value, String> {
         let Some(maker) = self.for_dem(dem)? else {
             return Ok(Value::Null);
         };
@@ -212,7 +212,7 @@ impl TerrainTiles {
     /// Tile `z/x/y` of the DEM as a Terrarium PNG.
     pub fn tile(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         z: u32,
         x: u32,
         y: u32,
@@ -223,7 +223,7 @@ impl TerrainTiles {
     /// Tile `z/x/y` of the ground in the terrain state named `state` (`before`, `after`).
     pub fn tile_in(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         state: &str,
         z: u32,
         x: u32,
@@ -241,7 +241,7 @@ impl TerrainTiles {
     /// Vector Tile (no bytes when the tile has no line).
     pub fn contour_tile(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         z: u32,
         x: u32,
         y: u32,
@@ -253,7 +253,7 @@ impl TerrainTiles {
     /// [`TerrainTiles::contour_tile`] of the ground in the terrain state named `state`.
     pub fn contour_tile_in(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         state: &str,
         z: u32,
         x: u32,
@@ -280,7 +280,7 @@ impl TerrainTiles {
     /// `made` says whether this call made the mask.
     pub fn pool_water(
         &mut self,
-        dem: Option<Arc<Dem>>,
+        dem: Option<TerrainRef>,
         pools: Option<PoolWaterIn>,
     ) -> Result<Value, String> {
         let (Some(_), Some(pools)) = (self.for_dem(dem)?, pools) else {
@@ -417,6 +417,7 @@ mod tests {
     //! Label: example
     use super::*;
     use owd_format::design::terrain_tile::decode_png;
+    use owd_format::geotiff::Dem;
 
     fn dem(level: f64) -> Arc<Dem> {
         Arc::new(Dem {

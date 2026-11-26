@@ -563,7 +563,7 @@ pub fn build_terrain_grid(
             py.push(y);
         }
     }
-    let z = terrain(&px, &py);
+    let z = crate::types::grid::sample_grid(terrain, &px, &py, cell_m);
     if z.len() != h * w {
         return Err(format!(
             "cannot reshape array of size {} into shape ({h},{w})",

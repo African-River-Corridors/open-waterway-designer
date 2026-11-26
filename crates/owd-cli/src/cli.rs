@@ -160,6 +160,10 @@ enum ProjectSub {
         /// Print a machine-readable result as JSON.
         #[arg(long)]
         json: bool,
+        /// Also hash every byte of the DEM (SHA-256), read a piece at a time with progress: the
+        /// check that catches what the quick check of a large sectioned DEM cannot.
+        #[arg(long)]
+        full: bool,
     },
 }
 
@@ -1632,7 +1636,9 @@ pub fn main() -> ExitCode {
                 title,
                 json,
             } => crate::project::init(&folder, title.as_deref(), json),
-            ProjectSub::Status { folder, json } => crate::project::status(&folder, json),
+            ProjectSub::Status { folder, json, full } => {
+                crate::project::status(&folder, json, full)
+            }
         },
     };
     match result {

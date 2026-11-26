@@ -29,6 +29,17 @@ pub trait ByteSource: Send + Sync {
     fn as_slice(&self) -> Option<&[u8]> {
         None
     }
+
+    /// The file's identities, kept so each is worked out once ([`super::DemFile`] keeps them).
+    fn identities(&self) -> Option<&super::identity::Identities> {
+        None
+    }
+
+    /// The source as a shared handle, when it is one (a [`super::DemFile`]): what a sectioned
+    /// reader opened from it holds.
+    fn shared(&self) -> Option<SharedSource> {
+        None
+    }
 }
 
 /// A shared source.
@@ -94,6 +105,12 @@ impl<T: ByteSource + ?Sized> ByteSource for Arc<T> {
     fn as_slice(&self) -> Option<&[u8]> {
         (**self).as_slice()
     }
+    fn identities(&self) -> Option<&super::identity::Identities> {
+        (**self).identities()
+    }
+    fn shared(&self) -> Option<SharedSource> {
+        (**self).shared()
+    }
 }
 
 impl<T: ByteSource + ?Sized> ByteSource for &T {
@@ -105,6 +122,12 @@ impl<T: ByteSource + ?Sized> ByteSource for &T {
     }
     fn as_slice(&self) -> Option<&[u8]> {
         (**self).as_slice()
+    }
+    fn identities(&self) -> Option<&super::identity::Identities> {
+        (**self).identities()
+    }
+    fn shared(&self) -> Option<SharedSource> {
+        (**self).shared()
     }
 }
 

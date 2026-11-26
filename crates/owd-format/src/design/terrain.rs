@@ -3,23 +3,33 @@
 
 use super::crs::Crs;
 use super::session::DesignError;
-use crate::geotiff::Dem;
+use crate::sectioned::Terrain;
+use owd_core::types::grid;
+
+/// Metres in a degree of latitude, to turn a grid's cell in metres into degrees for a DEM in
+/// WGS84 (a degree of longitude is shorter, so a level chosen this way is fine enough both ways).
+const M_PER_DEGREE: f64 = 111_320.0;
 
 /// The CRS of a DEM as the document records it: `EPSG:nnnn`, or `unknown`.
-pub fn dem_crs_name(dem: &Dem) -> String {
-    dem.epsg
+pub fn dem_crs_name<G: Terrain + ?Sized>(dem: &G) -> String {
+    dem.epsg()
         .map_or("unknown".to_string(), |e| format!("EPSG:{e}"))
 }
 
 /// A sampler over `dem` for points in the project CRS (`project_epsg`, a WGS84 / UTM code).
 /// A DEM in WGS84 is sampled where it is; a DEM in the project's own zone is sampled directly;
 /// any other CRS is refused with a message that says what to convert to.
-pub fn dem_sampler(
-    dem: &Dem,
+///
+/// Points are read at full resolution, except inside [`grid::sample_grid`]: a grid of cells `c`
+/// metres across reads the coarsest level of the DEM whose cell is no larger than `c` (an overview
+/// of a sectioned DEM), and says so with [`grid::note_grid_read`]. A DEM in memory has one level,
+/// so its every read is at full resolution, as before.
+pub fn dem_sampler<G: Terrain + ?Sized>(
+    dem: &G,
     project_epsg: Option<u32>,
 ) -> Result<impl Fn(&[f64], &[f64]) -> Vec<f64> + '_, DesignError> {
     let project = project_epsg.and_then(|c| Crs::from_epsg(c).ok());
-    let utm = match (dem.epsg, project) {
+    let utm = match (dem.epsg(), project) {
         (Some(4326), Some(Crs::Utm(u))) => Some(u),
         (e, Some(p)) if e == Some(p.epsg()) => None,
         (e, Some(p)) => {
@@ -36,17 +46,24 @@ pub fn dem_sampler(
             ));
         }
     };
+    let to_dem_units = if utm.is_some() { M_PER_DEGREE } else { 1.0 };
     Ok(move |xs: &[f64], ys: &[f64]| -> Vec<f64> {
-        xs.iter()
+        let level = grid::asked_cell().map_or(0, |c| dem.level_for_cell(c / to_dem_units));
+        if level > 0 {
+            grid::note_grid_read(dem.levels()[level].cell() * to_dem_units);
+        }
+        let (px, py): (Vec<f64>, Vec<f64>) = xs
+            .iter()
             .zip(ys)
             .map(|(&x, &y)| {
                 let p = match utm {
                     Some(u) => u.inverse(x, y).unwrap_or([f64::NAN; 2]),
                     None => [x, y],
                 };
-                dem.sample_bilinear(p[0], p[1])
+                (p[0], p[1])
             })
-            .collect()
+            .unzip();
+        dem.sample_many_level(level, &px, &py)
     })
 }
 

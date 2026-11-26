@@ -231,6 +231,76 @@ pub trait Terrain: Send + Sync + core::fmt::Debug {
 /// A terrain shared between threads and surfaces.
 pub type TerrainRef = Arc<dyn Terrain>;
 
+/// A shared terrain reads as the terrain it holds: every method forwarded, so nothing changes.
+impl<T: Terrain + ?Sized> Terrain for Arc<T> {
+    fn full(&self) -> Level {
+        (**self).full()
+    }
+    fn nodata(&self) -> Option<f64> {
+        (**self).nodata()
+    }
+    fn epsg(&self) -> Option<u32> {
+        (**self).epsg()
+    }
+    fn width(&self) -> usize {
+        (**self).width()
+    }
+    fn height(&self) -> usize {
+        (**self).height()
+    }
+    fn geotransform(&self) -> [f64; 6] {
+        (**self).geotransform()
+    }
+    fn bounds(&self) -> (f64, f64, f64, f64) {
+        (**self).bounds()
+    }
+    fn levels(&self) -> Vec<Level> {
+        (**self).levels()
+    }
+    fn level_for_cell(&self, cell: f64) -> usize {
+        (**self).level_for_cell(cell)
+    }
+    fn level_value(&self, level: usize, row: usize, col: usize) -> f64 {
+        (**self).level_value(level, row, col)
+    }
+    fn value(&self, row: usize, col: usize) -> f64 {
+        (**self).value(row, col)
+    }
+    fn sample_bilinear(&self, x: f64, y: f64) -> f64 {
+        (**self).sample_bilinear(x, y)
+    }
+    fn sample_bilinear_level(&self, level: usize, x: f64, y: f64) -> f64 {
+        (**self).sample_bilinear_level(level, x, y)
+    }
+    fn sample_many(&self, xs: &[f64], ys: &[f64]) -> Vec<f64> {
+        (**self).sample_many(xs, ys)
+    }
+    fn sample_many_level(&self, level: usize, xs: &[f64], ys: &[f64]) -> Vec<f64> {
+        (**self).sample_many_level(level, xs, ys)
+    }
+    fn count_below(&self, r0: usize, r1: usize, c0: usize, c1: usize, level: f64) -> u32 {
+        (**self).count_below(r0, r1, c0, c1, level)
+    }
+    fn summary(&self) -> Option<HeightSummary> {
+        (**self).summary()
+    }
+    fn window_level(&self, level: usize, bounds: (f64, f64, f64, f64)) -> Dem {
+        (**self).window_level(level, bounds)
+    }
+    fn window(&self, bounds: (f64, f64, f64, f64), cell: f64) -> Dem {
+        (**self).window(bounds, cell)
+    }
+    fn window_within(&self, bounds: (f64, f64, f64, f64), max_cells: usize) -> Dem {
+        (**self).window_within(bounds, max_cells)
+    }
+    fn sectioned(&self) -> Option<&SectionedDem> {
+        (**self).sectioned()
+    }
+    fn read_error(&self) -> Option<String> {
+        (**self).read_error()
+    }
+}
+
 impl Terrain for Dem {
     fn full(&self) -> Level {
         Level {

@@ -50,7 +50,8 @@ not (
     (binary_id(owd-format::optimise) & test(=a_zero_length_weight_changes_nothing_and_a_positive_one_is_hashed_and_shown)) |
     (binary_id(owd-format::optimise) & test(=a_zero_flood_cost_changes_nothing_and_the_flood_terms_are_reported)) |
     (binary_id(owd-core::lattice_land_cost) & test(=a_land_weight_keeps_the_line_in_the_river_on_a_drowned_plain)) |
-    (binary_id(owd-format::optimise) & test(=a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes))
+    (binary_id(owd-format::optimise) & test(=a_positive_land_weight_is_hashed_and_shown_and_never_reaches_the_volumes)) |
+    (binary_id(owd-format::sectioned_large) & test(=a_dem_of_1_2_billion_cells_is_opened_and_a_100_km_line_runs_within_the_cache))
 )
 '''
 
@@ -64,3 +65,9 @@ slow-timeout = { period = "120s", terminate-after = 5 }
 [[profile.nightly.overrides]]
 filter = 'binary_id(owd-cli::exit_code_rule) & test(/^(optimise|volumes|run)_follows_the_rule$/)'
 slow-timeout = { period = "120s", terminate-after = 10 }
+
+# COG-1: the 1.2 billion cell DEM is written once (several minutes in a debug build), then kept in
+# the target's temporary folder.
+[[profile.nightly.overrides]]
+filter = 'binary_id(owd-format::sectioned_large)'
+slow-timeout = { period = "120s", terminate-after = 15 }

@@ -8,7 +8,7 @@
 use crate::state::AppState;
 use owd_format::design::Session;
 use owd_format::design::provenance::Mark;
-use owd_format::geotiff::Dem;
+use owd_format::sectioned::{Terrain, TerrainRef};
 use owd_reach::DroppedFiles;
 use owd_reach::banks::{BankParams, MaskBanks, window_bbox};
 use owd_reach::edgefit::{FitParams, SceneQuery, default_range, fit_to_scene, record_edge_fit};
@@ -103,7 +103,7 @@ pub struct ReachJob {
     step: ReachStep,
     session: Session,
     memo: ReachMemo,
-    dem: Option<Arc<Dem>>,
+    dem: Option<TerrainRef>,
     /// The document when the step began: the result is kept only if it has not changed since.
     base: Value,
 }
@@ -114,10 +114,10 @@ fn err(e: impl std::fmt::Display) -> String {
 
 /// The DEM height at a longitude and latitude, from a DEM in WGS84 or in the study's UTM zone.
 fn dem_sampler(
-    dem: &Dem,
+    dem: &dyn Terrain,
     utm: owd_format::design::crs::Utm,
 ) -> Option<Box<dyn Fn([f64; 2]) -> f64 + '_>> {
-    match dem.epsg {
+    match dem.epsg() {
         Some(4326) => Some(Box::new(move |p: [f64; 2]| dem.sample_bilinear(p[0], p[1]))),
         Some(e) if e == utm.epsg() => Some(Box::new(move |p: [f64; 2]| {
             utm.forward(p[0], p[1])

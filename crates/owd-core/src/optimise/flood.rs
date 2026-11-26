@@ -411,7 +411,7 @@ impl FloodField {
                 xs.push(p[0]);
                 ys.push(p[1]);
             }
-            let z = terrain(&xs, &ys);
+            let z = crate::types::grid::sample_grid(terrain, &xs, &ys, cell_m);
             if z.len() != end - at {
                 return Err(format!(
                     "the terrain gave {} levels for {} points",

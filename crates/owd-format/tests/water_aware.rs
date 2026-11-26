@@ -89,9 +89,9 @@ fn seed_legs_and_fixed_pieces_give_the_joined_fitted_option() {
     );
     assert!(s.validate().is_empty(), "{:?}", s.validate());
     // Exports carry the note.
-    let csv = s.export_csv(None);
+    let csv = s.export_csv(None::<&[u8]>);
     assert!(csv.contains("width only, no depth data"), "{csv}");
-    let g: Value = serde_json::from_str(&s.export_geojson(false, None).unwrap()).unwrap();
+    let g: Value = serde_json::from_str(&s.export_geojson(false, None::<&[u8]>).unwrap()).unwrap();
     assert_eq!(
         g["features"][0]["properties"]["notes"],
         "width only, no depth data"

@@ -26,8 +26,10 @@ fn walk(ctx: &Context, id: &str) -> Result<SectionVolumes, String> {
         DemCheck::Missing => return Err(format!("the DEM `{name}` was not given")),
         DemCheck::NoDem => return Err("the design has no DEM".into()),
     }
-    let grid = owd_format::geotiff::read_bytes(ctx.dem.unwrap_or_default())
-        .map_err(|e| format!("{name}: {e}"))?;
+    let grid = ctx
+        .dem
+        .ok_or_else(|| format!("the DEM `{name}` was not given"))
+        .and_then(|d| owd_format::sectioned::terrain_of(d).map_err(|e| format!("{name}: {e}")))?;
     let epsg = ctx.doc["project"]["crs"]["epsg"].as_u64().map(|c| c as u32);
     let sampler = dem_sampler(&grid, epsg).map_err(|e| e.to_string())?;
     ctx.session

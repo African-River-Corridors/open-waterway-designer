@@ -5,6 +5,7 @@
 
 use super::crs::{Crs, Utm};
 use super::session::{DesignError, Session, Stage, StageStatus};
+use crate::sectioned::ByteSource;
 use serde_json::{Value, json};
 
 /// The label every export carries.
@@ -95,7 +96,10 @@ impl Session {
         (r.is_object() && r["id"] == id).then_some(r)
     }
 
-    pub(super) fn volumes_status_name(&self, dem: Option<&[u8]>) -> &'static str {
+    pub(super) fn volumes_status_name<S: ByteSource + ?Sized>(
+        &self,
+        dem: Option<&S>,
+    ) -> &'static str {
         match self.stage_status_with_dem(Stage::Volumes, dem) {
             StageStatus::NotRun => "not run",
             StageStatus::Fresh => "fresh",
@@ -111,7 +115,7 @@ impl Session {
     /// design line option. Volumes are empty until the volumes stage has run; `volumes_status` says
     /// whether the numbers still hold. `dem` is the DEM file the caller found, if any: a changed or
     /// missing one makes the volumes stale.
-    pub fn export_csv(&self, dem: Option<&[u8]>) -> String {
+    pub fn export_csv<S: ByteSource + ?Sized>(&self, dem: Option<&S>) -> String {
         let mut out = format!("# {SCREENING_LABEL}\n");
         for n in self.export_notices() {
             out.push_str(&format!("# {}\n", n.replace('\n', " ")));
@@ -153,7 +157,11 @@ impl Session {
     /// The design line options as a GeoJSON FeatureCollection: in the project CRS (named in a `crs`
     /// member) or, with `wgs84`, in longitude and latitude. Each feature carries the option's
     /// checks, its failed checks, its quantities when the volumes stage has run, and the label.
-    pub fn export_geojson(&self, wgs84: bool, dem: Option<&[u8]>) -> Result<String, DesignError> {
+    pub fn export_geojson<S: ByteSource + ?Sized>(
+        &self,
+        wgs84: bool,
+        dem: Option<&S>,
+    ) -> Result<String, DesignError> {
         let epsg = self.doc["project"]["crs"]["epsg"]
             .as_u64()
             .map(|c| c as u32);
@@ -367,7 +375,7 @@ impl Session {
     /// The constraint stretches (C) of every option as CSV, one row per stretch. The head carries the
     /// screening label, the unverified-Rules notice, the design basis and the verdicts. Empty rows
     /// below the head until the volumes stage has run.
-    pub fn export_stretches_csv(&self, dem: Option<&[u8]>) -> String {
+    pub fn export_stretches_csv<S: ByteSource + ?Sized>(&self, dem: Option<&S>) -> String {
         let mut out = format!(
             "# {SCREENING_LABEL}\n# {}\n",
             super::screening::UNVERIFIED_NOTICE
@@ -420,10 +428,10 @@ impl Session {
 
     /// The constraint stretches (C) as GeoJSON lines: each the part of its option's design line
     /// between the stretch's ends, in the project CRS or, with `wgs84`, in longitude and latitude.
-    pub fn export_stretches_geojson(
+    pub fn export_stretches_geojson<S: ByteSource + ?Sized>(
         &self,
         wgs84: bool,
-        dem: Option<&[u8]>,
+        dem: Option<&S>,
     ) -> Result<String, DesignError> {
         let epsg = self.doc["project"]["crs"]["epsg"]
             .as_u64()

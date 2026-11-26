@@ -26,7 +26,7 @@
 use super::crs::{Crs, Utm};
 use super::session::{DesignError, Session, Stage, StageStatus};
 use super::terrain_tile::{Overlay, TILE, TileMaker};
-use crate::geotiff::Dem;
+use crate::sectioned::Terrain;
 use crate::types::TerrainSampler;
 use owd_core::cut_model::cut_model_a_face;
 use owd_core::geom::Pt;
@@ -403,7 +403,7 @@ impl Session {
     pub fn cut_surface(
         &self,
         channel: &Channel,
-        dem: &Dem,
+        dem: &(impl Terrain + ?Sized),
     ) -> Result<Option<CutSurface>, DesignError> {
         if !(channel.from_volumes && channel.has_ground) {
             return Ok(None);
@@ -416,7 +416,7 @@ impl Session {
             .unwrap_or_default();
         // A DEM in the project's own zone is read where it is; one in degrees goes through the
         // projection, point by point (the two CRS the stages read a DEM in).
-        let to_project: Option<ToProject> = match dem.epsg {
+        let to_project: Option<ToProject> = match dem.epsg() {
             Some(e) if e == utm.epsg() => None,
             Some(4326) => Some(Box::new(utm.forward_fn().map_err(DesignError::Input)?)),
             _ => {
@@ -701,7 +701,7 @@ impl CutSurface {
     /// The cut at a place given in longitude and latitude, read on the maker's DEM.
     pub fn at_lon_lat(&self, maker: &TileMaker, lon: f64, lat: f64) -> Option<CutAt> {
         let dem = maker.dem();
-        let [x, y] = match (&self.to_project, dem.epsg) {
+        let [x, y] = match (&self.to_project, dem.epsg()) {
             (Some(_), _) => [lon, lat],
             (None, Some(e)) => match Crs::from_epsg(e).ok()? {
                 Crs::Utm(u) => u.forward(lon, lat).ok()?,
@@ -729,9 +729,12 @@ impl CutSurface {
             return Ok(None);
         }
         let dem = maker.dem();
+        // The ground at the tile's level of the DEM (COG-1: an overview at a far zoom of a
+        // sectioned DEM; the DEM itself in memory).
+        let level = maker.level_at_zoom(z);
         // The depth at each pixel: positive for a dry cut, negative for a dredge, zero for none.
         let depths = maker.at_pixels(z, x, y, 0, 0.0, |px, py| {
-            let ground = dem.sample_bilinear(px, py);
+            let ground = dem.sample_bilinear_level(level, px, py);
             match self.at_dem(px, py, ground) {
                 Some(c) if c.kind == "dredge" => -c.depth_m,
                 Some(c) => c.depth_m,

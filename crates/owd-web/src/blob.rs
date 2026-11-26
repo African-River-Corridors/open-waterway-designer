@@ -29,12 +29,9 @@ impl JsBlobSource {
 // SAFETY: the engine runs on one thread, inside one Web Worker (wasm32 has no threads here); the
 // `ByteSource` bound asks for `Send + Sync` because native surfaces share a terrain between threads.
 // A `JsBlobSource` is made and used only on that one thread.
-#[cfg(target_arch = "wasm32")]
 unsafe impl Send for JsBlobSource {}
-#[cfg(target_arch = "wasm32")]
 unsafe impl Sync for JsBlobSource {}
 
-#[cfg(target_arch = "wasm32")]
 impl ByteSource for JsBlobSource {
     fn len(&self) -> u64 {
         self.len
