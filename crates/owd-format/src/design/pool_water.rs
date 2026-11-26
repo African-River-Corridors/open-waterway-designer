@@ -602,8 +602,9 @@ impl PoolWater {
     }
 
     /// The surface of tile `z/x/y`, metres: the pool's level where there is water, the ground
-    /// (as [`TileMaker::heights`] gives it) everywhere else. Water drawn on this surface is flat
-    /// at each pool's level.
+    /// (as [`TileMaker::heights`] gives it, from the same level of the DEM) everywhere else. Water
+    /// drawn on this surface is flat at each pool's level, and dry ground is exactly the plain
+    /// terrain: turning the water on changes nothing where there is none.
     pub fn surface(
         &self,
         maker: &TileMaker,
@@ -614,11 +615,13 @@ impl PoolWater {
         if !maker.holds_dem(z, x, y) {
             return maker.heights(z, x, y);
         }
+        let level = maker.level_at_zoom(z);
         Ok(
             maker.sampled(z, x, y, 0, maker.info().base_m as f32, |px, py| {
-                self.water(px, py)
-                    .map_or_else(|| maker.height_at(px, py), |(_, level, _)| level)
-                    as f32
+                self.water(px, py).map_or_else(
+                    || maker.height_at_level(level, px, py),
+                    |(_, level, _)| level,
+                ) as f32
             }),
         )
     }
