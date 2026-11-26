@@ -110,7 +110,10 @@ impl<'a> CutIndex<'a> {
     pub fn locate(&self, p: Pt, extra_m: f64) -> Option<CutPlace> {
         let reach = self.reach_m + extra_m + self.spacing_m;
         let r = (reach / self.cell).ceil() as i64;
-        let (cx, cy) = ((p[0] / self.cell).floor() as i64, (p[1] / self.cell).floor() as i64);
+        let (cx, cy) = (
+            (p[0] / self.cell).floor() as i64,
+            (p[1] / self.cell).floor() as i64,
+        );
         let mut best: Option<(f64, usize, f64)> = None;
         for gx in cx - r..=cx + r {
             for gy in cy - r..=cy + r {
@@ -181,7 +184,6 @@ pub fn cut_relation(place: &CutPlace, area_m2: f64, near_m: f64) -> Option<CutRe
     }
 }
 
-
 /// The finest cell of the grid the severed-island test is worked out on, metres.
 pub const ISLAND_CELL_M: f64 = 10.0;
 /// The most cells one cut-through's grid may hold; a larger one takes coarser cells.
@@ -192,14 +194,19 @@ const ISLAND_MAX_CELLS: f64 = 4.0e6;
 /// # The rule
 ///
 /// A CUT-THROUGH is a run of the design line outside the river polygon. Around each, on a grid of
-/// [`ISLAND_CELL_M`] cells over the run's box widened by its own length (at least 500 m), a cell
+/// [`ISLAND_CELL_M`] cells over the run's box widened by four times its length (at least 1 km), a cell
 /// is WATER when its centre is in the river polygon; with the cut, also when it is within
 /// `half_m` of the design line (the channel's half-width at the water surface). LAND cells join
 /// their four neighbours. Land that reaches the edge of the grid is the MAINLAND. A point is
 /// SEVERED when its cell is mainland without the cut and not with it: the cut and the bypassed loop
 /// of the river close round it. Land the loop encloses beyond the grid's edge reads as mainland,
 /// so a very wide loop is missed, never invented.
-pub fn severed(line: &[Pt], river: &[owd_core::geom::Polygon], half_m: f64, points: &[Pt]) -> Vec<bool> {
+pub fn severed(
+    line: &[Pt],
+    river: &[owd_core::geom::Polygon],
+    half_m: f64,
+    points: &[Pt],
+) -> Vec<bool> {
     let mut out = vec![false; points.len()];
     if line.len() < 2 || river.is_empty() {
         return out;
@@ -213,7 +220,10 @@ pub fn severed(line: &[Pt], river: &[owd_core::geom::Polygon], half_m: f64, poin
         let n = (d / ISLAND_CELL_M).ceil().max(1.0) as usize;
         for k in 0..n {
             let t = k as f64 / n as f64;
-            let p = [w[0][0] + t * (w[1][0] - w[0][0]), w[0][1] + t * (w[1][1] - w[0][1])];
+            let p = [
+                w[0][0] + t * (w[1][0] - w[0][0]),
+                w[0][1] + t * (w[1][1] - w[0][1]),
+            ];
             samples.push((p, !in_river(p)));
         }
     }
@@ -244,7 +254,12 @@ fn island_run(
     points: &[Pt],
     out: &mut [bool],
 ) {
-    let (mut x0, mut y0, mut x1, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let (mut x0, mut y0, mut x1, mut y1) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
     for p in run {
         x0 = x0.min(p[0]);
         y0 = y0.min(p[1]);
@@ -252,7 +267,7 @@ fn island_run(
         y1 = y1.max(p[1]);
     }
     let len = run.len() as f64 * ISLAND_CELL_M;
-    let pad = len.max(500.0);
+    let pad = (4.0 * len).max(1000.0);
     let (x0, y0, x1, y1) = (x0 - pad, y0 - pad, x1 + pad, y1 + pad);
     let mut cell = ISLAND_CELL_M;
     while (x1 - x0) * (y1 - y0) / (cell * cell) > ISLAND_MAX_CELLS {
@@ -277,7 +292,8 @@ fn island_run(
         for k in 0..=n {
             let t = k as f64 / n as f64;
             let p = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
-            if p[0] < x0 - half_m || p[0] > x1 + half_m || p[1] < y0 - half_m || p[1] > y1 + half_m {
+            if p[0] < x0 - half_m || p[0] > x1 + half_m || p[1] < y0 - half_m || p[1] > y1 + half_m
+            {
                 continue;
             }
             let (pc, pr) = (((p[0] - x0) / cell) as i64, ((p[1] - y0) / cell) as i64);
@@ -342,7 +358,6 @@ fn island_run(
     }
 }
 
-
 /// How many buildings each list of the cut report names; the counts are whole.
 pub const CONFLICTS_LISTED: usize = 50;
 
@@ -376,6 +391,8 @@ impl super::session::Session {
         let mut near = Vec::new();
         let mut island = Vec::new();
         let (mut n_taken, mut n_near, mut n_island) = ([0usize; 2], [0usize; 2], [0usize; 2]);
+        // Every building in each class, by its number in the file's order (for the map's style).
+        let (mut f_taken, mut f_near, mut f_island) = (Vec::new(), Vec::new(), Vec::new());
         for (i, f) in set.features.iter().enumerate() {
             let counted = usize::from(!filters.counts(f));
             let item = |place: Option<&CutPlace>| {
@@ -391,12 +408,14 @@ impl super::session::Session {
                 Some(p) => match cut_relation(&p, f.area_m2, filters.near_cut_m) {
                     Some(CutRelation::Taken) => {
                         n_taken[counted] += 1;
+                        f_taken.push(i);
                         if taken.len() < CONFLICTS_LISTED {
                             taken.push(item(Some(&p)));
                         }
                     }
                     Some(CutRelation::Near) => {
                         n_near[counted] += 1;
+                        f_near.push(i);
                         if near.len() < CONFLICTS_LISTED {
                             near.push(item(Some(&p)));
                         }
@@ -407,6 +426,7 @@ impl super::session::Session {
             }
             if cut_off[i] {
                 n_island[counted] += 1;
+                f_island.push(i);
                 if island.len() < CONFLICTS_LISTED {
                     island.push(item(None));
                 }
@@ -420,6 +440,7 @@ impl super::session::Session {
             "from_volumes": channel.from_volumes && channel.has_ground,
             "listed": CONFLICTS_LISTED,
             "taken_list": taken, "near_list": near, "severed_list": island,
+            "fids": {"taken": f_taken, "near": f_near, "severed": f_island},
             "rule": "taken: the building, as a disc of its own area about its centroid, reaches inside the cut's daylight lines (the water's edge where a side has no cut); near: within near_cut_m of them; severed: on land a cut-through and the bypassed loop of the river close round. A report, not a cost.",
         }))
     }

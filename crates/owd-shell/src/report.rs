@@ -49,9 +49,17 @@ pub struct ReportJob {
     dem: Option<owd_format::sectioned::DemFile>,
     option: Option<String>,
     ask: ReportAsk,
+    /// What the design names by reference and the report reads (BLD-1).
+    extras: owd_report::Extras,
 }
 
 impl ReportJob {
+    /// The report reads these too (BLD-1: the buildings and the channel).
+    pub(crate) fn with_extras(mut self, extras: owd_report::Extras) -> ReportJob {
+        self.extras = extras;
+        self
+    }
+
     pub(crate) fn new(
         design: String,
         dem: Option<owd_format::sectioned::DemFile>,
@@ -63,6 +71,7 @@ impl ReportJob {
             dem,
             option: option.map(String::from),
             ask,
+            extras: owd_report::Extras::default(),
         }
     }
 
@@ -93,8 +102,9 @@ impl ReportJob {
                 control: control.clone(),
                 requested_by: Some(self.ask.requested_by.clone()),
             };
-            let report = owd_report::build(&self.design, self.dem.as_ref(), &req)
-                .map_err(|e| e.to_string())?;
+            let report =
+                owd_report::build_with(&self.design, self.dem.as_ref(), &req, &self.extras)
+                    .map_err(|e| e.to_string())?;
             for &f in &formats {
                 let r = report.render(f).map_err(|e| e.to_string())?;
                 out.push((format!("{}.{}", report.stem(), extension(f)), r.bytes));

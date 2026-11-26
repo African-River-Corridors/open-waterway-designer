@@ -23,12 +23,16 @@ pub fn body(ctx: &Context, assets: &mut Vec<(String, Vec<u8>)>) -> (Vec<Value>, 
         stretches(ctx),
         design_basis(ctx),
         quantities(ctx),
-        section(
-            "long-section-section",
-            "Long section",
-            vec![figures::long_section(ctx, assets)],
-        ),
     ];
+    let mut body = body;
+    if let Some(b) = buildings(ctx) {
+        body.push(b);
+    }
+    body.push(section(
+        "long-section-section",
+        "Long section",
+        vec![figures::long_section(ctx, assets)],
+    ));
     (body, trace::appendix(ctx).into_iter().collect())
 }
 
@@ -688,4 +692,67 @@ fn quantities(ctx: &Context) -> Value {
         ]
     };
     section("works", "Works and quantities", body)
+}
+
+/// The buildings (BLD-1): those the pools flood, by the weir search's rule (the optimise stage's
+/// flood report, when it ran with buildings), and those the channel takes, is near, or severs
+/// (worked out by the caller from the volumes' stations). None when neither is there.
+fn buildings(ctx: &Context) -> Option<Value> {
+    let flood = &ctx.doc["stages"]["optimise"]["results"]["cascade"]["flood"];
+    let b = &flood["buildings"];
+    let c = ctx.building_conflicts.as_ref();
+    if !b.is_object() && c.is_none() {
+        return None;
+    }
+    let n = |v: &Value, k: &str| v[k].as_u64().unwrap_or(0).to_string();
+    let mut body = vec![prose(
+        "The buildings are machine-detected footprints, not a survey: each has a confidence, and those below the threshold are counted apart. The counts are a screening figure.",
+    )];
+    if b.is_object() {
+        body.push(prose(format!(
+            "The pools flood **{}** buildings (a building counts where its centroid is in land the pool floods by the weir search's rule and the water there is at least {} m deep). Counted apart: {} below the confidence threshold of {}, {} below the smallest area. Building cost: {} at {} a building.",
+            n(b, "flooded"),
+            b["min_depth_m"],
+            n(b, "flooded_below_confidence"),
+            b["min_confidence"],
+            n(b, "flooded_below_area"),
+            b["building_cost"].as_f64().map_or("-".to_string(), |x| format!("{x:.0}")),
+            b["cost_per_building"],
+        )));
+        let rows: Vec<Vec<String>> = flood["pools"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, p)| {
+                vec![
+                    (i + 1).to_string(),
+                    format!("{:.2}", p["level_m"].as_f64().unwrap_or(f64::NAN)),
+                    n(p, "buildings_flooded"),
+                    p["settlement_flooded_ha"]
+                        .as_f64()
+                        .map_or("-".into(), |h| format!("{h:.1}")),
+                ]
+            })
+            .collect();
+        body.push(table(
+            "buildings-by-pool",
+            "Buildings and settlement land flooded by each pool",
+            &[
+                ("Pool", "right", None),
+                ("Level", "right", Some("m")),
+                ("Buildings flooded", "right", None),
+                ("Settlement land", "right", Some("ha")),
+            ],
+            rows,
+        ));
+    }
+    if let Some(c) = c {
+        body.push(prose(format!(
+            "Against the channel: **{}** buildings in the cut (inside its daylight lines), **{}** within {} m of it, and **{}** on land a cut-through severs from the bank. Counted apart (below the thresholds): {}, {} and {}. A report, not a cost.",
+            n(c, "taken"), n(c, "near"), c["near_cut_m"], n(c, "severed"),
+            n(c, "taken_apart"), n(c, "near_apart"), n(c, "severed_apart"),
+        )));
+    }
+    Some(section("buildings", "Buildings", body))
 }
