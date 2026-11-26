@@ -42,9 +42,17 @@ through it. Otherwise the design's own water level is used. With no DEM the wind
 plan area: the channel's footprint outside the river polygon, times the land weight (1 when not set),
 plus the length cost.
 
-A river-following line (`method: "river_following"`, or a line whose details list `cut_throughs`)
-may move only inside the river and inside the room of its recorded cut-throughs
-(`stay_in_river: "auto"`). `"on"` holds any line to the river; `"off"` frees it.
+**Permitted ground** (`stay_in_river`, `"auto"` by default). A river-following line
+(`method: "river_following"`) and a given line may move only inside the river and inside the room of
+their permitted stretches. For a river-following line these are its record's
+`permitted_stretches` (`{id, kind: cut_through | forced, from, to, room_m}`, design-line chainage,
+read from the line's details); a cut-through's two ends are also forced seams. A given line has no
+record: its own off-river stretches (the design line's `cut_offs`) are its permitted ground, with a
+room of `cut_through_room_m` either side, and they are not seams. `"on"` holds any line the same
+way; `"off"` frees it (the land weight then carries the preference for water).
+
+Where the design's water level steps (pools given as a water level, more than 5 cm between two
+points 2 m apart along the line), each step is a weir site: a forced seam with the weir straight.
 
 ## The record
 
@@ -79,14 +87,14 @@ All under `windows` in the optimise settings. A setting left `null` takes its va
 | `cell_m` | 2 | The search's ground grid |
 | `stay_in_river` | `auto` | See above; `in_river_margin_m` 0, `cut_through_room_m` two bottom widths |
 | `heuristic` | `c_min` | `c_min` (the length weight per metre: exact) or `none` |
-| `max_expand`, `max_states` | 2,000,000, 8,000,000 | Caps per window |
+| `max_expand`, `max_states` | 2,000,000, 2,000,000 | Caps per window (a state takes about 600 bytes with its grid and polish) |
 | `window_time_s` | 300 | Time limit per window |
 | `polish` | true | With `polish_spacings_m` (R_min / 3.6 … / 1.44), `polish_max_shift_m` (½ bottom width, ≥ 15), `polish_station_m` 20, `polish_radius_margin_m` (max 20 m, 6 % of R_min) |
 | `adopt_threshold` | 0.01 | Adopt at 1 % cheaper |
 | `turn_limit_deg`, `length_ratio_limit` | 1,080, 3 | The loop test |
 | `search_rake_step_m`, `search_ds_m` | 2, 8 | The search's sampling across and along |
 | `threads` | every core | Windows searched at once (one in the browser) |
-| `memory_budget_mb` | 4,096 | Fewer windows run at once when their states could pass this |
+| `memory_budget_mb` | 8,192 | Fewer windows run at once when `max_states` x 600 bytes each could pass this |
 
 The section (cut model, station step, reach, sampling, slope, half-width) is the volumes stage's,
 so a change to the volumes settings makes a window run stale.

@@ -27,7 +27,7 @@ pub const MIN_WINDOW_M: f64 = 50.0;
 /// What a state of the search holds in memory, about (bytes): its cost, pose, parent and primitive
 /// in four maps, and its entries in the queue. Measured on the synthetic rivers (see the change
 /// log); used only to limit the windows run at once.
-pub const STATE_BYTES: f64 = 240.0;
+pub const STATE_BYTES: f64 = 600.0;
 
 /// How the window optimiser runs. Every field can change the answer, and every field is written
 /// with the answer by the stage.
@@ -90,7 +90,7 @@ impl WindowConfig {
         lat.min_straight_m = loa_m;
         lat.corridor_limit = true;
         lat.max_expand = 2_000_000;
-        lat.max_states = 8_000_000;
+        lat.max_states = 2_000_000;
         lat.heuristic = "c_min".into();
         let r = r_min_m;
         Self {
@@ -136,7 +136,7 @@ impl WindowConfig {
             station_m: crate::cut_model::STATION_M,
             weir_straight_m: 2.0 * loa_m,
             threads: 1,
-            memory_budget_mb: 4096.0,
+            memory_budget_mb: 8192.0,
         }
     }
 }
@@ -160,6 +160,9 @@ pub struct WindowInputs<'a> {
     pub weirs_m: Vec<f64>,
     pub cut_throughs_m: Vec<(f64, f64)>,
     pub forced_stretches_m: Vec<(f64, f64)>,
+    /// Stretches of the starting line the line may stay off the river on, with the room either
+    /// side (m): `(from, to, room)`. Read only with `stay_in_river`; they are not seams.
+    pub permitted_m: Vec<(f64, f64, f64)>,
     pub frozen_m: Vec<(f64, f64)>,
     /// Seconds, from any origin: the time limit of each window and the records read it.
     pub clock: &'a (dyn Fn() -> f64 + Sync),
@@ -321,47 +324,63 @@ fn polys_of(g: Geometry) -> Vec<Polygon> {
     }
 }
 
-/// The permitted ground of a window (OPT-5 3.16): the river grown by the margin, the recorded
-/// cut-throughs with their room, the forced off-river stretches with half a bottom width.
-fn permitted_polys(
+/// The permitted ground of a window (OPT-5 3.16) on its grid: the river (grown by the margin when
+/// one is set), and each permitted stretch of the starting line (a recorded cut-through, a forced
+/// off-river stretch, a given line's own off-river stretch) with its room either side.
+fn permitted_mask(
     inp: &WindowInputs,
     cfg: &WindowConfig,
-    near: (f64, f64, f64, f64),
-) -> Vec<Polygon> {
-    let mut out: Vec<Polygon> = if cfg.in_river_margin_m != 0.0 {
-        crate::geom::offset::buffer_polygons(inp.river, cfg.in_river_margin_m)
+    grid: &crate::optimise::lattice::TerrainGrid,
+) -> CellMask {
+    let mut mask = if cfg.in_river_margin_m != 0.0 {
+        let grown = crate::geom::offset::buffer_polygons(inp.river, cfg.in_river_margin_m)
             .map(polys_of)
-            .unwrap_or_else(|_| inp.river.to_vec())
+            .unwrap_or_else(|_| inp.river.to_vec());
+        CellMask::on(grid, &grown)
     } else {
-        inp.river.to_vec()
+        // The grid's wet cells are the river polygon at the cell centres.
+        CellMask {
+            cells: grid.wet.clone(),
+            x0: grid.x0,
+            y0: grid.y0,
+            cell_m: grid.cell_m,
+        }
     };
     let len = linear::length(inp.line);
-    let mut add = |a: f64, b: f64, room: f64| {
+    let (gx0, gy0, gx1, gy1) = grid.bounds();
+    for &(a, b, room) in &inp.permitted_m {
         let s = stretch(inp.line, a.max(0.0), b.min(len));
-        if s.len() >= 2
-            && let Ok(g) = buffer_line(&s, room.max(1.0), 8, Cap::Round)
-        {
-            let part = polys_of(g);
-            out = overlay(&out, &part, Op::Union);
+        if s.len() < 2 {
+            continue;
         }
-    };
-    let (xmin, ymin, xmax, ymax) = near;
-    let touches = |a: f64, b: f64| {
-        stretch(inp.line, a.max(0.0), b.min(len))
-            .iter()
-            .any(|p| p[0] >= xmin && p[0] <= xmax && p[1] >= ymin && p[1] <= ymax)
-    };
-    for &(a, b) in &inp.cut_throughs_m {
-        if touches(a, b) {
-            add(a, b, cfg.cut_through_room_m);
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for p in &s {
+            x0 = x0.min(p[0] - room);
+            y0 = y0.min(p[1] - room);
+            x1 = x1.max(p[0] + room);
+            y1 = y1.max(p[1] + room);
+        }
+        if x1 < gx0 || x0 > gx1 || y1 < gy0 || y0 > gy1 {
+            continue;
+        }
+        let c0 = ((x0.max(gx0) - grid.x0) / grid.cell_m).floor().max(0.0) as usize;
+        let c1 = ((x1.min(gx1) - grid.x0) / grid.cell_m).ceil() as usize;
+        let r0 = ((grid.y0 - y1.min(gy1)) / grid.cell_m).floor().max(0.0) as usize;
+        let r1 = ((grid.y0 - y0.max(gy0)) / grid.cell_m).ceil() as usize;
+        for r in r0..=r1.min(mask.cells.len().saturating_sub(1)) {
+            let row = &mut mask.cells[r];
+            for c in c0..=c1.min(row.len().saturating_sub(1)) {
+                if !row[c] {
+                    let p = [
+                        grid.x0 + c as f64 * grid.cell_m,
+                        grid.y0 - r as f64 * grid.cell_m,
+                    ];
+                    row[c] = linear::point_line_distance(p, &s) <= room;
+                }
+            }
         }
     }
-    for &(a, b) in &inp.forced_stretches_m {
-        if touches(a, b) {
-            add(a, b, 0.5 * cfg.bottom_width_m);
-        }
-    }
-    out
+    mask
 }
 
 /// Read the window's ground (the only terrain reads of a window): on the main thread.
@@ -375,10 +394,7 @@ fn prepare(
     let (corridor, _) = line_corridor(&seg, cfg.corridor_half_m)?;
     let pad = cfg.section.maxw_m + 20.0;
     let grid = window_grid(inp.terrain, inp.river_index, &corridor, pad, cfg.cell_m)?;
-    let mask = cfg.stay_in_river.then(|| {
-        let b = grid.bounds();
-        CellMask::on(&grid, &permitted_polys(inp, cfg, b))
-    });
+    let mask = cfg.stay_in_river.then(|| permitted_mask(inp, cfg, &grid));
     // One level over the window when the starting line's level is the same along all of it.
     let n = std::cmp::max(2, ((job.level_hi - job.level_lo) / 5.0).ceil() as usize + 1);
     let first = (inp.level)(job.level_lo);

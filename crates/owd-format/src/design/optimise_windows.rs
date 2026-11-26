@@ -130,7 +130,7 @@ impl Default for WindowSettings {
             cut_through_room_m: None,
             heuristic: "c_min".into(),
             max_expand: 2_000_000,
-            max_states: 8_000_000,
+            max_states: 2_000_000,
             window_time_s: 300.0,
             polish: true,
             polish_spacings_m: None,
@@ -143,7 +143,7 @@ impl Default for WindowSettings {
             search_rake_step_m: 2.0,
             search_ds_m: 8.0,
             threads: None,
-            memory_budget_mb: 4096.0,
+            memory_budget_mb: 8192.0,
         }
     }
 }
@@ -272,6 +272,44 @@ fn stretches(details: &Value, key: &str) -> Vec<(f64, f64)> {
         .flatten()
         .filter_map(|s| Some((s["from_m"].as_f64()?, s["to_m"].as_f64()?)))
         .filter(|(a, b)| a < b)
+        .collect()
+}
+
+/// The river-following record's permitted stretches (OPT-4's `permitted_stretches()`: `{id, kind:
+/// cut_through|forced, from, to, room_m}`, design-line chainage), read from the line's details, at
+/// `permitted_stretches` or `record.permitted_stretches`: `(kind, from, to, room)`.
+fn permitted_records(details: &Value) -> Vec<(String, f64, f64, Option<f64>)> {
+    let list = if details["permitted_stretches"].is_array() {
+        &details["permitted_stretches"]
+    } else {
+        &details["record"]["permitted_stretches"]
+    };
+    list.as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| {
+            let from = s["from"].as_f64().or_else(|| s["from_m"].as_f64())?;
+            let to = s["to"].as_f64().or_else(|| s["to_m"].as_f64())?;
+            (from < to).then(|| {
+                (
+                    s["kind"].as_str().unwrap_or("cut_through").to_string(),
+                    from,
+                    to,
+                    s["room_m"].as_f64(),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Where the water level along the starting line steps (a weir between two pools): every place
+/// the level table (one value every 2 m) changes by more than 5 cm between neighbours.
+fn level_steps(table: &[f64]) -> Vec<f64> {
+    table
+        .windows(2)
+        .enumerate()
+        .filter(|(_, w)| (w[1] - w[0]).abs() > 0.05)
+        .map(|(i, _)| 2.0 * i as f64 + 1.0)
         .collect()
 }
 
@@ -441,23 +479,60 @@ impl Session {
                 table[i] * (1.0 - f) + table[i + 1] * f
             }
         };
+        // Pools given as a water level (not by an earlier cascade): each step of the level is a
+        // weir site, so a window never crosses one.
+        let mut weirs_m = weirs_m;
+        if !carried && !plan_area {
+            weirs_m.extend(level_steps(&table));
+        }
         let land_weight = if plan_area && typed.land_weight == 0.0 {
             1.0
         } else {
             typed.land_weight
         };
-        let cut_throughs = stretches(&start_details, "cut_throughs");
-        let forced_stretches = stretches(&start_details, "forced_stretches");
+        // The record of a river-following line (OPT-4): its cut-throughs and forced stretches are
+        // forced seams and permitted ground, each with its room.
+        let room_default = ws.cut_through_room_m.unwrap_or(2.0 * bw);
+        let mut cut_throughs = stretches(&start_details, "cut_throughs");
+        let mut forced_stretches = stretches(&start_details, "forced_stretches");
+        let mut permitted: Vec<(f64, f64, f64)> = cut_throughs
+            .iter()
+            .map(|&(a, b)| (a, b, room_default))
+            .chain(forced_stretches.iter().map(|&(a, b)| (a, b, 0.5 * bw)))
+            .collect();
+        let records = permitted_records(&start_details);
+        for (kind, a, b, room) in &records {
+            if kind == "forced" {
+                forced_stretches.push((*a, *b));
+                permitted.push((*a, *b, room.unwrap_or(0.5 * bw)));
+            } else {
+                cut_throughs.push((*a, *b));
+                permitted.push((*a, *b, room.unwrap_or(room_default)));
+            }
+        }
+        let method = start.as_ref().map_or("centreline", |l| l.method.as_str());
+        // A given line has no record: its own off-river stretches are its permitted ground (not
+        // seams), so the mask never forbids what the line already does.
+        if method == "given" {
+            for c in start.iter().flat_map(|l| l.cut_offs.iter().flatten()) {
+                permitted.push((c.from.0, c.to.0, room_default));
+            }
+        }
         let stay = match ws.stay_in_river.as_str() {
             "on" => true,
             "off" => false,
             _ => {
-                start
-                    .as_ref()
-                    .is_some_and(|l| l.method == "river_following")
+                matches!(method, "river_following" | "given")
                     || !cut_throughs.is_empty()
+                    || !forced_stretches.is_empty()
             }
         };
+        // "on" for any line: its own off-river stretches are permitted too.
+        if stay && method != "given" && records.is_empty() && cut_throughs.is_empty() {
+            for c in start.iter().flat_map(|l| l.cut_offs.iter().flatten()) {
+                permitted.push((c.from.0, c.to.0, room_default));
+            }
+        }
         let cfg = self.window_config(
             ws,
             typed,
@@ -500,9 +575,10 @@ impl Session {
             plan_area,
             level: &level,
             rule: &rule,
-            weirs_m: weirs_m.clone(),
+            weirs_m,
             cut_throughs_m: cut_throughs,
             forced_stretches_m: forced_stretches,
+            permitted_m: permitted,
             frozen_m: Vec::new(),
             clock: &clock,
             cancel: &never,
@@ -750,5 +826,38 @@ fn window_threads(setting: Option<i64>) -> usize {
             Some(t) => t.max(1) as usize,
             None => std::thread::available_parallelism().map_or(1, |n| n.get()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Label: property (the river-following record's hand-over shape is read, both keys).
+    #[test]
+    fn the_permitted_stretches_of_a_record_are_read() {
+        let d = json!({"permitted_stretches": [
+            {"id": "ct-1", "kind": "cut_through", "from": 100.0, "to": 900.0, "room_m": 60.0},
+            {"id": "f-1", "kind": "forced", "from": 2000.0, "to": 2150.0, "room_m": 15.0},
+            {"id": "bad", "kind": "forced", "from": 10.0, "to": 5.0},
+        ]});
+        let r = permitted_records(&d);
+        assert_eq!(r.len(), 2);
+        assert_eq!(r[0], ("cut_through".to_string(), 100.0, 900.0, Some(60.0)));
+        assert_eq!(r[1].0, "forced");
+        let nested = json!({"record": d.clone()});
+        assert_eq!(permitted_records(&nested), r);
+        assert!(permitted_records(&json!({})).is_empty());
+    }
+
+    /// Label: property (a step of the water level is a weir site; a sloping level is not).
+    #[test]
+    fn a_step_of_the_level_is_a_weir_site() {
+        let mut t: Vec<f64> = (0..1000).map(|i| 10.0 - 1e-4 * i as f64).collect();
+        assert!(level_steps(&t).is_empty());
+        for v in t.iter_mut().skip(500) {
+            *v -= 1.0;
+        }
+        assert_eq!(level_steps(&t), vec![999.0]);
     }
 }

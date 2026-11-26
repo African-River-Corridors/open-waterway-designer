@@ -37,6 +37,7 @@ fn run(name: &str, f: &WindowFixture, cfg: &WindowConfig, rule: &HalfWidthRule) 
         weirs_m: vec![],
         cut_throughs_m: vec![],
         forced_stretches_m: vec![],
+        permitted_m: vec![],
         frozen_m: vec![],
         clock: &clock,
         cancel: &never,

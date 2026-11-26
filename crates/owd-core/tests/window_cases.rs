@@ -75,6 +75,38 @@ fn run_with(
         weirs_m: weirs,
         cut_throughs_m: vec![],
         forced_stretches_m: vec![],
+        permitted_m: vec![],
+        frozen_m: vec![],
+        clock: &clock,
+        cancel: &never,
+    };
+    optimise_windows(&inp, cfg).unwrap()
+}
+
+fn run_permitted(
+    f: &WindowFixture,
+    cfg: &WindowConfig,
+    permitted: Vec<(f64, f64, f64)>,
+) -> WindowsResult {
+    let index = PolygonIndex::new(&f.river);
+    let sampler = f.sampler();
+    let level = |_: f64| fx::WATER_LEVEL_M;
+    let clock = || 0.0;
+    let never = || false;
+    let r = rule(cfg.lattice.r_min_m);
+    let inp = WindowInputs {
+        line: &f.start_line,
+        river: &f.river,
+        river_index: &index,
+        centreline: Some(&f.centreline),
+        terrain: &sampler,
+        plan_area: false,
+        level: &level,
+        rule: &r,
+        weirs_m: vec![],
+        cut_throughs_m: vec![],
+        forced_stretches_m: vec![],
+        permitted_m: permitted,
         frozen_m: vec![],
         clock: &clock,
         cancel: &never,
@@ -349,5 +381,14 @@ fn s9_held_to_the_river_the_line_makes_no_new_departure() {
         outside(&held.line) <= cfg.cell_m,
         "held: {}",
         outside(&held.line)
+    );
+    // A permitted stretch of the starting line (a recorded cut-through, or a given line's own
+    // off-river stretch) opens its room to the line again.
+    let len = owd_core::geom::linear::length(&f.start_line);
+    let opened = run_permitted(&f, &cfg, vec![(0.0, len, 400.0)]);
+    assert!(
+        outside(&opened.line) > 20.0,
+        "opened: {}",
+        outside(&opened.line)
     );
 }
