@@ -160,13 +160,14 @@ impl StationScorer for PlainScorer<'_> {
                 ..Section::default()
             };
         };
-        // The section across the line every metre: the template is the bed over the bottom width,
+        // The section across the line: the template is the bed over the bottom width,
         // then the side slope up; cut is the ground above it, wet below the water level, dry above.
         let level = (self.water)(at);
         let bed = level - self.depth_m;
         let n = [-libm::sin(heading), libm::cos(heading)];
         let reach = b / 2.0 + self.side_slope * (self.depth_m + 60.0);
-        let steps = (2.0 * reach).ceil() as i64;
+        // Every two metres across: a test double, not the volumes stage's section.
+        let steps = reach.ceil() as i64;
         let dx = 2.0 * reach / steps as f64;
         let (mut wet, mut dry, mut face) = (0.0, 0.0, 0.0f64);
         for i in 0..=steps {
