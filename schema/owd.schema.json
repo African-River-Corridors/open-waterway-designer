@@ -637,8 +637,8 @@
           "type": ["object", "null"],
           "properties": {
             "method": {
-              "description": "Spec 0017: the method that makes the one design line. Default rolling_circle.",
-              "enum": ["rolling_circle", "reroute", "centreline", "given"]
+              "description": "Spec 0017: the method that makes the one design line. Default rolling_circle. `river_following` is the river-following line (OPT-4).",
+              "enum": ["rolling_circle", "reroute", "centreline", "given", "river_following"]
             },
             "given": {
               "description": "Ticket C21: the line the user gave, for the method `given`: its name and its points in the project CRS.",

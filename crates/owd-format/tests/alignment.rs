@@ -330,3 +330,28 @@ fn the_reroute_fairness_weight_is_a_stage_setting_and_the_schema_knows_it() {
         "{errors:?}"
     );
 }
+
+/// Every alignment method the code can store is one the published schema accepts, so a design saved
+/// by any method opens again. The river-following line (OPT-4) once saved `river_following`, which the
+/// schema refused: the next command on that design stopped with "not one of the allowed values".
+#[test]
+fn every_alignment_method_is_in_the_schema() {
+    use AlignMethod::*;
+    let all = [RollingCircle, Reroute, Centreline, Given, RiverFollowing];
+    // A new method fails to compile here until it is listed above, and then fails below until the
+    // schema lists it too.
+    for m in &all {
+        match m {
+            RollingCircle | Reroute | Centreline | Given | RiverFollowing => {}
+        }
+    }
+    let schema = owd_format::design::schema::schema();
+    let allowed = schema
+        .pointer("/$defs/alignment_stage/properties/settings/properties/method/enum")
+        .and_then(Value::as_array)
+        .expect("the schema lists the alignment methods");
+    for m in all {
+        let v = serde_json::to_value(m).unwrap();
+        assert!(allowed.contains(&v), "the schema does not list the method {v}");
+    }
+}
