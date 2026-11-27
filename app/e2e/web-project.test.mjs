@@ -4,7 +4,7 @@
 // Everything after the dialog is the app's own path: reading owd-project.json, opening the design and the
 // DEM in one step, Save back into the folder, exports into exports/, the folder remembered for Reopen.
 // The data is the synthetic web example.
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -122,6 +122,11 @@ const opened = (b) => until(b, "the project's design", async () => (await text(b
 
 before(async () => {
   ({ server, origin } = await serve(DIST));
+});
+// Close each test's browsers when the test ends, so a file never holds one driver and one Chrome
+// per test run so far (29 at once in web-smoke on 27 Nov), and a killed file leaves none behind.
+afterEach(async () => {
+  while (sessions.length) await sessions.pop().deleteSession().catch(() => {});
 });
 after(async () => {
   for (const b of sessions) await b.deleteSession().catch(() => {});

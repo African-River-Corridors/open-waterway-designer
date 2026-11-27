@@ -1,6 +1,6 @@
 // Buildings, places and settlements in the web app (BLD-1): the built web app in headless Chrome. Run by
 // e2e/run-web.sh. The data is synthetic (e2e/synthetic-places.mjs) beside the synthetic web example.
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -21,6 +21,11 @@ let origin, server;
 const sessions = [];
 before(async () => {
   ({ server, origin } = await serve(DIST));
+});
+// Close each test's browsers when the test ends, so a file never holds one driver and one Chrome
+// per test run so far (29 at once in web-smoke on 27 Nov), and a killed file leaves none behind.
+afterEach(async () => {
+  while (sessions.length) await sessions.pop().deleteSession().catch(() => {});
 });
 after(async () => {
   for (const b of sessions) await b.deleteSession().catch(() => {});
