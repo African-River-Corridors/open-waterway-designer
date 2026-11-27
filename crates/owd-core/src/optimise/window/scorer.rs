@@ -255,8 +255,8 @@ impl<'a> MoveScorer<'a> {
         let mut land_n = 0usize;
         for (k, &o) in self.offs.iter().enumerate() {
             let (gx, gy) = (x + o * nx, y + o * ny);
-            let zk = self.grid.sample_ground_at(gx, gy);
             let ins = self.grid.sample_wet_at(gx, gy);
+            let zk = self.grid.sample_ground_split(gx, gy, ins);
             z[k] = zk;
             inside[k] = ins;
             wet[k] = zk.is_finite() && ins;
@@ -438,12 +438,15 @@ impl Measure {
     }
 }
 
+/// The ground a line is measured on: heights at points, NaN where unknown.
+pub type Ground<'a> = &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>;
+
 /// The full measure (OPT-5): the volumes stage's walk of a line, cut by the walk's own section
 /// ([`SectionCutter`]), widened by the line's own radius ([`HalfWidthRule::along`]), plus the land
 /// and the length the weights price.
 pub struct LineMeasure<'a> {
     cutter: SectionCutter<'a>,
-    terrain: &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>,
+    terrain: Ground<'a>,
     rule: &'a HalfWidthRule,
     level: LevelAt<'a>,
     weights: Weights,
@@ -455,7 +458,7 @@ impl<'a> LineMeasure<'a> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         cutter: SectionCutter<'a>,
-        terrain: &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>,
+        terrain: Ground<'a>,
         rule: &'a HalfWidthRule,
         level: LevelAt<'a>,
         weights: Weights,

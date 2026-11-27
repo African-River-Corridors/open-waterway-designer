@@ -398,6 +398,30 @@ The details give every seam (`seams`) and every weir site (`weirs`): its chainag
 free, the gate, where the line passed it, and the straight the line has there, measured on the
 line.
 
+**The window optimiser (`--method windows`).** A second method of the optimise stage redesigns the
+alignment's design line (or a line given with `owd design-line`) in windows of about 1 to 2 km,
+volume-aware. Seams sit on straights where the line hugs the river; in each window an exact lattice
+search (64 headings, 12 radii from R_min to 8 R_min, arcs of about 80 m, one vessel length of
+straight between opposite curves) finds the cheapest line from the line's exact pose at one seam to
+its exact pose at the other, and prices every move with the volumes stage's own cross-section: its
+cut model, its bend widening at the arc's radius, its ground with the bed model. A sideways polish
+then slides both the found line and the starting stretch. A window takes the found line only when
+the volumes stage's measure says it is at least 1 % cheaper; otherwise it keeps the starting line,
+unchanged, and says why. A second pass searches over the first pass's seams. The line holds R_min,
+joins without a gap or a kink, never crosses itself and is never dearer than the line it started
+from. The weir cascade is not run: the pools and weirs of an earlier pool-lattice run are kept (its
+weirs become seams), else the design's water level is used. It is off by default; a design that does
+not choose it is unchanged.
+
+```
+owd optimise design.owd.json --method windows                  # windows of 1,500 m
+owd optimise design.owd.json --method windows --window-length 2000 --threads 8
+```
+
+`owd optimise` prints one row per window (its stretch, its cost before and after, adopted or why
+not); the app's Optimise panel has the method, the window length and the same table. The settings
+are under `windows` in the optimise settings; see [docs/window-optimiser.md](docs/window-optimiser.md).
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.

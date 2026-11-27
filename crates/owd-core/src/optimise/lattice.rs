@@ -480,6 +480,42 @@ impl TerrainGrid {
             + g[rr + 1][cc + 1] * fc * fr
     }
 
+    /// The ground at `(x, y)` read from the cells on the same side of the river's edge as the point
+    /// (`wet`: the point is in the river): bilinear over the corner cells whose wet mark is `wet`,
+    /// their weights renormalised; plain bilinear when none is. The ground steps at the river's edge
+    /// (the bed under the water, the DEM beside it): read this way, the step stays a step instead of
+    /// a ramp one cell wide (OPT-5, the window optimiser's ground). NaN off the grid.
+    pub fn sample_ground_split(&self, x: f64, y: f64, wet: bool) -> f64 {
+        let (row, col) = self.rc(x, y);
+        let (h, w) = (self.rows(), self.cols());
+        let (c0, r0) = (col.floor(), row.floor());
+        let ok = c0 >= 0.0 && r0 >= 0.0 && c0 < (w as f64 - 1.0) && r0 < (h as f64 - 1.0);
+        if !ok {
+            return f64::NAN;
+        }
+        let (fc, fr) = (col - c0, row - r0);
+        let (cc, rr) = (c0 as usize, r0 as usize);
+        let corners = [
+            (rr, cc, (1.0 - fc) * (1.0 - fr)),
+            (rr, cc + 1, fc * (1.0 - fr)),
+            (rr + 1, cc, (1.0 - fc) * fr),
+            (rr + 1, cc + 1, fc * fr),
+        ];
+        let (mut sum, mut wsum, mut all) = (0.0, 0.0, true);
+        for &(r, c, k) in &corners {
+            if self.wet[r][c] == wet {
+                sum += self.ground[r][c] * k;
+                wsum += k;
+            } else {
+                all = false;
+            }
+        }
+        if all || wsum <= 0.0 {
+            return self.sample_ground_at(x, y);
+        }
+        sum / wsum
+    }
+
     pub fn sample_ground(&self, xs: &[f64], ys: &[f64]) -> Vec<f64> {
         xs.iter()
             .zip(ys)

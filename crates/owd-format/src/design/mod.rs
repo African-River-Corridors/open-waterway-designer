@@ -25,6 +25,7 @@ pub mod midline;
 pub mod migrate;
 pub mod mouth;
 pub mod optimise;
+pub mod optimise_windows;
 pub mod plan_cut;
 pub mod pool_water;
 pub mod provenance;

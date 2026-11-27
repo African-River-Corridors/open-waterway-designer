@@ -172,6 +172,7 @@ fn command_line_steps(case: &Case, failed: &mut Vec<Value>) -> Result<Value, Str
                         corridors: None,
                         fairness_weight: None,
                         use_water: None,
+                        ..Default::default()
                     },
                     &None,
                     false,

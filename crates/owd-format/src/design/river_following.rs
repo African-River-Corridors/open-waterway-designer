@@ -984,9 +984,12 @@ pub fn river_following(
             "element_count": chain.elements.len(),
             "arc_count": chain.elements.iter().filter(|e| e.is_arc()).count(),
             "seed_gap_m": out.seed.gap_m,
-            "cut_throughs": record.cut_throughs.len(),
+            "cut_through_candidates": record.cut_throughs.len(),
             "cut_throughs_accepted": record.cut_throughs.iter().filter(|c| c.accepted).count(),
-            "forced_stretches": record.forced.len(),
+            // The stretches the window optimiser (OPT-5) reads from its starting line's details:
+            // design-line chainage, from the typed record's permitted_stretches().
+            "cut_throughs": permitted_json(&record, "cut_through"),
+            "forced_stretches": permitted_json(&record, "forced"),
             "costed_on": costed_on,
             "warnings": warnings,
         }),
@@ -1045,6 +1048,19 @@ impl Derived {
             seed,
         }
     }
+}
+
+/// The permitted stretches of one kind as the window optimiser reads them: `{id, from_m, to_m,
+/// room_m}`.
+fn permitted_json(record: &RiverFollowingRecord, kind: &str) -> Value {
+    Value::Array(
+        record
+            .permitted_stretches()
+            .into_iter()
+            .filter(|p| p.kind == kind)
+            .map(|p| json!({"id": p.id, "from_m": p.from.0, "to_m": p.to.0, "room_m": p.room_m}))
+            .collect(),
+    )
 }
 
 fn cut_record(c: &Choice, after: &Chain, on_line: &dyn Fn(&Chain, f64) -> f64) -> CutThroughRecord {

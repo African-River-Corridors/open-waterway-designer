@@ -41,10 +41,12 @@ pub fn window_grid(
         return Err("the window's corridor is empty".into());
     }
     let (mut xmin, mut ymin, mut xmax, mut ymax) = bounds(corridor);
-    xmin -= pad_m;
-    ymin -= pad_m;
-    xmax += pad_m;
-    ymax += pad_m;
+    // Cell centres on whole multiples of the cell from the origin, so the grid of a mirrored or
+    // moved window samples the same points of the ground.
+    xmin = ((xmin - pad_m) / cell_m).floor() * cell_m;
+    ymin = ((ymin - pad_m) / cell_m).floor() * cell_m;
+    xmax = ((xmax + pad_m) / cell_m).ceil() * cell_m;
+    ymax = ((ymax + pad_m) / cell_m).ceil() * cell_m;
     let w = ((xmax - xmin) / cell_m).ceil() as usize + 1;
     let h = ((ymax - ymin) / cell_m).ceil() as usize + 1;
     let inside = PolygonIndex::new(corridor);

@@ -115,16 +115,17 @@ impl RiverMask {
             let (ylo, yhi) = (a[1].min(b[1]), a[1].max(b[1]));
             let r0 = (((ylo - origin[1]) / cell - 0.5).ceil().max(0.0)) as usize;
             let r1 = (((yhi - origin[1]) / cell - 0.5).floor()) as i64;
-            for r in r0..=(r1.max(-1) as usize).min(ny.saturating_sub(1)) {
-                if r1 < 0 {
-                    break;
-                }
+            if r1 < 0 {
+                continue;
+            }
+            let last = (r1 as usize).min(ny.saturating_sub(1));
+            for (r, row) in cross.iter_mut().enumerate().take(last + 1).skip(r0) {
                 let y = origin[1] + (r as f64 + 0.5) * cell;
                 // Half-open in y, as the even-odd rule counts a vertex once.
                 if y < ylo || y >= yhi {
                     continue;
                 }
-                cross[r].push(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                row.push(a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
             }
         }
         let mut state = vec![0u8; nx * ny];
