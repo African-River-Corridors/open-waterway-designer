@@ -46,6 +46,9 @@ Grouped, each number with its unit, and "–" with the reason when its step has 
 - **Weirs**: how many, total lift, highest lift; pool count.
 - **Land**: land flooded (ha), buildings flooded, buildings in the cut.
 - **Stretches**: how many widenings, deepenings and bend cut-throughs.
+- **Data and limits**: the standing caveats of the data (for example low-confidence banks, a DEM
+  that does not cover the river). They move here from the "Data notices" list in the map's corner,
+  which goes (design round 4, question 3).
 
 A number from a step that is *out of date* is shown greyed with "out of date" beside its group.
 
@@ -60,3 +63,4 @@ A number from a step that is *out of date* is shown greyed with "out of date" be
 6. Change a cut-through's force choice in the Cut-throughs tab: step 3 goes out of date, as today.
 7. Minimise: only the tab row shows. Hide and show from the Panels menu: same place and size.
 8. No long table remains in the steps panel.
+9. A design with data notices lists them under Data and limits; the map's corner has no notices list.

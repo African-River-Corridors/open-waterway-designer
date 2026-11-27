@@ -45,8 +45,10 @@ the picker. The last option cannot be deleted.
 - **One active option.** A picker at the top of the steps panel (spec 0021) names it. The steps,
   their settings windows (spec 0022) and the results panel's other tabs (spec 0023) show the
   active option.
-- **The map** draws every option's line and channel in its own colour; the active one bold, the
-  others thin. The Options tab can hide an option from the map.
+- **The map** draws every option's line in its own colour, from a set kept apart from the layer
+  colours; the active one bold, the others thin. **Only the active option** draws its channel, cut,
+  buildings in the cut and pools; the others draw their line only (design round 4, question 4). The
+  Options tab can hide an option from the map.
 - **Run** (spec 0019) runs the active option. Beside it, **Run all options** runs every option that
   is out of date, one after another.
 

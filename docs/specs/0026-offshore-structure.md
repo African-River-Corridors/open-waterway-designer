@@ -35,8 +35,8 @@ reader sees the whole corridor.
 5. Drag and rotate: the 2D footprint and the 3D model follow.
 6. A file that is not glTF is refused with the reason.
 
-## Open question
+## Storage: settled by spec 0030
 
-Where the structure lives in the design file, against spec 0017 (stage contracts), which names "a
-structures tool" as having no place yet. The builder's first step is a short note to the
-maintainer with the proposed field, before code.
+The structure is kept in the structures and models layer (spec 0030), a layer file the design
+references, as `kind: transshipment_point` (design round 4, question 1). Build spec 0030 first; this
+spec is then its first kind with a model.

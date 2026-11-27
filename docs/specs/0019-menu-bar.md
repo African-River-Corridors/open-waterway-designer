@@ -32,6 +32,9 @@ the desktop app.
 
 - One row, never wrapping, at 1280 px wide and above. Below that, the File and Panels menus keep
   their place and the study name is cut short with "…".
+- **Narrow screens** (design round 4, question 7): the app is made for screens 1280 px wide and up.
+  In a narrower window (a tablet or a phone) one line under the menu bar says so; the map can still
+  be looked at, and nothing else is promised.
 - "Screening — not for construction" stays in the footer.
 
 ## Acceptance checks

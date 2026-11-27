@@ -20,6 +20,10 @@ leaves the channel.
   drawn where the vessel has been and stays on after it passes.
 - Where the band leaves the **channel bottom** (the design channel's bottom edge, as the Channel
   layer draws it), that part of the band is **red**. Elsewhere it is a light tint.
+- **Both, to compare** (design round 4, question 6): beside the hull envelope, two **dashed lines**
+  show the channel width the PIANC WG 141 rule gives at that point (its bend widening at the line's
+  local radius), centred on the design line. The engineer sees the hull's swept path and the
+  rule's width side by side.
 - In 3D the hull is a simple box of the vessel's length, beam and draught on the water surface (a
   glTF model can replace it later, as spec 0026 does for structures).
 - Two map layer ticks: **Vessel** and **Swept path**, on when the control is used.
@@ -41,4 +45,5 @@ N places, longest M m".
    line) to within 5 %.
 4. A synthetic bend tighter than R_min: red band shows there; a straight: no red.
 5. In 3D the box rides on the water surface.
-6. Moving the slider moves the profile's station, and the reverse.
+6. On the same bend, the dashed lines are the PIANC WG 141 width at radius R apart, to 0.5 m.
+7. Moving the slider moves the profile's station, and the reverse.
