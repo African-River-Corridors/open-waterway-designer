@@ -31,7 +31,8 @@ settings differ from the defaults.
 
 | Step | Settings |
 |---|---|
-| 1 Project and data | Water level and fall, river mouth, downstream point, terrain memory limit; the run's objective, limits and target level |
+| 1 Project and data | Water level and fall, river mouth, downstream point, terrain memory limit |
+| The active option (spec 0028) | The run's objective, limits and target level: a gear beside the option picker |
 | 2 Vessel and channel | Rule Sets and their inputs, vessel, draught, custom vessel fields |
 | 3 Design line | Rolling circle: keep to the water. River-following: seed tolerance |
 | 4 Weirs and pools | Method; window length; cost per metre of line; cost per m² of land; keep inside the corridor; seams on straights; free the line at seams and weirs; seam search window; straight between opposite curves; straight through a weir site; cost per hectare flooded; cost per building flooded; most a pool may stand above bank-full |

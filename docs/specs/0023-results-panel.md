@@ -21,7 +21,7 @@ its height, and can be dragged, resized, minimised to its tab row, and hidden fr
 ### Tabs, in this order
 
 1. **Summary** (opens first): the design summary, below.
-2. **Options**: the design options side by side (spec 0028, design options). Greyed until that
+2. **Options**: the design options side by side (spec 0028, design options in one file). Greyed until that
    spec is built.
 3. **Weirs and pools**: one row per pool: pool level, lift, flooded land (ha), above bank-full (m),
    buildings flooded, settlement flooded; the totals above the table.
