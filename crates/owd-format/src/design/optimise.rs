@@ -14,6 +14,7 @@ use crate::types::TerrainSampler;
 use owd_core::alignment::radius_check::{default_check_chord, min_radius_on_chord, radius_ok};
 use owd_core::cut_model::CUT_MODEL;
 use owd_core::geom::{Pt, linear};
+use owd_core::optimise::buildings::with_building_cost;
 use owd_core::optimise::cascade::{
     CascadeConfig, SectionOptions, build_level_table, cascade_levels, earthworks_reach_cost,
     search_cascade,
@@ -46,6 +47,8 @@ const LATTICE: &str = "lattice";
 pub const FLOOD_DISTANCE_M: f64 = 1500.0;
 /// The default side of a cell of the flood grid, in metres.
 pub const FLOOD_CELL_M: f64 = 25.0;
+/// The default least depth of water at a building that counts it as flooded, in metres (BLD-1).
+pub const BUILDING_MIN_DEPTH_M: f64 = 0.3;
 
 /// The settings of the optimise stage, typed. A key the stage does not know is refused by name.
 #[derive(Debug, Clone, PartialEq)]
@@ -93,6 +96,14 @@ pub struct OptimiseSettings {
     /// Report each pool's flooded land and its height above bank-full with no flood cost and no
     /// limit set. Off by default, and not written then.
     pub flood_report: bool,
+    /// The cost of one building a pool floods, in the units of the cut cost (BLD-1): the
+    /// engineer's price, such as a resettlement cost. The weir search adds it per building to the
+    /// cost of each pool. 0 (the default) is off; then it is not written. It needs a DEM and a
+    /// buildings file.
+    pub building_cost: f64,
+    /// A building counts as flooded only where the water at its centroid is at least this deep, in
+    /// metres. Written only when it is not the default.
+    pub building_min_depth_m: f64,
     pub structure_fixed: f64,
     pub structure_per_lift: f64,
     pub structure_power: f64,
@@ -167,6 +178,8 @@ impl Default for OptimiseSettings {
             flood_distance_m: FLOOD_DISTANCE_M,
             flood_cell_m: FLOOD_CELL_M,
             flood_report: false,
+            building_cost: 0.0,
+            building_min_depth_m: BUILDING_MIN_DEPTH_M,
             structure_fixed: 1.0e5,
             structure_per_lift: 2.0e5,
             structure_power: 1.0,
@@ -257,6 +270,13 @@ impl OptimiseSettings {
         if self.flood_report {
             v["flood_report"] = json!(true);
         }
+        // The buildings (BLD-1), the same way.
+        if self.building_cost != 0.0 {
+            v["building_cost"] = json!(self.building_cost);
+        }
+        if self.building_min_depth_m != BUILDING_MIN_DEPTH_M {
+            v["building_min_depth_m"] = json!(self.building_min_depth_m);
+        }
         // The settings of the joins (OPT-3), each written only when it is not its default.
         if self.seams_on_straights {
             v["seams_on_straights"] = json!(true);
@@ -290,7 +310,10 @@ impl OptimiseSettings {
 
     /// The flood terms are on: the search or the report reads flooded land and bank-full.
     pub fn flood_on(&self) -> bool {
-        self.flood_cost_per_ha != 0.0 || self.max_above_bank_m.is_some() || self.flood_report
+        self.flood_cost_per_ha != 0.0
+            || self.max_above_bank_m.is_some()
+            || self.flood_report
+            || self.building_cost != 0.0
     }
 
     /// Lay the settings of `source` (an object, or null for none) over these. A key the stage does
@@ -402,6 +425,28 @@ impl OptimiseSettings {
                             "the setting `flood_report` must be true or false".into(),
                         )
                     })?
+                }
+                "building_cost" => {
+                    let w = f(k)?;
+                    if !(w.is_finite() && w >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `building_cost` must be a number >= 0 (a cost per \
+                             building a pool floods; 0 is off)"
+                                .into(),
+                        ));
+                    }
+                    out.building_cost = w;
+                }
+                "building_min_depth_m" => {
+                    let d = f(k)?;
+                    if !(d.is_finite() && d >= 0.0) {
+                        return Err(DesignError::Input(
+                            "the setting `building_min_depth_m` must be a number of metres >= 0 \
+                             (the least depth of water at a building that counts it as flooded)"
+                                .into(),
+                        ));
+                    }
+                    out.building_min_depth_m = d;
                 }
                 "structure_fixed" => out.structure_fixed = f(k)?,
                 "structure_per_lift" => out.structure_per_lift = f(k)?,
@@ -635,7 +680,9 @@ impl Session {
         // plan area and chooses no weirs, so there is no pool to price or to limit: a flood cost, a
         // limit above bank-full or the flood report is refused, never dropped.
         if plan_area && typed.flood_on() {
-            let what = if typed.flood_cost_per_ha != 0.0 {
+            let what = if typed.building_cost != 0.0 {
+                "a building cost (`building_cost`)"
+            } else if typed.flood_cost_per_ha != 0.0 {
                 "a flood cost (`flood_cost_per_ha`)"
             } else if typed.max_above_bank_m.is_some() {
                 "a limit above bank-full (`max_above_bank_m`)"
@@ -646,9 +693,15 @@ impl Session {
                 "{what} cannot be worked out without a DEM: flooded land and bank-full are read \
                  from the ground levels, and with no DEM the optimise stage runs on plan area and \
                  chooses no weirs. Import a DEM (`owd import --dem FILE`), or run with the flood \
-                 cost at 0, no limit and no flood report."
+                 cost and the building cost at 0, no limit and no flood report."
             )));
         }
+        // A building cost with no buildings to count is refused here, before any work (BLD-1).
+        let stage_buildings = if typed.flood_on() {
+            self.stage_buildings(typed.building_cost)?
+        } else {
+            None
+        };
         let settings = typed.to_value();
         let size = self.channel_size()?;
         let (depth, r_min) = (size.design_depth_m, size.min_bend_radius_m);
@@ -763,23 +816,50 @@ impl Session {
                     let mut breaks: Vec<f64> = vec![cfg.start_m, cfg.terminal_m];
                     breaks.extend(cfg.candidate_sites_m.iter().copied());
                     let flood_table = FloodTable::new(&field, &breaks, &cascade_levels(&cfg));
-                    Some((field, flood_table, banks))
+                    // The buildings on the same field, counted by the same rule (BLD-1).
+                    let buildings = match &stage_buildings {
+                        Some(set) => Some(super::flood_buildings::building_ground(
+                            set.clone(),
+                            self.building_filters(),
+                            &field,
+                            terrain,
+                            &breaks,
+                            &cascade_levels(&cfg),
+                            typed.building_min_depth_m,
+                        )?),
+                        None => None,
+                    };
+                    Some((field, flood_table, banks, buildings))
                 } else {
                     None
                 };
                 let flood_terms =
                     flood_ground
                         .as_ref()
-                        .map(|(field, flood_table, banks)| FloodTerms {
+                        .map(|(field, flood_table, banks, _)| FloodTerms {
                             field,
                             table: flood_table,
                             banks,
                             cost_per_ha: typed.flood_cost_per_ha,
                             max_above_bank_m: typed.max_above_bank_m,
                         });
+                let buildings = flood_ground.as_ref().and_then(|g| g.3.as_ref());
+                let counted = |i: usize| buildings.is_some_and(|b| b.counted[i]);
                 let search = match flood_terms {
                     Some(terms) => {
-                        search_cascade(&cfg, &with_flood_cost(&reach, terms), &structure)
+                        let flooded = with_flood_cost(&reach, terms);
+                        // A building cost of 0 leaves the search as it was, byte for byte.
+                        match buildings.filter(|_| typed.building_cost != 0.0) {
+                            Some(b) => search_cascade(
+                                &cfg,
+                                &with_building_cost(
+                                    &flooded,
+                                    b.terms(&counted, typed.building_cost),
+                                ),
+                                &structure,
+                            ),
+                            None => search_cascade(&cfg, &flooded, &structure),
+                        }
                     }
                     None => search_cascade(&cfg, &reach, &structure),
                 }
@@ -821,6 +901,18 @@ impl Session {
                 };
                 let pools = best.pools();
                 // What each pool of the chosen cascade floods, and how it stands against the banks.
+                let building_rows = buildings.map(|b| {
+                    super::flood_buildings::buildings_report(b, &pools, typed.building_cost)
+                });
+                let settlement_ha = match (
+                    flood_ground.as_ref(),
+                    self.features(super::features::FeatureInput::Settlements),
+                ) {
+                    (Some(g), Some(set)) => Some(super::flood_buildings::settlement_hectares(
+                        set, &g.0, &pools,
+                    )),
+                    _ => None,
+                };
                 flood_report = flood_terms.map(|terms| {
                     let mut total_m2 = 0.0;
                     let mut any_limit = false;
@@ -841,7 +933,7 @@ impl Session {
                                     f.area_ha()
                                 ));
                             }
-                            json!({
+                            let mut row = json!({
                                 "start_m": a, "end_m": b, "level_m": level,
                                 // The lift of the weir at the pool's lower end; none below the first weir.
                                 "lift_m": i.checked_sub(1).and_then(|w| best.weirs.get(w)).map(|w| w.lift_m),
@@ -853,10 +945,27 @@ impl Session {
                                 "max_above_bank_m": num_or_null(e.max_above_bank_m),
                                 "depth_over_river_lower_m": num_or_null(e.depth_over_river_lower_m),
                                 "depth_over_river_upper_m": num_or_null(e.depth_over_river_upper_m),
-                            })
+                            });
+                            // BLD-1: the buildings and the settlement land of the pool, when loaded.
+                            if let Some((_, per)) = &building_rows
+                                && let Some(Value::Object(m)) = per.get(i)
+                            {
+                                for (k, v) in m {
+                                    row[k] = v.clone();
+                                }
+                            }
+                            if let Some(ha) = &settlement_ha {
+                                row["settlement_flooded_ha"] = json!(ha[i]);
+                            }
+                            row
                         })
                         .collect();
                     let flood_cost = typed.flood_cost_per_ha * total_m2 / 10_000.0;
+                    let building_cost = building_rows
+                        .as_ref()
+                        .and_then(|(t, _)| t["building_cost"].as_f64())
+                        .filter(|_| typed.building_cost != 0.0)
+                        .unwrap_or(0.0);
                     json!({
                         "flood_cost_per_ha": typed.flood_cost_per_ha,
                         "max_above_bank_m": typed.max_above_bank_m,
@@ -866,10 +975,19 @@ impl Session {
                         "flooded_ha": total_m2 / 10_000.0,
                         "flood_cost": flood_cost,
                         // The cut part of the cascade's reach cost: the reach cost less the flood cost.
-                        "cut_cost": best.reach_cost() - flood_cost,
+                        "cut_cost": best.reach_cost() - flood_cost - building_cost,
                         "reaches_limit": any_limit,
                         "pools": rows,
                     })
+                })
+                .map(|mut report| {
+                    if let Some((t, _)) = &building_rows {
+                        report["buildings"] = t.clone();
+                    }
+                    if let Some(ha) = &settlement_ha {
+                        report["settlement_flooded_ha"] = json!(ha.iter().sum::<f64>());
+                    }
+                    report
                 });
                 let cascade = json!({
                     "total_cost": best.total_cost,

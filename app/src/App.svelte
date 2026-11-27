@@ -83,6 +83,8 @@
   let busy = $state<StageName | null>(null);
   let samples = $state(0);
   let notice = $state<string | null>(null);
+  /** What opening a project added to the design (BLD-1): normal, so a calm line, not a warning. */
+  let projectAdded = $state<string | null>(null);
   let dropTarget = $state<InputRole | null>(null);
 
   async function run(stage: StageName, method?: RunMethod): Promise<boolean> {
@@ -178,6 +180,8 @@
       error =
         setting === "flood_cost_per_ha"
           ? "The cost per hectare of flooded land must be a number, 0 or more."
+          : setting === "building_cost"
+          ? "The cost per building flooded must be a number, 0 or more."
           : "The limit above bank-full must be a number of metres, 0 or more, or empty for no limit.";
       return;
     }
@@ -338,6 +342,7 @@
     (e?.currentTarget as HTMLElement | null | undefined)?.blur();
     const inProject = action === api.save ? project : null;
     const saved = await fileAction(action);
+    if (saved) projectAdded = null;
     if (saved && isWeb) notice = inProject?.design ? `Saved ${inProject.design} in the project folder "${inProject.folder}".` : canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
   }
 
@@ -381,6 +386,7 @@
       try {
         const next = await api.projectOpen((line) => (projectProgress = line));
         if (next.project_note) notice = next.project_note;
+        projectAdded = next.project_added ?? null;
         return next;
       } finally {
         projectProgress = null;
@@ -653,7 +659,7 @@
           // A GeoTIFF is the DEM wherever it lands; vector data must land on its own row.
           if (/\.tiff?$/i.test(e.name)) load("dem", e.file);
           else if (role) load(role, e.file);
-          else error = "Drop the file on the row it belongs to: left bank, right bank, river polygon or centreline.";
+          else error = "Drop the file on the row it belongs to: left bank, right bank, river polygon, centreline, buildings, places or settlements.";
         }
       })
       .then((un) => undo.push(un))
@@ -762,6 +768,9 @@
   {#if projectProgress}
     <div class="banner info" role="status" data-testid="project-progress">{projectProgress}</div>
   {/if}
+  {#if projectAdded}
+    <div class="banner info" role="status" data-testid="project-added">{projectAdded}<button onclick={() => (projectAdded = null)}>Dismiss</button></div>
+  {/if}
   {#if lastProject && !project}
     <div class="banner info" role="status" data-testid="reopen-banner">
       <span>Your last project folder: {lastProject.folder}/. Your browser will ask you to allow it again.</span>
@@ -800,7 +809,7 @@
       {#if reachView}
         <StartFromRiver {map} {snap} onSnap={(next) => openDocDone(next)} onError={(m) => (error = m)} onUseVessel={useVessel} bind:picker={reachPicker} />
       {:else}
-        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onRiverFollowing={riverFollowing} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} onJoinSetting={joinSetting} onOptimiseMethod={optimiseMethod} onWindowLength={windowLength} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} />
+        <LeftPanel {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} {busy} {samples} {dropTarget} onRun={run} onCancel={cancel} onUseWater={useWater} onWindowLength={windowLength} onRiverFollowing={riverFollowing} onOptimiseMethod={optimiseMethod} onLoad={(r) => load(r)} onFetch={fetchDem} onWater={water} onTerrainLimit={terrainLimit} onDownstream={downstreamPoint} onMouth={riverMouth} onRunInputs={runInputs} onOptimiseLength={optimiseLength} onOptimiseFlood={optimiseFlood} onOptimiseLand={optimiseLand} onCorridorLimit={corridorLimit} onJoinSetting={joinSetting} {lineName} {table} {indexOf} {selectedId} onSelect={(id) => (selectedId = id)} {stretchesOpen} onStretches={toggleStretches} {project} onProjectLoad={loadProjectItem} onFeatureAction={(a) => fileAction(a)} />
       {/if}
     </section>
     <div class="handle v" role="separator" aria-orientation="vertical" onpointerdown={dragLeft}></div>
@@ -808,7 +817,7 @@
       {#if sheetsView}<SheetsView option={selectedId} onNotice={(m) => (notice = m)} onError={(m) => (error = m)} />{/if}
       <div class="maparea" data-testid="map-area">
       <div class="mapbox">
-        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} {channel} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline />{/if}
+        {#if tiles}<MapPanel {geometry} {selectedId} {stretches} {selectedStretch} {hillshade} {terrain} {channel} terrainNote={TERRAIN_NOTE} {imagery} onImageryFail={(src) => imageryControl?.fail(src)} stationPosition={profileOpen || sectionOpen ? (crossSection?.position ?? null) : null} onPick={editingBanks ? undefined : reachView && reachPicker ? reachPicker : pickPoint} onReady={(m) => (map = m)} bind:offline features={snap?.feature_inputs} />{/if}
         <BankEditor {map} {geometry} {snap} onSnap={(next) => (snap = next)} bind:active={editingBanks} />
         {#if snap?.notices?.length}
           <ul class="notices" data-testid="map-notices" aria-label="Data notices">

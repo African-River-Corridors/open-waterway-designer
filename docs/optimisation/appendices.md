@@ -145,6 +145,8 @@ A test holds the names and defaults of this table to the engine's.
 | `flood_distance_m` | `--flood-distance` | m | `1500` | Flooded land is counted out to this distance from the baseline. |
 | `flood_cell_m` | none | m | `25` | The side of a cell of the flood grid. |
 | `flood_report` | `--flood-report` | yes or no | `false` | Report each pool's flooded land and height above bank-full with no flood cost and no limit. |
+| `building_cost` | `--building-cost` | cost per building | `0` | The cost of one building a pool floods, in the weir search: the engineer's price, such as a resettlement cost. 0 is off. Needs a DEM and a buildings file. |
+| `building_min_depth_m` | `--building-min-depth` | m | `0.3` | A building counts as flooded only where the water at its point is at least this deep. |
 | `structure_fixed` | none | cost | `100000` | $F$: the part of a weir's cost that does not depend on its lift. |
 | `structure_per_lift` | none | cost per m | `200000` | $P$: the part of a weir's cost per metre of lift (to the power below). |
 | `structure_power` | none | none | `1` | $p$: the power of the lift in the structure cost. |

@@ -32,7 +32,7 @@
           </td>
           <td class="act">
             {#if LOADS.includes(item.state)}
-              <button disabled={busy} data-testid="project-load-{item.key}" onclick={() => onLoad(item.key)} title={item.state === "changed" ? "Use this DEM: the design then records it, and the volumes go stale" : `Load ${item.path} into the design`}>{item.state === "changed" ? "Use this DEM" : "Load"}</button>
+              <button disabled={busy} data-testid="project-load-{item.key}" onclick={() => onLoad(item.key)} title={item.state === "changed" ? (item.key === "dem" ? "Use this DEM: the design then records it, and the volumes go stale" : "Use this file: the design then records it") : `Load ${item.path} into the design`}>{item.state === "changed" ? (item.key === "dem" ? "Use this DEM" : "Use this file") : "Load"}</button>
             {/if}
           </td>
         </tr>

@@ -236,7 +236,35 @@ fn open_unconfirmed(path: &str) -> core::result::Result<Session, Failure> {
     }
     load_rule_set_files(&mut session)?;
     attach_multiplier(path, &mut session);
+    attach_features(path, &mut session);
     Ok(session)
+}
+
+/// Attach the feature files the design names (BLD-1: buildings, points of interest, settlements),
+/// from beside the document, when each is the file whose hash was recorded. Otherwise say so on
+/// stderr, as for the DEM: what reads them then goes without them, or refuses by name.
+fn attach_features(doc: &str, session: &mut Session) {
+    use owd_format::design::features::FeatureInput;
+    for input in FeatureInput::ALL {
+        let Some(p) = session.features_path(input).map(str::to_string) else {
+            continue;
+        };
+        let bytes = std::fs::read(doc_dir(doc).join(&p)).ok();
+        let warning = session.features_warning(input, bytes.as_deref());
+        if let (None, Some(b)) = (&warning, &bytes)
+            && let Err(e) = session.attach_features(input, b)
+        {
+            if !QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+                eprintln!("owd: warning: {e}");
+            }
+            continue;
+        }
+        if let Some(w) = warning
+            && !QUIET.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            eprintln!("owd: warning: {w}");
+        }
+    }
 }
 
 /// Attach the cut-rate multiplier raster the design names (spec 0017 ticket 13), from beside the
@@ -422,7 +450,86 @@ pub fn import(
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
-    import_toward(doc, inputs, None, None, dem, water, output, json_mode)
+    import_toward(
+        doc,
+        inputs,
+        None,
+        None,
+        dem,
+        water,
+        FeatureFlags::default(),
+        output,
+        json_mode,
+    )
+}
+
+/// The feature files of `owd import` (BLD-1): `--buildings`, `--points-of-interest`,
+/// `--settlements`, and the building filters.
+#[derive(Default)]
+pub struct FeatureFlags {
+    /// By `FeatureInput` order.
+    pub files: [Option<String>; 3],
+    pub min_confidence: Option<f64>,
+    pub min_area_m2: Option<f64>,
+    pub near_cut_m: Option<f64>,
+}
+
+impl FeatureFlags {
+    fn any(&self) -> bool {
+        self.files.iter().any(Option::is_some)
+            || self.min_confidence.is_some()
+            || self.min_area_m2.is_some()
+            || self.near_cut_m.is_some()
+    }
+}
+
+/// Record and read each feature file given, then the building filters; the lines to say.
+fn import_features(
+    doc: &str,
+    session: &mut Session,
+    f: &FeatureFlags,
+) -> core::result::Result<Vec<String>, Failure> {
+    use owd_format::design::features::FeatureInput;
+    let mut lines = Vec::new();
+    for (input, file) in FeatureInput::ALL.into_iter().zip(&f.files) {
+        let Some(file) = file else { continue };
+        let bytes =
+            std::fs::read(file).map_err(|e| input_error(format!("cannot read {file}: {e}")))?;
+        let rel = relative_dem_path(doc, file);
+        let set = session
+            .set_features(input, &rel, &bytes)
+            .map_err(from_design)?;
+        let mut line = format!(
+            "{}: {} features, from {}",
+            input.key(),
+            set.features.len(),
+            set.crs
+        );
+        if set.skipped > 0 {
+            line.push_str(&format!(" ({} with no geometry left out)", set.skipped));
+        }
+        lines.push(line);
+    }
+    if f.min_confidence.is_some() || f.min_area_m2.is_some() || f.near_cut_m.is_some() {
+        let mut b = session.building_filters();
+        if let Some(v) = f.min_confidence {
+            b.min_confidence = v;
+        }
+        if let Some(v) = f.min_area_m2 {
+            b.min_area_m2 = v;
+        }
+        if let Some(v) = f.near_cut_m {
+            b.near_cut_m = v;
+        }
+        session.set_building_filters(b).map_err(from_design)?;
+    }
+    if let Some(b) = session.feature_inputs().get("buildings") {
+        lines.push(format!(
+            "buildings counted: {} (below the confidence threshold {}: {}; below the smallest area {} m2: {})",
+            b["counted"], b["min_confidence"], b["below_confidence"], b["min_area_m2"], b["below_area"]
+        ));
+    }
+    Ok(lines)
 }
 
 /// `owd import` with the point the river flows towards (`--downstream LON,LAT`) and the river mouth
@@ -435,6 +542,7 @@ pub fn import_toward(
     mouth: Option<&str>,
     dem: Option<String>,
     water: WaterFlags,
+    features: FeatureFlags,
     output: &Option<String>,
     json_mode: bool,
 ) -> Result {
@@ -472,9 +580,9 @@ pub fn import_toward(
         || water.slope.is_some()
         || water.table.is_some()
         || water.pools.is_some();
-    if texts.is_empty() && dem.is_none() && !has_water && mouth.is_none() {
+    if texts.is_empty() && dem.is_none() && !has_water && mouth.is_none() && !features.any() {
         return Err(input_error(
-            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem, a water level or --mouth",
+            "nothing to import: give --left-bank, --right-bank, --centreline, --polygon, --dem, a water level, --mouth or --buildings",
         ));
     }
     // The document is read first when it is on stdin: stdin can be read once.
@@ -545,6 +653,7 @@ pub fn import_toward(
         mouth_note = Some(r);
     }
     apply_water(&mut session, &water)?;
+    let feature_lines = import_features(doc, &mut session, &features)?;
     if dem.is_some() && water.holds_bathymetry {
         session
             .set_dem_holds_bathymetry(true)
@@ -571,6 +680,7 @@ pub fn import_toward(
             ));
             lines.extend(m.notes.iter().map(|n| format!("note: {n}")));
         }
+        lines.extend(feature_lines.iter().cloned());
         // What the bank checks found, after the other lines.
         lines.extend(report.warnings.iter().map(|w| format!("warning: {w}")));
         lines.join("\n")
@@ -587,6 +697,7 @@ pub fn import_toward(
         json!({
             "ok": true, "project_epsg": report.project_epsg, "inputs": inputs_json,
             "warnings": report.warnings,
+            "features": session.feature_inputs(),
             "mouth": mouth_note.as_ref().map(|m| json!({
                 "point": m.point, "turned": m.turned, "notes": m.notes,
             })),
@@ -1341,6 +1452,8 @@ pub struct OptimiseFlags {
     pub flood_cost_per_ha: Option<f64>,
     pub max_above_bank: Option<f64>,
     pub flood_distance: Option<f64>,
+    pub building_cost: Option<f64>,
+    pub building_min_depth: Option<f64>,
     pub flood_report: bool,
     pub seams_on_straights: Option<bool>,
     pub free_seams: Option<bool>,
@@ -1379,6 +1492,8 @@ pub fn optimise(
         ("flood_cost_per_ha", flags.flood_cost_per_ha),
         ("max_above_bank_m", flags.max_above_bank),
         ("flood_distance_m", flags.flood_distance),
+        ("building_cost", flags.building_cost),
+        ("building_min_depth_m", flags.building_min_depth),
         ("seam_window_m", flags.seam_window),
         ("seam_offset_m", flags.seam_offset),
         ("seam_heading_tol_deg", flags.seam_heading_tol),
@@ -1574,6 +1689,57 @@ fn flood_text(flood: &Value) -> String {
             n(&p["depth_over_river_upper_m"], 2),
         ));
     }
+    out.push_str(&buildings_text(flood));
+    out
+}
+
+/// The buildings and the settlement land the pools flood, as `owd optimise` prints them (BLD-1).
+fn buildings_text(flood: &Value) -> String {
+    let mut out = String::new();
+    let b = &flood["buildings"];
+    if b.is_object() {
+        let n = |k: &str| b[k].as_u64().unwrap_or(0);
+        out.push_str(&format!(
+            "\nbuildings flooded (the weir search's rule, water at least {} m deep): {} of {} loaded, building cost {} at {} a building; counted apart: {} below the confidence threshold {}, {} below the smallest area",
+            b["min_depth_m"], n("flooded"), n("loaded"),
+            b["building_cost"].as_f64().map_or("-".into(), |x| format!("{x:.0}")),
+            b["cost_per_building"], n("flooded_below_confidence"), b["min_confidence"], n("flooded_below_area"),
+        ));
+        if let Some(bands) = b["by_confidence"].as_object() {
+            let parts: Vec<String> = bands
+                .iter()
+                .filter(|(_, v)| v.as_u64() != Some(0))
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect();
+            if !parts.is_empty() {
+                out.push_str(&format!("\n  flooded by confidence: {}", parts.join(", ")));
+            }
+        }
+        if let Some(pools) = flood["pools"].as_array() {
+            let per: Vec<String> = pools
+                .iter()
+                .enumerate()
+                .map(|(i, p)| format!("pool {}: {}", i + 1, p["buildings_flooded"]))
+                .collect();
+            out.push_str(&format!("\n  by pool: {}", per.join(", ")));
+        }
+        for f in b["first"].as_array().into_iter().flatten() {
+            out.push_str(&format!(
+                "\n  building {} at {}, {} (pool {}, {} m along the line, {} m deep)",
+                f["id"].as_str().unwrap_or("?"),
+                f["lon_lat"][0],
+                f["lon_lat"][1],
+                f["pool"],
+                f["chainage_m"],
+                f["depth_m"]
+            ));
+        }
+    }
+    if let Some(ha) = flood["settlement_flooded_ha"].as_f64() {
+        out.push_str(&format!(
+            "\nsettlement land flooded (the weir search's rule): {ha:.1} ha; a report, not a cost"
+        ));
+    }
     out
 }
 
@@ -1669,13 +1835,53 @@ pub fn volumes(doc: &str, flags: VolumesFlags, output: &Option<String>, json_mod
             }
         ));
     }
+    // The buildings and the channel (BLD-1): a report, read from the volumes' own stations.
+    let conflicts = session
+        .channel(sampler.as_ref().map(|s| s as TerrainSampler))
+        .ok()
+        .and_then(|c| session.building_conflicts(&c));
+    if let Some(c) = &conflicts {
+        human.push(building_conflict_line(c));
+    }
     say(
         dest == "-",
         json_mode,
         &human.join("\n"),
-        json!({"ok": all_ok, "design_line": json_rows.first()}),
+        json!({"ok": all_ok, "design_line": json_rows.first(), "buildings": conflicts}),
     );
     option_checks_outcome(&fails.join("; "))
+}
+
+/// The buildings and the channel (BLD-1) for a report: the channel read on the DEM the design
+/// recorded, when it is there. `None` with no buildings loaded.
+pub(crate) fn building_conflicts_of(session: &Session, dem: Option<&DemFile>) -> Option<Value> {
+    session.features(owd_format::design::features::FeatureInput::Buildings)?;
+    let terrain = dem.and_then(|b| {
+        let b = owd_format::design::stage_terrain(session, Some(b)).ok()?;
+        owd_shell::state::open_dem(b, None).ok()
+    });
+    let sampler = terrain
+        .as_ref()
+        .and_then(|d| owd_format::design::terrain::dem_sampler(d, project_epsg(session)).ok());
+    let channel = session
+        .channel(sampler.as_ref().map(|s| s as TerrainSampler))
+        .ok()?;
+    session.building_conflicts(&channel)
+}
+
+/// The buildings and the channel in one line (BLD-1).
+pub(crate) fn building_conflict_line(c: &Value) -> String {
+    let n = |k: &str| c[k].as_u64().unwrap_or(0);
+    format!(
+        "buildings: {} in the cut, {} within {} m of it, {} on land a cut-through severs (and {}, {}, {} below the confidence or area thresholds); a report, not a cost",
+        n("taken"),
+        n("near"),
+        c["near_cut_m"],
+        n("severed"),
+        n("taken_apart"),
+        n("near_apart"),
+        n("severed_apart")
+    )
 }
 
 /// Largest number of tiles one `fetch-dem` will take: a reach this wide wants a DEM of its own.

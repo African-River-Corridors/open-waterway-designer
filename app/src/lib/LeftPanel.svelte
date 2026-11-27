@@ -43,6 +43,7 @@
     onStretches,
     project = null,
     onProjectLoad = () => {},
+    onFeatureAction = () => {},
   }: {
     snap: Snapshot | null;
     choices: Choices | null;
@@ -83,6 +84,7 @@
     /** The open project folder (PROJ-1, web app), if any: shown above the Data section. */
     project?: ProjectStatus | null;
     onProjectLoad?: (key: string) => void;
+    onFeatureAction?: (action: () => Promise<Snapshot | null>) => void;
   } = $props();
 </script>
 
@@ -91,7 +93,7 @@
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
   {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}
-  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} />
+  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} {onFeatureAction} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>
 

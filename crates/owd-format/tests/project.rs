@@ -62,7 +62,10 @@ fn every_key_but_owd_project_is_optional() {
             "river_polygon",
             "left_bank",
             "right_bank",
-            "water_pools"
+            "water_pools",
+            "buildings",
+            "points_of_interest",
+            "settlements"
         ]
     );
     // A file with a byte-order mark, as some editors on Windows write, still reads.

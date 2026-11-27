@@ -13,6 +13,9 @@ export const MAP_LAYERS = [
   { id: "structures", label: "Weirs and locks" },
   { id: "pool-levels", label: "Pool levels" },
   { id: "pool-water", label: "Pool water" },
+  { id: "places", label: "Places" },
+  { id: "buildings", label: "Buildings" },
+  { id: "settlements", label: "Settlements" },
   { id: "terrain-shading", label: "Terrain shading" },
   { id: "contours", label: "Contours" },
   { id: "imagery", label: "Imagery" },
@@ -26,8 +29,9 @@ export const LAYERS_KEY = "owd-map-layers";
 
 /** The layers that start unticked. The cut extent colours the ground over the imagery, the pool water
  * covers the ground and takes a moment to work out, terrain shading darkens the imagery, and contours
- * lay lines over everything, so the user asks for them (MAP-2, MAP-3, MAP-4, MAP-5). */
-export const STARTS_OFF: readonly MapLayerId[] = ["cut", "pool-water", "terrain-shading", "contours"];
+ * lay lines over everything, so the user asks for them (MAP-2, MAP-3, MAP-4, MAP-5). Buildings and
+ * settlements cover the imagery near the river; the places' names are few, so they start on (BLD-1). */
+export const STARTS_OFF: readonly MapLayerId[] = ["cut", "pool-water", "terrain-shading", "contours", "buildings", "settlements"];
 
 /** The default ticks: every layer on but those in STARTS_OFF. */
 export const defaultTicks = (): LayerTicks => Object.fromEntries(MAP_LAYERS.map((l) => [l.id, !STARTS_OFF.includes(l.id)])) as LayerTicks;
@@ -88,6 +92,10 @@ export const STYLE_LAYERS: Record<MapLayerId, string[]> = {
   structures: ["structures-chamber", "structures-lock", "structures-weir", "structures-outline", "structures-3d"],
   "pool-levels": ["pool-reaches"],
   "pool-water": ["pool-water"],
+  // BLD-1: added by MapFeatures.svelte.
+  places: ["places", "places-blocks", "places-blocks-3d"],
+  buildings: ["buildings-density", "buildings-dots", "buildings-fill", "buildings-outline"],
+  settlements: ["settlements-fill", "settlements-outline"],
   "terrain-shading": ["terrain-tint", "terrain-shading"],
   contours: ["contours-casing", "contours", "contours-labels"],
   imagery: ["under", "basemap", "hillshade"],

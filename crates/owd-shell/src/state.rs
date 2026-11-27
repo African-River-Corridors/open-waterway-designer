@@ -6,6 +6,7 @@
 
 use crate::run::{Outcome, RunControl, RunJob};
 use owd_format::design::bank_edit::BankEdit;
+use owd_format::design::features::{BuildingFilters, FeatureInput};
 use owd_format::design::sections::Stations;
 use owd_format::design::{
     AlignMethod, DesignError, NoteKind, OpenNote, Role, Session, Stage, StageStatus,
@@ -49,6 +50,19 @@ pub struct AppState {
     /// The Rule Set files loaded in this shell, as text, for the life of the shell: every design
     /// opened later loads them too (ticket #491).
     rule_set_texts: Vec<String>,
+    /// Where each feature file (BLD-1: buildings, points of interest, settlements) was read from,
+    /// so a save elsewhere says its path again from there. By [`FeatureInput`] order.
+    feature_files: [Option<PathBuf>; 3],
+    /// Each feature file as the map draws it (WGS84 GeoJSON text), made when it is loaded or
+    /// attached. Never stored: the design holds only the reference.
+    feature_maps: [Option<Arc<String>>; 3],
+}
+
+/// A feature file as the map draws it (WGS84 GeoJSON text).
+fn feature_map(input: FeatureInput, bytes: &[u8]) -> Result<Arc<String>, String> {
+    let text = owd_format::design::features::file_text(input, bytes).map_err(message)?;
+    let v = owd_format::design::features::map_geojson(input, &text)?;
+    Ok(Arc::new(v.to_string()))
 }
 
 /// How many bank edits can be undone.
@@ -268,6 +282,8 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         }
     }
 
@@ -321,6 +337,11 @@ impl AppState {
             .map(|n| n.text.clone())
             .collect();
         warnings.extend(session.dem_warning(dem_bytes));
+        // A feature file the design names is attached by the host after the open (BLD-1); until
+        // then it shows as missing.
+        for input in FeatureInput::ALL {
+            warnings.extend(session.features_warning(input, None));
+        }
         let dem_file = session
             .dem_path()
             .map(|rel| path.parent().unwrap_or(Path::new(".")).join(rel));
@@ -340,6 +361,8 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         })
     }
 
@@ -1186,6 +1209,9 @@ impl AppState {
         ask: crate::report::ReportAsk,
     ) -> crate::report::ReportJob {
         crate::report::ReportJob::new(self.session.to_text(), self.dem_src.clone(), option, ask)
+            .with_extras(owd_report::Extras {
+                building_conflicts: self.building_conflicts(),
+            })
     }
 
     /// The quantity table as CSV, from the session. The same text as `owd export --csv`.
@@ -1194,12 +1220,135 @@ impl AppState {
     }
 
     /// The DEM path is stored relative to the document: say it again from the folder `path` is in.
-    /// Only the path changes; the DEM's hash stays, so no stage goes stale.
+    /// Only the path changes; the DEM's hash stays, so no stage goes stale. The feature files too.
     fn point_dem_from(&mut self, path: &Path) {
         if let Some(file) = &self.dem_file {
             let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
             self.session.set_dem_path(&rel);
         }
+        for input in FeatureInput::ALL {
+            if let Some(file) = &self.feature_files[input as usize] {
+                let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
+                self.session.set_features_path(input, &rel);
+            }
+        }
+    }
+
+    /// Reference a feature file (BLD-1) and keep its features: `file` is where it was read from
+    /// (from the project folder in the browser), its path recorded from the design's folder. A
+    /// refusal changes nothing.
+    pub fn load_features(
+        &mut self,
+        input: FeatureInput,
+        file: &Path,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let base = self.path.as_deref().and_then(Path::parent);
+        let rel = match base {
+            Some(b) => relative_to(b, file),
+            None => file.to_string_lossy().into_owned(),
+        };
+        let mut s = self.session.clone();
+        s.set_features(input, &rel, bytes).map_err(message)?;
+        let map = feature_map(input, bytes)?;
+        self.session = s;
+        self.feature_maps[input as usize] = Some(map);
+        self.feature_files[input as usize] = Some(file.to_path_buf());
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Attach the feature file the design names, found by the host at its recorded path (or at
+    /// `file`, the project's path for it). A file that is not the one recorded is refused, and its
+    /// warning stays.
+    pub fn attach_features(
+        &mut self,
+        input: FeatureInput,
+        file: Option<&Path>,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        match self.session.attach_features(input, bytes) {
+            Ok(()) => {
+                self.feature_maps[input as usize] = Some(feature_map(input, bytes)?);
+                if let Some(f) = file {
+                    self.feature_files[input as usize] = Some(f.to_path_buf());
+                }
+                self.drop_feature_warnings(input);
+                Ok(())
+            }
+            Err(e) => {
+                self.drop_feature_warnings(input);
+                self.warnings
+                    .extend(self.session.features_warning(input, Some(bytes)));
+                Err(message(e))
+            }
+        }
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, input: FeatureInput) -> Result<(), String> {
+        self.refuse_while_running()?;
+        if self.session.feature_record(input).is_none() {
+            return Ok(());
+        }
+        self.session.clear_features(input);
+        self.feature_files[input as usize] = None;
+        self.feature_maps[input as usize] = None;
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the building filters (confidence, area, distance from the cut).
+    pub fn set_building_filters(&mut self, f: BuildingFilters) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session.set_building_filters(f).map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, each feature numbered `fid` as the
+    /// session numbers it. `None` when the design has none attached.
+    pub fn feature_map(&self, input: FeatureInput) -> Option<Arc<String>> {
+        self.session.features(input)?;
+        self.feature_maps[input as usize].clone()
+    }
+
+    pub fn features(
+        &self,
+        input: FeatureInput,
+    ) -> Option<&Arc<owd_format::design::features::FeatureSet>> {
+        self.session.features(input)
+    }
+
+    /// [`AppState::set_building_filters`] from JSON: the keys given change, the others stay.
+    pub fn set_building_filters_json(&mut self, v: &Value) -> Result<(), String> {
+        let mut f = self.session.building_filters();
+        for (k, slot) in [
+            ("min_confidence", &mut f.min_confidence),
+            ("min_area_m2", &mut f.min_area_m2),
+            ("near_cut_m", &mut f.near_cut_m),
+        ] {
+            match &v[k] {
+                Value::Null => {}
+                x => {
+                    *slot = x
+                        .as_f64()
+                        .ok_or_else(|| format!("`{k}` must be a number"))?
+                }
+            }
+        }
+        self.set_building_filters(f)
+    }
+
+    fn drop_feature_warnings(&mut self, input: FeatureInput) {
+        let Some(path) = self.session.features_path(input).map(str::to_string) else {
+            return;
+        };
+        let tag = format!("`{path}`");
+        self.warnings.retain(|w| !w.contains(&tag));
     }
 
     /// The text to write at `path`: the design with its DEM path said from that folder.
@@ -1327,6 +1476,8 @@ impl AppState {
         snap["rule_set_problem"] = json!(self.session.rule_set_problem().map(message));
         // The stages "Run stale" would run now, in order: the surfaces step through these and
         // never work the list out from the statuses (one run loop).
+        // The buildings, points of interest and settlements the design names (BLD-1).
+        snap["feature_inputs"] = self.session.feature_inputs();
         snap["due"] = json!(
             self.session
                 .due_stages()
@@ -1335,6 +1486,196 @@ impl AppState {
                 .collect::<Vec<_>>()
         );
         snap
+    }
+}
+
+/// The buildings, points of interest and settlements against the design (BLD-1): what a click on
+/// one reads, and the channel's stations they are measured against.
+impl AppState {
+    /// The channel of the design line with its stations, as the cut test reads it: the volumes
+    /// stage's own stations and daylight lines when they are fresh on the DEM held.
+    pub fn channel_stations(&self) -> Result<owd_format::design::channel::Channel, String> {
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok(),
+            None => None,
+        };
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
+        self.session.channel(terrain).map_err(message)
+    }
+
+    /// The ground at points in the project CRS, from the DEM held (NaN off it, or with none).
+    pub fn ground_at(&self, pts: &[[f64; 2]]) -> Vec<f64> {
+        let dem = self.usable_dem();
+        let sampler = dem
+            .as_deref()
+            .and_then(|d| owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok());
+        match sampler {
+            Some(s) => {
+                let (xs, ys): (Vec<f64>, Vec<f64>) = pts.iter().map(|p| (p[0], p[1])).unzip();
+                s(&xs, &ys)
+            }
+            None => vec![f64::NAN; pts.len()],
+        }
+    }
+
+    /// What a click on feature `fid` of `input` reads, as JSON: its id, name, kind and other
+    /// properties, area and confidence (and whether it is counted), the ground there, its distance
+    /// to the design line and the chainage of the nearest point, and its place across the cut
+    /// (`channel`, when the caller has it). The water there is the caller's to add.
+    pub fn feature_card(
+        &self,
+        input: FeatureInput,
+        fid: usize,
+        channel: Option<&owd_format::design::channel::Channel>,
+    ) -> Result<Value, String> {
+        use owd_format::design::feature_place::{CutIndex, cut_relation, line_distance};
+        let set = self
+            .session
+            .features(input)
+            .ok_or_else(|| format!("no {} file is loaded", input.label().to_lowercase()))?;
+        let f = set
+            .features
+            .get(fid)
+            .ok_or_else(|| format!("there is no feature {fid}"))?;
+        let num = |v: f64| if v.is_finite() { json!(v) } else { Value::Null };
+        let mut card = json!({
+            "input": input.key(),
+            "fid": fid,
+            "id": f.id,
+            "name": f.name,
+            "kind": f.kind,
+            "properties": f.props,
+            "lon_lat": f.lon_lat,
+            "area_m2": num(f.area_m2),
+            "confidence": num(f.confidence),
+            "ground_m": num(self.ground_at(&[f.at])[0]),
+        });
+        if input == FeatureInput::Buildings {
+            let filters = self.session.building_filters();
+            card["below_confidence"] = json!(filters.below_confidence(f));
+            card["below_area"] = json!(filters.below_area(f));
+        }
+        if input == FeatureInput::Settlements {
+            card["area_ha"] = num(f.area_m2 / 10_000.0);
+        }
+        if let Some(line) = owd_format::design::final_line_of(self.session.document()) {
+            let (d, ch) = line_distance(&line.line.0, f.at);
+            card["line_distance_m"] = num(d);
+            card["line_chainage_m"] = num(ch);
+        }
+        if let Some(ch) = channel {
+            let near = self.session.building_filters().near_cut_m;
+            let index = CutIndex::new(ch);
+            card["cut"] = match index.locate(f.at, near.max(500.0)) {
+                Some(p) => json!({
+                    "chainage_m": p.chainage_m,
+                    "offset_m": p.offset_m,
+                    "outside_m": p.outside_m,
+                    "daylight": p.daylight,
+                    "from_volumes": ch.from_volumes,
+                    "relation": match cut_relation(&p, f.area_m2, near) {
+                        Some(owd_format::design::feature_place::CutRelation::Taken) => "taken",
+                        Some(owd_format::design::feature_place::CutRelation::Near) => "near",
+                        None => "clear",
+                    },
+                }),
+                None => Value::Null,
+            };
+        }
+        Ok(card)
+    }
+
+    /// Points spread evenly over settlement `fid` (about `n`, on a square grid), in WGS84: what the
+    /// share of it the pool water covers is counted on.
+    pub fn settlement_samples(&self, fid: usize, n: usize) -> Vec<[f64; 2]> {
+        use owd_format::design::features::polygon_contains;
+        let Some(f) = self
+            .session
+            .features(FeatureInput::Settlements)
+            .and_then(|s| s.features.get(fid))
+        else {
+            return Vec::new();
+        };
+        let area: f64 = f.area_m2.max(1.0);
+        let step = (area / n.max(1) as f64).sqrt().max(1.0);
+        let mut pts = Vec::new();
+        for poly in &f.polygons {
+            let (mut x0, mut y0, mut x1, mut y1) = (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            );
+            for p in &poly.exterior {
+                x0 = x0.min(p[0]);
+                y0 = y0.min(p[1]);
+                x1 = x1.max(p[0]);
+                y1 = y1.max(p[1]);
+            }
+            let mut y = y0 + step / 2.0;
+            while y < y1 {
+                let mut x = x0 + step / 2.0;
+                while x < x1 {
+                    if polygon_contains(poly, [x, y]) {
+                        pts.push([x, y]);
+                    }
+                    x += step;
+                }
+                y += step;
+            }
+        }
+        let Some(utm) = self
+            .project_epsg()
+            .and_then(|e| owd_format::design::crs::Crs::from_epsg(e).ok())
+        else {
+            return Vec::new();
+        };
+        match utm {
+            owd_format::design::crs::Crs::Utm(u) => u.inverse_all(&pts).unwrap_or_default(),
+            owd_format::design::crs::Crs::Wgs84 => pts,
+        }
+    }
+
+    /// The buildings and the channel (BLD-1): in the cut, near it, severed. `None` with no
+    /// buildings loaded or no channel yet.
+    pub fn building_conflicts(&self) -> Option<Value> {
+        self.session.features(FeatureInput::Buildings)?;
+        let channel = self.channel_stations().ok()?;
+        self.session.building_conflicts(&channel)
+    }
+
+    /// [`AppState::building_conflicts`] on a channel the caller holds.
+    pub fn building_conflicts_on(
+        &self,
+        channel: &owd_format::design::channel::Channel,
+    ) -> Option<Value> {
+        self.session.building_conflicts(channel)
+    }
+
+    /// Whether each feature of `input` is counted (for buildings: passes the confidence and area
+    /// filters; every place and settlement is), by `fid`.
+    pub fn features_counted(&self, input: FeatureInput) -> Vec<bool> {
+        let f = self.session.building_filters();
+        self.session
+            .features(input)
+            .map(|s| {
+                s.features
+                    .iter()
+                    .map(|b| input != FeatureInput::Buildings || f.counts(b))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The representative point of every feature of `input` in WGS84, by `fid`; empty with none.
+    pub fn feature_points(&self, input: FeatureInput) -> Vec<[f64; 2]> {
+        self.session
+            .features(input)
+            .map(|s| s.features.iter().map(|f| f.lon_lat).collect())
+            .unwrap_or_default()
     }
 }
 

@@ -3,7 +3,7 @@
 // a changed input moves the result, and the result equals native `owd run` (ADR 0005 tolerance); a
 // design and its DEM load through the file picker and a full run (the pool search, in wasm) equals native;
 // Cancel leaves the design as it was; a reload brings the design back; blocked storage still loads.
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -88,6 +88,11 @@ let reach;
 before(async () => {
   ({ server, origin } = await serve(DIST));
   reach = await serveReach();
+});
+// Close each test's browsers when the test ends, so a file never holds one driver and one Chrome
+// per test run so far (29 at once in web-smoke on 27 Nov), and a killed file leaves none behind.
+afterEach(async () => {
+  while (sessions.length) await sessions.pop().deleteSession().catch(() => {});
 });
 after(async () => {
   for (const b of sessions) await b.deleteSession().catch(() => {});
@@ -1206,7 +1211,8 @@ describe("OWD web smoke tests", () => {
     // The seven layers of MAP-1, and the terrain shading (MAP-2) and the contours (MAP-3), which have tests of their own below.
     // And the weirs and locks, the pool levels and the pool water (MAP-4), tested below too.
     // And the channel and the cut extent (MAP-5), tested below as well.
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 7);
+    // And the places, the buildings and the settlements (BLD-1), tested in web-features.test.mjs.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 10);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);

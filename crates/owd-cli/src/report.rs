@@ -67,6 +67,10 @@ pub fn report(flags: ReportFlags) -> Result {
     std::fs::create_dir_all(&out)
         .map_err(|e| input_error(format!("cannot create {}: {e}", out.display())))?;
     let text = session.to_text();
+    // What the design names by reference and the report reads (BLD-1: the buildings and the channel).
+    let extras = owd_report::Extras {
+        building_conflicts: crate::commands::building_conflicts_of(&session, dem.as_ref()),
+    };
     let mut written = Vec::new();
     let mut listed = Vec::new();
     for kind in kinds {
@@ -81,8 +85,8 @@ pub fn report(flags: ReportFlags) -> Result {
                     .join(" "),
             ),
         };
-        let report =
-            owd_report::build(&text, dem.as_ref(), &req).map_err(|e| input_error(e.to_string()))?;
+        let report = owd_report::build_with(&text, dem.as_ref(), &req, &extras)
+            .map_err(|e| input_error(e.to_string()))?;
         let mut files = Vec::new();
         let mut warnings = Vec::new();
         for &format in &formats {

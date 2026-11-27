@@ -4,7 +4,7 @@
 // Everything after the dialog is the app's own path: reading owd-project.json, opening the design and the
 // DEM in one step, Save back into the folder, exports into exports/, the folder remembered for Reopen.
 // The data is the synthetic web example.
-import { after, before, describe, it } from "node:test";
+import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,6 +12,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { remote } from "webdriverio";
 import { serve } from "./web-server.mjs";
+import { buildings, places, settlements } from "./synthetic-places.mjs";
 
 const here = import.meta.dirname;
 const FIXTURES = path.resolve(here, "../../examples/web");
@@ -121,6 +122,11 @@ const opened = (b) => until(b, "the project's design", async () => (await text(b
 
 before(async () => {
   ({ server, origin } = await serve(DIST));
+});
+// Close each test's browsers when the test ends, so a file never holds one driver and one Chrome
+// per test run so far (29 at once in web-smoke on 27 Nov), and a killed file leaves none behind.
+afterEach(async () => {
+  while (sessions.length) await sessions.pop().deleteSession().catch(() => {});
 });
 after(async () => {
   for (const b of sessions) await b.deleteSession().catch(() => {});
@@ -262,6 +268,39 @@ describe("OWD web: the project folder", () => {
     await (await tid(b, "project-dialog-close")).click();
     assert.equal(await fileText(b, "owd-project.json", "zz-empty"), null);
     assert.match(await text(b, "file-label"), /reach-b\.owd/, "the open design stays");
+  });
+
+
+  it("buildings, places and settlements the project names are loaded by Open project, said in one calm line, and checked against their hash after a save (BLD-1)", async () => {
+    const b = await start();
+    const project = { ...STANDARD, inputs: { ...STANDARD.inputs, buildings: "inputs/buildings.geojson", points_of_interest: "inputs/points-of-interest.geojson", settlements: "inputs/settlements.geojson" } };
+    const files = standardFiles({
+      "owd-project.json": JSON.stringify(project, null, 2),
+      "inputs/buildings.geojson": JSON.stringify(buildings(50, { reach: 300 })),
+      "inputs/points-of-interest.geojson": JSON.stringify(places()),
+      "inputs/settlements.geojson": JSON.stringify(settlements()),
+    });
+    await folder(b, files);
+    await openProject(b);
+    await opened(b);
+    // One calm line however many inputs, with no warning mark; the design is unsaved.
+    await until(b, "the added line", () => exists(b, "project-added"));
+    assert.equal(await text(b, "project-added").then((t) => t.replace(/Dismiss$/, "").trim()), "The project added 3 inputs to the design (buildings, places, settlements). Save to keep them.");
+    assert.equal(await b.execute(() => document.querySelector('[data-testid="project-added"]').className.includes("warn")), false);
+    assert.match(await text(b, "file-label"), /unsaved/);
+    for (const k of ["buildings", "points_of_interest", "settlements"]) assert.equal(await state(b, k), "loaded", k);
+    const snap = await snapshot(b);
+    assert.equal(snap.document.inputs.buildings.path, "../inputs/buildings.geojson");
+    assert.deepEqual(snap.warnings, []);
+    // Saved, then opened again: the design names them, so they are attached, and no line is said.
+    await (await tid(b, "save")).click();
+    await until(b, "the save", async () => !/unsaved/.test(await text(b, "file-label")));
+    assert.equal(await exists(b, "project-added"), false);
+    await openProject(b);
+    await opened(b);
+    await until(b, "the inputs loaded again", async () => (await state(b, "buildings")) === "loaded");
+    assert.equal(await exists(b, "project-added"), false);
+    assert.doesNotMatch(await text(b, "file-label"), /unsaved/);
   });
 
   it("a missing DEM shows as missing; another DEM than the design recorded shows the warning and can be taken", async () => {
