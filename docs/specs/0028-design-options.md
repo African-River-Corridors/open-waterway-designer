@@ -69,6 +69,9 @@ options** (the Options tab's rows). With none preferred, the active option.
 
 - The document format gains a list of options around the run; format 0.6. A 0.5 file opens as one
   option, named after its line method, and nothing in it moves.
+- FMT-2 (the split design file, grilled with the maintainer on 26 November) also moves the format to
+  0.6. The two need **one 0.6 plan**: the architecture check before the build (coordinator task
+  T-256081) settles it, with ADR 0015 and spec 0017.
 - `owd run <design> --option NAME` runs one option; with no `--option`, every option that is due.
   `owd measures --json` gives every option's measures.
 
