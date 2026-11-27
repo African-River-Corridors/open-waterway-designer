@@ -318,14 +318,17 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Make the design line by the rolling circle, the least-cost re-route or the river centreline.
+    /// Make the design line by the rolling circle, the least-cost re-route, the river-following line
+    /// or the river centreline.
     /// A design has one design line: it replaces the one any method made before.
     Align {
         /// The channel design. `-` is stdin.
         #[arg(value_parser = crate::project::design_arg)]
         doc: String,
-        /// The method: rolling-circle, reroute (from the river centreline), or centreline (the river
-        /// centreline as it is, with no repair). It is stored as the alignment's method, and
+        /// The method: rolling-circle, reroute (from the river centreline), river-following (arcs
+        /// and straights that follow the river at R_min, meander cut-throughs as a costed choice,
+        /// a sideways shift to cut less), or centreline (the river centreline as it is, with no
+        /// repair). It is stored as the alignment's method, and
         /// `owd run` runs it again.
         #[arg(long, value_name = "METHOD")]
         method: String,
@@ -337,7 +340,8 @@ enum Command {
         /// method).
         #[arg(long, value_name = "METRES")]
         chord: Option<f64>,
-        /// Re-route: a GeoTIFF DEM (WGS84 or the project's UTM zone) for the terrain.
+        /// Re-route and river-following: a GeoTIFF DEM (WGS84 or the project's UTM zone) for the
+        /// terrain. The river-following line runs without one, on plan area.
         #[arg(long, value_name = "FILE")]
         dem: Option<String>,
         /// Re-route: set the water level (the level at the river's start), in metres.
@@ -355,6 +359,19 @@ enum Command {
         /// design's alignment settings (default: on when the design has a river polygon).
         #[arg(long, value_name = "BOOL")]
         use_water: Option<String>,
+        /// River-following: the largest gap of the seed from the river centreline outside the
+        /// bends tighter than R_min, in metres (default: 5 m, or an eighth of the bottom width
+        /// when more; one arc per bend). Stored in the design.
+        #[arg(long, value_name = "METRES")]
+        seed_tolerance: Option<f64>,
+        /// River-following: force a cut-through on or off by its id, `ID=on` or `ID=off`, or give
+        /// it back to the rule, `ID=rule`. Repeat for more. Stored in the design.
+        #[arg(long, value_name = "ID=on|off|rule")]
+        force_cut: Vec<String>,
+        /// River-following: run the sideways shift, true or false (default true). Stored in the
+        /// design.
+        #[arg(long, value_name = "BOOL")]
+        shift: Option<String>,
         #[command(flatten)]
         out: Out,
     },
@@ -1443,6 +1460,9 @@ pub fn main() -> ExitCode {
             corridors,
             fairness_weight,
             use_water,
+            seed_tolerance,
+            force_cut,
+            shift,
             out,
         } => commands::align(
             &doc,
@@ -1457,6 +1477,9 @@ pub fn main() -> ExitCode {
                 corridors,
                 fairness_weight,
                 use_water,
+                seed_tolerance,
+                force_cut,
+                shift,
             },
             &out.output,
             out.json,

@@ -9,6 +9,7 @@
     onRun,
     onCancel,
     onUseWater,
+    onRiverFollowing,
     onOptimiseLength,
     onOptimiseLand,
     onCorridorLimit,
@@ -25,6 +26,8 @@
     onCancel: () => void;
     /** Set the rolling circle's water-aware mode (#494). */
     onUseWater: (choice: UseWater) => void;
+    /** Set river-following settings (OPT-4). */
+    onRiverFollowing: (settings: Record<string, unknown>) => void;
     /** What made the design line on the map and in the table (its name in the table), if there is one. */
     /** Set the cost of one metre of design line for the pool search (a number as typed). */
     onOptimiseLength: (weight: string) => void;
@@ -149,7 +152,7 @@
       }
     }
   });
-  const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route" };
+  const METHOD_LABEL: Record<RunMethod, string> = { rolling_circle: "Rolling circle", reroute: "Re-route", river_following: "River-following" };
 
   // Display labels only: the stage names and their order come from the session.
   const LABEL: Record<StageName, string> = {
@@ -171,6 +174,29 @@
     const used = line?.method === "rolling_circle" ? line.settings?.use_water : undefined;
     return used == null ? null : WATER[useWaterChoice(used)];
   });
+
+  // The river-following line (OPT-4): its record, the stored settings, the tolerance as typed.
+  let rf = $derived(snap?.document.stages.alignment.results?.river_following ?? null);
+  let rfSettings = $derived(snap?.document.stages.alignment.settings?.river_following ?? {});
+  let rfForce = $derived((rfSettings.cut_force ?? {}) as Record<string, boolean>);
+  let tolText = $state("");
+  let tolSeen: string | null = null;
+  $effect(() => {
+    const now = rfSettings.seed_tolerance_m == null ? "" : String(rfSettings.seed_tolerance_m);
+    if (tolSeen !== now) {
+      tolSeen = now;
+      tolText = now;
+    }
+  });
+  /** Force a cut-through on or off by its id, or give it back to the rule. */
+  function force(id: string, choice: string) {
+    const next: Record<string, boolean> = { ...rfForce };
+    if (choice === "rule") delete next[id];
+    else next[id] = choice === "on";
+    onRiverFollowing({ cut_force: next });
+  }
+  const forceChoice = (id: string) => (id in rfForce ? (rfForce[id] ? "on" : "off") : "rule");
+  const FORCED: Record<string, string> = { tight_bend: "River tighter than R_min", straight: "Moved to keep a straight", off_river: "Out of the river" };
 </script>
 
 <section aria-label="Stages">
@@ -185,6 +211,7 @@
             <select aria-label="Alignment method" bind:value={method} disabled={busy !== null}>
               <option value="rolling_circle">Rolling circle</option>
               <option value="reroute">Re-route</option>
+              <option value="river_following">River-following</option>
             </select>
           {/if}
           {#if busy === s.name}
@@ -291,6 +318,62 @@
                 {/each}
               </tbody>
             </table>
+          </li>
+        {/if}
+      {/if}
+      {#if s.name === "alignment" && method === "river_following"}
+        <li class="sub length" data-testid="rf-tolerance-row">
+          <label class="name">
+            Seed tolerance to the centreline (m; empty = default)
+            <input type="text" inputmode="decimal" data-testid="rf-tolerance" bind:value={tolText} disabled={busy !== null} />
+          </label>
+          <button data-testid="set-rf-tolerance" disabled={busy !== null} onclick={() => onRiverFollowing({ seed_tolerance_m: tolText.trim() === "" ? null : Number(tolText) })}>Set</button>
+          <span class="dim help" data-testid="rf-tolerance-help">How far the seed may stand from the river centreline outside the bends tighter than R_min. The default (5 m, or an eighth of the bottom width when more) gives one arc per bend; a tighter value gives compound curves.</span>
+        </li>
+        {#if rf}
+          <li class="sub lines" data-testid="rf-summary">
+            <span>Seed: {rf.seed.arc_count} arcs, {rf.seed.element_count} elements, largest gap {fixed(rf.seed.gap_m, 1)} m; costed on {rf.costed_on === "volume" ? "volume" : "plan area (no DEM)"}</span>
+            {#each rf.warnings as w}<span class="help" data-testid="rf-warning">{w}</span>{/each}
+          </li>
+          {#if rf.cut_throughs.length > 0}
+            <li class="sub length" data-testid="rf-cuts-row">
+              <table class="pools" data-testid="rf-cuts">
+                <thead>
+                  <tr><th>Cut-through</th><th>Saves (m)</th><th>Stay cost</th><th>Cut cost</th><th>Face (m)</th><th>Decision</th><th>Force</th></tr>
+                </thead>
+                <tbody>
+                  {#each rf.cut_throughs as c (c.id)}
+                    <tr data-testid="rf-cut">
+                      <td>{c.id}</td>
+                      <td>{fixed(c.options[c.offered].saved_m, 0)}</td>
+                      <td>{Math.round(c.stay.cost).toLocaleString()}</td>
+                      <td>{Math.round(c.options[c.offered].numbers.cost).toLocaleString()}</td>
+                      <td>{fixed(c.options[c.offered].numbers.face_max_m, 1)}</td>
+                      <td title={c.refused_because ?? ""}>{c.accepted ? "taken" : "refused"} ({c.decided_by})</td>
+                      <td>
+                        <select aria-label="Force {c.id}" data-testid="rf-force" value={forceChoice(c.id)} disabled={busy !== null} onchange={(e) => force(c.id, e.currentTarget.value)}>
+                          <option value="rule">By the rule</option>
+                          <option value="on">On</option>
+                          <option value="off">Off</option>
+                        </select>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </li>
+          {/if}
+          {#if rf.forced.length > 0}
+            <li class="sub lines" data-testid="rf-forced">
+              {#each rf.forced as f (f.id)}
+                <span data-testid="rf-forced-stretch">{FORCED[f.kind] ?? f.kind}: {fixed(f.from, 0)} to {fixed(f.to, 0)} m{f.river_radius_m != null ? `, river radius ${fixed(f.river_radius_m, 0)} m` : ""}, up to {fixed(f.farthest_from_centreline_m, 1)} m from the centreline</span>
+              {/each}
+            </li>
+          {/if}
+          <li class="sub lines" data-testid="rf-bends">
+            {#each rf.seed.bends as b, i}
+              <span data-testid="rf-bend">Bend {i + 1}: R {fixed(b.radius_m, 0)} m {b.hand}, gap {fixed(b.gap_m, 1)} m{b.tight ? ", held at the least radius" : ""}</span>
+            {/each}
           </li>
         {/if}
       {/if}

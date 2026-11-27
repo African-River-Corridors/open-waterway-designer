@@ -114,6 +114,58 @@ export interface DesignLine {
   id: string;
   method: string;
   settings?: { use_water?: boolean | null } & Record<string, unknown>;
+  /** What a river-following line records about itself (OPT-4); absent for other methods. */
+  river_following?: RiverFollowingRecord;
+}
+/** One way through a stretch: staying in the river, or a cut-through. */
+export interface CutNumbers {
+  length_m: number;
+  wet_m3: number;
+  dry_m3: number;
+  plain_m3: number;
+  cost: number;
+  land_m2: number;
+  face_max_m: number;
+}
+/** A meander cut-through candidate, accepted or refused, with both sets of numbers. */
+export interface CutThrough {
+  id: string;
+  river_from: number;
+  river_to: number;
+  stay: CutNumbers;
+  options: { radius_m: number; length_m: number; saved_m: number; numbers: CutNumbers }[];
+  offered: number;
+  passes: boolean;
+  accepted: boolean;
+  decided_by: "rule" | "forced on" | "forced off";
+  refused_because?: string;
+}
+/** A stretch the river forces on the line. */
+export interface ForcedStretch {
+  id: string;
+  kind: "tight_bend" | "straight" | "off_river";
+  from: number;
+  to: number;
+  river_radius_m?: number;
+  farthest_from_centreline_m: number;
+}
+/** One bend of the seed. */
+export interface SeedBend {
+  from: number;
+  to: number;
+  radius_m: number;
+  hand: "left" | "right";
+  gap_m: number;
+  tight: boolean;
+}
+export interface RiverFollowingRecord {
+  costed_on: "volume" | "plan_area";
+  derived: { seed_tolerance_m: number; r_min_m: number; r_clip_m: number; min_straight_m: number };
+  seed: { element_count: number; arc_count: number; gap_m: number; settled: boolean; bends: SeedBend[] };
+  cut_throughs: CutThrough[];
+  forced: ForcedStretch[];
+  elements: unknown[];
+  warnings: string[];
 }
 /** The parts of the design line's volumes results the app reads. */
 export interface VolumesOption {
@@ -525,6 +577,8 @@ export const setWater = (level: string, fall: string) => invoke<Snapshot>("set_w
 /** The alignment settings the app reads: the rolling circle's water-aware mode (#494). */
 export interface AlignmentSettings {
   rolling_circle?: { use_water?: boolean | null } & Record<string, unknown>;
+  /** The river-following line's settings, only those not their default (OPT-4). */
+  river_following?: { seed_tolerance_m?: number | null; cut_force?: Record<string, boolean> } & Record<string, unknown>;
 }
 /** The rolling circle's water-aware mode, as the app offers it: `default` is the setting unset (on when the design has a river polygon). */
 export type UseWater = "default" | "true" | "false";
@@ -588,7 +642,10 @@ export const setDownstreamPoint = (point: string) => invoke<Snapshot>("set_downs
 export const setMouth = (mouth: string) => invoke<Snapshot>("set_mouth", { mouth });
 /** Set the run's objective (`SENSE:MEASURE`), limits (one `MEASURE<=VALUE` a line) and target level, each empty for none, as `owd run-inputs` does (spec 0017). No stage goes stale. Rejects with the reason and its code. */
 export const setRunInputs = (objective: string, limits: string, targetLevel: string) => invoke<Snapshot>("set_run_inputs", { objective, limits, targetLevel });
-export type RunMethod = "rolling_circle" | "reroute";
+export type RunMethod = "rolling_circle" | "reroute" | "river_following";
+/** Set river-following settings in the design (`owd align --method river-following` and its flags); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
+export const setRiverFollowing = (settings: Record<string, unknown>) =>
+  invoke<Snapshot>("set_alignment_settings", { method: "river_following", settings });
 export type OutputLevel = "concept" | "pre_feasibility" | "feasibility";
 export type RunLimit = { measure: string; bound: "at_most" | "at_least"; value: number; currency?: string };
 export type RunInputs = { objective?: { measure: string; sense: "minimise" | "maximise" }; limits?: RunLimit[]; target_level?: OutputLevel };

@@ -10,7 +10,7 @@ use owd_core::rules::engine;
 use owd_format::design::design_line::{AlignmentIn, DesignLine, alignment};
 use owd_format::design::river::{RiverIn, river};
 use owd_format::design::sizing::{ChannelSize, SizingIn, size};
-use owd_format::design::{AlignMethod, AlignmentSettings};
+use owd_format::design::{AlignMethod, AlignmentSettings, VolumesSettings};
 use owd_format::types::{RiverPolygon, TerrainSampler};
 use serde_json::{Value, json};
 
@@ -67,7 +67,13 @@ fn input_with(
         settings: s,
         seed: None,
         constraints: None,
-        volumes: None,
+        // The volumes section, coarser across than the default so the tests run in seconds: the
+        // same one scorer, sampled every 2 m out to 100 m.
+        volumes: Some(VolumesSettings {
+            dx_m: 2.0,
+            maxw_m: 100.0,
+            ..Default::default()
+        }),
     }
 }
 
