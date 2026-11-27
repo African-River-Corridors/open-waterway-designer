@@ -235,6 +235,9 @@ pub struct Session {
     /// A file moved from format 0.4 whose mouth only the elevation model can tell, while the host
     /// has not loaded it yet ([`Session::settle_old_mouth`]). Not stored.
     pub(super) old_mouth_pending: bool,
+    /// The buildings, points of interest and settlements the document names (BLD-1), read from the
+    /// files whose hashes it recorded, when the host has attached them. Not stored.
+    pub(super) features: super::features::Attached,
 }
 
 fn empty_stage() -> Value {
@@ -257,6 +260,7 @@ impl Session {
             notes: Vec::new(),
             multiplier: None,
             old_mouth_pending: false,
+            features: Default::default(),
             doc: json!({
                 "format_version": FORMAT_VERSION,
                 "engine_version": ENGINE_VERSION,
@@ -332,6 +336,7 @@ impl Session {
             notes,
             multiplier: None,
             old_mouth_pending: false,
+            features: Default::default(),
         };
         // A moved line that was fresh keeps a fresh record: its hash becomes the record's own.
         if moved_fresh && let Some(h) = s.reference_line_record_hash() {
@@ -573,6 +578,19 @@ impl Session {
                 inputs.remove(super::run_inputs::INPUT);
                 // Nor the rates table (ticket 12): only the cost reads it, and cost is not stored.
                 inputs.remove(super::cost::INPUT);
+                // The buildings, places and settlements (BLD-1) are read by no stage unless the
+                // optimise settings ask for them: loading one leaves every stage fresh.
+                for f in super::features::FeatureInput::ALL {
+                    inputs.remove(f.key());
+                }
+            }
+            // The optimise stage reads the buildings when its settings ask for them (a building
+            // cost, or the flood terms with buildings loaded): then the file and its filters are
+            // part of its hash, by content, not by where the file sits.
+            if stage == Stage::Optimise
+                && let Some(b) = self.buildings_read_by_optimise()
+            {
+                dep["buildings"] = b;
             }
             if stage == Stage::Volumes
                 && self.bed_model_value().is_some()

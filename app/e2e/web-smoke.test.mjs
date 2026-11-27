@@ -1178,7 +1178,8 @@ describe("OWD web smoke tests", () => {
     // The seven layers of MAP-1, and the terrain shading (MAP-2) and the contours (MAP-3), which have tests of their own below.
     // And the weirs and locks, the pool levels and the pool water (MAP-4), tested below too.
     // And the channel and the cut extent (MAP-5), tested below as well.
-    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 7);
+    // And the places, the buildings and the settlements (BLD-1), tested in web-features.test.mjs.
+    assert.equal((await b.$$("[data-testid=layers-list] input[type=checkbox]")).length, IDS.length + 10);
     // No design yet: only the imagery is there. The rest are greyed and say so; every tick is on by default.
     for (const id of IDS) {
       const c = await box(id);

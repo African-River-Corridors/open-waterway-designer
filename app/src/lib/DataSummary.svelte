@@ -2,6 +2,7 @@
   import type { InputRole, Snapshot } from "./api";
   import { platform } from "./platform";
   import { bankValue, fileNameOf, FALL_HELP, roundedFall } from "./words";
+  import FeatureInputs from "./FeatureInputs.svelte";
 
   let {
     snap,
@@ -14,6 +15,7 @@
     onDownstream,
     onMouth,
     onRunInputs,
+    onFeatureAction = () => {},
   }: {
     snap: Snapshot | null;
     busy: boolean;
@@ -30,6 +32,8 @@
     onMouth: (mouth: string) => void;
     /** Set the run's objective, limits (one a line) and target level (spec 0017), as `owd run-inputs` does. */
     onRunInputs: (objective: string, limits: string, level: string) => void;
+    /** Run a file action on the buildings, places or settlements (BLD-1). */
+    onFeatureAction?: (action: () => Promise<Snapshot | null>) => void;
   } = $props();
 
   let inputs = $derived(snap?.document.inputs);
@@ -81,6 +85,7 @@
   const value = (role: InputRole) => {
     if (role === "dem") return inputs?.dem ? fileNameOf(inputs.dem.path) : "not loaded";
     if (role === "river_polygon") return inputs?.river_polygon ? `${inputs.river_polygon.coordinates[0].length} positions` : "not loaded";
+    if (role !== "left_bank" && role !== "right_bank" && role !== "centreline") return "";
     return bankValue(inputs?.[role], role !== "centreline" && !!inputs?.river_polygon);
   };
   /** The full path of a loaded DEM, for the tooltip. */
@@ -127,6 +132,7 @@
   <p class="row">
     {#if platform().kind === "tauri"}<button disabled={busy} data-testid="fetch-dem" onclick={onFetch} title="Download a Copernicus GLO-30 DEM for the reach, beside the saved design">Fetch DEM</button>{/if}
   </p>
+  <FeatureInputs {snap} {busy} {dropTarget} {onLoad} onAction={onFeatureAction} />
   <p class="hint">Drop a file on its row to load it. GeoJSON and GeoPackage in WGS84 or UTM; DEM as GeoTIFF.</p>
 
   <div class="water">

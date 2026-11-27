@@ -183,6 +183,8 @@ export interface Snapshot {
     /** Where each generated or loaded input came from (spec 0012). Absent for a design with none. */
     provenance?: Partial<Record<ProvenanceInput, Provenance>>;
   };
+  /** The buildings, points of interest and settlements the design names (BLD-1), by key. */
+  feature_inputs?: Partial<Record<FeatureKey, FeatureInputInfo>>;
   /** True when a bank edit can be undone. */
   can_undo_bank_edit?: boolean;
   /** The terrain memory limit set on this machine, in bytes; null: the default. */
@@ -518,7 +520,61 @@ export const poolWaterAt = (id: number, lon: number, lat: number) => invoke<Wate
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 
-export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem";
+export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem" | FeatureKey;
+/** The feature inputs (BLD-1): files the design names by path and hash, never copies. */
+export type FeatureKey = "buildings" | "points_of_interest" | "settlements";
+export const FEATURE_KEYS: FeatureKey[] = ["buildings", "points_of_interest", "settlements"];
+/** One feature input as the snapshot shows it. */
+export interface FeatureInputInfo {
+  path: string;
+  sha256: string;
+  count: number;
+  crs: string;
+  label: string;
+  /** The file is attached: the map and the reports can read it. */
+  attached: boolean;
+  min_confidence?: number;
+  min_area_m2?: number;
+  near_cut_m?: number;
+  /** Buildings only, when attached: costed, and counted apart. */
+  counted?: number;
+  below_confidence?: number;
+  below_area?: number;
+  /** Buildings: the least depth of water that counts one as flooded (the optimise setting). */
+  min_depth_m?: number;
+}
+export const clearFeatures = (key: FeatureKey) => invoke<Snapshot>("clear_features", { key });
+export const setBuildingFilters = (filters: { min_confidence?: number; min_area_m2?: number; near_cut_m?: number }) => invoke<Snapshot>("set_building_filters", { filters });
+/** A feature file as the map draws it: WGS84, each feature numbered `fid` as the session numbers it. */
+export interface FeatureMap {
+  type: "FeatureCollection";
+  features: { type: "Feature"; geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> & { fid: number; id: string } }[];
+}
+/** What a click on feature `fid` reads, with the water of pool water `pool` there when given. */
+export const featureCard = (key: FeatureKey, fid: number, pool: number | null) => invoke<import("./features").FeatureCard>("feature_card", { key, fid, pool });
+/** Which features the map's pool water covers at least `minDepth` deep, and how many by pool. */
+export interface FeaturesFlooded {
+  fids: number[];
+  depths: number[];
+  pools: { number: number; flooded: number; counted: number }[];
+  min_depth_m: number;
+}
+export const featuresFlooded = (key: FeatureKey, pool: number, minDepth: number) => invoke<FeaturesFlooded>("features_flooded", { key, pool, minDepth });
+/** The buildings and the channel (BLD-1): in the cut, near it, severed; null with no buildings or channel. */
+export interface BuildingConflicts {
+  taken: number;
+  near: number;
+  severed: number;
+  taken_apart: number;
+  near_apart: number;
+  severed_apart: number;
+  near_cut_m: number;
+  from_volumes: boolean;
+  fids: { taken: number[]; near: number[]; severed: number[] };
+}
+export const buildingConflicts = () => invoke<BuildingConflicts | null>("building_conflicts");
+/** A feature file as the map draws it, or null when none is attached. */
+export const featureMap = (key: FeatureKey) => invoke<FeatureMap | null>("feature_map", { key });
 /** Load one input. With no path the user picks a file (a dropped file is a path on the desktop, a File in a browser); null comes back on cancel. Rejects with the session's reason. */
 export const loadInput = (role: InputRole, path?: string | File) => invoke<Snapshot | null>("load_input", { role, path: path ?? null });
 /** The water level at the river's start, and optionally a fall per metre (both as typed). */
@@ -556,7 +612,7 @@ export interface OptimiseSettings {
   weir_straight_m?: number | null;
 }
 /** A flood setting of the optimise stage the app may set. */
-export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m";
+export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m" | "building_cost";
 /** What one pool of the weir cascade floods (`results.cascade.flood.pools`, written when a flood setting is on). */
 export interface PoolFlood {
   start_m: number;
@@ -577,7 +633,10 @@ export interface CascadeFlood {
   flooded_ha: number;
   flood_cost: number;
   flood_cost_per_ha: number;
-  pools: PoolFlood[];
+  pools: (PoolFlood & { buildings_flooded?: number; settlement_flooded_ha?: number })[];
+  /** BLD-1: the buildings the pools flood by the weir search's rule, when buildings are loaded. */
+  buildings?: { flooded: number; loaded: number; building_cost: number; cost_per_building: number; min_depth_m: number; flooded_below_confidence: number; flooded_below_area: number; first: { id: string; lon_lat: [number, number]; pool: number }[] };
+  settlement_flooded_ha?: number;
 }
 /** The join settings of the optimise stage that the app sets (OPT-3). */
 export type JoinSetting = "seams_on_straights" | "free_seams" | "seam_window_m" | "min_straight_m" | "weir_straight_m";
@@ -749,7 +808,7 @@ export const projectForget = () => invoke<void>("project_forget");
 export const projectAdopt = (design: string | null, dem: string | null) => invoke<void>("project_adopt", { design, dem });
 /** Open the chosen project: the design and its DEM in one step. `onProgress` gets a line to show.
  * `project_note` says what opening changed in the design, if anything. */
-export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null }>("project_open", { onProgress });
+export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null; project_added?: string | null }>("project_open", { onProgress });
 export const projectStatus = () => invoke<ProjectStatus | null>("project_status");
 /** Load one listed item of the project into the design. */
 export const projectLoad = (key: string, onProgress: (line: string) => void) => invoke<Snapshot>("project_load", { key, onProgress });

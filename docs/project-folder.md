@@ -9,7 +9,8 @@ A project folder holds one study in one place: the design, its DEM, the source d
   owd-project.json        the small text file that says what is here
   design/<name>.owd       the design file(s)
   terrain/<name>.tif      the DEM (GeoTIFF)
-  inputs/                 source data: centreline, river polygon, bank lines, water levels by pool
+  inputs/                 source data: centreline, river polygon, bank lines, water levels by pool,
+                          buildings, points of interest, settlements
   exports/                what OWD writes out: GeoJSON, CSV, sheets, reports
 ```
 
@@ -28,7 +29,10 @@ Make one with `owd project init <folder> --title "Reach A screening"`. It makes 
     "river_polygon": "inputs/river-polygon.geojson",
     "left_bank": null,
     "right_bank": null,
-    "water_pools": "inputs/pools.csv"
+    "water_pools": "inputs/pools.csv",
+    "buildings": "inputs/buildings.geojson",
+    "points_of_interest": "inputs/points-of-interest.geojson",
+    "settlements": "inputs/settlements.geojson"
   },
   "notes": ""
 }
@@ -40,6 +44,29 @@ Make one with `owd project init <folder> --title "Reach A screening"`. It makes 
 - `null`, or a key left out, means "none".
 - A key OWD does not know is ignored, and kept when OWD writes the file again. You can add your own, such as a client reference.
 - `water_pools` is a table of `chainage_m,level_m`, one line per pool, as `owd import --water-pools` reads it.
+- `buildings`, `points_of_interest` and `settlements` are optional GeoJSON (or GeoPackage) files. The design records each by path and SHA-256, never a copy, as it records the DEM. `owd project init` writes no key for them; add the ones you have. See [Buildings, places and settlements](buildings-and-places.md).
+
+A small example of each, in WGS84:
+
+```json
+{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "properties": {"area_m2": 84.5, "confidence": 0.82},
+   "geometry": {"type": "Polygon", "coordinates": [[[-3.0001, 5.4301], [-3.0000, 5.4301], [-3.0000, 5.4302], [-3.0001, 5.4302], [-3.0001, 5.4301]]]}}]}
+```
+
+```json
+{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "properties": {"name": "Riverbend", "kind": "community", "area_ha": 45.5},
+   "geometry": {"type": "Point", "coordinates": [-3.0027, 5.4307]}},
+  {"type": "Feature", "properties": {"name": "Old Crossing", "kind": "bridge", "bearing_deg": 0, "length_m": 120, "width_m": 8, "deck_level_m": 36},
+   "geometry": {"type": "Point", "coordinates": [-2.9910, 5.4271]}}]}
+```
+
+```json
+{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "properties": {"name": ""},
+   "geometry": {"type": "Polygon", "coordinates": [[[-3.0040, 5.4280], [-3.0004, 5.4280], [-3.0004, 5.4316], [-3.0040, 5.4316], [-3.0040, 5.4280]]]}}]}
+```
 
 OWD reads and checks the file in one place (`owd_format::project`), for the web app and the command line alike. A file it cannot use is refused with the key, the value and what to write instead.
 

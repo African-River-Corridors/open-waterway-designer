@@ -405,6 +405,17 @@ impl TerrainTiles {
 
     /// What a click reads at a longitude and latitude: `{pool, water_level_m, ground_m,
     /// depth_m}`, or `null` on dry ground.
+    /// The water at many points (longitude and latitude) on flood mask `id`: `None` on dry ground
+    /// (BLD-1: which buildings and places the map's pool water covers).
+    pub fn pool_water_points(
+        &mut self,
+        id: u32,
+        pts: &[[f64; 2]],
+    ) -> Result<Vec<Option<owd_format::design::pool_water::WaterAt>>, String> {
+        let (water, maker) = self.water_of(id)?;
+        Ok(pts.iter().map(|p| water.at(maker, p[0], p[1])).collect())
+    }
+
     pub fn pool_water_at(&mut self, id: u32, lon: f64, lat: f64) -> Result<Value, String> {
         let (water, maker) = self.water_of(id)?;
         serde_json::to_value(water.at(maker, lon, lat)).map_err(|e| e.to_string())

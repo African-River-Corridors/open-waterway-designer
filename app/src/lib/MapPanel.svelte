@@ -12,6 +12,8 @@
   import { MAP_LAYERS, STARTS_OFF, STYLE_LAYERS, loadLayerTicks, saveLayerTicks, type LayerTicks, type MapLayerId } from "./mapLayers";
   import { CONTOUR_DEEP_ZOOM, CONTOUR_MIN_ZOOM, CONTOUR_PROTOCOL, INTERVALS, LABEL_PREFIX, contourTemplate, intervalAt, loadContourChoice, parseContourUrl, saveContourChoice, type ContourChoice } from "./contours";
   import StructureCard from "./StructureCard.svelte";
+  import MapFeatures from "./MapFeatures.svelte";
+  import type { FeaturesFlooded, Snapshot } from "./api";
   import { PLACEHOLDER_NOTE, POOL_PROTOCOL, POOL_SURFACE_PROTOCOL, extrusionFeatures, parsePoolUrl, partFeatures, poolFeatures, poolLabel, poolSurfaceTemplate, poolTemplate, stepsCheck, stopColour, waterReadout, weirLabel } from "./structures";
   import { EXAGGERATIONS, PITCH_3D, TERRAIN_PROTOCOL, loadTerrainPrefs, parseTileUrl, saveTerrainPrefs, stateTileTemplate, type TerrainPrefs } from "./terrain3d";
 
@@ -30,6 +32,7 @@
     onPick,
     onReady,
     offline = $bindable(false),
+    features = undefined,
   }: {
     geometry: MapGeometry | null;
     selectedId?: string | null;
@@ -57,7 +60,13 @@
     onReady?: (map: maplibregl.Map) => void;
     /** True while the basemap tiles are failing. The parent reads it to fetch the hillshade. */
     offline?: boolean;
+    /** The buildings, places and settlements the design names (BLD-1), as the snapshot shows them. */
+    features?: Snapshot["feature_inputs"];
   } = $props();
+  /** The buildings the pool water floods, by pool (BLD-1): a column of the Land table. */
+  let buildingsFlooded = $state<FeaturesFlooded | null>(null);
+  /** The map, once loaded, for the buildings, places and settlements. */
+  let featureMap = $state.raw<maplibregl.Map | undefined>(undefined);
 
   // The worker is served with the app (never from a CDN), so the map starts offline too.
   maplibregl.setWorkerUrl(workerUrl);
@@ -167,6 +176,9 @@
     "pool-water": !!structures?.pools.length && !!terrain,
     "terrain-shading": !!terrain,
     contours: !!terrain,
+    places: !!features?.points_of_interest?.attached,
+    buildings: !!features?.buildings?.attached,
+    settlements: !!features?.settlements?.attached,
     imagery: true,
   });
 
@@ -572,6 +584,7 @@
     if (id === "cut") return !terrain ? "load the DEM first" : "run the volumes first";
     if (id === "structures" || id === "pool-levels" || (id === "pool-water" && !structures?.pools.length)) return "none";
     if (id === "pool-water") return "load a DEM";
+    if ((id === "places" || id === "buildings" || id === "settlements") && features?.[id === "places" ? "points_of_interest" : id]) return "file missing";
     return "none loaded";
   }
 
@@ -845,6 +858,7 @@
       m.addLayer({ id: "structures-outline", type: "line", source: "structures", paint: { "line-color": ink, "line-width": 1 } });
       m.addLayer({ id: "structures-3d", type: "fill-extrusion", source: "structures-3d", layout: { visibility: "none" }, paint: { "fill-extrusion-color": ["match", ["get", "kind"], "lock_gate", ink, "lock_chamber", river, cream], "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": 0, "fill-extrusion-opacity": 1 } });
       ready = true;
+      featureMap = m;
       // A test reads the map's own state (terrain, pitch) through this; only a build in test mode has it.
       if (import.meta.env.MODE === "test") (window as unknown as { __owdMap: maplibregl.Map }).__owdMap = m;
       onReady?.(m);
@@ -1096,11 +1110,11 @@
         </header>
         <table>
           <thead>
-            <tr><th>Pool</th><th>Level, m</th><th>Flooded, ha</th><th>Outside the river polygon, ha</th></tr>
+            <tr><th>Pool</th><th>Level, m</th><th>Flooded, ha</th><th>Outside the river polygon, ha</th>{#if buildingsFlooded}<th data-testid="pool-land-buildings-head" title="Buildings the map's pool water covers at least {buildingsFlooded.min_depth_m} m deep, of those counted (confidence and area). The weir search's count can differ near a weir.">Buildings flooded</th>{/if}</tr>
           </thead>
           <tbody>
             {#each poolWater.pools as p}
-              <tr data-testid="pool-land-row"><td>{p.number}</td><td>{m1(p.level_m)}</td><td>{m1(p.flooded_ha)}</td><td>{p.outside_river_ha == null ? "no polygon" : m1(p.outside_river_ha)}</td></tr>
+              <tr data-testid="pool-land-row"><td>{p.number}</td><td>{m1(p.level_m)}</td><td>{m1(p.flooded_ha)}</td><td>{p.outside_river_ha == null ? "no polygon" : m1(p.outside_river_ha)}</td>{#if buildingsFlooded}<td data-testid="pool-land-buildings">{buildingsFlooded.pools.find((b) => b.number === p.number)?.counted ?? 0}</td>{/if}</tr>
             {/each}
           </tbody>
         </table>
@@ -1119,6 +1133,7 @@
       </dl>
     </section>
   {/if}
+  <MapFeatures map={featureMap} {ready} {features} ticks={{ buildings: ticks.buildings, places: ticks.places, settlements: ticks.settlements }} poolOn={shows("pool-water") && poolWaterDrawn === "on"} {poolWater} minDepth={features?.buildings?.min_depth_m ?? 0.3} bind:flooded={buildingsFlooded} {terrainOn} exaggeration={prefs.exaggeration} channelKey={channel?.key ?? ""} />
   {#if weirShown && structures}
     <StructureCard weir={weirShown} {structures} {poolWater} onClose={() => (selectedWeir = null)} />
   {/if}

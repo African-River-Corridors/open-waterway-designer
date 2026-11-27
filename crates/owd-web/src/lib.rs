@@ -116,6 +116,11 @@ fn endpoints(json: &str) -> Result<owd_shell::reach::ReachEndpoints, String> {
     Ok(owd_shell::reach::ReachEndpoints::from_json(&v))
 }
 
+fn feature_input(key: &str) -> Result<owd_format::design::features::FeatureInput, String> {
+    owd_format::design::features::FeatureInput::from_key(key)
+        .ok_or_else(|| format!("`{key}` is not a feature input"))
+}
+
 fn point(v: &Value) -> Result<[f64; 2], String> {
     match (v[0].as_f64(), v[1].as_f64()) {
         (Some(a), Some(b)) => Ok([a, b]),
@@ -138,6 +143,9 @@ pub struct Session {
     /// The channel of the design line as the map draws it (MAP-5), as JSON, for the design named
     /// by the terrain's cut key: made when the design changes, never stored.
     channel: String,
+    /// The channel's stations for the cut test of buildings and places (BLD-1), with the channel
+    /// key they were made under: made on the first click after the design changes, never stored.
+    stations: Option<(String, std::sync::Arc<owd_format::design::channel::Channel>)>,
 }
 
 impl Session {
@@ -195,6 +203,7 @@ impl Session {
             state: new_design(),
             terrain: terrain::TerrainTiles::default(),
             channel: String::new(),
+            stations: None,
         }
     }
 
@@ -366,6 +375,139 @@ impl Session {
         let text = ok(input::vector_text(name, bytes, layer.as_deref()))?;
         let date = today();
         self.edit(|s| s.load_inputs(&[(role, text)], &date))
+    }
+
+    /// Load a feature file (BLD-1: `buildings`, `points_of_interest` or `settlements`): the design
+    /// records it by path and hash, as `owd import --buildings` does. `name` is its path from the
+    /// project folder (or its file name).
+    pub fn load_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.load_features(input, Path::new(name), &bytes))
+    }
+
+    /// Attach the feature file the design names, from the bytes the page found (a project's file).
+    /// Refused when it is not the file whose hash was recorded.
+    pub fn attach_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.attach_features(input, Some(Path::new(name)), &bytes))
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.clear_features(input))
+    }
+
+    /// Set the building filters, as JSON `{min_confidence, min_area_m2, near_cut_m}`.
+    pub fn set_building_filters(&mut self, filters: &str) -> Js<String> {
+        let v: Value =
+            ok(serde_json::from_str(filters).map_err(|e| format!("not building filters: {e}")))?;
+        self.edit(|s| s.set_building_filters_json(&v))
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, or `null` when none is attached.
+    pub fn feature_map(&self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        Ok(self
+            .state
+            .feature_map(input)
+            .map_or_else(|| "null".to_string(), |m| m.as_str().to_string()))
+    }
+
+    /// What a click on feature `fid` of `key` reads, as JSON (see `AppState::feature_card`), with
+    /// the water of pool water `pool` there when the map shows it: `{pool, water_level_m,
+    /// ground_m, depth_m}`, or null on dry ground.
+    pub fn feature_card(&mut self, key: &str, fid: u32, pool: Option<u32>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        let ckey = self.state.channel_key();
+        if self.stations.as_ref().is_none_or(|(k, _)| *k != ckey) {
+            self.stations = self
+                .state
+                .channel_stations()
+                .ok()
+                .map(|c| (ckey, std::sync::Arc::new(c)));
+        }
+        let channel = self.stations.as_ref().map(|(_, c)| c.clone());
+        let mut card = ok(self
+            .state
+            .feature_card(input, fid as usize, channel.as_deref()))?;
+        if let Some(id) = pool {
+            let at = card["lon_lat"].clone();
+            let (lon, lat) = (
+                at[0].as_f64().unwrap_or(f64::NAN),
+                at[1].as_f64().unwrap_or(f64::NAN),
+            );
+            card["water"] = self
+                .terrain
+                .pool_water_at(id, lon, lat)
+                .unwrap_or(Value::Null);
+            if input == owd_format::design::features::FeatureInput::Settlements {
+                let pts = self.state.settlement_samples(fid as usize, 400);
+                if let Ok(at) = self.terrain.pool_water_points(id, &pts)
+                    && !at.is_empty()
+                {
+                    let wet = at.iter().filter(|w| w.is_some()).count();
+                    card["flooded_share"] = json!(wet as f64 / at.len() as f64);
+                }
+            }
+        }
+        Ok(card.to_string())
+    }
+
+    /// The buildings and the channel (BLD-1), as JSON: in the cut, near it, on land a cut-through
+    /// severs; `null` with no buildings or no channel yet. Read on the channel's stations, made once
+    /// per design.
+    pub fn building_conflicts(&mut self) -> String {
+        let ckey = self.state.channel_key();
+        if self.stations.as_ref().is_none_or(|(k, _)| *k != ckey) {
+            self.stations = self
+                .state
+                .channel_stations()
+                .ok()
+                .map(|c| (ckey, std::sync::Arc::new(c)));
+        }
+        match &self.stations {
+            Some((_, c)) => self
+                .state
+                .building_conflicts_on(c)
+                .map_or_else(|| "null".into(), |v| v.to_string()),
+            None => "null".into(),
+        }
+    }
+
+    /// Which features of `key` the map's pool water `pool` covers at least `min_depth_m` deep, as
+    /// JSON: `{fids, depths, pools: [{number, flooded, counted}]}`. `counted`: the buildings that
+    /// pass the confidence and area filters. This is the map's flood mask, which differs from the
+    /// weir search's rule near a weir (see `pool_water.rs`).
+    pub fn features_flooded(&mut self, key: &str, pool: u32, min_depth_m: f64) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        let pts = self.state.feature_points(input);
+        let at = ok(self.terrain.pool_water_points(pool, &pts))?;
+        let counted = self.state.features_counted(input);
+        let mut fids = Vec::new();
+        let mut depths = Vec::new();
+        let mut by_pool: std::collections::BTreeMap<usize, (usize, usize)> = Default::default();
+        for (i, w) in at.iter().enumerate() {
+            let Some(w) = w else { continue };
+            if w.depth_m.is_nan() || w.depth_m < min_depth_m {
+                continue;
+            }
+            fids.push(i);
+            depths.push((w.depth_m * 100.0).round() / 100.0);
+            let e = by_pool.entry(w.pool).or_default();
+            e.0 += 1;
+            if counted.get(i).copied().unwrap_or(true) {
+                e.1 += 1;
+            }
+        }
+        let pools: Vec<Value> = by_pool
+            .into_iter()
+            .map(|(n, (f, c))| json!({"number": n, "flooded": f, "counted": c}))
+            .collect();
+        Ok(
+            json!({"fids": fids, "depths": depths, "pools": pools, "min_depth_m": min_depth_m})
+                .to_string(),
+        )
     }
 
     /// Edit a bank (spec 0012). `edit` is JSON, see `owd_shell::input::bank_edit_of`.

@@ -1,0 +1,1 @@
+- **Buildings and the channel (BLD-1).** `owd volumes`, `owd report` (a Buildings section in the screening report) and the map say which buildings the cut takes (inside its daylight lines, from the volumes stage's own stations), which are within `near_cut_m` of it (default 50 m), and which stand on a meander island a cut-through severs from the bank. A report, not a cost.

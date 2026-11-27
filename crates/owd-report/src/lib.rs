@@ -234,10 +234,29 @@ pub fn build<S: ByteSource + ?Sized>(
     dem: Option<&S>,
     req: &Request,
 ) -> Result<Report, ReportError> {
+    build_with(design, dem, req, &Extras::default())
+}
+
+/// What a report reads that the design file does not hold: worked out by the caller from files
+/// the design names by reference (BLD-1).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Extras {
+    /// The buildings and the channel (`Session::building_conflicts`), when buildings are loaded.
+    pub building_conflicts: Option<Value>,
+}
+
+/// [`build`] with [`Extras`].
+pub fn build_with<S: ByteSource + ?Sized>(
+    design: &str,
+    dem: Option<&S>,
+    req: &Request,
+    extras: &Extras,
+) -> Result<Report, ReportError> {
     let held = dem;
     let dem: Option<&dyn ByteSource> = held.as_ref().map(|d| d as &dyn ByteSource);
     let session = Session::open(design).map_err(|e| ReportError::Design(e.to_string()))?;
-    let ctx = Context::new(&session, dem, req.option.as_deref())?;
+    let mut ctx = Context::new(&session, dem, req.option.as_deref())?;
+    ctx.building_conflicts = extras.building_conflicts.clone();
     let number = format!("OWD-{}-{}", design_code(&ctx.title), req.kind.code());
     let mut assets = Vec::new();
     let (body, appendices) = match req.kind {
@@ -310,6 +329,8 @@ pub(crate) struct Context<'a> {
     pub title: String,
     /// The chosen design line option (from `options`), if the design has one.
     pub option: Option<Value>,
+    /// The buildings and the channel (BLD-1), from the caller.
+    pub building_conflicts: Option<Value>,
 }
 
 impl<'a> Context<'a> {
@@ -340,6 +361,7 @@ impl<'a> Context<'a> {
             dem,
             title,
             option,
+            building_conflicts: None,
         })
     }
 

@@ -394,6 +394,14 @@ No bund is assumed beside a weir: low ground near a weir that joins the river on
 counts. Ground past the edge of the grid or of the DEM is not counted, so the area is a lower bound
 when the water reaches that edge; the tool then warns.
 
+**The building cost** (`building_cost`, 0 by default; BLD-1). With a buildings file loaded, each
+pool also pays `building_cost` for each building it floods: a building counts when its point is in a
+cell the pool floods by the rule above and the water there is at least `building_min_depth_m`
+(0.3 m) deep, so a puddle does not count. Buildings below the file's confidence or area thresholds
+are counted apart and never costed. Each building's lowest flooding level is one number, so the count
+over a reach at a level is a prefix sum like $A_{\text{flood}}$: two reads a pool. The price is the
+engineer's, not a fact. See [Buildings, places and settlements](../buildings-and-places.md).
+
 **The bank limit** (`max_above_bank_m`, off by default) is a hard limit. No pool may stand more than
 this height above **bank-full** anywhere along it. Bank-full is an estimate from the DEM, made on the
 same 25 m grid. A **bank cell** is a cell outside the river polygon with a cell inside it among its

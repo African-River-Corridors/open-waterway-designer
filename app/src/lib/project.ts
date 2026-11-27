@@ -163,7 +163,7 @@ export type ItemState = "loaded" | "found" | "changed" | "set" | "missing" | "no
 export function itemState(key: string, path: string | null, there: boolean, inDesign: boolean, demChanged = false): ItemState {
   if (!path) return "none";
   if (!there) return "missing";
-  if (key === "dem" && demChanged) return "changed";
+  if ((key === "dem" || key === "buildings" || key === "points_of_interest" || key === "settlements") && demChanged) return "changed";
   if (!inDesign) return "found";
   return key === "water_pools" ? "set" : "loaded";
 }
@@ -172,7 +172,7 @@ export function itemState(key: string, path: string | null, there: boolean, inDe
 export const STATE_WORDS: Record<ItemState, string> = {
   loaded: "loaded",
   found: "found, not loaded",
-  changed: "found, not the DEM the design recorded",
+  changed: "found, not the file the design recorded",
   set: "found; the design has a water level",
   missing: "missing",
   none: "not named",
