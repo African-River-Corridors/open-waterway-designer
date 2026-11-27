@@ -436,9 +436,7 @@ enum Command {
         /// pools and weirs stay as they are).
         #[arg(long, value_name = "METHOD")]
         method: Option<String>,
-        /// With `--method windows`: the window length aimed for, in metres (default 1,500; the
-        /// band is 800 to 2,500 m, widened to take it).
-        #[arg(long, value_name = "METRES")]
+        #[arg(long, value_name = "METRES", help = optimise_window_length_help())]
         window_length: Option<f64>,
         /// With `--method windows`: how many windows to search at once (default: every core).
         #[arg(long, value_name = "N")]
@@ -1773,6 +1771,19 @@ fn optimise_join_help(key: &str, text: &str) -> String {
         _ => d.min_straight_m,
     };
     format!("{text} (default {}).", shown_default(&serde_json::json!(v)))
+}
+
+/// The help of `owd optimise --window-length`, with the window optimiser's own defaults.
+fn optimise_window_length_help() -> String {
+    let w = owd_format::design::OptimiseSettings::default().windows;
+    let n = |v: f64| shown_default(&serde_json::json!(v));
+    format!(
+        "With `--method windows`: the window length aimed for, in metres (default {}; the band is \
+         {} to {} m, widened to take it).",
+        n(w.window_target_m),
+        n(w.window_min_m),
+        n(w.window_max_m)
+    )
 }
 
 /// The help of `owd optimise --land-weight`, with the stage's own default.
