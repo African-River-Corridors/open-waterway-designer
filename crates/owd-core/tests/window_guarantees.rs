@@ -8,7 +8,7 @@ use owd_core::optimise::lattice::{LatticeConfig, lattice_primitives};
 use owd_core::optimise::window::line::{
     LoopCheck, curve_near, pose_on, radius_reading, short_reversals, splice,
 };
-use owd_core::optimise::window::run::{adopts, geometric_radii};
+use owd_core::optimise::window::run::{JoinVerdict, adopts, geometric_radii, join_verdict};
 use owd_core::synthetic::window::path;
 
 const R_MIN: f64 = 300.0;
@@ -144,6 +144,78 @@ fn a_short_straight_between_opposite_curves_is_reported() {
     let (t, run) = curve_near(&line, at, R_MIN, 75.0, true);
     assert_eq!(t, -1);
     assert!((run - 10.0).abs() < 3.0, "{run}");
+}
+
+/// An S of two R_min curves with `run` metres of straight between them.
+fn s_bend(run: f64) -> Vec<Pt> {
+    path(
+        (0.0, 0.0, 0.0),
+        &[
+            (f64::INFINITY, 300.0),
+            (R_MIN, 0.5),
+            (f64::INFINITY, run),
+            (R_MIN, -0.5),
+            (f64::INFINITY, 300.0),
+        ],
+        2.0,
+    )
+}
+
+/// The minimum straight of one 90 m vessel, as the window lattice holds it.
+fn lattice_90() -> LatticeConfig {
+    let mut lat = LatticeConfig::new(R_MIN);
+    lat.min_straight_m = 90.0;
+    lat
+}
+
+/// A window that joins into an S with 30 m of straight, under the 90 m asked, is undone and says
+/// `short_straight`; not adopted, nothing holds it and the joined line says so.
+#[test]
+fn a_window_that_makes_a_short_s_bend_is_undone() {
+    let (cur, joined) = (s_bend(200.0), s_bend(30.0));
+    // The window holds the straight (about 450 m to 480 m on the joined line).
+    let spans = [(0.0, 100.0), (350.0, 550.0)];
+    assert_eq!(
+        join_verdict(&cur, &joined, &spans, &[true, true], &lattice_90()),
+        JoinVerdict::Undo(1, "short_straight")
+    );
+    let JoinVerdict::Keep(w) = join_verdict(&cur, &joined, &spans, &[true, false], &lattice_90())
+    else {
+        panic!("a window far from the S-bend was undone");
+    };
+    assert!(w.len() == 1 && w[0].contains("straight"), "{w:?}");
+    // A straight long enough: kept, with nothing to say.
+    assert_eq!(
+        join_verdict(&cur, &s_bend(120.0), &spans, &[true, true], &lattice_90()),
+        JoinVerdict::Keep(vec![])
+    );
+}
+
+/// An S-bend the starting line already had is not the window's doing: kept.
+#[test]
+fn the_starting_lines_own_short_s_bend_is_kept() {
+    let (cur, joined) = (s_bend(30.0), s_bend(36.0));
+    assert_eq!(
+        join_verdict(&cur, &joined, &[(350.0, 550.0)], &[true], &lattice_90()),
+        JoinVerdict::Keep(vec![])
+    );
+}
+
+/// The minimum straight set to 0 is off: the short S-bend changes nothing.
+#[test]
+fn a_minimum_straight_of_zero_undoes_nothing() {
+    let mut lat = lattice_90();
+    lat.min_straight_m = 0.0;
+    assert_eq!(
+        join_verdict(
+            &s_bend(200.0),
+            &s_bend(30.0),
+            &[(350.0, 550.0)],
+            &[true],
+            &lat
+        ),
+        JoinVerdict::Keep(vec![])
+    );
 }
 
 /// A window is bounded by its work, not by the clock: with no time limit (the default) a slow clock

@@ -197,6 +197,9 @@ fn the_window_method_makes_a_line_that_holds_r_min_and_is_never_dearer() {
         .collect();
     assert!(dist(got[0], start[0]) < 1e-6);
     assert!(dist(got[got.len() - 1], start[start.len() - 1]) < 1e-6);
+    // Saved and opened again: the schema takes every value the stage stored.
+    let opened = Session::open(&s.to_text()).unwrap();
+    assert_eq!(opened.validate(), Vec::<String>::new());
     // The volumes stage reads it.
     s.run_volumes(&Value::Null, Some(&terrain)).unwrap();
     assert_eq!(

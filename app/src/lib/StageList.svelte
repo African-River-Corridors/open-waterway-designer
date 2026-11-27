@@ -116,6 +116,7 @@
     no_ground: "no ground",
     too_short: "too short",
     crosses_line: "crosses the line",
+    short_straight: "short straight between curves",
     frozen: "frozen",
     cancelled: "cancelled",
   };
