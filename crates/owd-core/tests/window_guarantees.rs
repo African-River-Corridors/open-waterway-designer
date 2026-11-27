@@ -145,3 +145,81 @@ fn a_short_straight_between_opposite_curves_is_reported() {
     assert_eq!(t, -1);
     assert!((run - 10.0).abs() < 3.0, "{run}");
 }
+
+/// A window is bounded by its work, not by the clock: with no time limit (the default) a slow clock
+/// changes nothing, and the answer is the same as with an idle one; a time limit set by hand still
+/// stops a window, which keeps its start and says `timeout`.
+#[test]
+fn the_default_window_has_no_clock_limit() {
+    use owd_core::geom::overlay::PolygonIndex;
+    use owd_core::optimise::window::run::{Adopted, WindowConfig, WindowInputs, optimise_windows};
+    use owd_core::optimise::window::scorer::HalfWidthRule;
+    use owd_core::synthetic::window as fx;
+    let cfg0 = WindowConfig::defaults(R_MIN, 75.0, 30.0, 4.0);
+    assert!(cfg0.window_time_s.is_infinite());
+    let f = fx::hump_reach(1500.0, 80.0, 30.0, 600.0, 15.0);
+    let mut cfg = cfg0.clone();
+    cfg.lattice.n_heading = 16;
+    cfg.lattice.radii_m = Some(vec![R_MIN, 2.0 * R_MIN]);
+    cfg.cell_m = 4.0;
+    cfg.section.maxw_m = 80.0;
+    cfg.section.dx_m = 4.0;
+    cfg.search_dx_m = 4.0;
+    cfg.polish = None;
+    cfg.second_pass = false;
+    let index = PolygonIndex::new(&f.river);
+    let sampler = f.sampler();
+    let level = |_: f64| fx::WATER_LEVEL_M;
+    let rule = HalfWidthRule::fixed(15.0);
+    let never = || false;
+    let run = |cfg: &WindowConfig, clock: &(dyn Fn() -> f64 + Sync)| {
+        optimise_windows(
+            &WindowInputs {
+                line: &f.start_line,
+                river: &f.river,
+                river_index: &index,
+                centreline: Some(&f.centreline),
+                terrain: &sampler,
+                plan_area: false,
+                level: &level,
+                rule: &rule,
+                weirs_m: vec![],
+                cut_throughs_m: vec![],
+                forced_stretches_m: vec![],
+                permitted_m: vec![],
+                frozen_m: vec![],
+                clock,
+                cancel: &never,
+            },
+            cfg,
+        )
+        .unwrap()
+    };
+    // A clock that runs an hour on every reading: a loaded machine at its worst.
+    let ticks = std::sync::atomic::AtomicU64::new(0);
+    let slow = || 3600.0 * ticks.fetch_add(1, std::sync::atomic::Ordering::Relaxed) as f64;
+    let idle = || 0.0;
+    let a = run(&cfg, &idle);
+    let b = run(&cfg, &slow);
+    assert_eq!(a.line, b.line);
+    assert!(b.windows.iter().all(|w| w.reason != "timeout"));
+    // With a limit set by hand the clock stops the search at its first look (every 1,000
+    // expansions): a plain Dijkstra over a 6 m lattice of 64 headings expands that many.
+    cfg.window_time_s = 300.0;
+    cfg.lattice.heuristic = "none".into();
+    cfg.lattice.n_heading = 64;
+    cfg.lattice.pitch_m = 6.0;
+    cfg.lattice.straight_len_m = Some(12.0);
+    cfg.lattice.goal_pos_tol_m = Some(3.0);
+    let c = run(&cfg, &slow);
+    assert!(
+        c.windows
+            .iter()
+            .any(|w| w.reason == "timeout" && w.adopted == Adopted::None),
+        "{:?}",
+        c.windows
+            .iter()
+            .map(|w| (w.reason, w.expansions))
+            .collect::<Vec<_>>()
+    );
+}

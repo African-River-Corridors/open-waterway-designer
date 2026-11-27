@@ -88,7 +88,7 @@ All under `windows` in the optimise settings. A setting left `null` takes its va
 | `stay_in_river` | `auto` | See above; `in_river_margin_m` 0, `cut_through_room_m` two bottom widths |
 | `heuristic` | `c_min` | `c_min` (the length weight per metre: exact) or `none` |
 | `max_expand`, `max_states` | 2,000,000, 2,000,000 | Caps per window (a state takes about 600 bytes with its grid and polish) |
-| `window_time_s` | 300 | Time limit per window |
+| `window_time_s` | none | A wall-clock limit per window (s). Off by default: the caps `max_expand` and `max_states` bound a window, so a busy machine gives the same answer, later |
 | `polish` | true | With `polish_spacings_m` (R_min / 3.6 … / 1.44), `polish_max_shift_m` (½ bottom width, ≥ 15), `polish_station_m` 20, `polish_radius_margin_m` (max 20 m, 6 % of R_min) |
 | `adopt_threshold` | 0.01 | Adopt at 1 % cheaper |
 | `turn_limit_deg`, `length_ratio_limit` | 1,080, 3 | The loop test |

@@ -82,7 +82,9 @@ pub struct WindowSettings {
     pub heuristic: String,
     pub max_expand: i64,
     pub max_states: i64,
-    pub window_time_s: f64,
+    /// A wall-clock limit per window (s); null (the default) is none: the work caps bound a window,
+    /// so a loaded machine gives the same answer as an idle one, only later.
+    pub window_time_s: Option<f64>,
     pub polish: bool,
     /// null: R_min / 3.6, / 3, / 2.4, / 1.8 and / 1.44.
     pub polish_spacings_m: Option<Vec<f64>>,
@@ -131,7 +133,7 @@ impl Default for WindowSettings {
             heuristic: "c_min".into(),
             max_expand: 2_000_000,
             max_states: 2_000_000,
-            window_time_s: 300.0,
+            window_time_s: None,
             polish: true,
             polish_spacings_m: None,
             polish_max_shift_m: None,
@@ -201,7 +203,9 @@ impl WindowSettings {
         pos("nominal_arc_m", self.nominal_arc_m)?;
         pos("corridor_half_m", self.corridor_half_m)?;
         pos("cell_m", self.cell_m)?;
-        pos("window_time_s", self.window_time_s)?;
+        if let Some(t) = self.window_time_s {
+            pos("window_time_s", t)?;
+        }
         pos("polish_station_m", self.polish_station_m)?;
         pos("search_rake_step_m", self.search_rake_step_m)?;
         pos("search_ds_m", self.search_ds_m)?;
@@ -680,7 +684,7 @@ impl Session {
         if let Some(r) = ws.cut_through_room_m {
             cfg.cut_through_room_m = r;
         }
-        cfg.window_time_s = ws.window_time_s;
+        cfg.window_time_s = ws.window_time_s.unwrap_or(f64::INFINITY);
         cfg.polish = if ws.polish {
             let mut p: PolishSettings = cfg.polish.clone().expect("the defaults polish");
             if let Some(s) = &ws.polish_spacings_m {

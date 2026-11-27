@@ -48,6 +48,9 @@ pub struct WindowConfig {
     pub in_river_margin_m: f64,
     pub cut_through_room_m: f64,
     pub bottom_width_m: f64,
+    /// A wall-clock limit per window (s), read off the caller's clock; infinite (the default) is
+    /// none, and the work caps (`max_expand`, `max_states`) bound a window, the same on a loaded
+    /// machine as on an idle one.
     pub window_time_s: f64,
     pub polish: Option<PolishSettings>,
     pub adopt_threshold: f64,
@@ -107,7 +110,7 @@ impl WindowConfig {
             in_river_margin_m: 0.0,
             cut_through_room_m: 2.0 * bottom_width_m,
             bottom_width_m,
-            window_time_s: 300.0,
+            window_time_s: f64::INFINITY,
             polish: Some(PolishSettings {
                 spacings_m: vec![r / 3.6, r / 3.0, r / 2.4, r / 1.8, r / 1.44],
                 max_shift_m: (0.5 * bottom_width_m).max(15.0),
@@ -683,7 +686,8 @@ fn run_window(
         turn: turn_after,
         run_m: run_after + lead_end,
     };
-    let mut stop = || (inp.clock)() - t0 > cfg.window_time_s || (inp.cancel)();
+    let timed = cfg.window_time_s.is_finite();
+    let mut stop = || (timed && (inp.clock)() - t0 > cfg.window_time_s) || (inp.cancel)();
     let res: LatticeResult = solve_lattice_with(
         grid,
         &start,
