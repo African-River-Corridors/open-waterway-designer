@@ -7,8 +7,10 @@ import { after, afterEach, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import zlib from "node:zlib";
 import { remote } from "webdriverio";
 import { serve } from "./web-server.mjs";
 import { reportEngineHost } from "./report-engine-hosts.mjs";
@@ -83,6 +85,40 @@ const sameAsNative = (page, native, what) => {
   assert.deepEqual(r.problems.slice(0, 5), [], `${what}: stages equal to native (ADR 0005 tolerance)`);
   assert.ok(r.numbers > 0, `${what}: stages had numbers to compare`);
 };
+
+/** One plain 256 px PNG tile: a chunk is its length, its type, its data and a CRC of the type and data. */
+function plainTile() {
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([Buffer.from(type), data])));
+    return Buffer.concat([head, Buffer.from(type), data, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(256, 0);
+  header.writeUInt32BE(256, 4);
+  header.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
+  const row = Buffer.concat([Buffer.from([0]), Buffer.alloc(256 * 3, 0x80)]);
+  const pixels = zlib.deflateSync(Buffer.concat(Array.from({ length: 256 }, () => row)));
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", header), chunk("IDAT", pixels), chunk("IEND", Buffer.alloc(0))]);
+}
+/** A tile server for the custom imagery: every /{z}/{x}/{y}.png is the plain tile. It counts what it served. */
+function serveTiles() {
+  const png = plainTile();
+  let served = 0;
+  const server = http.createServer((req, res) => {
+    if (!/^\/\d+\/\d+\/\d+\.png$/.test(new URL(req.url, "http://localhost").pathname)) {
+      res.writeHead(404).end("not found");
+      return;
+    }
+    served += 1;
+    res.writeHead(200, { "content-type": "image/png", "access-control-allow-origin": "*" }).end(png);
+  });
+  return new Promise((resolve) =>
+    server.listen(0, "127.0.0.1", () => resolve({ server, origin: `http://127.0.0.1:${server.address().port}`, served: () => served })),
+  );
+}
 
 let reach;
 before(async () => {
@@ -1097,10 +1133,13 @@ describe("OWD web smoke tests", () => {
   });
 
   it("the Imagery setting: custom tiles change the attribution and are remembered; a failing Esri request says so and falls back; the key stays out of the design", async () => {
-    // Esri is never called in a test: its requests are stubbed. Headless Chrome here has no WebGL, so no tile is asked for at all.
+    // Esri is never called in a test: its requests are stubbed. The map draws with WebGL (SwiftShader), as it does in
+    // Chrome on CI, so it really asks for the custom tiles. They come from a test tile server: tiles that keep failing
+    // would rightly send the page back to the open imagery, and the custom attribution would not stay.
     const KEY = "FAKE-KEY-not-real-7f3a9c1d";
-    {
-      const b = await start();
+    const tiles = await serveTiles();
+    try {
+      const b = await start({ args: ["--headless=new", "--no-sandbox", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1500,950"] });
       await b.url(`${origin}/owd/app`);
       await loaded(b);
       assert.match(await text(b, "attribution"), /EOxCloudless/, "the open default is shown at first");
@@ -1129,15 +1168,20 @@ describe("OWD web smoke tests", () => {
       await (await tid(b, "imagery-select")).selectByAttribute("value", "custom");
       const apply = await tid(b, "imagery-custom-apply");
       assert.equal(await apply.isEnabled(), false, "custom tiles need an address and an attribution");
-      await (await tid(b, "imagery-url")).setValue(`http://127.0.0.1:9/{z}/{x}/{y}.png`);
+      await (await tid(b, "imagery-url")).setValue(`${tiles.origin}/{z}/{x}/{y}.png`);
       await (await tid(b, "imagery-attribution")).setValue("Tiles by the Test Tile Server");
       await apply.click();
       await until(b, "the custom attribution", async () => (await text(b, "attribution")) === "Tiles by the Test Tile Server");
       assert.equal(await (await tid(b, "attribution")).getAttribute("data-source"), "custom");
+      await until(b, "the map to ask for the custom tiles", async () => tiles.served() > 0);
+      assert.equal(await exists(b, "imagery-note"), false, "the custom tiles load, so there is no failure line");
       // Remembered on this machine: a reload shows it again.
+      const before = tiles.served();
       await b.refresh();
       await loaded(b);
       await until(b, "the custom attribution after a reload", async () => (await text(b, "attribution")) === "Tiles by the Test Tile Server");
+      await until(b, "the custom tiles asked for again after the reload", async () => tiles.served() > before);
+      assert.equal(await (await tid(b, "attribution")).getAttribute("data-source"), "custom");
       // Esri: a failing request shows one line and the open default is back.
       await b.execute(() => {
         window.showSaveFilePicker = async () => ({
@@ -1187,6 +1231,8 @@ describe("OWD web smoke tests", () => {
       // Clear removes it.
       await (await tid(b, "imagery-key-clear")).click();
       assert.equal(await b.execute(() => (localStorage.getItem("owd-imagery") ?? "").includes("7f3a9c1d")), false);
+    } finally {
+      tiles.server.close();
     }
   });
 
