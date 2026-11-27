@@ -69,6 +69,16 @@ fn the_radius_check_fails_on_an_arc_under_r_min() {
     );
     assert!(radius_reading(&ok, R_MIN).1);
     assert!(!radius_reading(&bad, R_MIN).1);
+    // Where it fails is read the same way: nowhere on the good line, on the arc of the bad one.
+    use owd_core::alignment::radius_check::{default_check_chord, radius_failures};
+    let chord = default_check_chord(R_MIN);
+    assert!(radius_failures(&ok, chord, R_MIN).is_empty());
+    let at = radius_failures(&bad, chord, R_MIN);
+    assert!(!at.is_empty());
+    assert!(
+        at.iter()
+            .all(|p| p[0] > 380.0 && p[0] < 400.0 + 0.9 * R_MIN)
+    );
 }
 
 /// Continuity: a piece spliced between two poses of the line leaves no gap; the same piece moved

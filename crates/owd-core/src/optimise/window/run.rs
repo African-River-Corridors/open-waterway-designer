@@ -959,6 +959,47 @@ fn run_pass(
                 .any(|s| (s.0 - c.0).abs() < 1.0 && (s.1 - c.1).abs() < 1.0)
         });
         let Some(&(s1, s2)) = new_crossing else {
+            // R_min on the joined line, read exactly as the final check reads it: every place it
+            // fails where the current line did not fail nearby is laid to the adopted window that
+            // holds it (or is nearest within a chord), which is undone; then read again.
+            let r_min = cfg.lattice.r_min_m;
+            let chord = crate::alignment::radius_check::default_check_chord(r_min);
+            let before = crate::alignment::radius_check::radius_failures(cur, chord, r_min);
+            let after = crate::alignment::radius_check::radius_failures(&joined, chord, r_min);
+            let new_fail = after.iter().find(|p| {
+                !before
+                    .iter()
+                    .any(|q| libm::hypot(p[0] - q[0], p[1] - q[1]) <= 2.0 * chord)
+            });
+            if let Some(&p) = new_fail {
+                let at = linear::project(&joined, p);
+                let k = new_spans
+                    .iter()
+                    .enumerate()
+                    .filter(|(k, _)| outcomes[*k].piece.is_some())
+                    .map(|(k, sp)| {
+                        let d = if at < sp.0 {
+                            sp.0 - at
+                        } else if at > sp.1 {
+                            at - sp.1
+                        } else {
+                            0.0
+                        };
+                        (k, d)
+                    })
+                    .filter(|(_, d)| *d <= chord)
+                    .min_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(k, _)| k);
+                if let Some(k) = k {
+                    outcomes[k].piece = None;
+                    outcomes[k].rec.adopted = Adopted::None;
+                    outcomes[k].rec.reason = "radius";
+                    continue;
+                }
+                warnings.push(format!(
+                    "the joined line reads under R_min near {at:.0} m and no adopted window holds it"
+                ));
+            }
             let recs = outcomes.into_iter().map(|o| o.rec).collect();
             return (joined, recs, new_spans);
         };

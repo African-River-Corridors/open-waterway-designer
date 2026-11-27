@@ -42,6 +42,12 @@ fn run(name: &str, f: &WindowFixture, cfg: &WindowConfig, rule: &HalfWidthRule) 
         clock: &clock,
         cancel: &never,
     };
+    let (r0, ok0) =
+        owd_core::optimise::window::line::radius_reading(&f.start_line, cfg.lattice.r_min_m);
+    println!("{name}: the starting line reads R {r0:.0} (ok {ok0})");
+    if std::env::var("ONLY_START").is_ok() {
+        return;
+    }
     let out = optimise_windows(&inp, cfg).expect("runs");
     println!(
         "{name}: {:.1} s, start {:.0} -> result {:.0} ({:+.2} %), plain m3 {:.0} -> {:.0}, R {:.0} ok {}, crossing {:?}, in flight {}",
@@ -90,6 +96,20 @@ fn run(name: &str, f: &WindowFixture, cfg: &WindowConfig, rule: &HalfWidthRule) 
         out.start_total.length_m,
         out.result_total.length_m
     );
+    if !out.radius_ok {
+        let len = owd_core::geom::linear::length(&out.line);
+        let mut s0 = 0.0;
+        while s0 < len {
+            let part =
+                owd_core::optimise::window::line::stretch(&out.line, s0, (s0 + 400.0).min(len));
+            let (r, ok) =
+                owd_core::optimise::window::line::radius_reading(&part, cfg.lattice.r_min_m);
+            if !ok {
+                println!("  R {r:.0} between {s0:.0} and {:.0} m", s0 + 400.0);
+            }
+            s0 += 200.0;
+        }
+    }
     for wn in &out.warnings {
         println!("  warning: {wn}");
     }

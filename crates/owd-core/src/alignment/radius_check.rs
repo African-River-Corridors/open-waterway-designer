@@ -85,6 +85,32 @@ pub fn min_radius_on_chord(line: &[Pt], chord_m: f64) -> Result<f64, PyError> {
     Ok(py_min(forward, backward))
 }
 
+/// Where [`min_radius_on_chord`] reads a radius that fails [`radius_ok`] at `r_min`: the middle
+/// point of every failing three-point reading, forward and backward, on the same resampling the
+/// check uses (so a line fails the check exactly when this is not empty, NaN aside).
+pub fn radius_failures(line: &[Pt], chord_m: f64, r_min: f64) -> Vec<Pt> {
+    if !(chord_m.is_finite() && chord_m > 0.0) {
+        return Vec::new();
+    }
+    let half = chord_m / 2.0;
+    let k = ((half / MAX_STRIDE_M).ceil() as usize).max(1);
+    let h = half / k as f64;
+    let mut out = Vec::new();
+    let reversed: Vec<Pt> = line.iter().rev().copied().collect();
+    for pts in [resample_exact(line, h), resample_exact(&reversed, h)] {
+        if pts.len() < 2 * k + 1 {
+            continue;
+        }
+        for i in 0..pts.len() - 2 * k {
+            let r = three_point_min(&pts[i..=i + 2 * k], k);
+            if r.is_finite() && !radius_ok(r, r_min) {
+                out.push(pts[i + k]);
+            }
+        }
+    }
+    out
+}
+
 /// Minimum three-point radius (m) on a polyline's own vertices, arms `k` vertices long.
 pub fn min_radius_on_vertices(pts: &[Pt], k: i64) -> Result<f64, PyError> {
     if k < 1 {
