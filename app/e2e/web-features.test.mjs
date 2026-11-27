@@ -260,7 +260,8 @@ describe("buildings, places and settlements (BLD-1)", () => {
     await (await tid(b, "open-example")).click();
     await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
     await until(b, "the DEM", async () => !(await (await tid(b, "terrain-3d")).getAttribute("disabled")));
-    // Buildings of 14 m standing on the design line itself (so in the cut), and others 400 m away.
+    // Buildings of 30 m standing on the design line itself (so in the cut), and others 400 m away. The
+    // design line is drawn over them, so the colour is read 10 m to the side of it, inside the footprint.
     const line = await b.execute(async () => (await window.__owdPlatform.call("map_geometry")).options[0].line.coordinates);
     const sq = ([lon, lat], side) => {
       const dlat = side / 111320 / 2;
@@ -269,8 +270,8 @@ describe("buildings, places and settlements (BLD-1)", () => {
     };
     const on = line.filter((_, i) => i % Math.max(1, Math.floor(line.length / 8)) === 0).slice(1, 7);
     const feats = [
-      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 196, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq(c, 14)] } })),
-      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 196, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq([c[0], c[1] + 400 / 111320], 14)] } })),
+      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 900, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq(c, 30)] } })),
+      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 900, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq([c[0], c[1] + 400 / 111320], 30)] } })),
     ];
     await loadFeatures(b, "buildings", "on-the-line.geojson", { type: "FeatureCollection", features: feats });
     await until(b, "the buildings row", async () => (await text(b, "data-buildings")).startsWith("12"));
@@ -306,8 +307,11 @@ describe("buildings, places and settlements (BLD-1)", () => {
         });
         m.triggerRepaint();
       });
-      return { terrain: !!m.getTerrain(), zoom: m.getZoom(), fid, state, pixel, fillAboveCut: !layers.includes("cut-depth") || layers.indexOf("buildings-fill") > layers.indexOf("cut-depth") };
-    }, on[2]);
+      const p = m.project({ lng: c[0], lat: c[1] });
+      return { terrain: !!m.getTerrain(), zoom: m.getZoom(), fid, state, pixel, at: [p.x, p.y], size: [m.getCanvas().width, m.getCanvas().clientWidth], paint: m.getPaintProperty("buildings-fill", "fill-color"), above: layers.slice(layers.indexOf("buildings-fill") + 1), fillAboveCut: !layers.includes("cut-depth") || layers.indexOf("buildings-fill") > layers.indexOf("cut-depth") };
+    }, [on[2][0], on[2][1] + 10 / 111320]);
+    await b.saveScreenshot(path.join(os.tmpdir(), "owd-building-in-cut-3d.png"));
+    fs.writeFileSync(path.join(os.tmpdir(), "owd-building-in-cut-3d.json"), JSON.stringify(read, null, 1));
     assert.equal(read.terrain, true);
     assert.ok(read.zoom > 17 && read.zoom < 18, `${read.zoom}`);
     assert.notEqual(read.fid, null, "the footprint is drawn under the point");

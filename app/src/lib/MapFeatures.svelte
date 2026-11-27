@@ -77,8 +77,9 @@
     if (added) return;
     added = true;
     for (const id of ["buildings", "building-points", "places", "settlements", "places-blocks", "places-blocks-3d"]) m.addSource(id, { type: "geojson", data: empty, promoteId: "fid" });
-    // Over the imagery and the pool water, under the channel and the design line.
-    const before = ["channel-bed", "pool-reaches", "options-casing"].find((id) => m.getLayer(id));
+    // Over the imagery, the pool water, the cut-depth picture and the channel's pale bed (so a building in
+    // the cut shows its own colour), under the pool reaches and the design line.
+    const before = ["pool-reaches", "options-casing"].find((id) => m.getLayer(id));
     const vis = (on: boolean) => ({ visibility: on ? "visible" : "none" }) as const;
     const t = untrack(() => ticks);
     const state = ["boolean", ["feature-state", "flooded"], false] as unknown as maplibregl.ExpressionSpecification;
