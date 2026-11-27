@@ -71,6 +71,7 @@ type SaveHandle = { name: string; createWritable: () => Promise<{ write: (t: str
 
 /** The feature inputs (BLD-1), by their key in the design and in `owd-project.json`. */
 const FEATURE_KEYS: string[] = ["buildings", "points_of_interest", "settlements"];
+const FEATURE_WORDS: Record<string, string> = { buildings: "buildings", points_of_interest: "places", settlements: "settlements" };
 
 const bytesOf = async (file: File) => new Uint8Array(await file.arrayBuffer());
 
@@ -289,12 +290,14 @@ export async function createWebPlatform(): Promise<Platform> {
     const before = project;
     project = { folder, info };
     try {
-      let snap = await change<{ dirty: boolean; title: string; file_name: string; project_note?: string | null }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
+      let snap = await change<{ dirty: boolean; title: string; file_name: string; project_note?: string | null; project_added?: string | null }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
       dem = demFile;
       features = {};
       // The buildings, points of interest and settlements the project names (BLD-1): attached when the
       // design names them (a file that changed keeps its warning), loaded when it names none.
       const notes: string[] = snap.project_note ? [snap.project_note] : [];
+      // The inputs the project added to the design: normal, so said in one calm line, not a warning.
+      const added: string[] = [];
       for (const key of FEATURE_KEYS) {
         const path = info.items.find((i) => i.key === key)?.path;
         const file = path ? await folder.read(path) : null;
@@ -304,13 +307,14 @@ export async function createWebPlatform(): Promise<Platform> {
         try {
           snap = await change(named ? "attach_features" : "load_features", key, path, await readAll(file));
           features[key] = { name: path, file };
-          if (!named) notes.push(`The design did not name ${path}: it now does. Save to keep that.`);
+          if (!named) added.push(FEATURE_WORDS[key] ?? key);
         } catch (e) {
           if (!named) notes.push(`${path} was not loaded: ${String(e)}`);
           snap = await change("snapshot");
         }
       }
       snap.project_note = notes.length ? notes.join(" ") : null;
+      snap.project_added = added.length ? `The project added ${added.length} input${added.length === 1 ? "" : "s"} to the design (${added.join(", ")}). Save to keep ${added.length === 1 ? "it" : "them"}.` : null;
       handle = null;
       carriedDirty = false;
       chosen = null;

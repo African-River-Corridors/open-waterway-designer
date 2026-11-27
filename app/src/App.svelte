@@ -83,6 +83,8 @@
   let busy = $state<StageName | null>(null);
   let samples = $state(0);
   let notice = $state<string | null>(null);
+  /** What opening a project added to the design (BLD-1): normal, so a calm line, not a warning. */
+  let projectAdded = $state<string | null>(null);
   let dropTarget = $state<InputRole | null>(null);
 
   async function run(stage: StageName, method?: RunMethod): Promise<boolean> {
@@ -320,6 +322,7 @@
     (e?.currentTarget as HTMLElement | null | undefined)?.blur();
     const inProject = action === api.save ? project : null;
     const saved = await fileAction(action);
+    if (saved) projectAdded = null;
     if (saved && isWeb) notice = inProject?.design ? `Saved ${inProject.design} in the project folder "${inProject.folder}".` : canPick ? `Saved ${saved.file_name}.` : `Downloaded ${saved.file_name}: look in your browser's downloads folder.`;
   }
 
@@ -363,6 +366,7 @@
       try {
         const next = await api.projectOpen((line) => (projectProgress = line));
         if (next.project_note) notice = next.project_note;
+        projectAdded = next.project_added ?? null;
         return next;
       } finally {
         projectProgress = null;
@@ -743,6 +747,9 @@
   {/if}
   {#if projectProgress}
     <div class="banner info" role="status" data-testid="project-progress">{projectProgress}</div>
+  {/if}
+  {#if projectAdded}
+    <div class="banner info" role="status" data-testid="project-added">{projectAdded}<button onclick={() => (projectAdded = null)}>Dismiss</button></div>
   {/if}
   {#if lastProject && !project}
     <div class="banner info" role="status" data-testid="reopen-banner">

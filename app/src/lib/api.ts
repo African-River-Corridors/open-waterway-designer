@@ -808,7 +808,7 @@ export const projectForget = () => invoke<void>("project_forget");
 export const projectAdopt = (design: string | null, dem: string | null) => invoke<void>("project_adopt", { design, dem });
 /** Open the chosen project: the design and its DEM in one step. `onProgress` gets a line to show.
  * `project_note` says what opening changed in the design, if anything. */
-export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null }>("project_open", { onProgress });
+export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null; project_added?: string | null }>("project_open", { onProgress });
 export const projectStatus = () => invoke<ProjectStatus | null>("project_status");
 /** Load one listed item of the project into the design. */
 export const projectLoad = (key: string, onProgress: (line: string) => void) => invoke<Snapshot>("project_load", { key, onProgress });

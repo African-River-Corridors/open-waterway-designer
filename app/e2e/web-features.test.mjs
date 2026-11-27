@@ -254,6 +254,70 @@ describe("buildings, places and settlements (BLD-1)", () => {
     assert.equal(await savedText(b), textBefore);
   });
 
+
+  it("a building in the cut is filled in the cut colour, in 3D at zoom 17.5 too: its feature state is set and a pixel inside it is painted red, over the cut-depth picture", async () => {
+    const b = await start();
+    await (await tid(b, "open-example")).click();
+    await until(b, "the example", async () => (await text(b, "file-label")).includes("river-example.owd"));
+    await until(b, "the DEM", async () => !(await (await tid(b, "terrain-3d")).getAttribute("disabled")));
+    // Buildings of 14 m standing on the design line itself (so in the cut), and others 400 m away.
+    const line = await b.execute(async () => (await window.__owdPlatform.call("map_geometry")).options[0].line.coordinates);
+    const sq = ([lon, lat], side) => {
+      const dlat = side / 111320 / 2;
+      const dlon = side / (111320 * Math.cos((lat * Math.PI) / 180)) / 2;
+      return [[lon - dlon, lat - dlat], [lon + dlon, lat - dlat], [lon + dlon, lat + dlat], [lon - dlon, lat + dlat], [lon - dlon, lat - dlat]];
+    };
+    const on = line.filter((_, i) => i % Math.max(1, Math.floor(line.length / 8)) === 0).slice(1, 7);
+    const feats = [
+      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 196, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq(c, 14)] } })),
+      ...on.map((c) => ({ type: "Feature", properties: { area_m2: 196, confidence: 0.9 }, geometry: { type: "Polygon", coordinates: [sq([c[0], c[1] + 400 / 111320], 14)] } })),
+    ];
+    await loadFeatures(b, "buildings", "on-the-line.geojson", { type: "FeatureCollection", features: feats });
+    await until(b, "the buildings row", async () => (await text(b, "data-buildings")).startsWith("12"));
+    await (await tid(b, "layers-button")).click();
+    await until(b, "the buildings tick", async () => !(await box(b, "buildings")).disabled);
+    await (await tid(b, "layer-buildings")).click();
+    if (!(await box(b, "cut")).disabled && !(await box(b, "cut")).checked) await (await tid(b, "layer-cut")).click();
+    await until(b, "the buildings on the map", async () => (await featuresAttr(b, "data-buildings")) === "on", 60000);
+    await until(b, "buildings in the cut", async () => Number(await featuresAttr(b, "data-cut-taken")) > 0, 60000);
+    assert.equal(await featuresAttr(b, "data-cut-taken"), String(on.length));
+    assert.match(await text(b, "building-cut-legend"), /In the cut: 6/);
+    // 3D on, and close in over a building in the cut.
+    await (await tid(b, "terrain-3d")).click();
+    await until(b, "the terrain", () => b.execute(() => !!window.__owdMap.getTerrain()));
+    await b.execute((c) => void window.__owdMap.jumpTo({ center: c, zoom: 17.5, pitch: 50 }), on[2]);
+    await until(b, "the map to settle", () => b.execute(() => window.__owdMap.loaded() && window.__owdMap.areTilesLoaded()), 60000);
+    await new Promise((r) => setTimeout(r, 1500));
+    const read = await b.execute(async (c) => {
+      const m = window.__owdMap;
+      const layers = m.getStyle().layers.map((l) => l.id);
+      const hit = m.queryRenderedFeatures(m.project({ lng: c[0], lat: c[1] }), { layers: ["buildings-fill"] });
+      const fid = hit.length ? hit[0].id ?? hit[0].properties.fid : null;
+      const state = fid == null ? null : m.getFeatureState({ source: "buildings", id: fid });
+      const pixel = await new Promise((done) => {
+        m.once("render", () => {
+          const canvas = m.getCanvas();
+          const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+          const p = m.project({ lng: c[0], lat: c[1] });
+          const ratio = canvas.width / canvas.clientWidth;
+          const px = new Uint8Array(4);
+          gl.readPixels(Math.round(p.x * ratio), Math.round(canvas.height - p.y * ratio), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          done([...px]);
+        });
+        m.triggerRepaint();
+      });
+      return { terrain: !!m.getTerrain(), zoom: m.getZoom(), fid, state, pixel, fillAboveCut: !layers.includes("cut-depth") || layers.indexOf("buildings-fill") > layers.indexOf("cut-depth") };
+    }, on[2]);
+    assert.equal(read.terrain, true);
+    assert.ok(read.zoom > 17 && read.zoom < 18, `${read.zoom}`);
+    assert.notEqual(read.fid, null, "the footprint is drawn under the point");
+    assert.equal(read.state.cut, "taken");
+    assert.equal(read.fillAboveCut, true);
+    const [r, g, bl] = read.pixel;
+    assert.ok(r > 130 && g < 90 && bl < 90, `the pixel inside the footprint is the cut red: ${read.pixel}`);
+    if (SHOTS) await b.saveScreenshot(path.join(SHOTS, "web-building-in-cut-3d.png"));
+  });
+
   it("measures the map with 36,000 buildings: the time to show them, and the frame time while panning", async (t) => {
     const b = await start();
     // Software WebGL is slow: the measuring script may take minutes.

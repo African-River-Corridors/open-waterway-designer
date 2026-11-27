@@ -82,17 +82,23 @@
     const vis = (on: boolean) => ({ visibility: on ? "visible" : "none" }) as const;
     const t = untrack(() => ticks);
     const state = ["boolean", ["feature-state", "flooded"], false] as unknown as maplibregl.ExpressionSpecification;
+    const cut = ["coalesce", ["feature-state", "cut"], ""] as unknown as maplibregl.ExpressionSpecification;
+    const fillColour = ["match", cut, "taken", TAKEN, "near", NEAR, "severed", SEVERED, ["case", state, FLOODED, CREAM]] as unknown as maplibregl.ExpressionSpecification;
     m.addLayer({ id: "settlements-fill", type: "fill", source: "settlements", layout: vis(t.settlements), paint: { "fill-color": ["case", state, FLOODED, CREAM], "fill-opacity": 0.14 } }, before);
     m.addLayer({ id: "settlements-outline", type: "line", source: "settlements", layout: vis(t.settlements), paint: { "line-color": CREAM, "line-width": 1, "line-opacity": 0.9 } }, before);
     m.addLayer({ id: "buildings-density", type: "heatmap", source: "building-points", maxzoom: DOT_ZOOM + 1, layout: vis(t.buildings), paint: { "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 8, 6, DOT_ZOOM + 1, 14], "heatmap-intensity": 0.6, "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], DOT_ZOOM, 0.85, DOT_ZOOM + 1, 0], "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"], 0, "rgba(0,0,0,0)", 0.2, "rgba(242,232,207,0.55)", 0.6, "rgba(253,174,107,0.8)", 1, "rgba(228,87,46,0.95)"] } }, before);
     m.addLayer({ id: "buildings-dots", type: "circle", source: "building-points", minzoom: DOT_ZOOM, layout: vis(t.buildings), paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], DOT_ZOOM, 1.8, FOOTPRINT_ZOOM, 3], "circle-color": ["case", state, FLOODED, CREAM], "circle-stroke-color": INK, "circle-stroke-width": 0.75, "circle-pitch-alignment": "map", "circle-opacity": ["interpolate", ["linear"], ["zoom"], FOOTPRINT_ZOOM, 1, FOOTPRINT_ZOOM + 0.5, ["case", ["==", ["get", "point"], true], 1, 0]], "circle-stroke-opacity": ["interpolate", ["linear"], ["zoom"], FOOTPRINT_ZOOM, 1, FOOTPRINT_ZOOM + 0.5, ["case", ["==", ["get", "point"], true], 1, 0]] } }, before);
     m.addLayer({ id: "buildings-fill", type: "fill", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "fill-color": ["case", state, FLOODED, CREAM], "fill-opacity": 0.8 } }, before);
-    // The cut conflict style: the edge says how the building stands against the channel's cut.
-    const cut = ["coalesce", ["feature-state", "cut"], ""] as unknown as maplibregl.ExpressionSpecification;
-    const cutColour = ["match", cut, "taken", TAKEN, "near", NEAR, "severed", SEVERED, INK] as unknown as maplibregl.ExpressionSpecification;
-    m.addLayer({ id: "buildings-outline", type: "line", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "line-color": cutColour, "line-width": ["match", cut, "taken", 2.6, "near", 2, "severed", 2, ["case", state, 1.6, 0.8]] } }, before);
-    m.setPaintProperty("buildings-dots", "circle-stroke-color", cutColour);
-    m.setPaintProperty("buildings-dots", "circle-stroke-width", ["match", cut, "", 0.75, 1.8]);
+    // One rule, said in the legend: the FILL says how the building stands against the channel's cut
+    // (in it, near it, on severed land); a building with no cut state is filled orange when the pool
+    // water floods it, cream when not. A building both flooded and in a cut state keeps the cut fill
+    // and has a heavy orange edge.
+    m.setPaintProperty("buildings-fill", "fill-color", fillColour);
+    m.setPaintProperty("buildings-fill", "fill-opacity", 0.9);
+    m.addLayer({ id: "buildings-outline", type: "line", source: "buildings", minzoom: FOOTPRINT_ZOOM, layout: vis(t.buildings), paint: { "line-color": ["case", ["all", state, ["!=", cut, ""]], FLOODED, INK], "line-width": ["case", ["all", state, ["!=", cut, ""]], 3, state, 1.6, 0.8] } }, before);
+    m.setPaintProperty("buildings-dots", "circle-color", fillColour);
+    m.setPaintProperty("buildings-dots", "circle-stroke-color", ["case", ["all", state, ["!=", cut, ""]], FLOODED, INK]);
+    m.setPaintProperty("buildings-dots", "circle-stroke-width", ["case", ["all", state, ["!=", cut, ""]], 2, 0.75]);
     // A bridge's deck and a quay's slab: a placeholder block, pale with a dark edge like the weirs; in 3D it stands up.
     m.addLayer({ id: "places-blocks", type: "fill", source: "places-blocks", layout: vis(t.places), paint: { "fill-color": CREAM, "fill-outline-color": INK, "fill-opacity": 0.9 } });
     m.addLayer({ id: "places-blocks-3d", type: "fill-extrusion", source: "places-blocks-3d", layout: vis(t.places), paint: { "fill-extrusion-color": CREAM, "fill-extrusion-height": ["get", "height"], "fill-extrusion-base": ["get", "base"], "fill-extrusion-opacity": 1 } });
@@ -349,9 +355,10 @@
 <div hidden data-testid="map-features" data-buildings={buildingsState} data-buildings-ms={buildingsMs ?? ""} data-places={placesCount} data-place-images={placeImages} data-flooded={flooded ? flooded.fids.length : ""} data-place-kinds={kinds.join(" ")} data-place-blocks={blocksDrawn} data-cut-taken={conflicts?.taken ?? ""} data-cut-near={conflicts?.near ?? ""} data-cut-severed={conflicts?.severed ?? ""}></div>
 {#if ticks.buildings && conflicts && conflicts.taken + conflicts.near + conflicts.severed > 0}
   <ul class="kinds cut" data-testid="building-cut-legend" aria-label="Buildings against the channel">
-    <li><span class="edge" style="border-color: {TAKEN}"></span>In the cut: {conflicts.taken}</li>
-    <li><span class="edge" style="border-color: {NEAR}"></span>Within {conflicts.near_cut_m} m: {conflicts.near}</li>
-    <li><span class="edge" style="border-color: {SEVERED}"></span>On severed land: {conflicts.severed}</li>
+    <li><span class="swatch" style="background: {TAKEN}"></span>In the cut: {conflicts.taken}</li>
+    <li><span class="swatch" style="background: {NEAR}"></span>Within {conflicts.near_cut_m} m: {conflicts.near}</li>
+    <li><span class="swatch" style="background: {SEVERED}"></span>On severed land: {conflicts.severed}</li>
+    <li><span class="swatch" style="background: {FLOODED}"></span>Flooded by the pool water (a heavy orange edge when also one of the above)</li>
   </ul>
 {/if}
 {#if ticks.places && kinds.length}
@@ -386,6 +393,6 @@
   .mark { display: inline-grid; place-items: center; width: 12px; height: 12px; background: #f2e8cf; border: 1.5px solid #2b2925; color: #2b2925; font-size: 8px; font-weight: 700; line-height: 1; }
   .mark.circle { border-radius: 50%; width: 9px; height: 9px; }
   .kinds.cut { right: auto; left: 10px; bottom: auto; top: 10px; }
-  .edge { display: inline-block; width: 10px; height: 10px; border: 2.5px solid; background: #f2e8cf; }
+  .swatch { display: inline-block; width: 10px; height: 10px; border: 1px solid #2b2925; }
   .mark.diamond { transform: rotate(45deg) scale(0.8); }
 </style>
