@@ -54,7 +54,11 @@ not (
     (binary_id(owd-format::sectioned_large) & test(=a_dem_of_1_2_billion_cells_is_opened_and_a_100_km_line_runs_within_the_cache)) |
     (binary_id(owd-core::window_cases) & test(=s2_a_bend_against_a_spur_moves_away_from_it)) |
     (binary_id(owd-format::optimise_windows) & test(=the_window_method_makes_a_line_that_holds_r_min_and_is_never_dearer)) |
-    (binary_id(owd-format::optimise_windows) & test(=the_window_method_keeps_the_pools_of_a_fresh_lattice_run_and_its_weirs_are_seams))
+    (binary_id(owd-format::optimise_windows) & test(=the_window_method_keeps_the_pools_of_a_fresh_lattice_run_and_its_weirs_are_seams)) |
+    (binary_id(owd-cli::optimisation_doc) & test(/_the_documents_numbers$/)) |
+    (binary_id(owd-format::river_following) & test(=a_change_of_rule_quality_builds_the_line_again)) |
+    (binary_id(owd-format::river_following) & test(=the_same_input_gives_the_same_line)) |
+    (binary_id(owd-format::river_following_stale) & test(=a_change_of_rule_quality_makes_the_line_stale_and_run_builds_it_again))
 )
 '''
 

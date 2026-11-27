@@ -1,0 +1,23 @@
+{
+  "about": "The worked example of docs/optimisation: the commands of every run. run.py and the test crates/owd-cli/tests/optimisation_doc.rs both read this file. {doc} is the design file of the run, {inputs} this folder's inputs/ and {dem} the copy of inputs/dem.tif beside the design file.",
+  "setup": [
+    ["new", "{doc}", "--title", "Example River", "--date", "2026-11-24"],
+    ["import", "{doc}", "--centreline", "{inputs}/centreline.geojson", "--polygon", "{inputs}/river-polygon.geojson", "--dem", "{dem}", "--water-level", "0.0", "--water-slope", "-0.001"],
+    ["size", "{doc}", "--rule-set", "pianc-wg141", "--set-input", "se_quality=B", "--vessel", "CEMT_IV", "--draught", "2.5"],
+    ["align", "{doc}", "--method", "rolling-circle"]
+  ],
+  "settings": {"terminal_min_level_m": 6.5},
+  "optimise": ["optimise", "{doc}", "--lifts", "0.5,1,1.5,2", "--sites", "1000,2000,3000,4000,5000,6000", "--flood-report"],
+  "volumes": ["volumes", "{doc}"],
+  "runs": {
+    "base": [],
+    "length-300": ["--length-weight", "300"],
+    "length-1000": ["--length-weight", "1000"],
+    "land": ["--land-weight", "3.25"],
+    "flood-3000": ["--flood-cost-per-ha", "3000"],
+    "flood-20000": ["--flood-cost-per-ha", "20000"],
+    "bank-0": ["--max-above-bank", "0"],
+    "free-seams": ["--free-seams"],
+    "free-seams-0": ["--free-seams", "--weir-straight", "0"]
+  }
+}

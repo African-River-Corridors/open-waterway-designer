@@ -192,6 +192,10 @@ fn without_a_river_polygon_the_weir_has_the_default_length() {
     s.set_water_pools(&POOLS).unwrap();
     let m = s.map_structures().unwrap();
     assert_eq!(m.weirs.len(), 2);
+    assert_eq!(
+        m.level_steps, 2,
+        "the check the map shows: a weir for each step"
+    );
     for w in &m.weirs {
         assert!(!w.clipped_to_river);
         assert_eq!(w.weir_length_m, DEFAULT_WEIR_LENGTH_M);
