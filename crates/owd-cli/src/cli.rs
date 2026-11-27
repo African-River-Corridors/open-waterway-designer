@@ -23,7 +23,14 @@ fn align_help(method: &str, key: &str, text: &str, after: &str) -> String {
 
 /// Screening-level design of navigation channels in inland rivers.
 #[derive(Parser)]
-#[command(name = "owd", bin_name = "owd", version, about, long_about = None)]
+#[command(
+    name = "owd",
+    bin_name = "owd",
+    version,
+    about,
+    long_about = None,
+    after_help = "Every command that takes a channel design also takes a project folder in its place: a folder with an owd-project.json that names the design (`owd project init FOLDER`)."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -38,7 +45,7 @@ struct Cli {
         allow_hyphen_values = true
     )]
     terrain_limit_gib: Option<String>,
-    /// Make a failed check on an option the command made or re-ran an error: exit code 1, after
+    /// Make a failed check on the design line the command made or re-ran an error: exit code 1, after
     /// the design is saved. Without it, a saved design exits 0 and the failed checks are a warning.
     #[arg(long, global = true)]
     strict: bool,
@@ -90,6 +97,7 @@ enum WaterwaySub {
     /// Mark a reach. Reaches may not overlap; chainage not marked is a free-flowing river.
     Add {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Where the reach starts, metres of river chainage.
         #[arg(long, value_name = "M")]
@@ -109,6 +117,7 @@ enum WaterwaySub {
     /// List the marked reaches.
     List {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -117,12 +126,44 @@ enum WaterwaySub {
     /// Remove the reach that starts at a chainage.
     Remove {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The chainage the reach starts at, metres.
         #[arg(long, value_name = "M")]
         from: f64,
         #[command(flatten)]
         out: Out,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectSub {
+    /// Make a project folder: `owd-project.json` and the folders `design/`, `terrain/`, `inputs/`
+    /// and `exports/`. A text file that is there is never overwritten. A design and a DEM already
+    /// in the standard places are named in the new text file.
+    Init {
+        /// The project folder (made if it is not there).
+        folder: String,
+        /// The project's title (default: the folder's name).
+        #[arg(long)]
+        title: Option<String>,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// List what `owd-project.json` names and whether each file is there, and check the DEM
+    /// against the hash the design recorded. Exits 1 when a named file is missing or the DEM
+    /// is another file.
+    Status {
+        /// The project folder.
+        folder: String,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Also hash every byte of the DEM (SHA-256), read a piece at a time with progress: the
+        /// check that catches what the quick check of a large sectioned DEM cannot.
+        #[arg(long)]
+        full: bool,
     },
 }
 
@@ -155,6 +196,7 @@ enum Command {
     /// WGS84 / UTM). Name a GeoPackage layer as FILE#LAYER.
     Import {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The left bank, as a GeoJSON line. `-` is stdin.
         #[arg(long, value_name = "FILE")]
@@ -176,11 +218,14 @@ enum Command {
         /// OWD does not check it, and every output that reads it says so. A new DEM clears it.
         #[arg(long, requires = "dem")]
         holds_bathymetry: bool,
-        /// The water level in metres: a constant, or with --water-slope the level at the river's start.
+        /// The water level in metres: a constant, or with --water-slope the level at chainage 0 (the
+        /// river's start, or its mouth when one is stated).
         #[arg(long, value_name = "METRES")]
         water_level: Option<f64>,
-        /// The fall of the water per metre of river chainage (with --water-level).
-        #[arg(long, value_name = "M_PER_M")]
+        /// The fall of the water per metre of river chainage (with --water-level). With a mouth,
+        /// chainage 0 is the mouth and --water-level is the level there, so a river that falls
+        /// towards its mouth has a negative slope: the level rises upstream.
+        #[arg(long, value_name = "M_PER_M", allow_hyphen_values = true)]
         water_slope: Option<f64>,
         /// The water level as a table: lines of `chainage_m,level_m` along the river centreline.
         /// Two lines at one chainage make a step (a weir).
@@ -190,11 +235,39 @@ enum Command {
         /// the pool starts. Its level holds to the next line; nothing is read between two levels.
         #[arg(long, value_name = "FILE")]
         water_pools: Option<String>,
+        /// Building footprints (GeoJSON Polygons or Points, or a GeoPackage; WGS84 or the project
+        /// CRS), with `area_m2` and `confidence` when the source gives them. Referenced by
+        /// relative path and SHA-256, never copied into the design. Needs the river first.
+        #[arg(long, value_name = "FILE")]
+        buildings: Option<String>,
+        /// Points of interest (GeoJSON Points, or Polygons and LineStrings labelled at a point),
+        /// with `name` and `kind`. Referenced like --buildings.
+        #[arg(long, value_name = "FILE")]
+        points_of_interest: Option<String>,
+        /// Settlement polygons (GeoJSON Polygons). Referenced like --buildings.
+        #[arg(long, value_name = "FILE")]
+        settlements: Option<String>,
+        /// A building with a confidence below this (0 to 1) is counted apart and never costed
+        /// (default 0.7).
+        #[arg(long, value_name = "0..1")]
+        building_min_confidence: Option<f64>,
+        /// A building smaller than this, m2, is counted apart and never costed (default 0).
+        #[arg(long, value_name = "M2")]
+        building_min_area: Option<f64>,
+        /// Buildings within this distance of the cut are reported as near it, metres (default 50).
+        #[arg(long, value_name = "METRES")]
+        building_near_cut: Option<f64>,
         /// The point the river flows towards, as longitude and latitude (WGS84). Both banks are run
         /// towards it and named left and right looking downstream, whatever way they were drawn
         /// or named. Each bank imported records it in its provenance.
         #[arg(long, value_name = "LON,LAT", allow_hyphen_values = true)]
         downstream: Option<String>,
+        /// The river mouth, where chainage 0 is (spec 0017): `downstream` (the lower end, by the
+        /// water level or the DEM), or a point as longitude and latitude (WGS84). The river is
+        /// stored running from it, and every chainage OWD writes counts from it. Set before any
+        /// water level given in the same import, so that level's chainage counts from the mouth.
+        #[arg(long, value_name = "downstream|LON,LAT", allow_hyphen_values = true)]
+        mouth: Option<String>,
         /// A bank dataset file: both banks, the river polygon and what the source says about them
         /// (its accuracy, its low-confidence stretches), in one GeoJSON FeatureCollection.
         /// It is imported on its own: give the centreline, the DEM or the water level in another
@@ -202,7 +275,7 @@ enum Command {
         #[arg(
             long,
             value_name = "FILE",
-            conflicts_with_all = ["left_bank", "right_bank", "polygon", "centreline", "dem", "water_level", "water_slope", "water_table", "water_pools", "downstream"]
+            conflicts_with_all = ["left_bank", "right_bank", "polygon", "centreline", "dem", "water_level", "water_slope", "water_table", "water_pools", "downstream", "mouth"]
 
         )]
         banks: Option<String>,
@@ -212,6 +285,7 @@ enum Command {
     /// Choose the Rule Sets, a vessel class and a draught, and size the channel.
     Size {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A Rule Set to size to, by id or id@version (repeat for more than one; see `owd rules`).
         /// Every selected Rule applies and the strictest governs. `owd` is always selected.
@@ -266,12 +340,18 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Add a design line option by the rolling circle or the least-cost re-route.
+    /// Make the design line by the rolling circle, the least-cost re-route, the river-following line
+    /// or the river centreline.
+    /// A design has one design line: it replaces the one any method made before.
     Align {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
-        /// The method: rolling-circle, reroute, or centreline (the river centreline as it is, with
-        /// no repair). Running a method again replaces its own option.
+        /// The method: rolling-circle, reroute (from the river centreline), river-following (arcs
+        /// and straights that follow the river at R_min, meander cut-throughs as a costed choice,
+        /// a sideways shift to cut less), or centreline (the river centreline as it is, with no
+        /// repair). It is stored as the alignment's method, and
+        /// `owd run` runs it again.
         #[arg(long, value_name = "METHOD")]
         method: String,
         #[arg(long, value_name = "METRES", help = align_help("rolling_circle", "step_m", "Rolling circle: the sampling step in metres", ""))]
@@ -282,14 +362,16 @@ enum Command {
         /// method).
         #[arg(long, value_name = "METRES")]
         chord: Option<f64>,
-        /// Re-route: a GeoTIFF DEM (WGS84 or the project's UTM zone) for the terrain.
+        /// Re-route and river-following: a GeoTIFF DEM (WGS84 or the project's UTM zone) for the
+        /// terrain. The river-following line runs without one, on plan area.
         #[arg(long, value_name = "FILE")]
         dem: Option<String>,
         /// Re-route: set the water level (the level at the river's start), in metres.
         #[arg(long, value_name = "METRES")]
         water_level: Option<f64>,
-        /// Re-route: the fall of the water per metre of river chainage (with --water-level).
-        #[arg(long, value_name = "M_PER_M")]
+        /// Re-route: the fall of the water per metre of river chainage (with --water-level). With a
+        /// mouth, chainage 0 is the mouth: a river that falls towards it has a negative slope.
+        #[arg(long, value_name = "M_PER_M", allow_hyphen_values = true)]
         water_slope: Option<f64>,
         #[arg(long, value_name = "LIST", help = align_help("reroute", "corridor_sweep_m", "Re-route: the half-widths of the corridors to try, in metres, comma separated", ""))]
         corridors: Option<String>,
@@ -299,12 +381,27 @@ enum Command {
         /// design's alignment settings (default: on when the design has a river polygon).
         #[arg(long, value_name = "BOOL")]
         use_water: Option<String>,
+        /// River-following: the largest gap of the seed from the river centreline outside the
+        /// bends tighter than R_min, in metres. Unset, it is five metres, or an eighth of the
+        /// bottom width when that is more: one arc per bend. Stored in the design.
+        #[arg(long, value_name = "METRES")]
+        seed_tolerance: Option<f64>,
+        /// River-following: force a cut-through on or off by its id, `ID=on` or `ID=off`, or give
+        /// it back to the rule, `ID=rule`. Repeat for more. Stored in the design.
+        #[arg(long, value_name = "ID=on|off|rule")]
+        force_cut: Vec<String>,
+        /// River-following: run the sideways shift, true or false (default true). Stored in the
+        /// design.
+        #[arg(long, value_name = "BOOL")]
+        shift: Option<String>,
         #[command(flatten)]
         out: Out,
     },
-    /// Choose weir sites and pool levels, and add a design line option through the pools (the lattice).
+    /// Choose weir sites and pool levels, and refine the design line through the pools (the lattice).
+    /// The refined line is the one the volumes then read.
     Optimise {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A GeoTIFF DEM to record as the document's DEM and use.
         #[arg(long, value_name = "FILE")]
@@ -320,15 +417,80 @@ enum Command {
         wet_weight: Option<f64>,
         #[arg(long, help = optimise_help("dry_weight", "The weight of dry cut in the cost"))]
         dry_weight: Option<f64>,
+        #[arg(long, value_name = "COST_PER_M", help = optimise_length_weight_help())]
+        length_weight: Option<f64>,
+        #[arg(long, value_name = "M3_PER_M2", help = optimise_land_weight_help())]
+        land_weight: Option<f64>,
+        /// Hold the pool search inside the corridor: no point of the lattice's line may lie
+        /// further than `corridor_half_m` from the baseline. A pool with no line inside it keeps
+        /// the baseline and says so. `--corridor-limit` turns it on; `--corridor-limit false`
+        /// turns it off again in a design that holds it (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        corridor_limit: Option<bool>,
+        /// Put the seams of a long pool (it is searched in pieces of 6 km) where the baseline is
+        /// straightest and inside the river polygon, within `--seam-window` of the even split.
+        /// `--seams-on-straights` turns it on; `--seams-on-straights false` turns it off again
+        /// (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        seams_on_straights: Option<bool>,
+        /// Do not pin the line to the baseline's point and heading at a seam or at a weir site
+        /// between two pools: the line passes a gate on the cross-line there (inside the river,
+        /// within the heading tolerance) and the next search starts where it ended. At a weir
+        /// site the line is straight for `--weir-straight` through the gate. A seam or weir site
+        /// that cannot be freed is pinned as before and says why. `--free-seams false` turns it
+        /// off again (off unless the design says otherwise).
+        #[arg(long, value_name = "BOOL", num_args = 0..=1, default_missing_value = "true")]
+        free_seams: Option<bool>,
+        #[arg(long, value_name = "METRES", help = optimise_join_help("seam_window_m", "How far a seam may move from the even split to find a straight, in metres (with --seams-on-straights)"))]
+        seam_window: Option<f64>,
+        /// The room of a gate either side of the baseline, in metres (with --free-seams). Default:
+        /// the river's width on the cross-line, no further than half the corridor's half-width.
+        #[arg(long, value_name = "METRES")]
+        seam_offset: Option<f64>,
+        #[arg(long, value_name = "DEGREES", help = optimise_join_help("seam_heading_tol_deg", "How far the line's heading at a gate may be from the baseline's, in degrees (with --free-seams)"))]
+        seam_heading_tol: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_join_help("min_straight_m", "The straight the line must have between a left curve and a right curve, in metres; 0 is off"))]
+        min_straight: Option<f64>,
+        /// The straight the line must have through a weir site between two pools, in metres (with
+        /// --free-seams): half upstream of the weir and half downstream. Default: two lengths of
+        /// the vessel the design is sized for.
+        #[arg(long, value_name = "METRES")]
+        weir_straight: Option<f64>,
+        #[arg(long, value_name = "COST_PER_HA", help = optimise_flood_cost_help())]
+        flood_cost_per_ha: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_max_above_bank_help())]
+        max_above_bank: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_flood_distance_help())]
+        flood_distance: Option<f64>,
+        #[arg(long, value_name = "COST", help = optimise_building_cost_help())]
+        building_cost: Option<f64>,
+        #[arg(long, value_name = "METRES", help = optimise_building_depth_help())]
+        building_min_depth: Option<f64>,
+        /// Report what each pool floods and how far it stands above bank-full, with no flood cost
+        /// and no limit: the search is unchanged. The flood cost and the limit report it too.
+        #[arg(long)]
+        flood_report: bool,
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
+        /// `lattice` (the weir cascade, then the pool lattice; the default) or `windows` (the
+        /// window optimiser: the alignment's line redesigned in windows of 1 to 2 km, each priced
+        /// with the volumes stage's own section and adopted only when it saves at least 1 %; the
+        /// pools and weirs stay as they are).
+        #[arg(long, value_name = "METHOD")]
+        method: Option<String>,
+        #[arg(long, value_name = "METRES", help = optimise_window_length_help())]
+        window_length: Option<f64>,
+        /// With `--method windows`: how many windows to search at once (default: every core).
+        #[arg(long, value_name = "N")]
+        threads: Option<i64>,
         #[command(flatten)]
         out: Out,
     },
-    /// Work out dredge, dry cut and tallest face for every design line option, on the DEM.
+    /// Work out dredge, dry cut and tallest face of the design line, on the DEM.
     Volumes {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A GeoTIFF DEM to record as the document's DEM and use. Needed the first time, or to
         /// accept a DEM file that has changed.
@@ -355,6 +517,7 @@ enum Command {
     /// two commands that use the network.
     FetchDem {
         /// The channel design. `-` is not allowed: files are written next to it.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Metres to add around the river on every side (default 1000).
         #[arg(long, value_name = "METRES", default_value_t = 1000.0)]
@@ -473,16 +636,17 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Export the design line options as GeoJSON, or the quantity table as CSV. Every export says
-    /// "Screening — not for construction", and an option that fails a check says so.
+    /// Export the design line as GeoJSON, or the quantity table as CSV. Every export says
+    /// "Screening — not for construction", and a design line that fails a check says so.
     #[command(group(clap::ArgGroup::new("wgs84_target").args(["geojson", "banks"]).multiple(false)))]
     Export {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
-        /// GeoJSON: the options as lines, in the project CRS (or WGS84 with --wgs84).
+        /// GeoJSON: the design line, in the project CRS (or WGS84 with --wgs84).
         #[arg(long, conflicts_with = "csv")]
         geojson: bool,
-        /// CSV: one row per option, with dredge, dry cut, tallest face and failed checks.
+        /// CSV: one row for the design line, with dredge, dry cut, tallest face and failed checks.
         #[arg(long)]
         csv: bool,
         /// With --geojson or --banks: write longitude and latitude instead of the project CRS.
@@ -492,19 +656,19 @@ enum Command {
         /// the source says about them, in one GeoJSON FeatureCollection.
         #[arg(long, value_name = "FILE", conflicts_with_all = ["csv", "stretches", "limits"])]
         banks: Option<String>,
-        /// Export the constraint stretches (spec 0007) instead of the options: as GeoJSON lines or
+        /// Export the constraint stretches (spec 0007) instead of the design line: as GeoJSON lines or
         /// as CSV, whose head holds the design basis and the verdicts.
         #[arg(long)]
         stretches: bool,
         /// With --geojson: export the channel limits (the edges of the channel bottom, wider in
-        /// bends) of each option instead of the options.
+        /// bends) of the design line instead of the line.
         #[arg(long, requires = "geojson", conflicts_with_all = ["csv", "stretches"])]
         limits: bool,
         /// Write the export here instead of stdout.
         #[arg(short = 'o', long = "output", value_name = "FILE")]
         output: Option<String>,
     },
-    /// Draw sheets of a design line option: cross sections, the typical section, the setting-out table, plan sheets and the long section. Writes, for
+    /// Draw sheets of the design line: cross sections, the typical section, the setting-out table, plan sheets and the long section. Writes, for
     /// each sheet, its drawing document, normalised content, SVG, PDF and DXF. `owd draw run FILE`
     /// reads one drawing document with the drawing crate and prints the result of clause 17.3.
     #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
@@ -512,6 +676,7 @@ enum Command {
         #[command(subcommand)]
         sub: Option<DrawSub>,
         /// The channel design (after the volumes stage). `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: Option<String>,
         /// Write the drawings into this folder.
         #[arg(long, value_name = "DIR", required_unless_present = "document")]
@@ -519,7 +684,7 @@ enum Command {
         /// Print the drawing documents only, as one JSON object keyed by drawing number.
         #[arg(long, conflicts_with = "out")]
         document: bool,
-        /// The design line option, by id or name (default: the first).
+        /// The design line, by id or name (default: the design line; a design has one).
         #[arg(long, value_name = "NAME")]
         option: Option<String>,
         /// The kinds of sheet, comma separated: xs (cross sections), ts (typical section), so (setting-out table and CSV), pl (plan sheets), ls (long section). Default: all.
@@ -570,6 +735,7 @@ enum Command {
     /// and a "Data and limits" box. Files are named after the document number, in lower case.
     Report {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The kind of report: `screening`, `quantities`, `sections`, `run`, or `all`.
         #[arg(long, value_name = "KIND", default_value = "screening")]
@@ -577,7 +743,7 @@ enum Command {
         /// The format: `pdf`, `html`, `docx` or `all`.
         #[arg(long, value_name = "FORMAT", default_value = "pdf")]
         format: String,
-        /// The design line option, by id or name (default: the first).
+        /// The design line, by id or name (default: the design line; a design has one).
         #[arg(long, value_name = "NAME")]
         option: Option<String>,
         /// Write the reports into this folder (default: beside the design).
@@ -615,6 +781,7 @@ enum Command {
     /// output says so. Nothing else in the document changes.
     Bed {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// One depth in metres, for the whole river.
         #[arg(long, value_name = "METRES")]
@@ -637,6 +804,7 @@ enum Command {
     /// exits 1 if anything does; changes nothing.
     CheckBanks {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -647,6 +815,7 @@ enum Command {
     /// by eye (spec 0013). Needs the network. At most 30 km across: draw a long reach in parts.
     QaOverlay {
         /// The channel design.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The PNG to write.
         #[arg(long, value_name = "FILE")]
@@ -677,6 +846,7 @@ enum Command {
     /// reruns by itself.
     Fits {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// A Rule Set to answer under, as `owd size` names it: pianc-wg141 or gb50139, with its
         /// --set-input (se_quality=A|B|C, range_end=permissive|strict). Repeat for more answers
@@ -718,6 +888,7 @@ enum Command {
     /// stale when the banks change; never reruns by itself.
     Envelope {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The series, as `LENGTHxBEAM` in metres (default: 10x2,20x4,30x6,40x8,50x10).
         #[arg(long, value_name = "SIZES")]
@@ -746,10 +917,11 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// The plan cut of each design line option: the fairway at the water surface, less the river
+    /// The plan cut of the design line: the fairway at the water surface, less the river
     /// polygon. Plan only: it needs no terrain and no water level. Kept in the document.
     PlanCut {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The smallest piece that counts as a cut, in square metres (the document's, or the
         /// stage's own default when absent).
@@ -768,15 +940,16 @@ enum Command {
         #[command(flatten)]
         out: Out,
     },
-    /// Add a design line you already have (an earlier study, or drawn by hand) as an option. It gets
-    /// the radius check of the other options; a line under the minimum radius is kept and reported.
+    /// Make a line you already have (an earlier study, or drawn by hand) the design line. It gets the
+    /// radius check every design line gets; a line under the minimum radius is kept and reported.
     DesignLine {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// The line: GeoJSON, or a GeoPackage layer as `FILE#LAYER`.
         #[arg(long, value_name = "FILE")]
         line: String,
-        /// The option's name; its id is `given-` and the name in lower case.
+        /// The line's name; its id is `given-` and the name in lower case.
         #[arg(long, value_name = "NAME")]
         name: String,
         #[command(flatten)]
@@ -787,6 +960,73 @@ enum Command {
     Waterway {
         #[command(subcommand)]
         action: WaterwaySub,
+    },
+    /// The cost of the design (spec 0017): the rates times the volumes stage's stored volumes, by
+    /// reach and in total, in the rates table's currency. `--rates FILE` stores a rates table first
+    /// (JSON: `dredge_per_m3`, `dry_cut_per_m3`, `disposal_per_m3` and `haul_per_m3_km`, each
+    /// `{"amount", "currency"}`; `haul_km`; and optional `haul_by_reach`). Prints; stores no cost.
+    Cost {
+        /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
+        doc: String,
+        /// A rates table to store in the design before the cost is worked out.
+        #[arg(long, value_name = "FILE")]
+        rates: Option<String>,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Set the run's constraints (spec 0017): no-go areas the re-route goes round, and a cut-rate
+    /// multiplier raster whose cell value multiplies the cut rate there. Each flag given replaces
+    /// that part; a part not named is kept. With no flag, print them and change nothing. The stages
+    /// that read them go stale.
+    Constraints {
+        /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
+        doc: String,
+        /// No-go areas: a GeoJSON FeatureCollection of Polygons in the project CRS, each with the
+        /// properties `name` (unique) and `kind`. They replace the stored ones.
+        #[arg(long, value_name = "FILE")]
+        no_go: Option<String>,
+        /// Remove every no-go area.
+        #[arg(long, conflicts_with = "no_go")]
+        no_no_go: bool,
+        /// A cut-rate multiplier raster: a GeoTIFF in WGS84 or the project CRS, every cell zero or
+        /// more; no data means 1, and a cell at or above 1e6 is impassable to the re-route. It is
+        /// referenced by path and hash, like the DEM.
+        #[arg(long, value_name = "FILE")]
+        multiplier: Option<String>,
+        /// Remove the cut-rate multiplier.
+        #[arg(long, conflicts_with = "multiplier")]
+        no_multiplier: bool,
+        #[command(flatten)]
+        out: Out,
+    },
+    /// Set what the run aims at and must stay within, and the output level it aims to reach (spec
+    /// 0017). Each flag given replaces that part; a part not named is kept. With no flag, print them
+    /// and change nothing. Nothing optimises on them yet, so no stage goes stale.
+    RunInputs {
+        /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
+        doc: String,
+        /// The objective: `SENSE:MEASURE`, for example `minimise:cost` or `minimise:total_cut`.
+        /// `none` (or empty) states none. Measures: cost, total_cut, dredge, dry_cut, land_take,
+        /// line_length, structure_count, capacity.
+        #[arg(long, value_name = "SENSE:MEASURE")]
+        objective: Option<String>,
+        /// A limit (repeatable; together they replace the limits): `MEASURE<=VALUE` or
+        /// `MEASURE>=VALUE`, in the measure's unit (m³ for the cuts, m² for land take, m for line
+        /// length). A bound on cost names its currency: `cost<=2000000 USD`.
+        #[arg(long = "limit", value_name = "MEASURE<=VALUE")]
+        limits: Vec<String>,
+        /// Remove every limit.
+        #[arg(long, conflicts_with = "limits")]
+        no_limits: bool,
+        /// The output level the run aims at: `concept`, `pre-feasibility` or `feasibility`. Empty
+        /// states none (the run then aims at concept).
+        #[arg(long, value_name = "LEVEL")]
+        target_level: Option<String>,
+        #[command(flatten)]
+        out: Out,
     },
     /// List the Rule Sets, show one with its Rules and their status, or list the Measures.
     Rules {
@@ -806,6 +1046,7 @@ enum Command {
     /// the river is under 100 m wide. Reads the SWORD reaches near the river from Zenodo.
     WaterLevel {
         /// The channel design (with its river centreline or banks, and a DEM for the fallback).
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Another percentile of the SWOT levels (default 10, provisional). The level is then yours.
         #[arg(long, value_name = "P")]
@@ -830,8 +1071,9 @@ enum Command {
     /// document, never stored; refused when a stored set hash differs from the engine's.
     Trace {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
-        /// A design line option: read the station Rules at its stations (default: one per reach).
+        /// The design line, by id: read the station Rules at its stations (default: one per reach).
         #[arg(long)]
         option: Option<String>,
         /// With --option: the station spacing, metres.
@@ -844,6 +1086,7 @@ enum Command {
     /// Rerun every stale stage, in order.
     Run {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         #[command(flatten)]
         out: Out,
@@ -851,6 +1094,7 @@ enum Command {
     /// Check a channel design against the schema and its own rules.
     Validate {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -859,6 +1103,7 @@ enum Command {
     /// Show each stage as not run, fresh or stale.
     Status {
         /// The channel design. `-` is stdin.
+        #[arg(value_parser = crate::project::design_arg)]
         doc: String,
         /// Print a machine-readable result as JSON.
         #[arg(long)]
@@ -866,6 +1111,52 @@ enum Command {
     },
     /// Print the JSON Schema of the `.owd` format.
     Schema,
+    /// A standard project folder: the design, its DEM, the source data and the exports in one
+    /// place, listed in a small text file, `owd-project.json` (docs/project-folder.md).
+    Project {
+        #[command(subcommand)]
+        sub: ProjectSub,
+    },
+    /// A DEM file: what it holds, and a sectioned copy that OWD reads a block at a time, whatever
+    /// its size (a cloud-optimised GeoTIFF).
+    Dem {
+        #[command(subcommand)]
+        sub: DemSub,
+    },
+}
+
+#[derive(Subcommand)]
+enum DemSub {
+    /// Print what a GeoTIFF holds: size, cells, cell size, CRS, layout (strips or tiles), tile
+    /// size, compression, sample type, overviews, nodata, and whether OWD reads it in sections.
+    Info {
+        /// The GeoTIFF.
+        file: String,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Write a sectioned copy of a DEM: 512 x 512 tiles, DEFLATE with the predictor that suits the
+    /// sample type, 32-bit floats, overviews by averaging at each factor of two down to about
+    /// 256 cells, nodata kept, BigTIFF when it needs it, directories and overviews first. Written
+    /// a band of rows at a time, so the raster is never all in memory. A file that is already
+    /// sectioned with overviews is left alone unless `--force`.
+    Prepare {
+        /// The GeoTIFF to copy.
+        input: String,
+        /// The sectioned copy to write.
+        #[arg(short = 'o', long = "output")]
+        output: String,
+        /// Keep the input's sample type instead of 32-bit floats.
+        #[arg(long)]
+        keep_type: bool,
+        /// Write a copy even when the input is already sectioned with overviews.
+        #[arg(long)]
+        force: bool,
+        /// Print a machine-readable result as JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Parse the arguments, run the command and give the exit code. The `owd` binary calls this.
@@ -911,7 +1202,14 @@ pub fn main() -> ExitCode {
             water_slope,
             water_table,
             water_pools,
+            buildings,
+            points_of_interest,
+            settlements,
+            building_min_confidence,
+            building_min_area,
+            building_near_cut,
             downstream,
+            mouth,
             banks: None,
             out,
         } => commands::import_toward(
@@ -923,6 +1221,7 @@ pub fn main() -> ExitCode {
                 ("river_polygon", polygon),
             ],
             downstream.as_deref(),
+            mouth.as_deref(),
             dem,
             commands::WaterFlags {
                 level: water_level,
@@ -930,6 +1229,12 @@ pub fn main() -> ExitCode {
                 table: water_table,
                 pools: water_pools,
                 holds_bathymetry,
+            },
+            commands::FeatureFlags {
+                files: [buildings, points_of_interest, settlements],
+                min_confidence: building_min_confidence,
+                min_area_m2: building_min_area,
+                near_cut_m: building_near_cut,
             },
             &out.output,
             out.json,
@@ -1125,6 +1430,45 @@ pub fn main() -> ExitCode {
             &out.output,
             out.json,
         ),
+        Command::Cost { doc, rates, out } => {
+            crate::cost::cost(&doc, rates.as_deref(), &out.output, out.json)
+        }
+        Command::Constraints {
+            doc,
+            no_go,
+            no_no_go,
+            multiplier,
+            no_multiplier,
+            out,
+        } => crate::constraints::constraints(
+            &doc,
+            &crate::constraints::ConstraintFlags {
+                no_go,
+                no_no_go,
+                multiplier,
+                no_multiplier,
+            },
+            &out.output,
+            out.json,
+        ),
+        Command::RunInputs {
+            doc,
+            objective,
+            limits,
+            no_limits,
+            target_level,
+            out,
+        } => crate::run_inputs::run_inputs(
+            &doc,
+            &crate::run_inputs::RunFlags {
+                objective,
+                limits,
+                no_limits,
+                target_level,
+            },
+            &out.output,
+            out.json,
+        ),
         Command::Waterway { action } => match action {
             WaterwaySub::Add {
                 doc,
@@ -1165,6 +1509,9 @@ pub fn main() -> ExitCode {
             corridors,
             fairness_weight,
             use_water,
+            seed_tolerance,
+            force_cut,
+            shift,
             out,
         } => commands::align(
             &doc,
@@ -1179,6 +1526,9 @@ pub fn main() -> ExitCode {
                 corridors,
                 fairness_weight,
                 use_water,
+                seed_tolerance,
+                force_cut,
+                shift,
             },
             &out.output,
             out.json,
@@ -1191,7 +1541,26 @@ pub fn main() -> ExitCode {
             lifts,
             wet_weight,
             dry_weight,
+            length_weight,
+            land_weight,
+            corridor_limit,
+            seams_on_straights,
+            free_seams,
+            seam_window,
+            seam_offset,
+            seam_heading_tol,
+            min_straight,
+            weir_straight,
+            flood_cost_per_ha,
+            max_above_bank,
+            flood_distance,
+            building_cost,
+            building_min_depth,
+            flood_report,
             model,
+            method,
+            window_length,
+            threads,
             out,
         } => commands::optimise(
             &doc,
@@ -1202,7 +1571,26 @@ pub fn main() -> ExitCode {
                 lifts,
                 wet_weight,
                 dry_weight,
+                length_weight,
+                land_weight,
+                corridor_limit,
+                seams_on_straights,
+                free_seams,
+                seam_window,
+                seam_offset,
+                seam_heading_tol,
+                min_straight,
+                weir_straight,
+                flood_cost_per_ha,
+                max_above_bank,
+                flood_distance,
+                building_cost,
+                building_min_depth,
+                flood_report,
                 model,
+                method,
+                window_length,
+                threads,
             },
             &out.output,
             out.json,
@@ -1364,6 +1752,26 @@ pub fn main() -> ExitCode {
         Command::Validate { doc, json } => commands::validate(&doc, json),
         Command::Status { doc, json } => commands::status(&doc, json),
         Command::Schema => commands::schema(),
+        Command::Project { sub } => match sub {
+            ProjectSub::Init {
+                folder,
+                title,
+                json,
+            } => crate::project::init(&folder, title.as_deref(), json),
+            ProjectSub::Status { folder, json, full } => {
+                crate::project::status(&folder, json, full)
+            }
+        },
+        Command::Dem { sub } => match sub {
+            DemSub::Info { file, json } => crate::dem::info(&file, json),
+            DemSub::Prepare {
+                input,
+                output,
+                keep_type,
+                force,
+                json,
+            } => crate::dem::prepare(&input, &output, keep_type, force, json),
+        },
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -1402,6 +1810,112 @@ fn volumes_help(key: &str, text: &str) -> String {
 fn optimise_help(key: &str, text: &str) -> String {
     let d = owd_format::design::OptimiseSettings::default().to_value();
     format!("{text} (default {}).", shown_default(&d[key]))
+}
+
+/// The help of `owd optimise --length-weight`, with the stage's own default, read from
+/// `OptimiseSettings::default()` (the setting is not written into a design while it is 0).
+fn optimise_length_weight_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().length_weight;
+    format!(
+        "The cost of one metre of design line (sailing distance), in the units of the cut cost: one \
+         m3 of cut at weight 1 costs 1. The pool lattice pays it for every metre of line, so length \
+         through deep water is no longer free; a high value trades cut for a shorter line (default \
+         {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of a join flag of `owd optimise` (OPT-3), with the stage's own default for `key`, read
+/// from `OptimiseSettings::default()` (these settings are not written into a design at their
+/// defaults, so `optimise_help` cannot read them from the written settings).
+fn optimise_join_help(key: &str, text: &str) -> String {
+    let d = owd_format::design::OptimiseSettings::default();
+    let v = match key {
+        "seam_window_m" => d.seam_window_m,
+        "seam_heading_tol_deg" => d.seam_heading_tol_deg,
+        _ => d.min_straight_m,
+    };
+    format!("{text} (default {}).", shown_default(&serde_json::json!(v)))
+}
+
+/// The help of `owd optimise --window-length`, with the window optimiser's own defaults.
+fn optimise_window_length_help() -> String {
+    let w = owd_format::design::OptimiseSettings::default().windows;
+    let n = |v: f64| shown_default(&serde_json::json!(v));
+    format!(
+        "With `--method windows`: the window length aimed for, in metres (default {}; the band is \
+         {} to {} m, widened to take it).",
+        n(w.window_target_m),
+        n(w.window_min_m),
+        n(w.window_max_m)
+    )
+}
+
+/// The help of `owd optimise --land-weight`, with the stage's own default.
+fn optimise_land_weight_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().land_weight;
+    format!(
+        "The cost of one m2 of land taken, in m3 of cut per m2. The pool lattice pays it for every \
+         m2 of the channel's footprint at the water surface that lies outside the river polygon, \
+         cut or no cut, so a line over drowned land beside the river is no longer free. A value \
+         equal to the channel depth prices land like a cut of the full depth (default {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --flood-cost-per-ha`, with the stage's own default.
+fn optimise_flood_cost_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_cost_per_ha;
+    format!(
+        "The cost of one hectare of land a pool floods outside the river polygon, in the units of \
+         the cut cost (money, when the weights are prices per m3). The weir search adds it to each \
+         pool, so it trades cut against flooded land and stops taking the largest lift everywhere. \
+         A starting value is 3000; the right value is the engineer's to set. Needs a DEM (default \
+         {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --building-cost`, with the stage's own default (BLD-1).
+fn optimise_building_cost_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().building_cost;
+    format!(
+        "The cost of one building a pool floods, in the units of the cut cost: the engineer's price, \
+         for example a resettlement cost, not a fact. The weir search adds it per building flooded \
+         (centroid in flooded land, water at least --building-min-depth deep), so it moves weirs \
+         and lowers pools to flood fewer. Needs a DEM and a buildings file (owd import --buildings) \
+         (default {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --building-min-depth`, with the stage's own default (BLD-1).
+fn optimise_building_depth_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().building_min_depth_m;
+    format!(
+        "A building counts as flooded only where the water at its centroid is at least this deep, \
+         in metres, so a puddle does not count (default {}).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --max-above-bank`.
+fn optimise_max_above_bank_help() -> String {
+    "No pool may stand more than this many metres above bank-full anywhere in its reach. \
+     Bank-full is an estimate from the DEM: the 25th percentile of the ground beside the river \
+     polygon, the lower of the two sides, in each 500 m of line. With no cascade inside the limit \
+     the stage fails and says which reach blocks it. Needs a DEM (default: no limit)."
+        .to_string()
+}
+
+/// The help of `owd optimise --flood-distance`, with the stage's own default.
+fn optimise_flood_distance_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().flood_distance_m;
+    format!(
+        "Flooded land is counted out to this distance from the design line, in metres. A pool \
+         whose water reaches it is flagged: its flooded land is then a lower bound (default {}).",
+        shown_default(&serde_json::json!(d))
+    )
 }
 
 /// The help of `owd optimise --sites`: with no list, a site every `site_step_m`.

@@ -5,6 +5,7 @@
 
 use super::crs::{Crs, Utm};
 use super::session::{DesignError, Session, Stage, StageStatus};
+use crate::sectioned::ByteSource;
 use serde_json::{Value, json};
 
 /// The label every export carries.
@@ -19,7 +20,8 @@ pub fn no_feasible_line(option: &Value) -> bool {
 /// `fits_in_water` when a water-aware option has an infeasible stretch, and `join_guard` when a
 /// join that held R_min failed after a later fit (spec 0005); `no_feasible_line` when every bend
 /// of a water-aware option is infeasible (issue #366); `no_self_crossing` when the pool lattice's
-/// line crosses itself (issue #569).
+/// line crosses itself (issue #569); `no_go_clear` when the line's footprint enters a no-go area or
+/// hard-exclusion ground (spec 0017 ticket 13).
 pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     let mut failed = Vec::new();
     if no_feasible_line(option) {
@@ -37,6 +39,9 @@ pub fn failed_checks(option: &Value) -> Vec<&'static str> {
     }
     if c["no_self_crossing"]["ok"].as_bool() == Some(false) {
         failed.push("no_self_crossing");
+    }
+    if c["no_go_clear"]["ok"].as_bool() == Some(false) {
+        failed.push("no_go_clear");
     }
     failed
 }
@@ -87,13 +92,14 @@ impl Session {
     }
 
     pub(super) fn volumes_row(&self, id: &str) -> Option<&Value> {
-        self.doc["stages"]["volumes"]["results"]["options"]
-            .as_array()?
-            .iter()
-            .find(|r| r["id"] == id)
+        let r = &self.doc["stages"]["volumes"]["results"];
+        (r.is_object() && r["id"] == id).then_some(r)
     }
 
-    pub(super) fn volumes_status_name(&self, dem: Option<&[u8]>) -> &'static str {
+    pub(super) fn volumes_status_name<S: ByteSource + ?Sized>(
+        &self,
+        dem: Option<&S>,
+    ) -> &'static str {
         match self.stage_status_with_dem(Stage::Volumes, dem) {
             StageStatus::NotRun => "not run",
             StageStatus::Fresh => "fresh",
@@ -102,14 +108,14 @@ impl Session {
     }
 
     pub(super) fn options_list(&self) -> Vec<Value> {
-        self.doc["options"].as_array().cloned().unwrap_or_default()
+        self.design_lines()
     }
 
     /// The quantity table: one comment line with the screening label, a header, then one row per
     /// design line option. Volumes are empty until the volumes stage has run; `volumes_status` says
     /// whether the numbers still hold. `dem` is the DEM file the caller found, if any: a changed or
     /// missing one makes the volumes stale.
-    pub fn export_csv(&self, dem: Option<&[u8]>) -> String {
+    pub fn export_csv<S: ByteSource + ?Sized>(&self, dem: Option<&S>) -> String {
         let mut out = format!("# {SCREENING_LABEL}\n");
         for n in self.export_notices() {
             out.push_str(&format!("# {}\n", n.replace('\n', " ")));
@@ -151,7 +157,11 @@ impl Session {
     /// The design line options as a GeoJSON FeatureCollection: in the project CRS (named in a `crs`
     /// member) or, with `wgs84`, in longitude and latitude. Each feature carries the option's
     /// checks, its failed checks, its quantities when the volumes stage has run, and the label.
-    pub fn export_geojson(&self, wgs84: bool, dem: Option<&[u8]>) -> Result<String, DesignError> {
+    pub fn export_geojson<S: ByteSource + ?Sized>(
+        &self,
+        wgs84: bool,
+        dem: Option<&S>,
+    ) -> Result<String, DesignError> {
         let epsg = self.doc["project"]["crs"]["epsg"]
             .as_u64()
             .map(|c| c as u32);
@@ -163,7 +173,7 @@ impl Session {
             });
         if self.options_list().is_empty() {
             return Err(DesignError::Input(
-                "there are no design line options to export: run the alignment stage first".into(),
+                "there is no design line to export: run the alignment stage first".into(),
             ));
         }
         let status = self.volumes_status_name(dem);
@@ -248,7 +258,7 @@ impl Session {
             });
         if self.options_list().is_empty() {
             return Err(DesignError::Input(
-                "there are no design line options to export: run the alignment stage first".into(),
+                "there is no design line to export: run the alignment stage first".into(),
             ));
         }
         let size = self.channel_size()?;
@@ -365,7 +375,7 @@ impl Session {
     /// The constraint stretches (C) of every option as CSV, one row per stretch. The head carries the
     /// screening label, the unverified-Rules notice, the design basis and the verdicts. Empty rows
     /// below the head until the volumes stage has run.
-    pub fn export_stretches_csv(&self, dem: Option<&[u8]>) -> String {
+    pub fn export_stretches_csv<S: ByteSource + ?Sized>(&self, dem: Option<&S>) -> String {
         let mut out = format!(
             "# {SCREENING_LABEL}\n# {}\n",
             super::screening::UNVERIFIED_NOTICE
@@ -418,10 +428,10 @@ impl Session {
 
     /// The constraint stretches (C) as GeoJSON lines: each the part of its option's design line
     /// between the stretch's ends, in the project CRS or, with `wgs84`, in longitude and latitude.
-    pub fn export_stretches_geojson(
+    pub fn export_stretches_geojson<S: ByteSource + ?Sized>(
         &self,
         wgs84: bool,
-        dem: Option<&[u8]>,
+        dem: Option<&S>,
     ) -> Result<String, DesignError> {
         let epsg = self.doc["project"]["crs"]["epsg"]
             .as_u64()
@@ -531,5 +541,13 @@ mod crossing_tests {
         assert_eq!(failed_checks(&o), vec!["R_min"]);
         // An option with no such check (every other method) is not failed by it.
         assert!(failed_checks(&json!({"checks": {"radius_ok": true}})).is_empty());
+    }
+    #[test]
+    fn a_line_that_enters_a_no_go_area_fails_no_go_clear() {
+        let mut o = json!({"checks": {"radius_ok": true,
+            "no_go_clear": {"ok": false, "footprint_width_m": 40.0}}});
+        assert_eq!(failed_checks(&o), vec!["no_go_clear"]);
+        o["checks"]["no_go_clear"]["ok"] = json!(true);
+        assert!(failed_checks(&o).is_empty());
     }
 }

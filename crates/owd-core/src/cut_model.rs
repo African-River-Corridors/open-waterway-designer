@@ -280,6 +280,56 @@ pub fn section_area(
     dx: f64,
     run_m: Option<f64>,
 ) -> Result<(f64, f64, f64), String> {
+    section_area_weighted(
+        zs, xs, sidewhich, hb, grade, wl, depth, model, wet, wet_slope, dx, run_m, None,
+    )
+    .map(|a| (a.dredge, a.excav, a.max_face_h))
+}
+
+/// The areas of one transverse profile: plain, and weighted when weights are given.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SectionAreas {
+    /// The cut in the river, m².
+    pub dredge: f64,
+    /// The dry cut, m².
+    pub excav: f64,
+    /// The tallest face above the waterline, m.
+    pub max_face_h: f64,
+    /// The dredge with each sample's cut times its weight (spec 0017 ticket 13), when weights are
+    /// given.
+    pub weighted_dredge: Option<f64>,
+    /// The dry cut weighted the same way.
+    pub weighted_excav: Option<f64>,
+}
+
+/// [`section_area`] with a weight per sample (the cut-rate multiplier at the sample): the weighted
+/// areas sum each sample's cut times its weight. A weight that is not finite (no data) counts as 1.
+/// The plain areas are summed exactly as [`section_area`] sums them, so they never move.
+#[allow(clippy::too_many_arguments)]
+pub fn section_area_weighted(
+    zs: &[f64],
+    xs: &[f64],
+    sidewhich: &[i8],
+    hb: f64,
+    grade: f64,
+    wl: f64,
+    depth: f64,
+    model: &str,
+    wet: &[bool],
+    wet_slope: f64,
+    dx: f64,
+    run_m: Option<f64>,
+    weights: Option<&[f64]>,
+) -> Result<SectionAreas, String> {
+    if let Some(w) = weights
+        && w.len() != xs.len()
+    {
+        return Err(format!(
+            "one weight per sample: {} weights for {} samples",
+            w.len(),
+            xs.len()
+        ));
+    }
     let mdl = normalise_model(model);
     if mdl != CUT_MODEL && mdl != CUT_MODEL_B {
         return Err(format!(
@@ -305,6 +355,7 @@ pub fn section_area(
         )
     });
     let (mut dredge, mut excav, mut max_face_h) = (0.0, 0.0, 0.0);
+    let (mut w_dredge, mut w_excav) = (0.0, 0.0);
     for k in 0..xs.len() {
         let z = zs[k];
         if !z.is_finite() {
@@ -326,16 +377,25 @@ pub fn section_area(
             continue;
         }
         let a = cut * dx;
+        let weight = weights.map_or(1.0, |w| if w[k].is_finite() { w[k] } else { 1.0 });
         if wet[k] {
             dredge += a;
+            w_dredge += a * weight;
         } else {
             excav += a;
+            w_excav += a * weight;
         }
         if z > wl && (z - wl) > max_face_h {
             max_face_h = z - wl;
         }
     }
-    Ok((dredge, excav, max_face_h))
+    Ok(SectionAreas {
+        dredge,
+        excav,
+        max_face_h,
+        weighted_dredge: weights.map(|_| w_dredge),
+        weighted_excav: weights.map(|_| w_excav),
+    })
 }
 
 /// Per-station bottom half-width from a [`ChannelShape`](crate::rules::rulesets::ChannelShape).
@@ -392,17 +452,28 @@ pub fn widened_hb_from_shape_floor(
     local_radii(&xs, &ys, 2)
         .into_iter()
         .map(|ri| {
-            if ri.is_finite() && 0.0 < ri && ri < rmax {
+            widened_hb_at_radius(ri, hb, rmax, |ri| {
                 let r = match floor {
                     WideningFloor::MinRadius => py_max(ri, rmin),
                     WideningFloor::None => ri,
                 };
-                hb + 0.5 * shape.bend_widening_m(r)
-            } else {
-                hb
-            }
+                shape.bend_widening_m(r)
+            })
         })
         .collect()
+}
+
+/// The bottom half-width at a bend of radius `ri`: `hb + widening(ri) / 2` for a finite radius above
+/// 0 and under `rmax`, else `hb` (a straight). `widening` gives the whole bend widening (both sides)
+/// at a radius, with its floor applied. The volumes stage reads `ri` off the line
+/// ([`widened_hb_from_shape`]); the window optimiser's search (OPT-5) reads it off the primitive it
+/// lays, so the two widen by the one rule.
+pub fn widened_hb_at_radius(ri: f64, hb: f64, rmax: f64, widening: impl Fn(f64) -> f64) -> f64 {
+    if ri.is_finite() && 0.0 < ri && ri < rmax {
+        hb + 0.5 * widening(ri)
+    } else {
+        hb
+    }
 }
 
 /// Per-offset cut-face elevation for ONE transverse profile (for drawings). `None` where there is

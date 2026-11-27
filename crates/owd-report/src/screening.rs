@@ -23,12 +23,16 @@ pub fn body(ctx: &Context, assets: &mut Vec<(String, Vec<u8>)>) -> (Vec<Value>, 
         stretches(ctx),
         design_basis(ctx),
         quantities(ctx),
-        section(
-            "long-section-section",
-            "Long section",
-            vec![figures::long_section(ctx, assets)],
-        ),
     ];
+    let mut body = body;
+    if let Some(b) = buildings(ctx) {
+        body.push(b);
+    }
+    body.push(section(
+        "long-section-section",
+        "Long section",
+        vec![figures::long_section(ctx, assets)],
+    ));
     (body, trace::appendix(ctx).into_iter().collect())
 }
 
@@ -176,11 +180,7 @@ fn stage_limits(ctx: &Context) -> String {
     if let Some(n) = ctx.session.depth_note() {
         items.push(format!("The depth is {}.", md(n)));
     }
-    for o in d["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
+    for o in owd_format::design::volume_rows_of(d).iter() {
         let singles = o["screening"]["constraint_stretches"]
             .as_array()
             .into_iter()
@@ -370,10 +370,8 @@ fn what_fits(ctx: &Context) -> Value {
         }
         None => body.push(prose("The design has no fits answer (`owd fits`).")),
     }
-    let rows: Vec<Vec<String>> = d["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let rows: Vec<Vec<String>> = owd_format::design::volume_rows_of(d)
+        .iter()
         .filter(|o| o["screening"].is_object())
         .map(|o| {
             let s = &o["screening"];
@@ -479,10 +477,12 @@ fn stretches(ctx: &Context) -> Value {
         ));
         return section("stretches", "Constraint stretches", body);
     }
-    body.push(prose(
-        "Where the river as found falls short of a governing limit along the chosen design line \
-         option, by kind.",
-    ));
+    let on_design_line = ctx
+        .volumes_row()
+        .is_none_or(|v| v["screening"]["radius_read_on"] != "the plan line");
+    body.push(prose(owd_core::rules::screening::stretch_table_note(
+        on_design_line,
+    )));
     body.push(table(
         "stretch-summary",
         "Constraint stretches by kind",
@@ -538,13 +538,15 @@ fn stretches(ctx: &Context) -> Value {
             ("Found", "right", None),
             ("Deficit", "right", None),
             ("Works", "left", None),
-            ("Dredge", "right", Some("m³")),
-            ("Dry cut", "right", Some("m³")),
+            ("Design dredge here", "right", Some("m³")),
+            ("Design dry cut here", "right", Some("m³")),
         ],
         rows,
     );
     let mut notes = String::from(
-        "Required, found and deficit are in metres (width and depth) or metres of radius.",
+        "Required, found and deficit are in metres (width and depth) or metres of radius. Design \
+         dredge and dry cut here are part of the design total, and a station in two kinds of \
+         stretch is in both rows.",
     );
     if left_out > 0 {
         notes.push_str(&format!(
@@ -621,15 +623,14 @@ fn design_basis(ctx: &Context) -> Value {
 
 fn quantities(ctx: &Context) -> Value {
     let d = ctx.doc;
-    let rows: Vec<Vec<String>> = d["options"]
-        .as_array()
-        .into_iter()
-        .flatten()
+    let rows: Vec<Vec<String>> = ctx
+        .session
+        .design_lines()
+        .iter()
         .map(|o| {
-            let v = d["stages"]["volumes"]["results"]["options"]
-                .as_array()
-                .and_then(|a| a.iter().find(|r| r["id"] == o["id"]))
-                .cloned()
+            let v = owd_format::design::volume_rows_of(d)
+                .into_iter()
+                .find(|r| r["id"] == o["id"])
                 .unwrap_or(Value::Null);
             let failed = failed_checks(o);
             // Issue #366: an option with no feasible line is not a design and has no quantities.
@@ -659,9 +660,7 @@ fn quantities(ctx: &Context) -> Value {
         })
         .collect();
     let body = if rows.is_empty() {
-        vec![prose(
-            "The design has no design line option, so it has no works.",
-        )]
+        vec![prose("The design has no design line, so it has no works.")]
     } else {
         let mut t = table(
             "quantities-table",
@@ -693,4 +692,67 @@ fn quantities(ctx: &Context) -> Value {
         ]
     };
     section("works", "Works and quantities", body)
+}
+
+/// The buildings (BLD-1): those the pools flood, by the weir search's rule (the optimise stage's
+/// flood report, when it ran with buildings), and those the channel takes, is near, or severs
+/// (worked out by the caller from the volumes' stations). None when neither is there.
+fn buildings(ctx: &Context) -> Option<Value> {
+    let flood = &ctx.doc["stages"]["optimise"]["results"]["cascade"]["flood"];
+    let b = &flood["buildings"];
+    let c = ctx.building_conflicts.as_ref();
+    if !b.is_object() && c.is_none() {
+        return None;
+    }
+    let n = |v: &Value, k: &str| v[k].as_u64().unwrap_or(0).to_string();
+    let mut body = vec![prose(
+        "The buildings are machine-detected footprints, not a survey: each has a confidence, and those below the threshold are counted apart. The counts are a screening figure.",
+    )];
+    if b.is_object() {
+        body.push(prose(format!(
+            "The pools flood **{}** buildings (a building counts where its centroid is in land the pool floods by the weir search's rule and the water there is at least {} m deep). Counted apart: {} below the confidence threshold of {}, {} below the smallest area. Building cost: {} at {} a building.",
+            n(b, "flooded"),
+            b["min_depth_m"],
+            n(b, "flooded_below_confidence"),
+            b["min_confidence"],
+            n(b, "flooded_below_area"),
+            b["building_cost"].as_f64().map_or("-".to_string(), |x| format!("{x:.0}")),
+            b["cost_per_building"],
+        )));
+        let rows: Vec<Vec<String>> = flood["pools"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .map(|(i, p)| {
+                vec![
+                    (i + 1).to_string(),
+                    format!("{:.2}", p["level_m"].as_f64().unwrap_or(f64::NAN)),
+                    n(p, "buildings_flooded"),
+                    p["settlement_flooded_ha"]
+                        .as_f64()
+                        .map_or("-".into(), |h| format!("{h:.1}")),
+                ]
+            })
+            .collect();
+        body.push(table(
+            "buildings-by-pool",
+            "Buildings and settlement land flooded by each pool",
+            &[
+                ("Pool", "right", None),
+                ("Level", "right", Some("m")),
+                ("Buildings flooded", "right", None),
+                ("Settlement land", "right", Some("ha")),
+            ],
+            rows,
+        ));
+    }
+    if let Some(c) = c {
+        body.push(prose(format!(
+            "Against the channel: **{}** buildings in the cut (inside its daylight lines), **{}** within {} m of it, and **{}** on land a cut-through severs from the bank. Counted apart (below the thresholds): {}, {} and {}. A report, not a cost.",
+            n(c, "taken"), n(c, "near"), c["near_cut_m"], n(c, "severed"),
+            n(c, "taken_apart"), n(c, "near_apart"), n(c, "severed_apart"),
+        )));
+    }
+    Some(section("buildings", "Buildings", body))
 }

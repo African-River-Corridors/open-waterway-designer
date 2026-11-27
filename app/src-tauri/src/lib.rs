@@ -503,6 +503,12 @@ fn map_geometry(state: State<Shared>) -> Reply {
     lock(&state)?.map_geometry()
 }
 
+/// The weirs, the locks and the pools of the design, for the map (MAP-4): made on demand, never stored.
+#[tauri::command]
+fn map_structures(state: State<Shared>) -> Reply {
+    lock(&state)?.map_structures()
+}
+
 /// The offline map fallback: a hillshade of the DEM as a PNG data URL with the four corners it goes
 /// on, or `null` when the design has no DEM that can be read. Drawn on a worker thread, with the
 /// state unlocked while it is.
@@ -644,6 +650,19 @@ fn set_alignment_settings(
     finish(&window, &guard)
 }
 
+/// Set optimise settings (`length_weight`, the weights, ...), as `owd optimise --length-weight`
+/// does. Nothing runs; a fresh optimise stage whose settings change goes stale.
+#[tauri::command]
+fn set_optimise_settings(
+    window: Window,
+    state: State<Shared>,
+    settings: serde_json::Value,
+) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_optimise_settings(&settings)?;
+    finish(&window, &guard)
+}
+
 /// Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not
 /// written to the design.
 #[tauri::command]
@@ -659,6 +678,29 @@ fn set_terrain_limit(window: Window, state: State<Shared>, gib: String) -> Reply
 fn set_downstream_point(window: Window, state: State<Shared>, point: String) -> Reply {
     let mut guard = lock(&state)?;
     guard.set_downstream_point_text(&point)?;
+    finish(&window, &guard)
+}
+
+/// State the river mouth, `downstream` or `LON,LAT` (spec 0017), through the shell call `owd import
+/// --mouth` uses.
+#[tauri::command]
+fn set_mouth(window: Window, state: State<Shared>, mouth: String) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_mouth(&mouth)?;
+    finish(&window, &guard)
+}
+
+/// Set the run inputs (spec 0017, ticket 11) through the shell call `owd run-inputs` uses.
+#[tauri::command]
+fn set_run_inputs(
+    window: Window,
+    state: State<Shared>,
+    objective: String,
+    limits: String,
+    target_level: String,
+) -> Reply {
+    let mut guard = lock(&state)?;
+    guard.set_run_inputs(&objective, &limits, &target_level)?;
     finish(&window, &guard)
 }
 
@@ -1216,6 +1258,7 @@ pub fn run() {
             stretches_geojson,
             run_stale,
             map_geometry,
+            map_structures,
             option_table,
             export_file,
             sheets,
@@ -1229,8 +1272,11 @@ pub fn run() {
             load_input,
             set_water,
             set_alignment_settings,
+            set_optimise_settings,
             set_terrain_limit,
             set_downstream_point,
+            set_mouth,
+            set_run_inputs,
             edit_bank,
             undo_bank_edit,
             run_stage,

@@ -1,5 +1,8 @@
 <script lang="ts">
-  import type { Choices, CustomFields, InputRole, RunMethod, Snapshot, StageName, UseWater } from "./api";
+  import type { Choices, CustomFields, FloodSetting, InputRole, JoinSetting, OptionTable, ProjectStatus, RunMethod, Snapshot, StageName, UseWater, OptimiseMethod } from "./api";
+  import ProjectPanel from "./ProjectPanel.svelte";
+  import ChecksList from "./ChecksList.svelte";
+  import DesignLineCard from "./DesignLineCard.svelte";
   import DataSummary from "./DataSummary.svelte";
   import SizingForm from "./SizingForm.svelte";
   import StageList from "./StageList.svelte";
@@ -16,11 +19,31 @@
     onRun,
     onCancel,
     onUseWater,
+    onRiverFollowing,
     onLoad,
     onFetch,
     onWater,
     onTerrainLimit,
     onDownstream,
+    onMouth,
+    onRunInputs,
+    onOptimiseLength,
+    onOptimiseLand,
+    onCorridorLimit,
+    onOptimiseFlood,
+    onJoinSetting,
+    onOptimiseMethod,
+    onWindowLength,
+    lineName = null,
+    table,
+    indexOf,
+    selectedId,
+    onSelect,
+    stretchesOpen,
+    onStretches,
+    project = null,
+    onProjectLoad = () => {},
+    onFeatureAction = () => {},
   }: {
     snap: Snapshot | null;
     choices: Choices | null;
@@ -33,17 +56,44 @@
     onRun: (stage: StageName, method?: RunMethod) => void;
     onCancel: () => void;
     onUseWater: (choice: UseWater) => void;
+    onRiverFollowing: (settings: Record<string, unknown>) => void;
     onLoad: (role: InputRole) => void;
     onFetch: () => void;
     onWater: (level: string, fall: string) => void;
     onTerrainLimit: (gib: string) => void;
     onDownstream: (point: string) => void;
+    onMouth: (mouth: string) => void;
+    onRunInputs: (objective: string, limits: string, level: string) => void;
+    onOptimiseLength: (weight: string) => void;
+    onOptimiseLand: (weight: string) => void;
+    onCorridorLimit: (on: boolean) => void;
+    onOptimiseFlood: (setting: FloodSetting, value: string) => void;
+    onJoinSetting: (key: JoinSetting, value: boolean | string) => void;
+    /** Choose the optimise stage's method. */
+    onOptimiseMethod: (method: OptimiseMethod) => void;
+    /** Set the window optimiser's window length (metres, as typed). */
+    onWindowLength: (metres: string) => void;
+    lineName?: string | null;
+    /** The design line and its checks, as the session tables them. */
+    table: OptionTable | null;
+    indexOf: (id: string) => number;
+    selectedId: string | null;
+    onSelect: (id: string) => void;
+    stretchesOpen: boolean;
+    onStretches: () => void;
+    /** The open project folder (PROJ-1, web app), if any: shown above the Data section. */
+    project?: ProjectStatus | null;
+    onProjectLoad?: (key: string) => void;
+    onFeatureAction?: (action: () => Promise<Snapshot | null>) => void;
   } = $props();
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} />
-  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onRiverFollowing} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {onJoinSetting} {onOptimiseMethod} {onWindowLength} {lineName} />
+  <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
+  <ChecksList {table} />
+  {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}
+  <DataSummary {snap} busy={busy !== null} {dropTarget} {onLoad} {onFetch} {onWater} {onTerrainLimit} {onDownstream} {onMouth} {onRunInputs} {onFeatureAction} />
   <SizingForm {snap} {choices} {onRuleSets} {onVessel} {onCustomVessel} />
 </div>
 

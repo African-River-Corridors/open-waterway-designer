@@ -40,14 +40,13 @@ def test_draw_returns_five_files_per_sheet_and_writes_them(tmp_path):
         assert doc["status"] == "concept" and doc["standard_version"] == version
 
 
-def test_a_format_0_4_file_draws_as_its_format_0_3_original(tmp_path):
-    """Spec 0015 T1: the wheel reads format 0.4 (a string) and format 0.3 (the number 3) alike."""
+def test_the_example_is_format_0_5_and_draws(tmp_path):
+    """Spec 0017 ticket 6: the wheel reads format 0.5, one design line per design."""
     text = EXAMPLE.read_text()
-    assert '"format_version": 3,' in text
-    new = tmp_path / "river-example.owd"
-    new.write_text(text.replace('"format_version": 3,', '"format_version": "0.4",', 1))
-    (tmp_path / "river-dem.tif").write_bytes((EXAMPLE.parent / "river-dem.tif").read_bytes())
-    assert owd.draw(new) == owd.draw(EXAMPLE)
+    assert '"format_version": "0.5",' in text
+    assert '"options"' not in text
+    files = owd.draw(EXAMPLE)
+    assert files
 
 
 def test_draw_and_owd_draw_give_byte_identical_files(tmp_path):
@@ -60,7 +59,7 @@ def test_draw_and_owd_draw_give_byte_identical_files(tmp_path):
 
 
 def test_draw_refuses_what_it_cannot_draw(tmp_path):
-    with pytest.raises(ValueError, match="no design line option `nope`"):
+    with pytest.raises(ValueError, match="no design line `nope`"):
         owd.draw(EXAMPLE, option="nope")
     with pytest.raises(ValueError, match="unknown sheet kind `zz`"):
         owd.draw(EXAMPLE, sheets=["zz"])

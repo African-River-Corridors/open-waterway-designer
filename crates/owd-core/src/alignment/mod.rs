@@ -12,6 +12,7 @@ pub mod meanders;
 pub mod navigable;
 pub mod radius_check;
 pub mod reference_line;
+pub mod river_following;
 pub mod rolling_circle;
 pub mod route;
 pub mod widths;

@@ -7,13 +7,11 @@ use super::export::{SCREENING_LABEL, failed_checks, no_feasible_line};
 use super::session::Session;
 use serde_json::{Value, json};
 
-/// "1 stretch", "3 stretches".
-fn stretches(n: usize) -> String {
-    format!("{n} stretch{}", if n == 1 { "" } else { "es" })
-}
-
 /// Why an option has its verdict, in words, from its constraint stretches and failed checks
-/// (#312). The radius stretches read the river's own bends; the R_min check reads the design line.
+/// (#312). Width and depth stretches are where the design cuts the river (widenings, deepenings).
+/// A radius stretch reads the line the screening says (`radius_read_on`: the design line itself, or a
+/// plan line); the R_min check always reads the design line. The words come from
+/// `owd_core::rules::screening`, the one place that names the stretches.
 fn verdict_reason(screening: &Value, failed: &[&str]) -> Option<String> {
     let verdict = screening["verdict"].as_str()?;
     let all = screening["constraint_stretches"].as_array();
@@ -39,23 +37,15 @@ fn verdict_reason(screening: &Value, failed: &[&str]) -> Option<String> {
             parts.push("no bend has a feasible line".to_string());
         }
     }
-    let works: Vec<String> = ["width", "depth", "radius"]
-        .into_iter()
-        .filter_map(|k| {
-            let n = count(k);
-            (n > 0).then(|| format!("{n} {k}"))
-        })
-        .collect();
-    if !works.is_empty() {
-        let n: usize = ["width", "depth", "radius"].into_iter().map(count).sum();
-        parts.push(format!(
-            "{} need works ({})",
-            stretches(n),
-            works.join(", ")
-        ));
-    }
-    if count("radius") > 0 {
-        parts.push("the radius stretches read the river's own bends, not the design line".into());
+    let on_design_line = screening["radius_read_on"] != "the plan line";
+    if let Some(w) = owd_core::rules::screening::works_summary(
+        [count("width"), count("depth"), count("radius")],
+        on_design_line,
+    ) {
+        parts.push(w);
+        if !failed.contains(&"R_min") {
+            parts.push("the design line meets R_min".into());
+        }
     }
     if parts.is_empty() {
         parts.push("the river meets every governing limit".into());
@@ -74,7 +64,7 @@ impl Session {
     /// - `checks`: one per option and check it has (`R_min` always; `fits_in_water`,
     ///   `join_guard` and `no_feasible_line` when they apply), failures first: `option_id`,
     ///   `option`, `check`, `passed` and a `detail` in words.
-    pub fn option_table(&self, dem: Option<&[u8]>) -> Value {
+    pub fn option_table<S: crate::sectioned::ByteSource + ?Sized>(&self, dem: Option<&S>) -> Value {
         let mut rows = Vec::new();
         let mut checks = Vec::new();
         for o in self.options_list() {
@@ -137,8 +127,8 @@ impl Session {
                         "the design line fits in the navigable water".into()
                     } else {
                         format!(
-                            "{} where no line that meets R_min fits in the navigable water",
-                            stretches(n)
+                            "{n} stretch{} where no line that meets R_min fits in the navigable water",
+                            if n == 1 { "" } else { "es" }
                         )
                     },
                 );
@@ -171,6 +161,8 @@ impl Session {
             "volumes_status": self.volumes_status_name(dem),
             "rows": rows,
             "checks": checks,
+            // What a stretch is and what its dredge and dry cut mean, for the stretches tab.
+            "stretch_note": owd_core::rules::screening::stretch_table_note(true),
         }))
     }
 }
@@ -187,8 +179,18 @@ mod tests {
                 .join("../../examples/synthetic-river.owd"),
         )
         .unwrap();
+        // A 0.4 file: its first rolling-circle option opens as the one design line.
         let mut doc: Value = serde_json::from_str(&text).unwrap();
+        doc["format_version"] = json!("0.4");
         doc["options"] = options;
+        if doc["options"].as_array().is_some_and(Vec::is_empty) {
+            doc["stages"]["alignment"]["results"] = Value::Null;
+            doc["stages"]["alignment"]["depends_on"] = Value::Null;
+            for st in ["optimise", "volumes"] {
+                doc["stages"][st]["results"] = Value::Null;
+                doc["stages"][st]["depends_on"] = Value::Null;
+            }
+        }
         Session::open(&doc.to_string()).unwrap()
     }
 
@@ -201,24 +203,16 @@ mod tests {
     }
 
     #[test]
-    fn a_failing_option_sorts_first_and_keeps_its_numbers() {
-        let s = session_with(json!([
-            option("a", true, 400.0),
-            option("b", false, 222.0),
-            option("c", true, 350.0)
-        ]));
-        let t = s.option_table(None);
+    fn a_failing_design_line_keeps_its_numbers() {
+        let s = session_with(json!([option("b", false, 222.0)]));
+        let t = s.option_table(None::<&[u8]>);
         let ids: Vec<&str> = t["rows"]
             .as_array()
             .unwrap()
             .iter()
             .map(|r| r["id"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            ids,
-            ["b", "a", "c"],
-            "failures first, the rest in the document's order"
-        );
+        assert_eq!(ids, ["b"], "one design line, one row");
         let b = &t["rows"][0];
         assert_eq!(b["failed_checks"], json!(["R_min"]));
         assert_eq!(b["min_radius_m"], 222.0);
@@ -231,19 +225,23 @@ mod tests {
 
     #[test]
     fn the_checks_list_has_failures_first_with_the_numbers_in_words() {
-        let s = session_with(json!([option("a", true, 400.0), option("b", false, 222.0)]));
-        let c = s.option_table(None)["checks"].clone();
+        let s = session_with(json!([option("b", false, 222.0)]));
+        let c = s.option_table(None::<&[u8]>)["checks"].clone();
         assert_eq!(c[0]["option_id"], "b");
         assert_eq!(c[0]["passed"], false);
         assert_eq!(
             c[0]["detail"],
             "minimum radius 222 m of the design line against the ruleset's 330 m, read on a 110 m chord"
         );
-        assert_eq!(c[1]["passed"], true);
+        let a =
+            session_with(json!([option("a", true, 400.0)])).option_table(None::<&[u8]>)["checks"]
+                .clone();
+        assert_eq!(a[0]["passed"], true);
     }
 
-    /// The app's own example (#312): its option fails `fits_in_water`, not R_min. The radius
-    /// column, the checks and the verdict must agree, and each say what it read.
+    /// The app's own example (#312): its design line fails `fits_in_water` (and, since #366, is
+    /// no feasible line), not R_min. The radius column, the checks and the verdict must agree, and
+    /// each say what it read.
     #[test]
     fn on_the_example_the_table_the_checks_and_the_verdict_agree() {
         let text = std::fs::read_to_string(
@@ -251,10 +249,13 @@ mod tests {
                 .join("../../examples/web/river-example.owd"),
         )
         .unwrap();
-        let t = Session::open(&text).unwrap().option_table(None);
+        let t = Session::open(&text).unwrap().option_table(None::<&[u8]>);
         let row = &t["rows"][0];
         assert_eq!(row["radius_ok"], true, "{row}");
-        assert_eq!(row["failed_checks"], json!(["fits_in_water"]));
+        assert_eq!(
+            row["failed_checks"],
+            json!(["no_feasible_line", "fits_in_water"])
+        );
         let checks: Vec<&Value> = t["checks"].as_array().unwrap().iter().collect();
         let of = |name: &str| *checks.iter().find(|c| c["check"] == name).unwrap();
         // The radius check reads the design line, and passes, as the row's radius column does.
@@ -270,7 +271,7 @@ mod tests {
         // The failing check is listed too, with its stretches in words, first.
         let fiw = of("fits_in_water");
         assert_eq!(fiw["passed"], false);
-        assert_eq!(checks[0]["check"], "fits_in_water");
+        assert_eq!(checks[0]["passed"], false, "failures first");
         assert!(
             fiw["detail"].as_str().unwrap().contains("3 stretches"),
             "{fiw}"
@@ -279,12 +280,61 @@ mod tests {
         assert_eq!(row["verdict"], "not-navigable");
         let why = row["verdict_reason"].as_str().unwrap();
         assert!(why.contains("3 infeasible stretches"), "{why}");
-        assert!(why.contains("the river's own bends"), "{why}");
+        assert!(why.contains("no bend has a feasible line"), "{why}");
+    }
+
+    fn stretch(kind: &str) -> Value {
+        json!({"kind": kind})
+    }
+
+    /// The verdict names what the stretches are: where the design cuts the river, not "needs works",
+    /// and keeps the design line's own R_min check apart from them.
+    #[test]
+    fn the_reason_says_where_the_design_cuts_the_river_and_that_the_line_meets_r_min() {
+        let screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the design line option",
+            "constraint_stretches": [stretch("width"), stretch("width"), stretch("depth")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 3 stretches: 2 widenings, 1 deepening"),
+            "{why}"
+        );
+        assert!(why.contains("the design line meets R_min"), "{why}");
+        assert!(!why.contains("need works"), "{why}");
+        assert!(!why.contains("river's own bends"), "{why}");
+        // A failing R_min check is said as it is, and no "meets".
+        let why = verdict_reason(&screening, &["R_min"]).unwrap();
+        assert!(!why.contains("meets R_min"), "{why}");
+    }
+
+    /// A radius stretch read on a plan line is a bend cut-through of the design; one read on the
+    /// design line is a line tighter than R_min, and is not counted among the cuts.
+    #[test]
+    fn the_radius_stretches_are_named_for_the_line_they_read() {
+        let mut screening = json!({
+            "verdict": "navigable-with-works",
+            "radius_read_on": "the plan line",
+            "constraint_stretches": [stretch("radius"), stretch("radius")],
+        });
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(
+            why.contains("the design cuts the river at 2 stretches: 2 bend cut-throughs"),
+            "{why}"
+        );
+        screening["radius_read_on"] = json!("the design line option");
+        let why = verdict_reason(&screening, &[]).unwrap();
+        assert!(!why.contains("the design cuts the river"), "{why}");
+        assert!(
+            why.contains("tighter than R_min at 2 bends tighter than R_min on the design line"),
+            "{why}"
+        );
     }
 
     #[test]
     fn a_design_with_no_options_has_an_empty_table() {
-        let t = session_with(json!([])).option_table(None);
+        let t = session_with(json!([])).option_table(None::<&[u8]>);
         assert_eq!(t["rows"], json!([]));
         assert_eq!(t["checks"], json!([]));
     }

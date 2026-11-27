@@ -99,3 +99,279 @@ fn the_help_of_owd_optimise_shows_the_default_the_stage_uses() {
         );
     }
 }
+
+/// `--length-weight` (a cost per metre of design line) shows the stage's own default, 0 (off), read
+/// from the shared settings: the setting is not written into a design while it is 0, so the example
+/// above does not hold it.
+#[test]
+fn the_help_of_length_weight_shows_the_default_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default().length_weight;
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--length-weight");
+    assert!(
+        text.contains(&format!("(default {d}: off)")),
+        "the help of `--length-weight` does not show the default {d}: {text}"
+    );
+}
+
+/// `owd optimise --length-weight` goes through the stage's own reading of its settings: a negative
+/// weight is refused by name (exit 2) and the design is not written.
+#[test]
+fn a_negative_length_weight_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-length-weight");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Length weight", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", path.to_str().unwrap(), "--length-weight=-1"])
+        .output()
+        .expect("owd runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(err.contains("length_weight"), "{err}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
+
+/// `--land-weight` (a cost per m2 of channel footprint outside the river polygon) shows the stage's
+/// own default, 0 (off), and its unit, read from the shared settings.
+#[test]
+fn the_help_of_land_weight_shows_the_default_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default().land_weight;
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--land-weight");
+    assert!(text.contains("<M3_PER_M2>"), "{text}");
+    assert!(
+        text.contains(&format!("(default {d}: off)")),
+        "the help of `--land-weight` does not show the default {d}: {text}"
+    );
+}
+
+/// `owd optimise --land-weight` goes through the stage's own reading of its settings: a negative
+/// weight is refused by name (exit 2) and the design is not written.
+#[test]
+fn a_negative_land_weight_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-land-weight");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Land weight", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", path.to_str().unwrap(), "--land-weight=-1"])
+        .output()
+        .expect("owd runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(2), "{err}");
+    assert!(
+        err.contains("the setting `land_weight` must be a number >= 0"),
+        "{err}"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
+
+/// `--corridor-limit` goes through the stage's own reading of its settings. Its help says what it
+/// does; a value that is not true or false is refused before anything runs (exit 2) and the design
+/// is not written.
+#[test]
+fn the_corridor_limit_flag_is_documented_and_refuses_a_value_that_is_not_true_or_false() {
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let text = flag_help(&help, "--corridor-limit");
+    assert!(text.contains("corridor_half_m"), "{text}");
+    assert!(text.contains("keeps the baseline"), "{text}");
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-corridor-limit");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Corridor limit", "2026-11-20").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args([
+            "optimise",
+            path.to_str().unwrap(),
+            "--corridor-limit",
+            "maybe",
+        ])
+        .output()
+        .expect("owd runs");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    // The flag alone, and with a value, are both read: the run then stops at what the bare design
+    // lacks (its sizing), not at the flag.
+    for args in [vec!["--corridor-limit"], vec!["--corridor-limit", "false"]] {
+        let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+            .arg("optimise")
+            .arg(path.to_str().unwrap())
+            .args(&args)
+            .output()
+            .expect("owd runs");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("sizing"), "{args:?}: {err}");
+    }
+}
+
+/// The flood flags show the stage's own defaults, read from the shared settings: the flood cost is
+/// 0 (off), the distance 1500 m, and the limit above bank-full has none.
+#[test]
+fn the_help_of_the_flood_flags_shows_the_defaults_the_stage_uses() {
+    let d = owd_format::design::OptimiseSettings::default();
+    assert_eq!(d.flood_cost_per_ha, 0.0);
+    assert_eq!(d.max_above_bank_m, None);
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    let cost = flag_help(&help, "--flood-cost-per-ha");
+    assert!(
+        cost.contains(&format!("(default {}: off)", d.flood_cost_per_ha)),
+        "{cost}"
+    );
+    assert!(cost.contains("3000"), "{cost}");
+    let limit = flag_help(&help, "--max-above-bank");
+    assert!(limit.contains("(default: no limit)"), "{limit}");
+    assert!(limit.contains("estimate"), "{limit}");
+    let dist = flag_help(&help, "--flood-distance");
+    assert!(
+        dist.contains(&format!("(default {})", d.flood_distance_m)),
+        "{dist}"
+    );
+    assert!(help.contains("--flood-report"), "{help}");
+}
+
+/// The flood flags go through the stage's own reading of its settings: a bad value is refused by
+/// the setting's name (exit 2) and the design is not written.
+#[test]
+fn a_bad_flood_flag_is_refused_by_name() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-flood-flags");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Flood flags", "2026-11-21").to_text();
+    std::fs::write(&path, &text).unwrap();
+    for (flag, name) in [
+        ("--flood-cost-per-ha=-1", "flood_cost_per_ha"),
+        ("--max-above-bank=-0.5", "max_above_bank_m"),
+        ("--flood-distance=0", "flood_distance_m"),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+            .args(["optimise", path.to_str().unwrap(), flag])
+            .output()
+            .expect("owd runs");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(2), "{flag}: {err}");
+        assert!(err.contains(name), "{flag}: {err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+}
+
+/// The flags of the joins (OPT-3) are documented with the stage's own defaults, and go through the
+/// stage's own reading of its settings: a bad value is refused by name before anything runs (exit
+/// 2) and the design is not written; a good one is read, and the run then stops at what the bare
+/// design lacks (its sizing), not at the flag.
+#[test]
+fn the_join_flags_are_documented_and_refuse_bad_values_by_name() {
+    let d = owd_format::design::OptimiseSettings::default();
+    let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+        .args(["optimise", "--help"])
+        .output()
+        .expect("owd runs");
+    let help = String::from_utf8_lossy(&out.stdout).into_owned();
+    for (flag, says) in [
+        ("--seams-on-straights", "straightest".to_string()),
+        ("--free-seams", "gate".to_string()),
+        ("--seam-window", format!("(default {})", d.seam_window_m)),
+        (
+            "--seam-heading-tol",
+            format!("(default {})", d.seam_heading_tol_deg),
+        ),
+        ("--min-straight", format!("(default {})", d.min_straight_m)),
+        ("--weir-straight", "two lengths of".to_string()),
+        ("--seam-offset", "river".to_string()),
+    ] {
+        let text = flag_help(&help, flag);
+        assert!(text.contains(&says), "{flag}: `{says}` is not in: {text}");
+    }
+
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("owd-join-flags");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("d.owd");
+    let text = owd_format::design::Session::new("Joins", "2026-11-21").to_text();
+    std::fs::write(&path, &text).unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_owd"))
+            .arg("optimise")
+            .arg(path.to_str().unwrap())
+            .args(args)
+            .output()
+            .expect("owd runs");
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    for (args, says) in [
+        (
+            vec!["--min-straight=-1"],
+            "the setting `min_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            vec!["--seam-window=-1"],
+            "the setting `seam_window_m` must be a number of metres >= 0",
+        ),
+        (
+            vec!["--weir-straight=-1"],
+            "the setting `weir_straight_m` must be a number of metres >= 0",
+        ),
+        (
+            vec!["--seam-heading-tol", "95"],
+            "the setting `seam_heading_tol_deg` must be a number of degrees",
+        ),
+    ] {
+        let (code, err) = run(&args);
+        assert_eq!(code, Some(2), "{args:?}: {err}");
+        assert!(err.contains(says), "{args:?}: {err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+    for args in [
+        vec!["--free-seams", "maybe"],
+        vec!["--seams-on-straights", "maybe"],
+    ] {
+        let (code, _) = run(&args);
+        assert_eq!(code, Some(2), "{args:?}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+    for args in [
+        vec!["--free-seams"],
+        vec!["--free-seams", "false"],
+        vec!["--seams-on-straights"],
+        vec!["--seams-on-straights", "--seam-window", "900"],
+        vec![
+            "--free-seams",
+            "--weir-straight",
+            "180",
+            "--min-straight",
+            "90",
+            "--seam-offset",
+            "40",
+        ],
+    ] {
+        let (_, err) = run(&args);
+        assert!(err.contains("sizing"), "{args:?}: {err}");
+    }
+}

@@ -1,6 +1,7 @@
 //! Label: property
 //! The long section and the cross-section on the worked example (spec 0003, ticket 72): what is
 //! drawn is the station walk the volumes stage sums.
+use owd_format::design::sections::Stations;
 use owd_format::design::terrain::dem_sampler;
 use owd_format::design::{AlignMethod, Session, Stage};
 use owd_format::geotiff::Dem;
@@ -58,8 +59,10 @@ fn the_long_section_sums_to_the_volumes_the_table_shows() {
     let walk = s
         .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
-    let ls = s.long_section("rolling-circle", &walk).unwrap();
-    let row = &s.document()["stages"]["volumes"]["results"]["options"][0];
+    let ls = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
+    let row = &s.document()["stages"]["volumes"]["results"];
     let n = ls["chainage_m"].as_array().unwrap().len();
     assert_eq!(n as u64, row["stations"].as_u64().unwrap());
     let sum = |k: &str| ls[k].as_array().unwrap().iter().map(f).sum::<f64>() * f(&ls["station_m"]);
@@ -87,10 +90,12 @@ fn a_cross_section_is_the_walk_s_station_and_its_cut_agrees_with_the_long_sectio
     let walk = s
         .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
-    let ls = s.long_section("rolling-circle", &walk).unwrap();
+    let ls = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
     // Ask between two stations: the nearest one answers, and says which.
     let at = f(&ls["chainage_m"][10]) + 1.0;
-    let cs = s.cross_section(&walk, at).unwrap();
+    let cs = s.cross_section(&Stations::from(walk.clone()), at).unwrap();
     assert_eq!(cs["chainage_m"], ls["chainage_m"][10]);
     assert_eq!(cs["dredge_area_m2"], ls["dredge_area_m2"][10]);
     assert_eq!(cs["design_invert_m"], ls["design_invert_m"][10]);
@@ -109,9 +114,13 @@ fn a_point_picked_on_the_map_gives_the_nearest_station() {
     let walk = s
         .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
-    let ls = s.long_section("rolling-circle", &walk).unwrap();
+    let ls = s
+        .long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap();
     let p = &ls["positions"][25];
-    let got = s.station_near(&walk, f(&p[0]), f(&p[1])).unwrap();
+    let got = s
+        .station_near(&Stations::from(walk.clone()), f(&p[0]), f(&p[1]))
+        .unwrap();
     assert_eq!(got, f(&ls["chainage_m"][25]));
 }
 
@@ -124,7 +133,7 @@ fn the_sections_need_fresh_volumes_and_a_known_option() {
         s.option_section_walk("nope", &t as TerrainSampler)
             .unwrap_err()
             .to_string()
-            .contains("no option `nope`")
+            .contains("no design line `nope`")
     );
     s.set_water_profile(&[[0.0, 37.0]]).unwrap();
     let e = s

@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" font-family="'Public Sans', system-ui, sans-serif" role="img" aria-label="The chain of stages and what passes between them">
+<title>The chain of stages and what passes between them</title>
+<rect width="960" height="300" fill="#ffffff"/>
+<rect x="20.0" y="110.0" width="128.0" height="64.0" fill="#f8f2e3" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="84.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Sizing</text>
+<text x="84.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">vessel + rule set</text>
+<line x1="148.0" y1="142.0" x2="178.0" y2="142.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M178.0,142.0 L170.5,144.7 L170.5,139.3 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="163.0" y="102.0" font-size="11" fill="#b8432d" text-anchor="middle" font-weight="normal">B, D, R_min</text>
+<line x1="163.0" y1="106.0" x2="163.0" y2="142.0" stroke="#b8432d" stroke-width="0.6" stroke-dasharray="2 2"/>
+<rect x="178.0" y="110.0" width="128.0" height="64.0" fill="#f8f2e3" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="242.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Alignment</text>
+<text x="242.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">rolling circle</text>
+<line x1="306.0" y1="142.0" x2="336.0" y2="142.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M336.0,142.0 L328.5,144.7 L328.5,139.3 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="321.0" y="192.0" font-size="11" fill="#b8432d" text-anchor="middle" font-weight="normal">baseline</text>
+<line x1="321.0" y1="180.0" x2="321.0" y2="142.0" stroke="#b8432d" stroke-width="0.6" stroke-dasharray="2 2"/>
+<rect x="336.0" y="110.0" width="128.0" height="64.0" fill="#e8dcbd" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="400.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Weir search</text>
+<text x="400.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">sites, lifts, levels</text>
+<line x1="464.0" y1="142.0" x2="494.0" y2="142.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M494.0,142.0 L486.5,144.7 L486.5,139.3 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="479.0" y="102.0" font-size="11" fill="#b8432d" text-anchor="middle" font-weight="normal">pools, levels</text>
+<line x1="479.0" y1="106.0" x2="479.0" y2="142.0" stroke="#b8432d" stroke-width="0.6" stroke-dasharray="2 2"/>
+<rect x="494.0" y="110.0" width="128.0" height="64.0" fill="#e8dcbd" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="558.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Pool search</text>
+<text x="558.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">line in each pool</text>
+<line x1="622.0" y1="142.0" x2="652.0" y2="142.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M652.0,142.0 L644.5,144.7 L644.5,139.3 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="637.0" y="192.0" font-size="11" fill="#b8432d" text-anchor="middle" font-weight="normal">design line</text>
+<line x1="637.0" y1="180.0" x2="637.0" y2="142.0" stroke="#b8432d" stroke-width="0.6" stroke-dasharray="2 2"/>
+<rect x="652.0" y="110.0" width="128.0" height="64.0" fill="#f8f2e3" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="716.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Checks</text>
+<text x="716.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">R_min, joins, loops</text>
+<line x1="780.0" y1="142.0" x2="810.0" y2="142.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M810.0,142.0 L802.5,144.7 L802.5,139.3 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="795.0" y="102.0" font-size="11" fill="#b8432d" text-anchor="middle" font-weight="normal">line, pool levels</text>
+<line x1="795.0" y1="106.0" x2="795.0" y2="142.0" stroke="#b8432d" stroke-width="0.6" stroke-dasharray="2 2"/>
+<rect x="810.0" y="110.0" width="128.0" height="64.0" fill="#f8f2e3" stroke="#1f1e1b" stroke-width="1" rx="4"/>
+<text x="874.0" y="137.0" font-size="14" fill="#1f1e1b" text-anchor="middle" font-weight="600">Volumes</text>
+<text x="874.0" y="156.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">sections, m³</text>
+<line x1="84.0" y1="40.0" x2="84.0" y2="110.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M84.0,110.0 L81.3,102.5 L86.7,102.5 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="84.0" y="32.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">vessel, draught, rules</text>
+<line x1="242.0" y1="40.0" x2="242.0" y2="110.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M242.0,110.0 L239.3,102.5 L244.7,102.5 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="242.0" y="32.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">river centreline, polygon</text>
+<line x1="400.0" y1="40.0" x2="400.0" y2="110.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M400.0,110.0 L397.3,102.5 L402.7,102.5 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="400.0" y="32.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">DEM, sites, lifts, weights</text>
+<line x1="558.0" y1="40.0" x2="558.0" y2="110.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M558.0,110.0 L555.3,102.5 L560.7,102.5 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="558.0" y="32.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">DEM, river polygon, weights</text>
+<line x1="874.0" y1="40.0" x2="874.0" y2="110.0" stroke="#1f1e1b" stroke-width="1.2"/>
+<path d="M874.0,110.0 L871.3,102.5 L876.7,102.5 Z" fill="#1f1e1b" stroke="#1f1e1b" stroke-width="1" stroke-linejoin="round"/>
+<text x="874.0" y="32.0" font-size="11" fill="#55524b" text-anchor="middle" font-weight="normal">DEM, river polygon</text>
+<text x="479.0" y="232.0" font-size="12" fill="#1f1e1b" text-anchor="middle" font-weight="normal">the optimise stage (owd optimise): the two searches of this document</text>
+<line x1="336.0" y1="214.0" x2="622.0" y2="214.0" stroke="#1f1e1b" stroke-width="1"/>
+<text x="20.0" y="286.0" font-size="11" fill="#55524b" text-anchor="start" font-weight="normal">Top: what the engineer gives. Red: what one stage hands to the next.</text>
+<text x="952" y="292" font-size="10" fill="#55524b" text-anchor="end">Drawn by us, not by OWD</text>
+</svg>

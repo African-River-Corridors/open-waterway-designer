@@ -1,0 +1,1 @@
+- **The river polygon is drawn on the map (MAP-1).** The map geometry sent every ring of the river polygon with no positions, so the map drew no polygon at all. The rings now go whole, in longitude and latitude, and the box the map opens on holds the polygon (a design with a polygon and no line yet opens on its river). No design number moves: this is drawing only.

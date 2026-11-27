@@ -1,6 +1,7 @@
 // The only door to the Rust side. Every function forwards to a command (a Tauri command on the desktop,
 // the WebAssembly session in a browser, see lib/platform); none computes.
 import { platform } from "./platform";
+import type { ChannelView, CutAt } from "./channel";
 
 const invoke = <T>(command: string, args?: Record<string, unknown>) => platform().call<T>(command, args);
 
@@ -108,7 +109,65 @@ export interface Screening {
   blocking_not_evaluated: { count: number; rules: string[] };
   constraint_stretches: ConstraintStretch[];
 }
-/** The parts of an option's volumes results the app reads. */
+/** The parts of the design line the app reads (spec 0017: one design line per run). */
+export interface DesignLine {
+  id: string;
+  method: string;
+  settings?: { use_water?: boolean | null } & Record<string, unknown>;
+  /** What a river-following line records about itself (OPT-4); absent for other methods. */
+  river_following?: RiverFollowingRecord;
+}
+/** One way through a stretch: staying in the river, or a cut-through. */
+export interface CutNumbers {
+  length_m: number;
+  wet_m3: number;
+  dry_m3: number;
+  plain_m3: number;
+  cost: number;
+  land_m2: number;
+  face_max_m: number;
+}
+/** A meander cut-through candidate, accepted or refused, with both sets of numbers. */
+export interface CutThrough {
+  id: string;
+  river_from: number;
+  river_to: number;
+  stay: CutNumbers;
+  options: { radius_m: number; length_m: number; saved_m: number; numbers: CutNumbers }[];
+  offered: number;
+  passes: boolean;
+  accepted: boolean;
+  decided_by: "rule" | "forced on" | "forced off";
+  refused_because?: string;
+}
+/** A stretch the river forces on the line. */
+export interface ForcedStretch {
+  id: string;
+  kind: "tight_bend" | "straight" | "off_river";
+  from: number;
+  to: number;
+  river_radius_m?: number;
+  farthest_from_centreline_m: number;
+}
+/** One bend of the seed. */
+export interface SeedBend {
+  from: number;
+  to: number;
+  radius_m: number;
+  hand: "left" | "right";
+  gap_m: number;
+  tight: boolean;
+}
+export interface RiverFollowingRecord {
+  costed_on: "volume" | "plan_area";
+  derived: { seed_tolerance_m: number; r_min_m: number; r_clip_m: number; min_straight_m: number };
+  seed: { element_count: number; arc_count: number; gap_m: number; settled: boolean; bends: SeedBend[] };
+  cut_throughs: CutThrough[];
+  forced: ForcedStretch[];
+  elements: unknown[];
+  warnings: string[];
+}
+/** The parts of the design line's volumes results the app reads. */
 export interface VolumesOption {
   id: string;
   name: string;
@@ -137,8 +196,15 @@ export interface Provenance {
   mark: Mark;
   provisional?: boolean;
 }
+/** A note from opening a design saved in an older format: information, or something to do. */
+export interface OpenNote {
+  kind: "info" | "action";
+  text: string;
+}
 export interface Snapshot {
   engine_version: string;
+  /** What opening an older-format design changed. The `action` notes are in `warnings` too. */
+  open_notes?: OpenNote[];
   document: {
     project: {
       title: string;
@@ -153,18 +219,24 @@ export interface Snapshot {
       river_polygon: Polygon | null;
       dem: { path: string; sha256?: string } | null;
       water_level: { points: number[][] } | null;
+      /** The river mouth, where chainage 0 is (spec 0017); absent or null: none stated. */
+      mouth?: { point: [number, number]; stated_as: "point" | "downstream" } | null;
+      /** The run inputs (spec 0017); absent: no objective, no limits, target concept. */
+      run?: RunInputs;
     };
     stages: {
       sizing: StageRecord<SizingSettings, ChannelShape>;
-      alignment: StageRecord<AlignmentSettings, unknown>;
+      /** The one design line (spec 0017), with the settings its run used. */
+      alignment: StageRecord<AlignmentSettings, DesignLine>;
       optimise: StageRecord<unknown, unknown>;
-      volumes: StageRecord<unknown, { options: VolumesOption[] }>;
+      /** The volumes of the design line (spec 0017: one per run). */
+      volumes: StageRecord<unknown, VolumesOption>;
     };
-    /** The design line options, with the settings each run used. */
-    options?: { id: string; method: string; settings?: { use_water?: boolean | null } & Record<string, unknown> }[];
     /** Where each generated or loaded input came from (spec 0012). Absent for a design with none. */
     provenance?: Partial<Record<ProvenanceInput, Provenance>>;
   };
+  /** The buildings, points of interest and settlements the design names (BLD-1), by key. */
+  feature_inputs?: Partial<Record<FeatureKey, FeatureInputInfo>>;
   /** True when a bank edit can be undone. */
   can_undo_bank_edit?: boolean;
   /** The terrain memory limit set on this machine, in bytes; null: the default. */
@@ -388,10 +460,173 @@ export interface Hillshade {
   height: number;
 }
 export const hillshade = () => invoke<Hillshade | null>("hillshade");
+/** The DEM as terrain for the map's 3D view (MAP-2): what the map source needs. Null with no DEM in memory. */
+export interface TerrainInfo {
+  /** A number that changes with the DEM: the tiles of another number are of another DEM. */
+  id: number;
+  /** West, south, east and north of the DEM, in degrees. */
+  bounds: [number, number, number, number];
+  min_m: number;
+  max_m: number;
+  /** The height drawn where the DEM has no data, and outside it: its lowest height. */
+  base_m: number;
+  max_zoom: number;
+  tile_size: number;
+  encoding: "terrarium";
+  /** The cut of the channel over this DEM (MAP-5): a number that changes with it, or null for none. */
+  cut?: number | null;
+}
+export const terrainInfo = () => invoke<TerrainInfo | null>("terrain_info");
+/** One terrain tile of the ground in a terrain state ("before": the DEM; "after": the DEM with the channel
+ * cut into it, MAP-5), a PNG, made in this browser from the DEM in memory. */
+export const terrainTile = (z: number, x: number, y: number, state = "before") => invoke<Uint8Array>("terrain_tile", { z, x, y, state });
+/** The contour lines of one map tile of the DEM, every `interval` metres (MAP-3): a vector tile, made in
+ * this browser from the DEM in memory. No bytes when the tile has no line. */
+export const contourTile = (z: number, x: number, y: number, interval: number, state = "before") => invoke<Uint8Array>("contour_tile", { z, x, y, interval, state });
+/** The channel of the design line for the map (MAP-5): its edges, or why there are none yet. Derived by
+ * the engine from the design; nothing is stored. */
+export const channelGeometry = () => invoke<ChannelView | null>("channel_geometry");
+/** The cut-depth picture of one map tile (MAP-5): a PNG; no bytes when nothing is cut in the tile. */
+export const cutTile = (z: number, x: number, y: number) => invoke<Uint8Array>("cut_tile", { z, x, y });
+/** What the cut reads out at a point of the map (MAP-5); null where nothing is cut. */
+export const cutAt = (lon: number, lat: number) => invoke<CutAt | null>("cut_at", { lon, lat });
+/** The sizes of the placeholder lock and weir (MAP-4), and the rules they come from. A placeholder model, not a design. */
+export interface LockModel {
+  note: string;
+  vessel_length_m: number | null;
+  vessel_beam_m: number | null;
+  chamber_length_m: number | null;
+  chamber_width_m: number | null;
+  wall_thickness_m: number;
+  wall_freeboard_m: number;
+  default_weir_length_m: number;
+  rules: string;
+}
+/** One pool: a stretch of the design line at one water level. */
+export interface PoolReach {
+  number: number;
+  from_m: number;
+  to_m: number;
+  level_m: number;
+  line: LonLat[];
+  mid: LonLat;
+}
+/** One block of the placeholder model: a flat-topped shape. */
+export interface ModelPart {
+  kind: "weir" | "lock_wall" | "lock_gate" | "lock_chamber";
+  ring: LonLat[];
+  top_m: number;
+}
+/** One weir site: where one pool ends and the next begins. Upstream is the higher chainage. */
+export interface WeirSite {
+  number: number;
+  chainage_m: number;
+  position: LonLat;
+  bearing_deg: number;
+  upstream_level_m: number;
+  downstream_level_m: number;
+  lift_m: number;
+  upstream_pool: number | null;
+  downstream_pool: number | null;
+  weir_length_m: number;
+  clipped_to_river: boolean;
+  parts: ModelPart[];
+}
+/** The weirs, the locks and the pools of the design, for the map. Empty lists when the design has no pools. */
+export interface MapStructures {
+  model: LockModel;
+  pools: PoolReach[];
+  weirs: WeirSite[];
+  /** The steps of the water level along the design line: each has its weir (a check the map shows). */
+  level_steps: number;
+}
+/** Made by the session on demand from the water level along the design line: nothing of it is in the design file. */
+export const mapStructures = () => invoke<MapStructures>("map_structures");
+/** The pool water (MAP-4): the ground each pool floods, worked out in this browser from the DEM in memory. */
+export interface PoolWaterInfo {
+  /** A number that changes with the flood mask: tiles of another number are out of date. */
+  id: number;
+  /** The time the flood mask took, in milliseconds (0 when it was already made). */
+  build_ms: number;
+  made: boolean;
+  mask: { factor: number; width: number; height: number; cell_m: number; bytes: number; peak_bytes: number; flooded_cells: number };
+  /** Each pool's flooded ground, and the part of it outside the river polygon (null with no polygon), in hectares. */
+  pools: { number: number; level_m: number; flooded_ha: number; outside_river_ha: number | null }[];
+  /** The colour of the water by its depth: `[depth in metres, [red, green, blue, alpha]]`. */
+  depth_stops: [number, [number, number, number, number]][];
+}
+/** Null with no DEM in memory or no pools. The first call for a DEM and its pools makes the flood mask. */
+export const poolWaterInfo = () => invoke<PoolWaterInfo | null>("pool_water_info");
+/** The water of one map tile, a PNG coloured by depth and clear where dry. */
+export const poolWaterTile = (id: number, z: number, x: number, y: number) => invoke<Uint8Array>("pool_water_tile", { id, z, x, y });
+/** One terrain tile with the water on it: the pool's level where there is water, the ground elsewhere. */
+export const poolSurfaceTile = (id: number, z: number, x: number, y: number, state = "before") => invoke<Uint8Array>("pool_surface_tile", { id, z, x, y, state });
+/** What a click on the water reads. Null on dry ground. */
+export interface WaterAt {
+  pool: number;
+  water_level_m: number;
+  ground_m: number;
+  depth_m: number;
+}
+export const poolWaterAt = (id: number, lon: number, lat: number) => invoke<WaterAt | null>("pool_water_at", { id, lon, lat });
 /** A debug-build test hook: a replacement tile address. Null in release builds. */
 export const basemapTiles = () => invoke<string | null>("basemap_tiles");
 
-export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem";
+export type InputRole = "left_bank" | "right_bank" | "centreline" | "river_polygon" | "dem" | FeatureKey;
+/** The feature inputs (BLD-1): files the design names by path and hash, never copies. */
+export type FeatureKey = "buildings" | "points_of_interest" | "settlements";
+export const FEATURE_KEYS: FeatureKey[] = ["buildings", "points_of_interest", "settlements"];
+/** One feature input as the snapshot shows it. */
+export interface FeatureInputInfo {
+  path: string;
+  sha256: string;
+  count: number;
+  crs: string;
+  label: string;
+  /** The file is attached: the map and the reports can read it. */
+  attached: boolean;
+  min_confidence?: number;
+  min_area_m2?: number;
+  near_cut_m?: number;
+  /** Buildings only, when attached: costed, and counted apart. */
+  counted?: number;
+  below_confidence?: number;
+  below_area?: number;
+  /** Buildings: the least depth of water that counts one as flooded (the optimise setting). */
+  min_depth_m?: number;
+}
+export const clearFeatures = (key: FeatureKey) => invoke<Snapshot>("clear_features", { key });
+export const setBuildingFilters = (filters: { min_confidence?: number; min_area_m2?: number; near_cut_m?: number }) => invoke<Snapshot>("set_building_filters", { filters });
+/** A feature file as the map draws it: WGS84, each feature numbered `fid` as the session numbers it. */
+export interface FeatureMap {
+  type: "FeatureCollection";
+  features: { type: "Feature"; geometry: { type: string; coordinates: unknown }; properties: Record<string, unknown> & { fid: number; id: string } }[];
+}
+/** What a click on feature `fid` reads, with the water of pool water `pool` there when given. */
+export const featureCard = (key: FeatureKey, fid: number, pool: number | null) => invoke<import("./features").FeatureCard>("feature_card", { key, fid, pool });
+/** Which features the map's pool water covers at least `minDepth` deep, and how many by pool. */
+export interface FeaturesFlooded {
+  fids: number[];
+  depths: number[];
+  pools: { number: number; flooded: number; counted: number }[];
+  min_depth_m: number;
+}
+export const featuresFlooded = (key: FeatureKey, pool: number, minDepth: number) => invoke<FeaturesFlooded>("features_flooded", { key, pool, minDepth });
+/** The buildings and the channel (BLD-1): in the cut, near it, severed; null with no buildings or channel. */
+export interface BuildingConflicts {
+  taken: number;
+  near: number;
+  severed: number;
+  taken_apart: number;
+  near_apart: number;
+  severed_apart: number;
+  near_cut_m: number;
+  from_volumes: boolean;
+  fids: { taken: number[]; near: number[]; severed: number[] };
+}
+export const buildingConflicts = () => invoke<BuildingConflicts | null>("building_conflicts");
+/** A feature file as the map draws it, or null when none is attached. */
+export const featureMap = (key: FeatureKey) => invoke<FeatureMap | null>("feature_map", { key });
 /** Load one input. With no path the user picks a file (a dropped file is a path on the desktop, a File in a browser); null comes back on cancel. Rejects with the session's reason. */
 export const loadInput = (role: InputRole, path?: string | File) => invoke<Snapshot | null>("load_input", { role, path: path ?? null });
 /** The water level at the river's start, and optionally a fall per metre (both as typed). */
@@ -400,6 +635,8 @@ export const setWater = (level: string, fall: string) => invoke<Snapshot>("set_w
 /** The alignment settings the app reads: the rolling circle's water-aware mode (#494). */
 export interface AlignmentSettings {
   rolling_circle?: { use_water?: boolean | null } & Record<string, unknown>;
+  /** The river-following line's settings, only those not their default (OPT-4). */
+  river_following?: { seed_tolerance_m?: number | null; cut_force?: Record<string, boolean> } & Record<string, unknown>;
 }
 /** The rolling circle's water-aware mode, as the app offers it: `default` is the setting unset (on when the design has a river polygon). */
 export type UseWater = "default" | "true" | "false";
@@ -410,10 +647,87 @@ export const useWaterChoice = (value: boolean | null | undefined): UseWater => (
 /** Set the rolling circle's water-aware mode in the design (`owd align --use-water`); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
 export const setUseWater = (choice: UseWater) =>
   invoke<Snapshot>("set_alignment_settings", { method: "rolling_circle", settings: { use_water: useWaterValue(choice) } });
+/** Optimise settings the app may set. `length_weight`: the cost of one metre of design line, in the units of the cut cost (0 is off). `land_weight`: the cost of one m² of channel footprint outside the river polygon, in m³ of cut per m² (0 is off). `corridor_limit`: hold the pool search inside the corridor (false is off). `flood_cost_per_ha`: the cost of one hectare of land a pool floods outside the river polygon (0 is off). `max_above_bank_m`: the most a pool may stand above bank-full, in metres (null is no limit). */
+export interface OptimiseSettings {
+  length_weight?: number;
+  land_weight?: number;
+  corridor_limit?: boolean;
+  flood_cost_per_ha?: number;
+  max_above_bank_m?: number | null;
+  /** Put the seams of a long pool on straights of the baseline (false is off). */
+  seams_on_straights?: boolean;
+  /** How far a seam may move from the even split, in metres (1,500 by default). */
+  seam_window_m?: number;
+  /** Let the line pass seams and weir sites through a gate, off the baseline's pose (false is off). */
+  free_seams?: boolean;
+  /** The straight between a left curve and a right curve, in metres (0 is off). */
+  min_straight_m?: number;
+  /** The straight through a weir site, in metres; null is two vessel lengths. */
+  weir_straight_m?: number | null;
+  /** `lattice` (the weir cascade, then the pool lattice) or `windows` (the window optimiser, OPT-5). */
+  method?: OptimiseMethod;
+  /** The window optimiser's settings, the window lengths among them (metres). */
+  windows?: { window_target_m?: number; window_min_m?: number; window_max_m?: number };
+}
+/** The optimise stage's method. */
+export type OptimiseMethod = "lattice" | "windows";
+/** One window of the window optimiser, as the design line's details record it. */
+export interface WindowRow {
+  id: number;
+  pass: number;
+  start_m: number;
+  end_m: number;
+  full_start: { cost: number | null };
+  full_found: { cost: number | null } | null;
+  gain_pct: number | null;
+  adopted: "found" | "polished_start" | "none";
+  reason: string;
+}
+/** A flood setting of the optimise stage the app may set. */
+export type FloodSetting = "flood_cost_per_ha" | "max_above_bank_m" | "building_cost";
+/** What one pool of the weir cascade floods (`results.cascade.flood.pools`, written when a flood setting is on). */
+export interface PoolFlood {
+  start_m: number;
+  end_m: number;
+  level_m: number;
+  /** The lift of the weir at the pool's lower end; null below the first weir. */
+  lift_m: number | null;
+  /** Flooded land outside the river polygon, hectares. */
+  flooded_ha: number;
+  flood_cost: number;
+  /** The water reaches the edge of the flood grid: the hectares are a lower bound. */
+  reaches_limit: boolean;
+  /** The most the pool stands above bank-full in its reach, metres (bank-full is an estimate from the DEM). */
+  max_above_bank_m: number | null;
+}
+/** The flooded land of the cascade's pools, in total and for each pool. */
+export interface CascadeFlood {
+  flooded_ha: number;
+  flood_cost: number;
+  flood_cost_per_ha: number;
+  pools: (PoolFlood & { buildings_flooded?: number; settlement_flooded_ha?: number })[];
+  /** BLD-1: the buildings the pools flood by the weir search's rule, when buildings are loaded. */
+  buildings?: { flooded: number; loaded: number; building_cost: number; cost_per_building: number; min_depth_m: number; flooded_below_confidence: number; flooded_below_area: number; first: { id: string; lon_lat: [number, number]; pool: number }[] };
+  settlement_flooded_ha?: number;
+}
+/** The join settings of the optimise stage that the app sets (OPT-3). */
+export type JoinSetting = "seams_on_straights" | "free_seams" | "seam_window_m" | "min_straight_m" | "weir_straight_m";
+/** Set optimise settings in the design, as `owd optimise --length-weight` does; nothing runs, and a fresh optimise stage goes stale. Rejects with the reason. */
+export const setOptimiseSettings = (settings: OptimiseSettings) => invoke<Snapshot>("set_optimise_settings", { settings });
 /** Set the memory a terrain grid may take on this machine, in GiB (empty: the default). Not part of the design. */
 export const setTerrainLimit = (gib: string) => invoke<Snapshot>("set_terrain_limit", { gib });
 export const setDownstreamPoint = (point: string) => invoke<Snapshot>("set_downstream_point", { point });
-export type RunMethod = "rolling_circle" | "reroute";
+/** State the river mouth, `downstream` or `LON,LAT`, as `owd import --mouth` does (spec 0017). The river is turned to run from it when it is at the far end, and the stages that read it go stale. Rejects with the reason. */
+export const setMouth = (mouth: string) => invoke<Snapshot>("set_mouth", { mouth });
+/** Set the run's objective (`SENSE:MEASURE`), limits (one `MEASURE<=VALUE` a line) and target level, each empty for none, as `owd run-inputs` does (spec 0017). No stage goes stale. Rejects with the reason and its code. */
+export const setRunInputs = (objective: string, limits: string, targetLevel: string) => invoke<Snapshot>("set_run_inputs", { objective, limits, targetLevel });
+export type RunMethod = "rolling_circle" | "reroute" | "river_following";
+/** Set river-following settings in the design (`owd align --method river-following` and its flags); nothing runs, and a fresh alignment goes stale. Rejects with the reason. */
+export const setRiverFollowing = (settings: Record<string, unknown>) =>
+  invoke<Snapshot>("set_alignment_settings", { method: "river_following", settings });
+export type OutputLevel = "concept" | "pre_feasibility" | "feasibility";
+export type RunLimit = { measure: string; bound: "at_most" | "at_least"; value: number; currency?: string };
+export type RunInputs = { objective?: { measure: string; sense: "minimise" | "maximise" }; limits?: RunLimit[]; target_level?: OutputLevel };
 /** The snapshot after a run; `run.outcome` is `done` or `cancelled` (a cancelled run leaves the design as it was). Rejects with the reason. */
 export type RunResult = Snapshot & { run: { stage: StageName; outcome: "done" | "cancelled" } };
 export const runStage = (stage: StageName, method?: RunMethod) => invoke<RunResult>("run_stage", { stage, method: method ?? null });
@@ -452,6 +766,8 @@ export interface OptionTable {
   volumes_status: "not run" | "fresh" | "stale";
   rows: OptionRow[];
   checks: CheckRow[];
+  /** What a constraint stretch is and what its dredge and dry cut mean: one wording, from the core. */
+  stretch_note?: string;
 }
 export const optionTable = () => invoke<OptionTable>("option_table");
 
@@ -495,7 +811,7 @@ export const longSection = (option: string) => invoke<LongSection>("long_section
 export const crossSection = (option: string, chainage: number) => invoke<CrossSection>("cross_section", { option, chainage });
 export const stationNear = (option: string, lon: number, lat: number) => invoke<number>("station_near", { option, lon, lat });
 
-/** Export through the session to a file the user picks. Returns the path, or null when they cancel. Rejects with the reason (for example: no options yet). */
+/** Export through the session to a file the user picks. Returns the path, or null when they cancel. Rejects with the reason (for example: no design line yet). */
 export const exportFile = (kind: "geojson" | "csv") => invoke<string | null>("export_file", { kind });
 
 /** A drawing sheet as `owd draw` makes it (spec 0004): its number, title and SVG. */
@@ -521,6 +837,56 @@ export const exportReport = (option: string | null, ask: ReportAsk) => invoke<st
  * folder the user picks (desktop) or as downloads (web). `fromKm`/`toKm` cut the stretch. null on cancel. */
 export const exportQaOverlay = (fromKm?: number, toKm?: number) =>
   invoke<string | null>("export_qa_overlay", { fromKm: fromKm ?? null, toKm: toKm ?? null });
+
+// --- the project folder (PROJ-1, web app) -----------------------------------------------------------
+/** How one item of a project stands: see `lib/project.ts`. */
+export type ProjectItemState = "loaded" | "found" | "changed" | "set" | "missing" | "none";
+export interface ProjectItem {
+  key: string;
+  label: string;
+  /** The path from the project folder; null: the text file does not name it. */
+  path: string | null;
+  state: ProjectItemState;
+}
+/** The open project folder, for the Project panel. */
+export interface ProjectStatus {
+  title: string;
+  /** The folder's own name (the browser never tells where it is). */
+  folder: string;
+  design: string | null;
+  items: ProjectItem[];
+}
+/** What a folder with no `owd-project.json` holds in the standard places. */
+export interface ProjectFound {
+  designs: string[];
+  dems: string[];
+  inputs: { key: string; label: string; path: string }[];
+  /** True when there is no choice to make: at most one design and one DEM, and at least one. */
+  clear: boolean;
+}
+/** A folder the user chose. `found` is null when it has its text file; else what was found. */
+export interface ProjectLook {
+  folder: string;
+  title: string | null;
+  found: ProjectFound | null;
+}
+/** Whether this browser can open a folder (Chrome and Edge can). */
+export const projectSupported = () => invoke<boolean>("project_supported");
+/** Ask for a project folder. null when the user cancels. */
+export const projectPick = () => invoke<ProjectLook | null>("project_pick");
+/** The project folder remembered on this machine from last time, if any. */
+export const projectRemembered = () => invoke<{ title: string; folder: string } | null>("project_remembered");
+/** Go back to the remembered folder; the browser asks for leave again. */
+export const projectReopen = () => invoke<ProjectLook | null>("project_reopen");
+export const projectForget = () => invoke<void>("project_forget");
+/** Write `owd-project.json` into the chosen folder, naming the design and the DEM taken. */
+export const projectAdopt = (design: string | null, dem: string | null) => invoke<void>("project_adopt", { design, dem });
+/** Open the chosen project: the design and its DEM in one step. `onProgress` gets a line to show.
+ * `project_note` says what opening changed in the design, if anything. */
+export const projectOpen = (onProgress: (line: string) => void) => invoke<Snapshot & { project_note?: string | null; project_added?: string | null }>("project_open", { onProgress });
+export const projectStatus = () => invoke<ProjectStatus | null>("project_status");
+/** Load one listed item of the project into the design. */
+export const projectLoad = (key: string, onProgress: (line: string) => void) => invoke<Snapshot>("project_load", { key, onProgress });
 
 /** Web only: open the bundled example (a short synthetic river with its DEM). null when the user cancels. */
 export const openExample = () => invoke<Snapshot | null>("open_example");

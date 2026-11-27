@@ -6,6 +6,7 @@
 //! app's long-section call; the exaggeration is stated on the sheet in words; the style's factor
 //! overrides "auto"; and the same design gives the same bytes.
 use owd_format::design::Session;
+use owd_format::design::sections::Stations;
 use owd_format::design::terrain::dem_sampler;
 use owd_format::drawing::{self, DrawOptions, Sheet, SheetKind, Style, check};
 use owd_format::geotiff;
@@ -47,7 +48,8 @@ fn series() -> Value {
     let walk = s
         .option_section_walk("rolling-circle", &t as TerrainSampler)
         .unwrap();
-    s.long_section("rolling-circle", &walk).unwrap()
+    s.long_section("rolling-circle", &Stations::from(walk.clone()))
+        .unwrap()
 }
 
 fn viewport(sheet: &Sheet) -> &Value {

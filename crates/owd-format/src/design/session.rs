@@ -6,7 +6,7 @@
 
 use super::crs::{Crs, Utm};
 use super::geojson::{self, Role};
-use super::hash::{hash_value, sha256_hex};
+use super::hash::hash_value;
 use super::river::{RiverGeometry, RiverIn, river};
 use super::rule_sets::default_settings;
 use super::schema;
@@ -18,11 +18,16 @@ use serde_json::{Value, json};
 /// The engine version written into documents and stages.
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// The document format version this engine writes: the string `"0.4"` since spec 0015 (the custom
-/// vessel). A file with the number `3` (format 0.3, spec 0007) opens and is saved as 0.4, with
-/// nothing else changed. An older file is refused; there is no migration. Until format 1.0 (after
-/// an external review) a format change raises the minor number.
-pub const FORMAT_VERSION: &str = "0.4";
+/// The document format version this engine writes: the string `"0.5"` since spec 0017 ticket 6 (one
+/// design line). A 0.4 file opens and is saved as 0.5 ([`super::migrate::from_0_4`]): its design
+/// line options become the one design line; a stage that was fresh under the 0.4 rules stays fresh,
+/// a stale one stays stale; and it is turned to run from its mouth when that can be told. A file with
+/// the number `3` (format 0.3, spec 0007) opens as 0.4 first. An older file is refused; there is no
+/// migration. Until format 1.0 (after an external review) a format change raises the minor number.
+pub const FORMAT_VERSION: &str = "0.5";
+
+/// Format 0.4: the last format with a list of design line options.
+pub(super) const FORMAT_0_4: &str = "0.4";
 
 /// The format 0.3 files wrote as a number.
 const FORMAT_0_3: i64 = 3;
@@ -181,6 +186,39 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+/// What a note from opening a file asks of the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NoteKind {
+    /// It says what opening changed. Nothing was lost and there is nothing to do.
+    Info,
+    /// The user has something to do or to check: a stage to run again, a line that was not kept.
+    Action,
+}
+
+/// One note from opening a file made by an older OWD: a plain sentence and its kind.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OpenNote {
+    pub kind: NoteKind,
+    pub text: String,
+}
+
+impl OpenNote {
+    pub fn info(text: impl Into<String>) -> Self {
+        OpenNote {
+            kind: NoteKind::Info,
+            text: text.into(),
+        }
+    }
+
+    pub fn action(text: impl Into<String>) -> Self {
+        OpenNote {
+            kind: NoteKind::Action,
+            text: text.into(),
+        }
+    }
+}
+
 /// One channel design.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Session {
@@ -188,6 +226,18 @@ pub struct Session {
     pub(super) water_sampling: super::water::WaterSampling,
     /// The Rule Sets the session can select: the built-in ones and any loaded at run time.
     pub(super) library: Library,
+    /// What opening the file changed, in plain words (a move from an older format). Not stored.
+    pub(super) notes: Vec<OpenNote>,
+    /// The cut-rate multiplier raster the document names (spec 0017 ticket 13), read from the file
+    /// whose hash it recorded, when the host has attached it. Not stored: the document holds only
+    /// its reference, as for the DEM.
+    pub(super) multiplier: Option<std::sync::Arc<crate::geotiff::Dem>>,
+    /// A file moved from format 0.4 whose mouth only the elevation model can tell, while the host
+    /// has not loaded it yet ([`Session::settle_old_mouth`]). Not stored.
+    pub(super) old_mouth_pending: bool,
+    /// The buildings, points of interest and settlements the document names (BLD-1), read from the
+    /// files whose hashes it recorded, when the host has attached them. Not stored.
+    pub(super) features: super::features::Attached,
 }
 
 fn empty_stage() -> Value {
@@ -207,6 +257,10 @@ impl Session {
         Session {
             water_sampling: Default::default(),
             library: engine::built_in().clone(),
+            notes: Vec::new(),
+            multiplier: None,
+            old_mouth_pending: false,
+            features: Default::default(),
             doc: json!({
                 "format_version": FORMAT_VERSION,
                 "engine_version": ENGINE_VERSION,
@@ -218,25 +272,48 @@ impl Session {
                 "stages": {
                     "sizing": sizing_stage(), "alignment": empty_stage(),
                     "optimise": empty_stage(), "volumes": empty_stage()
-                },
-                "options": []
+                }
             }),
         }
     }
 
     /// Parse and validate `.owd` text.
+    ///
+    /// A format 0.4 (or 0.3) file moves to this format ([`super::migrate`]): each stage that was
+    /// fresh under the 0.4 rules when it opened stays fresh, with its numbers; a stale one stays
+    /// stale. Its mouth is worked out from its water level and stored, and when the mouth is the far
+    /// end the river and the stored results are turned to run from it. With no water level to tell,
+    /// the elevation model tells, once the host has loaded it ([`Session::settle_old_mouth`]).
     pub fn open(text: &str) -> Result<Session, DesignError> {
         let mut doc: Value = serde_json::from_str(text)
             .map_err(|e| DesignError::Input(format!("the file is not valid JSON: {e}")))?;
+        let mut notes = Vec::new();
+        // The stages kept fresh by a move from format 0.4, if the file is one.
+        let mut moved: Option<Vec<Stage>> = None;
+        if let Value::Number(n) = &doc["format_version"]
+            && n.as_i64() == Some(FORMAT_0_3)
+        {
+            // Format 0.3 reads as 0.4 (spec 0015), which moves to 0.5 below.
+            doc["format_version"] = json!(FORMAT_0_4);
+        }
+        if doc["format_version"] == FORMAT_0_4 {
+            let fresh = super::migrate::fresh_0_4(&doc);
+            let (n, keep) = super::migrate::from_0_4(&mut doc, &fresh);
+            notes = n;
+            moved = Some(keep);
+        }
+        // Answers stored by an older OWD say why they show stale (read before the line moves: the
+        // old hashes read `inputs.reference_line`).
+        notes.extend(super::fits::older_answer_note(&doc).map(OpenNote::action));
+        notes.extend(super::envelope::older_answer_note(&doc).map(OpenNote::action));
+        // A reference line stored the old way moves to its stage record (spec 0017 ticket 7).
+        let (moved_line, moved_fresh) = super::reference_line::move_from_inputs(&mut doc);
+        notes.extend(moved_line);
         match &doc["format_version"] {
-            // Format 0.3 reads as it is, and is saved as 0.4 (spec 0015).
-            Value::Number(n) if n.as_i64() == Some(FORMAT_0_3) => {
-                doc["format_version"] = json!(FORMAT_VERSION);
-            }
             Value::Number(n) => {
                 return Err(DesignError::Input(format!(
                     "the file is document format version {n}; this OWD opens format \
-                     {FORMAT_VERSION} and 0.3 only, and moves no older file (spec 0007). Rebuild \
+                     {FORMAT_VERSION}, 0.4 and 0.3 only, and moves no older file (spec 0007). Rebuild \
                      the design: start a new one, import its inputs, size it and run its stages \
                      again."
                 )));
@@ -256,10 +333,27 @@ impl Session {
             doc,
             water_sampling: Default::default(),
             library: engine::built_in().clone(),
+            notes,
+            multiplier: None,
+            old_mouth_pending: false,
+            features: Default::default(),
         };
+        // A moved line that was fresh keeps a fresh record: its hash becomes the record's own.
+        if moved_fresh && let Some(h) = s.reference_line_record_hash() {
+            s.doc["stages"][super::reference_line::STAGE]["depends_on"] = json!(h);
+        }
+        // The stages a move from 0.4 kept fresh get the hash of this format.
+        if let Some(keep) = &moved {
+            s.finish_moved_lines(keep, false);
+            s.stamp_fresh(keep);
+        }
         if s.doc["inputs"].is_object() && s.validate_schema_only().is_empty() {
             s.migrate_water_settings();
             s.canonical_vessel_ids();
+            if moved.is_some() {
+                let n = s.old_file_mouth(None, true);
+                s.notes.extend(n);
+            }
         }
         let errors = s.validate();
         if errors.is_empty() {
@@ -303,6 +397,18 @@ impl Session {
         }
     }
 
+    /// What opening the file changed, one plain sentence each: empty unless the file was made by an
+    /// older OWD and moved to this format. The command line prints them; the app shows them.
+    pub fn open_notes(&self) -> Vec<String> {
+        self.notes.iter().map(|n| n.text.clone()).collect()
+    }
+
+    /// The same notes with their kind: information, or something for the user to do. The app
+    /// shows the two kinds apart.
+    pub fn open_notes_by_kind(&self) -> &[OpenNote] {
+        &self.notes
+    }
+
     /// The document text: two-space indented JSON with a final newline.
     pub fn to_text(&self) -> String {
         let mut t = serde_json::to_string_pretty(&self.doc).expect("a JSON value serialises");
@@ -311,8 +417,9 @@ impl Session {
     }
 
     /// One stage as a [`StageRecord`](crate::stage::StageRecord): the settings, the output (the
-    /// stage's `results`), the dependency hash and the contract version. The document keeps its keys
-    /// until the format moves to 0.5, so this is a typed read of them, not a second copy.
+    /// stage's `results`), the dependency hash and the contract version. Format 0.5 still keeps the
+    /// keys `results` and `engine_version` (the rename to `output` and `version` touches every reader,
+    /// and is left to its own change), so this is a typed read of them, not a second copy.
     pub fn stage_record(&self, stage: Stage) -> crate::stage::StageRecord<Value, Value> {
         let st = &self.doc["stages"][stage.name()];
         crate::stage::StageRecord {
@@ -358,6 +465,35 @@ impl Session {
                 ));
             }
         }
+        // The run inputs are typed and checked beyond what the schema states (ticket 11).
+        if let Err(e) = self.run_inputs() {
+            errors.push(format!("/inputs/run: {e}"));
+        }
+        // The rates table too (ticket 12).
+        if let Err(e) = self.rates() {
+            errors.push(format!("/inputs/rates: {e}"));
+        }
+        // And the constraints (ticket 13).
+        if let Err(e) = self.constraints() {
+            errors.push(format!("/inputs/constraints: {e}"));
+        }
+        // The one design line, and the lattice's, are typed: each must read as a `DesignLine`.
+        for (at, v) in [
+            (
+                "/stages/alignment/results",
+                &self.doc["stages"]["alignment"]["results"],
+            ),
+            (
+                "/stages/optimise/results/design_line",
+                &self.doc["stages"]["optimise"]["results"]["design_line"],
+            ),
+        ] {
+            if !v.is_null()
+                && let Err(e) = serde_json::from_value::<super::design_line::DesignLine>(v.clone())
+            {
+                errors.push(format!("{at}: is not a design line: {e}"));
+            }
+        }
         errors
     }
 
@@ -366,6 +502,11 @@ impl Session {
     /// What a stage depended on, hashed: the inputs, the project CRS, and the settings and results
     /// of the stage and of every stage before it.
     pub(super) fn dependency_hash(&self, stage: Stage) -> String {
+        self.dependency_hash_with(stage, self.selected_set_hashes())
+    }
+
+    /// [`Session::dependency_hash`] with `rule_sets` as the content hashes of the selected Rule Sets.
+    pub(super) fn dependency_hash_with(&self, stage: Stage, rule_sets: Value) -> String {
         let st = |s: Stage| &self.doc["stages"][s.name()];
         let part = |s: Stage| json!({"settings": st(s)["settings"], "results": st(s)["results"]});
         let upto = |s: Stage| Stage::ALL.iter().take_while(|x| **x != s).count();
@@ -383,10 +524,17 @@ impl Session {
         });
         // The content of every selected Rule Set, as the engine holds it now: a changed set makes the
         // sizing stage, and so every stage after it, stale.
-        dep["rule_sets"] = self.selected_set_hashes();
+        dep["rule_sets"] = rule_sets;
         // The marked reaches decide which radius Rule applies where, so sizing depends on them.
         if let Some(r) = self.doc["inputs"].get("waterway_reaches") {
             dep["waterway_reaches"] = r.clone();
+        }
+        // The river-following line costs with the volumes stage's section settings: a change of
+        // them makes it stale (written only for that method, so no other hash moves).
+        if stage == Stage::Alignment
+            && self.doc["stages"]["alignment"]["settings"]["method"] == "river_following"
+        {
+            dep["section"] = self.doc["stages"]["volumes"]["settings"].clone();
         }
         if stage != Stage::Sizing {
             dep["inputs"] = self.doc["inputs"].clone();
@@ -398,37 +546,75 @@ impl Session {
             // The rolling circle reads neither the DEM nor the water level: one added after it ran
             // leaves it fresh. The re-route, the optimise stage and the volumes read them.
             let reads_dem = match stage {
-                Stage::Alignment => self.doc["stages"]["alignment"]["results"]["methods"]
-                    .as_array()
-                    .is_some_and(|m| m.iter().any(|x| x == "reroute")),
+                // The river-following line costs its cut-throughs and its shift on the ground.
+                Stage::Alignment => matches!(
+                    self.doc["stages"]["alignment"]["settings"]["method"].as_str(),
+                    Some("reroute" | "river_following")
+                ),
                 _ => true,
             };
             if !reads_dem && let Some(inputs) = dep["inputs"].as_object_mut() {
                 inputs.remove("dem");
                 inputs.remove("water_level");
+                // The cut-rate multiplier stays (ticket 13): every method's line is walked over it
+                // for hard-exclusion ground.
+            }
+            // The multiplier raster is identified by its hash, as the DEM is, not by where it sits.
+            // (`get_mut`, not indexing: indexing would add the key to a document without it.)
+            if let Some(m) = dep
+                .get_mut("inputs")
+                .and_then(|i| i.get_mut(super::constraints::INPUT))
+                .and_then(|c| c.get_mut("cut_rate_multiplier"))
+                .and_then(Value::as_object_mut)
+            {
+                m.remove("path");
             }
             dep["crs"] = self.doc["project"]["crs"].clone();
             // Only the volumes read the bed model (spec 0012): a new depth leaves the stages
             // before them fresh.
+            // The window method of the optimise stage (OPT-5) cuts with the volumes stage's section
+            // on the volumes stage's ground: it reads the bed model and the volumes settings too.
+            let windows = stage == Stage::Optimise
+                && self.doc["stages"]["optimise"]["settings"]["method"] == "windows";
             if stage != Stage::Volumes
+                && !windows
                 && let Some(inputs) = dep["inputs"].as_object_mut()
             {
                 inputs.remove("bed_model");
+            }
+            if windows {
+                dep["windows_section"] = self.doc["stages"]["volumes"]["settings"].clone();
             }
             // No stage reads the reference line (spec 0016): storing it leaves them fresh. The
             // volumes read the assumed bed, which is centred on it (#398).
             if let Some(inputs) = dep["inputs"].as_object_mut() {
                 inputs.remove("reference_line");
+                // No stage of the chain reads the run inputs yet (spec 0017, ticket 11): setting
+                // them leaves every stage fresh, and a file saved before them keeps its hashes. The
+                // stage that first reads them adds them to its own hash.
+                inputs.remove(super::run_inputs::INPUT);
+                // Nor the rates table (ticket 12): only the cost reads it, and cost is not stored.
+                inputs.remove(super::cost::INPUT);
+                // The buildings, places and settlements (BLD-1) are read by no stage unless the
+                // optimise settings ask for them: loading one leaves every stage fresh.
+                for f in super::features::FeatureInput::ALL {
+                    inputs.remove(f.key());
+                }
             }
-            if stage == Stage::Volumes
+            // The optimise stage reads the buildings when its settings ask for them (a building
+            // cost, or the flood terms with buildings loaded): then the file and its filters are
+            // part of its hash, by content, not by where the file sits.
+            if stage == Stage::Optimise
+                && let Some(b) = self.buildings_read_by_optimise()
+            {
+                dep["buildings"] = b;
+            }
+            if (stage == Stage::Volumes || windows)
                 && self.bed_model_value().is_some()
                 && let Some(a) = self.bed_axis_hash()
             {
                 dep["bed_axis"] = a;
             }
-        }
-        if matches!(stage, Stage::Optimise | Stage::Volumes) {
-            dep["options"] = self.doc["options"].clone();
         }
         hash_value(&dep)
     }
@@ -461,17 +647,20 @@ impl Session {
 
     /// A warning when the DEM the document names is missing or is not the file whose hash was
     /// recorded. `bytes` is the file the caller found at the recorded path, if any.
-    pub fn dem_warning(&self, bytes: Option<&[u8]>) -> Option<String> {
+    pub fn dem_warning<S: crate::sectioned::ByteSource + ?Sized>(
+        &self,
+        bytes: Option<&S>,
+    ) -> Option<String> {
         let dem = self.doc["inputs"]["dem"].as_object()?;
         let path = dem["path"].as_str().unwrap_or("?");
-        match bytes {
-            None => Some(format!(
+        match self.dem_check(bytes) {
+            super::volumes::DemCheck::Missing => Some(format!(
                 "the DEM `{path}` is missing: the volumes may no longer hold"
             )),
-            Some(b) if Some(sha256_hex(b).as_str()) != dem["sha256"].as_str() => Some(format!(
+            super::volumes::DemCheck::Changed => Some(format!(
                 "the DEM `{path}` has changed since its hash was recorded: the volumes may no longer hold"
             )),
-            Some(_) => None,
+            _ => None,
         }
     }
 
@@ -673,10 +862,32 @@ impl Session {
         self.import_with(items, None, false)
     }
 
+    /// An import into a design with a mouth sees the stored lines run towards the mouth, as an import
+    /// of a design without one does, and names the banks looking that way; afterwards the lines are
+    /// turned to run from the mouth again. With no downstream point given, the mouth is the point the
+    /// river runs towards.
     fn import_with(
         &mut self,
         items: &[(Role, &str)],
         downstream: Option<[f64; 2]>,
+        refuse_crossing: bool,
+    ) -> Result<ImportReport, DesignError> {
+        let Some(mouth) = self.stored_mouth() else {
+            return self.import_inner(items, downstream, None, refuse_crossing);
+        };
+        let mut view = self.clone();
+        view.turn_lines();
+        let report = view.import_inner(items, downstream, Some(mouth.point), refuse_crossing)?;
+        view.lines_from_mouth(mouth)?;
+        *self = view;
+        Ok(report)
+    }
+
+    fn import_inner(
+        &mut self,
+        items: &[(Role, &str)],
+        downstream: Option<[f64; 2]>,
+        mouth_xy: Option<[f64; 2]>,
         refuse_crossing: bool,
     ) -> Result<ImportReport, DesignError> {
         if items.is_empty() {
@@ -736,8 +947,16 @@ impl Session {
         };
         let mut converted = Vec::new();
         for (role, p) in &parsed {
-            let g = geojson::to_project_crs(p, target)
+            let mut g = geojson::to_project_crs(p, target)
                 .map_err(|e| DesignError::Input(format!("{}: {e}", role.name())))?;
+            // With a mouth, a new centreline runs towards it, as the stored lines do here.
+            if *role == Role::Centreline
+                && downstream.is_none()
+                && let Some(m) = mouth_xy
+                && line_points(&g).is_some_and(|c| super::bank_pair::runs_away_from(&c, m))
+            {
+                reverse_line(&mut g);
+            }
             converted.push((*role, p.crs, g));
         }
         let downstream_xy = match downstream {
@@ -746,7 +965,7 @@ impl Session {
                     .forward(lon, lat)
                     .map_err(|e| DesignError::Input(format!("the downstream point: {e}")))?,
             ),
-            None => None,
+            None => mouth_xy,
         };
         let pair = self.sound_pair(&converted, downstream_xy, refuse_crossing)?;
         let brings_a_bank = converted.iter().any(|(r, _, _)| r.is_bank());
@@ -837,8 +1056,13 @@ impl Session {
             crs_epsg: self.doc["project"]["crs"]["epsg"]
                 .as_u64()
                 .map(|c| c as u32),
-            // The document does not record a mouth yet: its lines are taken as they are stored.
-            ..RiverIn::default()
+            // The stored lines already run from the mouth when the design states one, so the river
+            // stage finds nothing to turn; it still names the banks looking downstream.
+            mouth: self
+                .stored_mouth()
+                .map(|m| super::river::Mouth::Point(m.point)),
+            water_profile: self.input_water_profile(),
+            end_levels_m: None,
         }
     }
 

@@ -6,6 +6,8 @@ mod eval;
 mod eval_rules;
 pub mod geotiff;
 pub mod host;
+pub mod project;
+pub mod sectioned;
 pub mod stage;
 pub mod types;
 

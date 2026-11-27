@@ -7,7 +7,7 @@
 
 use super::crs::Crs;
 use super::session::DesignError;
-use crate::geotiff::Dem;
+use crate::sectioned::Terrain;
 
 /// The longest side of the picture, in pixels.
 const MAX_SIDE: f64 = 1024.0;
@@ -37,9 +37,12 @@ fn lat_of(y: f64) -> f64 {
 
 /// A hillshade of `dem`, lit from the north-west at 45 degrees. Nodata and the ring of pixels
 /// around it are transparent.
-pub fn hillshade(dem: &Dem) -> Result<Hillshade, DesignError> {
+///
+/// The heights are read at the coarsest level of the DEM whose cell is no larger than a pixel of
+/// the picture (COG-1): an overview of a sectioned DEM, the DEM itself when it is in memory.
+pub fn hillshade<G: Terrain + ?Sized>(dem: &G) -> Result<Hillshade, DesignError> {
     let crs = dem
-        .epsg
+        .epsg()
         .ok_or_else(|| DesignError::Input("the DEM does not name its CRS".into()))
         .and_then(|e| Crs::from_epsg(e).map_err(DesignError::Input))?;
     let (x0, y0, x1, y1) = dem.bounds();
@@ -83,10 +86,11 @@ pub fn hillshade(dem: &Dem) -> Result<Hillshade, DesignError> {
         Crs::Wgs84 => lonlat.clone(),
         Crs::Utm(u) => u.forward_all(&lonlat).map_err(DesignError::Input)?,
     };
-    let z: Vec<f64> = at_dem
-        .iter()
-        .map(|p| dem.sample_bilinear(p[0], p[1]))
-        .collect();
+    // A pixel of the picture, in the DEM's units: the smaller of its two sides.
+    let pixel = ((x1 - x0) / w as f64).min((y1 - y0) / h as f64);
+    let level = dem.level_for_cell(pixel);
+    let (xs, ys): (Vec<f64>, Vec<f64>) = at_dem.iter().map(|p| (p[0], p[1])).unzip();
+    let z: Vec<f64> = dem.sample_many_level(level, &xs, &ys);
 
     // Horn's slope and aspect; light from azimuth 315, altitude 45 (GDAL's defaults).
     let (zenith, light) = (core::f64::consts::FRAC_PI_4, 135f64.to_radians());
@@ -151,6 +155,7 @@ pub fn hillshade(dem: &Dem) -> Result<Hillshade, DesignError> {
 mod tests {
     //! Label: property
     use super::*;
+    use crate::geotiff::Dem;
 
     /// A WGS84 DEM of a tilted plane: height rises to the east at 1 m per 10 m.
     fn ramp(rising_east: bool) -> Dem {

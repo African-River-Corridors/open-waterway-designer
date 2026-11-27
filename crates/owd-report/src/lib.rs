@@ -17,6 +17,7 @@ mod trace;
 
 use owd_format::design::Session;
 use owd_format::design::screening::SCREENING_NOTICE;
+use owd_format::sectioned::ByteSource;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -228,9 +229,34 @@ pub fn extension(format: Format) -> &'static str {
 }
 
 /// Build the report a request asks for, from the design text and the DEM bytes.
-pub fn build(design: &str, dem: Option<&[u8]>, req: &Request) -> Result<Report, ReportError> {
+pub fn build<S: ByteSource + ?Sized>(
+    design: &str,
+    dem: Option<&S>,
+    req: &Request,
+) -> Result<Report, ReportError> {
+    build_with(design, dem, req, &Extras::default())
+}
+
+/// What a report reads that the design file does not hold: worked out by the caller from files
+/// the design names by reference (BLD-1).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Extras {
+    /// The buildings and the channel (`Session::building_conflicts`), when buildings are loaded.
+    pub building_conflicts: Option<Value>,
+}
+
+/// [`build`] with [`Extras`].
+pub fn build_with<S: ByteSource + ?Sized>(
+    design: &str,
+    dem: Option<&S>,
+    req: &Request,
+    extras: &Extras,
+) -> Result<Report, ReportError> {
+    let held = dem;
+    let dem: Option<&dyn ByteSource> = held.as_ref().map(|d| d as &dyn ByteSource);
     let session = Session::open(design).map_err(|e| ReportError::Design(e.to_string()))?;
-    let ctx = Context::new(&session, dem, req.option.as_deref())?;
+    let mut ctx = Context::new(&session, dem, req.option.as_deref())?;
+    ctx.building_conflicts = extras.building_conflicts.clone();
     let number = format!("OWD-{}-{}", design_code(&ctx.title), req.kind.code());
     let mut assets = Vec::new();
     let (body, appendices) = match req.kind {
@@ -299,29 +325,29 @@ pub fn build(design: &str, dem: Option<&[u8]>, req: &Request) -> Result<Report, 
 pub(crate) struct Context<'a> {
     pub session: &'a Session,
     pub doc: &'a Value,
-    pub dem: Option<&'a [u8]>,
+    pub dem: Option<&'a dyn ByteSource>,
     pub title: String,
     /// The chosen design line option (from `options`), if the design has one.
     pub option: Option<Value>,
+    /// The buildings and the channel (BLD-1), from the caller.
+    pub building_conflicts: Option<Value>,
 }
 
 impl<'a> Context<'a> {
     fn new(
         session: &'a Session,
-        dem: Option<&'a [u8]>,
+        dem: Option<&'a dyn ByteSource>,
         asked: Option<&str>,
     ) -> Result<Context<'a>, ReportError> {
         let doc = session.document();
-        let list = doc["options"].as_array().cloned().unwrap_or_default();
+        let list = session.design_lines();
         let option = match asked {
             None => list.first().cloned(),
             Some(a) => Some(
                 list.iter()
                     .find(|o| o["id"] == a || o["name"] == a)
                     .cloned()
-                    .ok_or_else(|| {
-                        ReportError::Design(format!("there is no design line option `{a}`"))
-                    })?,
+                    .ok_or_else(|| ReportError::Design(format!("there is no design line `{a}`")))?,
             ),
         };
         let title = doc["project"]["title"]
@@ -335,16 +361,15 @@ impl<'a> Context<'a> {
             dem,
             title,
             option,
+            building_conflicts: None,
         })
     }
 
     /// The volumes stage's row of the chosen option.
     pub fn volumes_row(&self) -> Option<&'a Value> {
         let id = self.option.as_ref()?["id"].clone();
-        self.doc["stages"]["volumes"]["results"]["options"]
-            .as_array()?
-            .iter()
-            .find(|r| r["id"] == id)
+        let r = &self.doc["stages"]["volumes"]["results"];
+        (r.is_object() && r["id"] == id).then_some(r)
     }
 }
 

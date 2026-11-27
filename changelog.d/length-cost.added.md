@@ -1,0 +1,9 @@
+- **The pool search can pay for length: `length_weight`, a cost per metre of design line.** Water deeper than the channel bed costs nothing to cut, so extra length in deep water was free, and on a meander whose lobes nest the cheapest lattice line could be a loop (issue #569, kept out only by a guard). The new optimise setting `length_weight` is the cost of one metre of line (sailing distance), in the units of the cut cost: one m3 of cut at weight 1 costs 1. Every lattice edge, closing path and the baseline it is compared with pay it for their length; the `c_min` heuristic adds it per metre, so it stays admissible (any path is at least the straight-line distance long). The weir cascade does not read it: every cascade covers the whole line, so it would add the same to each. Set it with `owd optimise --length-weight X`, or in the app through `set_optimise_settings`. It is stored in the settings and is part of the optimise hash; the lattice's details show it with each pool's line length and length cost. The default, 0, is off: the setting is then not written, and every design gives the same line and numbers, byte for byte. On the meander of issue #569 (coarse lattice) a weight of 0.9 already makes the first pool's own line simple, where 0.8 still loops; on that coarse lattice some larger weights (7 to 11, 100, 150) give a loop again, because snapped search states merge, so the guard stays. The trade-off, on a synthetic 90-degree meander one wavelength (2,000 m of river, ends 944 m apart, dry neck between the bends, 40 m channel, bed 5.5 m below the dry ground, R_min 150 m): a high weight trades cut for a shorter line, and at 3,000 the line cuts the neck.
+
+  | length_weight | line length (m) | cut (m3, search measure) |
+  |---|---|---|
+  | 0 | 2,016 | 0 |
+  | 100 | 1,880 | 1,288 |
+  | 200 | 1,042 | 118,360 |
+  | 500 | 977 | 137,059 |
+  | 3,000 | 966 | 154,924 |

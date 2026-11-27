@@ -151,6 +151,19 @@ impl Utm {
 }
 
 impl Utm {
+    /// [`Utm::forward`] as a function that builds the projection once and is then called point by
+    /// point (longitude and latitude in degrees): `None` where a point cannot be converted.
+    pub fn forward_fn(self) -> Result<impl Fn([f64; 2]) -> Option<[f64; 2]> + 'static, String> {
+        let geo = Proj::from_proj_string("+proj=longlat +datum=WGS84 +no_defs")
+            .map_err(|e| e.to_string())?;
+        let utm = Proj::from_proj_string(&self.proj_string()).map_err(|e| e.to_string())?;
+        Ok(move |[lon, lat]: [f64; 2]| {
+            let mut p = (lon.to_radians(), lat.to_radians(), 0.0);
+            proj4rs::transform::transform(&geo, &utm, &mut p).ok()?;
+            Some([p.0, p.1])
+        })
+    }
+
     /// [`Utm::forward`] for many points, building the projection once.
     pub fn forward_all(self, pts: &[[f64; 2]]) -> Result<Vec<[f64; 2]>, String> {
         let geo = Proj::from_proj_string("+proj=longlat +datum=WGS84 +no_defs")

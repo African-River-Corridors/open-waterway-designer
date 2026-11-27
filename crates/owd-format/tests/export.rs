@@ -50,7 +50,7 @@ fn design(line: &[Pt], vessel: &str) -> Session {
 #[test]
 fn the_csv_has_the_label_a_header_and_a_failed_checks_column_that_names_the_failure() {
     let s = design(&zigzag(), "CEMT_Va");
-    let csv = s.export_csv(None);
+    let csv = s.export_csv(None::<&[u8]>);
     let lines: Vec<&str> = csv.lines().collect();
     assert_eq!(lines[0], format!("# {SCREENING_LABEL}"));
     let header: Vec<&str> = lines[1].split(',').collect();
@@ -63,7 +63,7 @@ fn the_csv_has_the_label_a_header_and_a_failed_checks_column_that_names_the_fail
     );
     assert_eq!(row[0], "rolling-circle");
     // A passing option has an empty failed_checks cell.
-    let ok = design(&straight(), "CEMT_IV").export_csv(None);
+    let ok = design(&straight(), "CEMT_IV").export_csv(None::<&[u8]>);
     let row: Vec<&str> = ok.lines().nth(2).unwrap().split(',').collect();
     assert_eq!(row[col], "");
 }
@@ -71,8 +71,9 @@ fn the_csv_has_the_label_a_header_and_a_failed_checks_column_that_names_the_fail
 #[test]
 fn the_geojson_has_the_label_the_checks_and_the_failure_in_both_crs() {
     let s = design(&zigzag(), "CEMT_Va");
-    let project: Value = serde_json::from_str(&s.export_geojson(false, None).unwrap()).unwrap();
-    let wgs: Value = serde_json::from_str(&s.export_geojson(true, None).unwrap()).unwrap();
+    let project: Value =
+        serde_json::from_str(&s.export_geojson(false, None::<&[u8]>).unwrap()).unwrap();
+    let wgs: Value = serde_json::from_str(&s.export_geojson(true, None::<&[u8]>).unwrap()).unwrap();
     for fc in [&project, &wgs] {
         assert_eq!(fc["screening"], SCREENING_LABEL);
         let f = &fc["features"][0];
@@ -117,10 +118,13 @@ fn the_geojson_has_the_label_the_checks_and_the_failure_in_both_crs() {
 #[test]
 fn an_export_with_no_options_says_what_to_run() {
     let s = Session::new("empty", "2026-10-16");
-    let e = s.export_geojson(false, None).unwrap_err().to_string();
+    let e = s
+        .export_geojson(false, None::<&[u8]>)
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("alignment"), "{e}");
     // The CSV of nothing is the label and the header.
-    assert_eq!(s.export_csv(None).lines().count(), 2);
+    assert_eq!(s.export_csv(None::<&[u8]>).lines().count(), 2);
 }
 
 #[test]
@@ -158,8 +162,8 @@ fn volumes_show_in_the_exports_with_their_status() {
 fn exports_carry_the_notice_of_every_input_used_and_are_unchanged_without_provenance() {
     use owd_format::design::provenance::{Mark, record};
     let mut s = design(&straight(), "CEMT_IV");
-    let plain_csv = s.export_csv(None);
-    let plain_geo = s.export_geojson(false, None).unwrap();
+    let plain_csv = s.export_csv(None::<&[u8]>);
+    let plain_geo = s.export_geojson(false, None::<&[u8]>).unwrap();
     assert!(!plain_csv.contains("OpenStreetMap") && !plain_geo.contains("notices"));
 
     let notice = "Source: EC JRC/Google; Pekel et al. 2016";
@@ -179,10 +183,11 @@ fn exports_carry_the_notice_of_every_input_used_and_are_unchanged_without_proven
         ),
     )
     .unwrap();
-    let csv = s.export_csv(None);
+    let csv = s.export_csv(None::<&[u8]>);
     assert!(csv.contains(&format!("# {notice}\n")), "{csv}");
     assert!(csv.contains("# Copernicus DEM notice\n"), "{csv}");
-    let geo: Value = serde_json::from_str(&s.export_geojson(false, None).unwrap()).unwrap();
+    let geo: Value =
+        serde_json::from_str(&s.export_geojson(false, None::<&[u8]>).unwrap()).unwrap();
     assert_eq!(geo["notices"], json!([notice, "Copernicus DEM notice"]));
     // The results do not depend on provenance: the same rows follow the notices.
     assert!(csv.ends_with(plain_csv.split_once('\n').unwrap().1));

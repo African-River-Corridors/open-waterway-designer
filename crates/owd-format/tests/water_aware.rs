@@ -74,7 +74,7 @@ fn seed_legs_and_fixed_pieces_give_the_joined_fitted_option() {
     let mut s = tail_design();
     s.align(AlignMethod::RollingCircle, &Value::Null, None)
         .unwrap();
-    let o = &s.document()["options"][0];
+    let o = &s.document()["stages"]["alignment"]["results"];
     let line = pts(&o["line"]);
     let tail: Vec<Pt> = fixed_tail().fixed[0].iter().map(shift).collect();
     // Joined, fitted, and ending on the must-follow tail exactly.
@@ -89,9 +89,9 @@ fn seed_legs_and_fixed_pieces_give_the_joined_fitted_option() {
     );
     assert!(s.validate().is_empty(), "{:?}", s.validate());
     // Exports carry the note.
-    let csv = s.export_csv(None);
+    let csv = s.export_csv(None::<&[u8]>);
     assert!(csv.contains("width only, no depth data"), "{csv}");
-    let g: Value = serde_json::from_str(&s.export_geojson(false, None).unwrap()).unwrap();
+    let g: Value = serde_json::from_str(&s.export_geojson(false, None::<&[u8]>).unwrap()).unwrap();
     assert_eq!(
         g["features"][0]["properties"]["notes"],
         "width only, no depth data"

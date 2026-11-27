@@ -426,7 +426,7 @@ fn with_both_banks_the_default_reads_the_reference_line_and_stores_it() {
     assert_eq!(v["fits"]["plan_line"], "reference");
     assert!(v["fits"].get("plan_line_note").is_none());
     let d: Value = serde_json::from_str(&std::fs::read_to_string(&doc).unwrap()).unwrap();
-    let rl = &d["inputs"]["reference_line"]["line"]["coordinates"];
+    let rl = &d["stages"]["reference_line"]["results"]["line"]["coordinates"];
     assert!(rl.as_array().unwrap().len() > 2);
     assert!(owd(&["validate", &doc]).status.success());
     let t = out(&owd(&["fits", &doc, "--show"]));

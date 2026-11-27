@@ -119,11 +119,14 @@ After the volumes stage, the document holds four answers for each design line op
   limit. A stretch is one of these kinds:
   - `width`: the navigable water is too narrow (works: `bank-cut`);
   - `depth`: the water over the bed at the design line is too shallow (works: `dredge`);
-  - `radius`: the river bends too tightly (works: `cut-through`);
+  - `radius`: the line the radius is read on (the design line, or a plan line) bends more tightly than R_min,
+    outside the 2 % reading tolerance the R_min check uses (works: `cut-through`);
   - `infeasible`: no works make the line fit (works: `none-possible`).
 
   Each stretch gives its chainages, the governing Rule, the required value and the river's own value at the
-  worst station, the deficit, and the dredge and dry cut inside the stretch.
+  worst station, the deficit, and the dredge and dry cut inside the stretch. Those volumes are the design's
+  own, part of the design total: a station in two kinds of stretch is in both rows, and the stretches do not
+  cover the whole line, so the rows do not add up to the total.
 - **Quantities**: dredge, dry cut and tallest face, as before.
 
 The desktop and web app show the verdict per option, the design basis in the inputs panel, and the

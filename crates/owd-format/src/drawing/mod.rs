@@ -4,7 +4,8 @@
 //! no hatch and no writer.
 //!
 //! The builder computes no engineering value. Every number it draws is a result the design
-//! already holds (the station walk the volumes stage sums). [`check`] reads the finished drawing
+//! already holds: the volumes stage's stored stations (spec 0017 ticket 10), read through
+//! [`Session::section_stations`]. [`check`] reads the finished drawing
 //! documents back and fails when a drawn value differs from its result.
 
 pub mod check;
@@ -16,6 +17,7 @@ mod setting_out;
 pub mod style;
 mod typical;
 
+use crate::design::sections::{StationSource, Stations};
 use crate::design::terrain::dem_sampler;
 use crate::design::{DemCheck, DesignError, Session};
 use crate::types::TerrainSampler;
@@ -219,13 +221,14 @@ pub fn sheets_with(
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {
     let option_id = resolve_option(session, options.option.as_deref())?;
-    let walk = session.option_section_walk(&option_id, terrain)?;
+    let stations = stations(session, &option_id, terrain, options)?;
+    let walk = &stations.walk;
     let mut out = Vec::new();
     for kind in &options.sheets {
         match kind {
             SheetKind::CrossSections => {
-                let built = gallery::build(session, &option_id, &walk, options)?;
-                let findings = check::gallery(&built, &walk);
+                let built = gallery::build(session, &option_id, walk, options)?;
+                let findings = check::gallery(&built, walk);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
                 }
@@ -242,16 +245,17 @@ pub fn sheets_with(
                 out.extend(built);
             }
             SheetKind::Plan => {
-                let built = plan::build(session, &option_id, &walk, terrain, options, background)?;
-                let findings = check::plan(&built, &walk, session, &option_id, options);
+                let built =
+                    plan::build(session, &option_id, &stations, terrain, options, background)?;
+                let findings = check::plan(&built, walk, session, &option_id, options);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
                 }
                 out.extend(built);
             }
             SheetKind::LongSection => {
-                let built = long_section::build(session, &option_id, &walk, options)?;
-                let series = session.long_section(&option_id, &walk)?;
+                let built = long_section::build(session, &option_id, &stations, options)?;
+                let series = session.long_section(&option_id, &stations)?;
                 let findings = check::long_section(&built, &series);
                 if !findings.is_empty() {
                     return Err(DrawError::Checks(findings));
@@ -268,15 +272,66 @@ pub fn sheets_with(
             }
         }
     }
+    // A sheet drawn from a new walk, or with sections cut again, says so, and why.
+    if let StationSource::Walked { reason } | StationSource::Computed { reason } = stations.source {
+        for sheet in out.iter_mut().filter(|s| {
+            matches!(
+                s.kind,
+                SheetKind::CrossSections | SheetKind::Plan | SheetKind::LongSection
+            )
+        }) {
+            sheet.warnings.push(reason.to_string());
+        }
+    }
     Ok(out)
+}
+
+/// The stations the sheets read (spec 0017 ticket 10): the volumes stage's stored stations, through
+/// the one door the report and the web app use too. The cross sections and the plan's section
+/// marks need the profile of every station the gallery picks; when one was not kept (a sheet style
+/// with another spacing), that station's section is cut again on the terrain for these sheets. A neighbour's
+/// profile is never drawn as the station asked for.
+fn stations(
+    session: &Session,
+    option_id: &str,
+    terrain: TerrainSampler,
+    options: &DrawOptions,
+) -> Result<Stations, DrawError> {
+    let stations = session.section_stations(option_id, &[], Some(terrain))?;
+    let sections = options
+        .sheets
+        .iter()
+        .any(|k| matches!(k, SheetKind::CrossSections | SheetKind::Plan));
+    if !sections || stations.source != StationSource::Stored {
+        return Ok(stations);
+    }
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .cloned()
+        .unwrap_or(Value::Null);
+    let picked: Vec<f64> = gallery::pick(
+        &stations.walk,
+        &option,
+        &worst_chainages(session, option_id),
+        &options.style.gallery(),
+    )
+    .iter()
+    .map(|&(i, _)| stations.walk.stations[i].chainage_m)
+    .collect();
+    if stations.profiles_at(&picked) {
+        return Ok(stations);
+    }
+    Ok(session.section_stations(option_id, &picked, Some(terrain))?)
 }
 
 /// The constraint stretches of an option (spec 0007), as the volumes stage stored them in its
 /// screening. Empty when there are none.
 pub(super) fn stretches(session: &Session, option_id: &str) -> Vec<Value> {
-    session.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|r| r["id"] == option_id))
+    crate::design::volume_rows_of(session.document())
+        .iter()
+        .find(|r| r["id"] == option_id)
         .and_then(|r| r["screening"]["constraint_stretches"].as_array())
         .cloned()
         .unwrap_or_default()
@@ -292,21 +347,16 @@ pub(super) fn worst_chainages(session: &Session, option_id: &str) -> Vec<f64> {
 
 /// The id of the option asked for: by id or by name, or the first option.
 fn resolve_option(session: &Session, asked: Option<&str>) -> Result<String, DrawError> {
-    let list = session.document()["options"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
+    let list = session.design_lines();
     let found = match asked {
         None => list.first(),
         Some(a) => list.iter().find(|o| o["id"] == a || o["name"] == a),
     };
     match (found, asked) {
         (Some(o), _) => Ok(o["id"].as_str().unwrap_or_default().to_string()),
-        (None, Some(a)) => Err(DrawError::Input(format!(
-            "there is no design line option `{a}`"
-        ))),
+        (None, Some(a)) => Err(DrawError::Input(format!("there is no design line `{a}`"))),
         (None, None) => Err(DrawError::Input(
-            "the design has no design line option to draw: run `owd align` first".into(),
+            "the design has no design line to draw: run `owd align` first".into(),
         )),
     }
 }
@@ -432,26 +482,29 @@ impl SheetOutput {
 
 /// Draw a design given as text, with the bytes of the DEM file it names (if any). The DEM must be
 /// the file whose hash the design recorded: a drawn section is what the volumes stage summed.
-pub fn sheets_from_text(
+pub fn sheets_from_text<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
 ) -> Result<Vec<Sheet>, DrawError> {
     sheets_from_text_with(design, dem, options, &Background::Relief)
 }
 
 /// [`sheets_from_text`], with the plan sheets drawn over `background`.
-pub fn sheets_from_text_with(
+pub fn sheets_from_text_with<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
     background: &Background,
 ) -> Result<Vec<Sheet>, DrawError> {
     let session = Session::open(design)?;
     let name = session.dem_path().unwrap_or("DEM").to_string();
     let grid = match session.dem_check(dem) {
-        DemCheck::Matches => crate::geotiff::read_bytes(dem.unwrap_or_default())
-            .map_err(|e| DrawError::Input(format!("{name}: {e}")))?,
+        DemCheck::Matches => match dem {
+            Some(d) => crate::sectioned::terrain_of(&d)
+                .map_err(|e| DrawError::Input(format!("{name}: {e}")))?,
+            None => return Err(DrawError::Input(format!("{name}: missing"))),
+        },
         DemCheck::Changed => {
             return Err(DrawError::Input(format!(
                 "the DEM `{name}` has changed since its hash was recorded: run `owd volumes --dem {name}` first"
@@ -476,9 +529,9 @@ pub fn sheets_from_text_with(
 }
 
 /// Every file of every sheet of a design: the one call that `owd draw` and `owd.draw` share.
-pub fn files_from_text(
+pub fn files_from_text<S: crate::sectioned::ByteSource + ?Sized>(
     design: &str,
-    dem: Option<&[u8]>,
+    dem: Option<&S>,
     options: &DrawOptions,
 ) -> Result<Vec<(String, Vec<u8>)>, DrawError> {
     let mut out = Vec::new();

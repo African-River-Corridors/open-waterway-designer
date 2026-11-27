@@ -161,6 +161,7 @@ fn cli_align(doc: &str) -> commands::Result {
             corridors: None,
             fairness_weight: None,
             use_water: None,
+            ..Default::default()
         },
         &None,
         true,
@@ -215,7 +216,7 @@ fn a_centreline_alone_gives_the_same_design_line_on_both_surfaces() {
     for bank in ["left_bank", "right_bank", "river_polygon"] {
         assert!(cli["inputs"][bank].is_null(), "{bank}");
     }
-    let option = &cli["options"][0];
+    let option = &cli["stages"]["alignment"]["results"];
     assert_eq!(option["method"], "rolling_circle");
     // Easing the tight bends changes the length a little.
     let (given, made) = (length_m(&line), length_m(&points(&option["line"])));
@@ -248,7 +249,7 @@ fn a_centreline_of_a_whole_river_gives_a_design_line_in_good_time() {
     );
 
     let d = document(&shell.save_text_for(Path::new("whole-river.owd")));
-    let option = &d["options"][0];
+    let option = &d["stages"]["alignment"]["results"];
     let made = length_m(&points(&option["line"]));
     assert!(
         (made - given).abs() <= 0.01 * given,

@@ -21,6 +21,9 @@ proj4rs = { version = "0.2.1", default-features = false }
 sha2 = "0.11.1"
 rusqlite = { version = "0.40.2", features = ["bundled", "serialize"] }
 tiff = { version = "0.11.3", default-features = false, features = ["deflate", "lzw"] }
+# The sectioned GeoTIFF reader and writer (COG-1): DEFLATE and LZW, block by block.
+miniz_oxide = "0.8"
+weezl = "0.1"
 
 [features]
 # `owd draw --imagery`: fetch EOxCloudless 2016 for plan backdrops. Off for the web build, which has no

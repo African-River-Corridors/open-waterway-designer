@@ -8,6 +8,7 @@
 
 use super::RuleError;
 use super::engine::{self, Selection, Sized, Vessel};
+use crate::alignment::radius_check::{RADIUS_TOL, radius_ok};
 use arc_rules::eval::{Outcome, Trace, TraceRow};
 use arc_rules::model::Compare;
 
@@ -42,6 +43,76 @@ impl StretchKind {
             StretchKind::Radius => "cut-through",
         }
     }
+}
+
+/// The words for a count of one kind of stretch, from the one place that names them. A width
+/// stretch is a widening (the bank cut), a depth stretch a deepening (the dredge), a radius stretch
+/// a bend cut-through when it is read on a plan line, and a bend tighter than R_min when it is read
+/// on the design line itself.
+pub fn kind_phrase(kind: StretchKind, n: usize, radius_on_design_line: bool) -> String {
+    let (one, many) = match (kind, radius_on_design_line) {
+        (StretchKind::Width, _) => ("widening", "widenings"),
+        (StretchKind::Depth, _) => ("deepening", "deepenings"),
+        (StretchKind::Radius, false) => ("bend cut-through", "bend cut-throughs"),
+        (StretchKind::Radius, true) => (
+            "bend tighter than R_min on the design line",
+            "bends tighter than R_min on the design line",
+        ),
+    };
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// The works the design makes, in words, from the counts of each kind of stretch: "the design cuts
+/// the river at 5 stretches: 2 widenings, 3 deepenings". `None` when there are none. A radius
+/// stretch read on the design line is no work of the design: it is named apart, as a line that is
+/// tighter than R_min.
+pub fn works_summary(counts: [usize; 3], radius_on_design_line: bool) -> Option<String> {
+    let [width, depth, radius] = counts;
+    let mut parts = Vec::new();
+    let mut cuts = Vec::new();
+    for (kind, n) in [(StretchKind::Width, width), (StretchKind::Depth, depth)] {
+        if n > 0 {
+            cuts.push(kind_phrase(kind, n, radius_on_design_line));
+        }
+    }
+    if radius > 0 && !radius_on_design_line {
+        cuts.push(kind_phrase(StretchKind::Radius, radius, false));
+    }
+    if !cuts.is_empty() {
+        let n = width + depth + if radius_on_design_line { 0 } else { radius };
+        parts.push(format!(
+            "the design cuts the river at {n} stretch{}: {}",
+            if n == 1 { "" } else { "es" },
+            cuts.join(", ")
+        ));
+    }
+    if radius > 0 && radius_on_design_line {
+        parts.push(format!(
+            "the design line is tighter than R_min at {}",
+            kind_phrase(StretchKind::Radius, radius, true)
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// The note under every list of stretches, in the app, the reports and the exports.
+pub fn stretch_table_note(radius_on_design_line: bool) -> String {
+    format!(
+        "A stretch is a run of stations on the design line where the river as found falls short of \
+         a governing limit, so the design cuts it: a widening (bank cut) where the navigable water \
+         is narrower than the width, a deepening (dredge) where it is shallower than the depth, a \
+         bend cut-through where the river's bend is tighter than R_min. Radius is read on {}. A \
+         radius within the {}% reading tolerance of R_min is not a stretch. Dredge and dry cut are \
+         the design's own, inside the stretch, and part of the design total: stretches of different \
+         kinds overlap, and the stretches do not cover the whole line, so the rows do not add up \
+         to the total.",
+        if radius_on_design_line {
+            "the design line itself"
+        } else {
+            "the plan line"
+        },
+        RADIUS_TOL * 100.0
+    )
 }
 
 /// One station of a design line option, as the river is found there.
@@ -183,6 +254,16 @@ pub fn falls_short(required: f64, river: f64) -> bool {
     river < required
 }
 
+/// Whether the river falls short of the limit of `kind`. A width or a depth falls short when it is
+/// below the limit. A radius falls short only when it fails `radius_ok`: the same reading
+/// tolerance as the R_min check, so a radius at R_min, or within the tolerance, is not a stretch.
+pub fn falls_short_of(kind: StretchKind, required: f64, river: f64) -> bool {
+    match kind {
+        StretchKind::Radius => !radius_ok(river, required),
+        _ => falls_short(required, river),
+    }
+}
+
 /// The constraint stretches of one design line option: each run of consecutive stations where the
 /// river falls short of a governing limit, by kind, in chainage order. `station_m` is the station
 /// spacing, for the volumes inside each stretch.
@@ -199,7 +280,7 @@ pub fn constraint_stretches(
         let mut run: Option<Stretch> = None;
         for (i, st) in stations.iter().enumerate() {
             let short = match need(kind, st, &lim, vessel, sized)? {
-                Some((required, rule, river)) if falls_short(required, river) => {
+                Some((required, rule, river)) if falls_short_of(kind, required, river) => {
                     Some((required, rule, river))
                 }
                 _ => None,

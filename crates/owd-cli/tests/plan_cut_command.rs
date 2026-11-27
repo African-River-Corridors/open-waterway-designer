@@ -48,7 +48,7 @@ fn plan_cut_runs_with_no_terrain_and_prints_a_plan_only_result() {
             .contains("plan only")
     );
     let options = stored["options"].as_array().unwrap();
-    assert_eq!(options.len(), doc["options"].as_array().unwrap().len());
+    assert_eq!(options.len(), 1, "one design line, one plan cut");
     for o in options {
         let (left, right) = (
             o["by_bank"]["left_m2"].as_f64().unwrap(),

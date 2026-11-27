@@ -14,6 +14,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
+#[cfg(target_arch = "wasm32")]
+pub mod blob;
+pub mod terrain;
+
 type Js<T> = Result<T, JsValue>;
 
 fn err(message: String) -> JsValue {
@@ -112,6 +116,11 @@ fn endpoints(json: &str) -> Result<owd_shell::reach::ReachEndpoints, String> {
     Ok(owd_shell::reach::ReachEndpoints::from_json(&v))
 }
 
+fn feature_input(key: &str) -> Result<owd_format::design::features::FeatureInput, String> {
+    owd_format::design::features::FeatureInput::from_key(key)
+        .ok_or_else(|| format!("`{key}` is not a feature input"))
+}
+
 fn point(v: &Value) -> Result<[f64; 2], String> {
     match (v[0].as_f64(), v[1].as_f64()) {
         (Some(a), Some(b)) => Ok([a, b]),
@@ -129,6 +138,14 @@ pub fn engine_version() -> String {
 #[wasm_bindgen]
 pub struct Session {
     state: AppState,
+    /// The terrain tiles of the DEM, for the map's 3D view: made on demand, never stored.
+    terrain: terrain::TerrainTiles,
+    /// The channel of the design line as the map draws it (MAP-5), as JSON, for the design named
+    /// by the terrain's cut key: made when the design changes, never stored.
+    channel: String,
+    /// The channel's stations for the cut test of buildings and places (BLD-1), with the channel
+    /// key they were made under: made on the first click after the design changes, never stored.
+    stations: Option<(String, std::sync::Arc<owd_format::design::channel::Channel>)>,
 }
 
 impl Session {
@@ -138,11 +155,42 @@ impl Session {
         Ok(self.snapshot())
     }
 
-    /// The station walk of an option, made now or taken from the cache.
-    fn walked(&mut self, option: &str) -> Js<owd_shell::state::Walked> {
-        let walked = ok(self.state.begin_walk(option).run())?;
+    /// The stations of an option, read now or taken from the cache, with the section profile of
+    /// the station nearest each of `profiles_at`.
+    fn walked(&mut self, option: &str, profiles_at: &[f64]) -> Js<owd_shell::state::Walked> {
+        let walked = ok(self
+            .state
+            .begin_walk(option)
+            .with_profiles_at(profiles_at)
+            .run())?;
         self.state.keep_walk(&walked);
         Ok(walked)
+    }
+}
+
+impl Session {
+    /// Make the channel's geometry and its cut surface again when the design has changed since
+    /// they were made (MAP-5). The geometry is `{key, geometry, note, legend}`: `geometry` is null with
+    /// `note` saying why when the channel cannot be drawn yet.
+    fn sync_channel(&mut self) {
+        let key = self.state.channel_key();
+        if !self.channel.is_empty() && self.terrain.cut_key() == key {
+            return;
+        }
+        let (geometry, note, cut) = match self.state.channel() {
+            Ok((g, cut)) => (json!(g), serde_json::Value::Null, cut),
+            Err(why) => (serde_json::Value::Null, json!(why), None),
+        };
+        self.channel = json!({
+            "key": key,
+            "geometry": geometry,
+            "note": note,
+            "legend": terrain::TerrainTiles::cut_legend(),
+        })
+        .to_string();
+        // The maker of the DEM in memory first, so the cut is laid on it.
+        let _ = self.terrain.info(self.state.dem());
+        self.terrain.set_cut(key, cut);
     }
 }
 
@@ -153,6 +201,9 @@ impl Session {
     pub fn new() -> Session {
         Session {
             state: new_design(),
+            terrain: terrain::TerrainTiles::default(),
+            channel: String::new(),
+            stations: None,
         }
     }
 
@@ -181,6 +232,77 @@ impl Session {
         let opened = ok(AppState::open(Path::new(name), text, dem.as_deref()))?;
         self.state = opened.with_machine_settings_of(&self.state);
         Ok(self.snapshot())
+    }
+
+    /// Open a design of a project folder (PROJ-1) with the DEM the project names, in one step.
+    /// `design` and `dem_path` are paths from the project folder. The snapshot has `project_note`:
+    /// what opening changed in the design (its DEM named, or pointed at the project's), or null.
+    pub fn open_project(
+        &mut self,
+        design: &str,
+        text: &str,
+        dem_path: Option<String>,
+        dem: Option<Vec<u8>>,
+    ) -> Js<String> {
+        let dem = match (&dem_path, dem) {
+            (Some(p), Some(bytes)) => Some((
+                Path::new(p.as_str()),
+                owd_format::sectioned::DemFile::from_bytes(bytes),
+            )),
+            _ => None,
+        };
+        let (opened, note) = ok(AppState::open_in_project(
+            Path::new(design),
+            text,
+            dem,
+            &today(),
+        ))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        let mut snap: Value = self.state.snapshot();
+        snap["project_note"] = json!(note);
+        Ok(snap.to_string())
+    }
+
+    /// Read and check the text of a project folder's `owd-project.json` (PROJ-1), as JSON.
+    pub fn project_read(&self, text: &str) -> Js<String> {
+        ok(owd_shell::project::read(text)).map(|v| v.to_string())
+    }
+
+    /// What a project folder with no text file holds in the standard places. `listing` is JSON,
+    /// see `owd_shell::project::find`.
+    pub fn project_find(&self, listing: &str) -> Js<String> {
+        let listing: Value =
+            ok(serde_json::from_str(listing).map_err(|e| format!("not a folder listing: {e}")))?;
+        Ok(owd_shell::project::find(&listing).to_string())
+    }
+
+    /// The text of a new `owd-project.json` for a folder that has none.
+    pub fn project_adopt(
+        &self,
+        listing: &str,
+        title: &str,
+        design: Option<String>,
+        dem: Option<String>,
+    ) -> Js<String> {
+        let listing: Value =
+            ok(serde_json::from_str(listing).map_err(|e| format!("not a folder listing: {e}")))?;
+        ok(owd_shell::project::adopt(
+            &listing,
+            title,
+            design.as_deref(),
+            dem.as_deref(),
+        ))
+    }
+
+    /// Where a file OWD writes out goes in a project folder: `exports/<name>`.
+    pub fn project_export_path(&self, name: &str) -> Js<String> {
+        ok(owd_shell::project::export_path(name))
+    }
+
+    /// Set the water level from a pool table (`chainage_m,level_m` a line), as `owd import
+    /// --water-pools FILE` does, through the same session call.
+    pub fn set_water_pools(&mut self, table: &str) -> Js<String> {
+        self.edit(|s| s.set_water_pools(table))
     }
 
     /// The `.owd` text to save as `name` (the DEM path is said from there).
@@ -253,6 +375,139 @@ impl Session {
         let text = ok(input::vector_text(name, bytes, layer.as_deref()))?;
         let date = today();
         self.edit(|s| s.load_inputs(&[(role, text)], &date))
+    }
+
+    /// Load a feature file (BLD-1: `buildings`, `points_of_interest` or `settlements`): the design
+    /// records it by path and hash, as `owd import --buildings` does. `name` is its path from the
+    /// project folder (or its file name).
+    pub fn load_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.load_features(input, Path::new(name), &bytes))
+    }
+
+    /// Attach the feature file the design names, from the bytes the page found (a project's file).
+    /// Refused when it is not the file whose hash was recorded.
+    pub fn attach_features(&mut self, key: &str, name: &str, bytes: Vec<u8>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.attach_features(input, Some(Path::new(name)), &bytes))
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        self.edit(|s| s.clear_features(input))
+    }
+
+    /// Set the building filters, as JSON `{min_confidence, min_area_m2, near_cut_m}`.
+    pub fn set_building_filters(&mut self, filters: &str) -> Js<String> {
+        let v: Value =
+            ok(serde_json::from_str(filters).map_err(|e| format!("not building filters: {e}")))?;
+        self.edit(|s| s.set_building_filters_json(&v))
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, or `null` when none is attached.
+    pub fn feature_map(&self, key: &str) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        Ok(self
+            .state
+            .feature_map(input)
+            .map_or_else(|| "null".to_string(), |m| m.as_str().to_string()))
+    }
+
+    /// What a click on feature `fid` of `key` reads, as JSON (see `AppState::feature_card`), with
+    /// the water of pool water `pool` there when the map shows it: `{pool, water_level_m,
+    /// ground_m, depth_m}`, or null on dry ground.
+    pub fn feature_card(&mut self, key: &str, fid: u32, pool: Option<u32>) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        let ckey = self.state.channel_key();
+        if self.stations.as_ref().is_none_or(|(k, _)| *k != ckey) {
+            self.stations = self
+                .state
+                .channel_stations()
+                .ok()
+                .map(|c| (ckey, std::sync::Arc::new(c)));
+        }
+        let channel = self.stations.as_ref().map(|(_, c)| c.clone());
+        let mut card = ok(self
+            .state
+            .feature_card(input, fid as usize, channel.as_deref()))?;
+        if let Some(id) = pool {
+            let at = card["lon_lat"].clone();
+            let (lon, lat) = (
+                at[0].as_f64().unwrap_or(f64::NAN),
+                at[1].as_f64().unwrap_or(f64::NAN),
+            );
+            card["water"] = self
+                .terrain
+                .pool_water_at(id, lon, lat)
+                .unwrap_or(Value::Null);
+            if input == owd_format::design::features::FeatureInput::Settlements {
+                let pts = self.state.settlement_samples(fid as usize, 400);
+                if let Ok(at) = self.terrain.pool_water_points(id, &pts)
+                    && !at.is_empty()
+                {
+                    let wet = at.iter().filter(|w| w.is_some()).count();
+                    card["flooded_share"] = json!(wet as f64 / at.len() as f64);
+                }
+            }
+        }
+        Ok(card.to_string())
+    }
+
+    /// The buildings and the channel (BLD-1), as JSON: in the cut, near it, on land a cut-through
+    /// severs; `null` with no buildings or no channel yet. Read on the channel's stations, made once
+    /// per design.
+    pub fn building_conflicts(&mut self) -> String {
+        let ckey = self.state.channel_key();
+        if self.stations.as_ref().is_none_or(|(k, _)| *k != ckey) {
+            self.stations = self
+                .state
+                .channel_stations()
+                .ok()
+                .map(|c| (ckey, std::sync::Arc::new(c)));
+        }
+        match &self.stations {
+            Some((_, c)) => self
+                .state
+                .building_conflicts_on(c)
+                .map_or_else(|| "null".into(), |v| v.to_string()),
+            None => "null".into(),
+        }
+    }
+
+    /// Which features of `key` the map's pool water `pool` covers at least `min_depth_m` deep, as
+    /// JSON: `{fids, depths, pools: [{number, flooded, counted}]}`. `counted`: the buildings that
+    /// pass the confidence and area filters. This is the map's flood mask, which differs from the
+    /// weir search's rule near a weir (see `pool_water.rs`).
+    pub fn features_flooded(&mut self, key: &str, pool: u32, min_depth_m: f64) -> Js<String> {
+        let input = ok(feature_input(key))?;
+        let pts = self.state.feature_points(input);
+        let at = ok(self.terrain.pool_water_points(pool, &pts))?;
+        let counted = self.state.features_counted(input);
+        let mut fids = Vec::new();
+        let mut depths = Vec::new();
+        let mut by_pool: std::collections::BTreeMap<usize, (usize, usize)> = Default::default();
+        for (i, w) in at.iter().enumerate() {
+            let Some(w) = w else { continue };
+            if w.depth_m.is_nan() || w.depth_m < min_depth_m {
+                continue;
+            }
+            fids.push(i);
+            depths.push((w.depth_m * 100.0).round() / 100.0);
+            let e = by_pool.entry(w.pool).or_default();
+            e.0 += 1;
+            if counted.get(i).copied().unwrap_or(true) {
+                e.1 += 1;
+            }
+        }
+        let pools: Vec<Value> = by_pool
+            .into_iter()
+            .map(|(n, (f, c))| json!({"number": n, "flooded": f, "counted": c}))
+            .collect();
+        Ok(
+            json!({"fids": fids, "depths": depths, "pools": pools, "min_depth_m": min_depth_m})
+                .to_string(),
+        )
     }
 
     /// Edit a bank (spec 0012). `edit` is JSON, see `owd_shell::input::bank_edit_of`.
@@ -437,12 +692,56 @@ impl Session {
         self.edit(|s| s.set_downstream_point_text(point))
     }
 
+    /// State the river mouth (spec 0017): `downstream` or `LON,LAT`, as `owd import --mouth` reads
+    /// it, through the same shell call.
+    pub fn set_mouth(&mut self, mouth: &str) -> Js<String> {
+        self.edit(|s| s.set_mouth(mouth))
+    }
+
+    /// Set the run inputs (spec 0017, ticket 11): the objective (`SENSE:MEASURE`), the limits (one
+    /// `MEASURE<=VALUE` a line) and the target level, each empty for none, as `owd run-inputs`
+    /// sets them, through the same session call.
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Js<String> {
+        self.edit(|s| s.set_run_inputs(objective, limits, target_level))
+    }
+
+    /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text (a FeatureCollection of polygons
+    /// in the project CRS, each with `name` and `kind`), as `owd constraints --no-go` reads it,
+    /// through the same session call. Empty text removes them.
+    pub fn set_no_go(&mut self, geojson: &str) -> Js<String> {
+        self.edit(|s| s.set_no_go(geojson))
+    }
+
+    /// Set the cut-rate multiplier raster (spec 0017, ticket 13) from the bytes of a GeoTIFF, as
+    /// `owd constraints --multiplier` does, through the same session call.
+    pub fn set_cut_rate_multiplier(&mut self, name: &str, bytes: Vec<u8>) -> Js<String> {
+        self.edit(|s| s.set_cut_rate_multiplier(Path::new(name), bytes))
+    }
+
+    /// Remove the cut-rate multiplier raster (spec 0017, ticket 13).
+    pub fn clear_cut_rate_multiplier(&mut self) -> Js<String> {
+        self.edit(|s| s.clear_cut_rate_multiplier())
+    }
+
     /// Set settings of one alignment method (`rolling_circle`, `reroute`, `centreline`), as JSON
     /// text, as `owd align --use-water` does (ticket #494). Nothing runs.
     pub fn set_alignment_settings(&mut self, method: &str, settings: &str) -> Js<String> {
         let settings: Value =
             ok(serde_json::from_str(settings).map_err(|e| format!("not alignment settings: {e}")))?;
         self.edit(|s| s.set_alignment_settings(method, &settings))
+    }
+
+    /// Set optimise settings (`length_weight`, the weights, ...), as JSON text, as `owd optimise
+    /// --length-weight` does. Nothing runs.
+    pub fn set_optimise_settings(&mut self, settings: &str) -> Js<String> {
+        let settings: Value =
+            ok(serde_json::from_str(settings).map_err(|e| format!("not optimise settings: {e}")))?;
+        self.edit(|s| s.set_optimise_settings(&settings))
     }
 
     pub fn set_water(&mut self, level: &str, fall: &str) -> Js<String> {
@@ -501,6 +800,98 @@ impl Session {
             "height": shade.height,
         })
         .to_string())
+    }
+
+    /// What the map needs for the 3D view of the DEM (MAP-2), as JSON: `null` with no DEM in
+    /// memory, else the DEM's box in degrees, its lowest and highest height, the deepest zoom
+    /// worth asking for, and a number that changes with the DEM.
+    pub fn terrain_info(&mut self) -> Js<String> {
+        self.sync_channel();
+        ok(self.terrain.info(self.state.dem())).map(|v| v.to_string())
+    }
+
+    /// Terrain tile `z/x/y` of the ground in `state` (`before`: the DEM; `after`: the DEM with
+    /// the channel cut into it, MAP-5): a 256 px Terrarium PNG, made here from the DEM in memory.
+    pub fn terrain_tile(&mut self, state: &str, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.tile_in(self.state.dem(), state, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// The channel of the design line for the map (MAP-5), as JSON `{key, geometry, note, legend}`:
+    /// the bed edges, the water-surface edges and the daylight lines in longitude and latitude.
+    /// Derived here; nothing is written to the design.
+    pub fn channel_geometry(&mut self) -> String {
+        self.sync_channel();
+        self.channel.clone()
+    }
+
+    /// The cut-depth picture of tile `z/x/y` (MAP-5): an RGBA PNG; no bytes when nothing is cut.
+    pub fn cut_tile(&mut self, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.cut_tile(self.state.dem(), z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// What the cut reads out at a point of the map (MAP-5), as JSON; `null` where nothing is cut.
+    pub fn cut_at(&mut self, lon: f64, lat: f64) -> Js<String> {
+        ok(self.terrain.cut_at(self.state.dem(), lon, lat)).map(|v| v.to_string())
+    }
+
+    /// The contour lines of tile `z/x/y` of the DEM, every `interval_m` metres: a Mapbox Vector
+    /// Tile, made here from the DEM in memory (no bytes when the tile has no line).
+    pub fn contour_tile(
+        &mut self,
+        state: &str,
+        z: u32,
+        x: u32,
+        y: u32,
+        interval_m: f64,
+    ) -> Js<Vec<u8>> {
+        ok(self
+            .terrain
+            .contour_tile_in(self.state.dem(), state, z, x, y, interval_m))
+        .map(|tile| tile.to_vec())
+    }
+
+    /// The weirs, the locks and the pools of the design, for the map (MAP-4), as JSON: made now
+    /// from the water level along the design line. An empty list when the design has no pools.
+    pub fn map_structures(&self) -> Js<String> {
+        Ok(ok(self.state.map_structures())?.to_string())
+    }
+
+    /// The pool water (MAP-4), as JSON: the ground each pool floods, worked out here from the DEM
+    /// in memory. `null` with no DEM or no pools. `build_ms` is the time the flood mask took.
+    pub fn pool_water_info(&mut self) -> Js<String> {
+        let pools = ok(self.state.pool_water_input())?;
+        let start = js_sys::Date::now();
+        let mut info = ok(self.terrain.pool_water(self.state.dem(), pools))?;
+        if info.is_object() {
+            info["build_ms"] = json!(js_sys::Date::now() - start);
+        }
+        Ok(info.to_string())
+    }
+
+    /// The water of tile `z/x/y` of pool water `id`: a PNG coloured by depth, clear where dry.
+    pub fn pool_water_tile(&mut self, id: u32, z: u32, x: u32, y: u32) -> Js<Vec<u8>> {
+        ok(self.terrain.pool_water_tile(id, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// The terrain of tile `z/x/y` with pool water `id` on it: the pool's level where there is
+    /// water, the ground elsewhere. A 256 px Terrarium PNG.
+    /// `state` names the ground the water stands on: `before`, the DEM; `after`, the DEM with the
+    /// channel cut into it and the cut filled to the pool level (MAP-5).
+    pub fn pool_surface_tile(
+        &mut self,
+        id: u32,
+        state: &str,
+        z: u32,
+        x: u32,
+        y: u32,
+    ) -> Js<Vec<u8>> {
+        ok(self.terrain.pool_surface_tile_in(id, state, z, x, y)).map(|png| png.to_vec())
+    }
+
+    /// What a click reads on pool water `id`, as JSON: `{pool, water_level_m, ground_m,
+    /// depth_m}`, or `null` on dry ground.
+    pub fn pool_water_at(&mut self, id: u32, lon: f64, lat: f64) -> Js<String> {
+        ok(self.terrain.pool_water_at(id, lon, lat)).map(|v| v.to_string())
     }
 
     /// The drawing sheets of an option (spec 0004, ticket 8) as JSON: `[{number, title, svg,
@@ -567,7 +958,7 @@ impl Session {
     }
 
     pub fn long_section(&mut self, option: &str) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         Ok(ok(w
             .session
             .long_section(option, &w.walk)
@@ -576,7 +967,7 @@ impl Session {
     }
 
     pub fn cross_section(&mut self, option: &str, chainage: f64) -> Js<String> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[chainage])?;
         Ok(ok(w
             .session
             .cross_section(&w.walk, chainage)
@@ -585,7 +976,7 @@ impl Session {
     }
 
     pub fn station_near(&mut self, option: &str, lon: f64, lat: f64) -> Js<f64> {
-        let w = self.walked(option)?;
+        let w = self.walked(option, &[])?;
         ok(w.session
             .station_near(&w.walk, lon, lat)
             .map_err(|e| e.to_string()))
@@ -605,5 +996,63 @@ impl Session {
 impl Default for Session {
     fn default() -> Self {
         Session::new()
+    }
+}
+
+/// A DEM given as a browser `File` the worker keeps (COG-1): `len` its size and `read` the worker's
+/// `(start, length) -> Uint8Array` over it. A large tiled file is then read a block at a time and
+/// never loaded whole; any other is read whole, as the bytes were before.
+#[cfg(target_arch = "wasm32")]
+fn dem_file(len: f64, read: js_sys::Function) -> owd_format::sectioned::DemFile {
+    owd_format::sectioned::DemFile::new(std::sync::Arc::new(blob::JsBlobSource::new(read, len)))
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl Session {
+    /// [`Session::load_dem`] from a file the worker keeps, read by range.
+    pub fn load_dem_file(&mut self, name: &str, len: f64, read: js_sys::Function) -> Js<String> {
+        let date = today();
+        let file = dem_file(len, read);
+        self.edit(|s| s.load_dem_file(Path::new(name), file, &date))
+    }
+
+    /// [`Session::open_text`] with the DEM as a file the worker keeps, read by range.
+    pub fn open_text_file(
+        &mut self,
+        name: &str,
+        text: &str,
+        len: Option<f64>,
+        read: Option<js_sys::Function>,
+    ) -> Js<String> {
+        let dem = len.zip(read).map(|(l, r)| dem_file(l, r));
+        let opened = ok(AppState::open_with_file(Path::new(name), text, dem))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        Ok(self.snapshot())
+    }
+
+    /// [`Session::open_project`] with the DEM as a file the worker keeps, read by range.
+    pub fn open_project_file(
+        &mut self,
+        design: &str,
+        text: &str,
+        dem_path: Option<String>,
+        len: Option<f64>,
+        read: Option<js_sys::Function>,
+    ) -> Js<String> {
+        let dem = match (&dem_path, len.zip(read)) {
+            (Some(p), Some((l, r))) => Some((Path::new(p.as_str()), dem_file(l, r))),
+            _ => None,
+        };
+        let (opened, note) = ok(AppState::open_in_project(
+            Path::new(design),
+            text,
+            dem,
+            &today(),
+        ))?;
+        self.state = opened.with_machine_settings_of(&self.state);
+        let mut snap: Value = self.state.snapshot();
+        snap["project_note"] = json!(note);
+        Ok(snap.to_string())
     }
 }

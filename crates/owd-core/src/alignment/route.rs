@@ -103,6 +103,9 @@ pub struct CostGrid {
     pub wet: Vec<Vec<f64>>,
     /// The dry part of `vol` on a protected bank (a `NoCutZone`), m3; empty when there are none.
     pub protected: Vec<Vec<f64>>,
+    /// True where the channel footprint at that offset reaches a no-go area or a cell at or above
+    /// [`HARD_EXCLUSION`] (spec 0017 ticket 13): impassable. Empty when there are none.
+    pub no_go: Vec<Vec<bool>>,
     pub station_step: f64,
     pub offset_step: f64,
 }
@@ -114,6 +117,30 @@ impl CostGrid {
             .get(i)
             .and_then(|r| r.get(k))
             .is_some_and(|&v| v > 0.0)
+            || self.no_go.get(i).and_then(|r| r.get(k)).is_some_and(|&b| b)
+    }
+
+    /// The number of stations where an offset path (each offset snapped to the grid) is on an
+    /// impassable cell (spec 0017 ticket 13).
+    pub fn no_go_hits(&self, ovals: &[f64]) -> usize {
+        if self.no_go.is_empty() {
+            return 0;
+        }
+        let k = self.offsets.len();
+        ovals
+            .iter()
+            .enumerate()
+            .filter(|&(i, &o)| {
+                let r = ((o - self.offsets[0]) / self.offset_step).round_ties_even();
+                self.no_go[i][r.max(0.0).min(k as f64 - 1.0) as usize]
+            })
+            .count()
+    }
+
+    /// True when some cells are passable only under a condition (a protected bank, a no-go area), so
+    /// a corridor may hold no line at all and the sweep goes on to a wider one.
+    fn has_conditions(&self) -> bool {
+        !self.protected.is_empty() || !self.no_go.is_empty()
     }
 
     /// The protected cut of an offset path (each offset snapped to the grid), m3.
@@ -184,6 +211,32 @@ fn hypot(a: f64, b: f64) -> f64 {
     libm::hypot(a, b)
 }
 
+/// A cut-rate multiplier at or above this value makes its cell impassable (spec 0017: a hard
+/// exclusion).
+pub const HARD_EXCLUSION: f64 = 1e6;
+
+/// What constrains the re-route (spec 0017 ticket 13). The default constrains nothing: the grid is
+/// the one [`build_cost_grid`] makes, bit for bit.
+#[derive(Clone, Copy, Default)]
+pub struct GridConstraints<'a> {
+    /// The cut-rate multiplier at points, `weight(xs, ys)`: each transect point's cut is multiplied
+    /// by it (no data, NaN, counts as 1). A value at or above [`HARD_EXCLUSION`] is impassable.
+    pub weight: Option<TerrainSampler<'a>>,
+    /// Areas the channel footprint must not enter.
+    pub no_go: &'a [Polygon],
+    /// Half the width of the channel footprint, m: a cell is impassable when a transect point within
+    /// this distance of its offset is in a no-go area (or within the grid's margin of one, see
+    /// [`no_go_margin`]) or on a hard exclusion.
+    pub footprint_half_m: f64,
+}
+
+/// How near a no-go area a footprint point may come before its cell is impassable: half a station
+/// step (the line runs straight between stations) and one offset step (the smoothing moves the line
+/// off the grid). OWD's own choice, so the line the grid picks clears the area itself.
+pub fn no_go_margin(p: &GridParams) -> f64 {
+    p.station_step / 2.0 + p.offset_step
+}
+
 /// Transect-approximation cut volume for every (station, offset).
 pub fn build_cost_grid(
     line: &[Pt],
@@ -205,6 +258,42 @@ pub fn build_cost_grid_with(
     p: &GridParams,
     no_cut: &[NoCutZone],
     bank_line: Option<&[Pt]>,
+) -> Result<CostGrid, PyError> {
+    build_grid(
+        line,
+        terrain,
+        river,
+        grade_at,
+        p,
+        no_cut,
+        bank_line,
+        &GridConstraints::default(),
+    )
+}
+
+/// [`build_cost_grid`] with constraints (spec 0017 ticket 13): each cell's cut weighed by the
+/// multiplier, and the cells whose footprint reaches a no-go area or a hard exclusion impassable.
+pub fn build_cost_grid_constrained(
+    line: &[Pt],
+    terrain: TerrainSampler,
+    river: &[Polygon],
+    grade_at: &dyn Fn(f64) -> f64,
+    p: &GridParams,
+    c: &GridConstraints,
+) -> Result<CostGrid, PyError> {
+    build_grid(line, terrain, river, grade_at, p, &[], None, c)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_grid(
+    line: &[Pt],
+    terrain: TerrainSampler,
+    river: &[Polygon],
+    grade_at: &dyn Fn(f64) -> f64,
+    p: &GridParams,
+    no_cut: &[NoCutZone],
+    bank_line: Option<&[Pt]>,
+    c: &GridConstraints,
 ) -> Result<CostGrid, PyError> {
     let bank_line = bank_line.unwrap_or(line);
     if !no_cut.is_empty() && bank_line.len() < 2 {
@@ -268,6 +357,40 @@ pub fn build_cost_grid_with(
         .map(|(&x, &y)| contains_xy(river, [x, y]))
         .collect();
     let grades: Vec<f64> = stations_m.iter().map(|&s| grade_at(s)).collect();
+    // The multiplier at each transect point, and which points are impassable: in (or within the
+    // margin of) a no-go area, or on a hard exclusion.
+    let weights: Option<Vec<f64>> = match c.weight {
+        Some(f) => {
+            let w = f(&sx, &sy);
+            if w.len() != sx.len() {
+                return Err(PyError::value(format!(
+                    "the multiplier gave {} values for {} points",
+                    w.len(),
+                    sx.len()
+                )));
+            }
+            Some(
+                w.into_iter()
+                    .map(|v| if v.is_finite() { v } else { 1.0 })
+                    .collect(),
+            )
+        }
+        None => None,
+    };
+    let margin = no_go_margin(p);
+    let impassable: Vec<bool> = if c.no_go.is_empty() && weights.is_none() {
+        Vec::new()
+    } else {
+        (0..sx.len())
+            .map(|j| {
+                weights.as_ref().is_some_and(|w| w[j] >= HARD_EXCLUSION)
+                    || (!c.no_go.is_empty()
+                        && crate::geom::overlay::point_polygon_distance([sx[j], sy[j]], c.no_go)
+                            <= margin)
+            })
+            .collect()
+    };
+    let any_impassable = impassable.iter().any(|&b| b);
 
     let n_off = offsets.len();
     let mut vol = vec![vec![f64::NAN; n_off]; n];
@@ -276,6 +399,11 @@ pub fn build_cost_grid_with(
         Vec::new()
     } else {
         vec![vec![0.0; n_off]; n]
+    };
+    let mut no_go = if any_impassable {
+        vec![vec![false; n_off]; n]
+    } else {
+        Vec::new()
     };
     // Which transect points are protected ground: dry, and on a zone's bank.
     let guarded: Vec<bool> = if no_cut.is_empty() {
@@ -297,11 +425,19 @@ pub fn build_cost_grid_with(
         let g = &heights[i * n_toff..(i + 1) * n_toff];
         let w = &wet_flags[i * n_toff..(i + 1) * n_toff];
         let valid: Vec<bool> = g.iter().map(|z| z.is_finite()).collect();
+        if any_impassable {
+            let imp = &impassable[i * n_toff..(i + 1) * n_toff];
+            for (k, &off) in offsets.iter().enumerate() {
+                no_go[i][k] =
+                    (0..n_toff).any(|j| imp[j] && (t_off[j] - off).abs() <= c.footprint_half_m);
+            }
+        }
         if valid.iter().filter(|&&v| v).count() < 5 {
             vol[i] = vec![0.0; n_off];
             wet[i] = vec![0.0; n_off];
             continue;
         }
+        let wrow = weights.as_ref().map(|w| &w[i * n_toff..(i + 1) * n_toff]);
         for (k, &off) in offsets.iter().enumerate() {
             let cut: Vec<f64> = (0..n_toff)
                 .map(|j| {
@@ -313,6 +449,11 @@ pub fn build_cost_grid_with(
                     if c < 0.0 { 0.0 } else { c }
                 })
                 .collect();
+            // The cut weighed by the multiplier, point by point; with none, the cut as it was.
+            let cut: Vec<f64> = match wrow {
+                Some(wr) => cut.iter().zip(wr).map(|(c, m)| c * m).collect(),
+                None => cut,
+            };
             let wet_cut: Vec<f64> = cut
                 .iter()
                 .zip(w)
@@ -341,6 +482,7 @@ pub fn build_cost_grid_with(
         vol,
         wet,
         protected,
+        no_go,
         station_step: p.station_step,
         offset_step: p.offset_step,
     })
@@ -773,13 +915,18 @@ pub fn solve_at_corridor_fair(
         fairness_weight,
     )
     .map_err(|e| {
-        if grid.protected.is_empty() {
-            e
-        } else {
+        if !grid.protected.is_empty() {
             PyError::runtime(format!(
                 "{}, or a no-cut zone leaves no offset that clears its bank",
                 e.message
             ))
+        } else if !grid.no_go.is_empty() {
+            PyError::runtime(format!(
+                "{}, or a no-go area leaves no offset that clears it",
+                e.message
+            ))
+        } else {
+            e
         }
     })?;
     let beta = baseline_turn_angles(&grid.centres);
@@ -802,7 +949,9 @@ pub fn solve_at_corridor_fair(
         );
         // It reads no cost, so it must not cut more of a protected bank than the line it starts
         // from; if it would, the line stays as the passes on the offsets left it (and fails).
-        if grid.protected_cut(&o) <= grid.protected_cut(&sm) {
+        if grid.protected_cut(&o) <= grid.protected_cut(&sm)
+            && grid.no_go_hits(&o) <= grid.no_go_hits(&sm)
+        {
             (o, passes + more, r)
         } else {
             (sm, passes, rmin)
@@ -857,7 +1006,7 @@ pub fn optimise_route(grid: &CostGrid, p: &RouteParams) -> Result<RouteResult, P
         let (sm, passes, rmin, sav) =
             match solve_at_corridor_fair(grid, &cost, ch, p.r_min, p.fairness_weight) {
                 Ok(v) => v,
-                Err(e) if grid.protected.is_empty() => return Err(e),
+                Err(e) if !grid.has_conditions() => return Err(e),
                 Err(e) => {
                     last_err = Some(e);
                     continue;
@@ -869,7 +1018,7 @@ pub fn optimise_route(grid: &CostGrid, p: &RouteParams) -> Result<RouteResult, P
         let ok = radius_ok(measured, p.r_min);
         // `(clean, ok, sav) > (best_clean, best_ok, best_sav)`; `clean` is always true with no
         // zones, so the ranking is then the Python `(ok, sav) > (best_ok, best_sav)`.
-        let clean = grid.protected_cut(&sm) == 0.0;
+        let clean = grid.protected_cut(&sm) == 0.0 && grid.no_go_hits(&sm) == 0;
         let better = best.as_ref().is_none_or(|b| {
             (clean && !b.clean)
                 || (clean == b.clean && ((ok && !b.ok) || (ok == b.ok && sav > b.sav)))
@@ -982,6 +1131,7 @@ mod tests {
             vol: vec![vec![5.0]; 3],
             wet: vec![vec![1.0]; 3],
             protected: vec![],
+            no_go: Vec::new(),
             station_step: 100.0,
             offset_step: 10.0,
         };
@@ -1039,6 +1189,7 @@ mod tests {
             vol: vec![vec![1.0; m]; n],
             wet: vec![vec![1.0; m]; n],
             protected: vec![],
+            no_go: Vec::new(),
             station_step: 50.0,
             offset_step: 10.0,
         }
@@ -1198,9 +1349,10 @@ mod tests {
             grades: vec![0.0; n],
             vol: vec![vec![1.0]; n],
             wet: vec![vec![0.0]; n],
+            protected: Vec::new(),
+            no_go: Vec::new(),
             station_step: 100.0,
             offset_step: 10.0,
-            protected: Vec::new(),
         };
         let p = RouteParams {
             r_min: r,

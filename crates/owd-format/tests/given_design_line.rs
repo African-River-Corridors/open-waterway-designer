@@ -1,6 +1,7 @@
-//! A design line can be an input: a line from a file becomes a design line option with the method
-//! `given`. It gets the radius check every option gets. A line under the minimum radius is
-//! reported, not refused. The volumes stage runs on it like on any option.
+//! A design line can be an input: a line from a file becomes the design line, with the method
+//! `given`. It gets the radius check every design line gets. A line under the minimum radius is
+//! reported, not refused. The volumes stage runs on it like on any design line. One design line per
+//! run (spec 0017): a given line replaces the line a method made, and a method replaces it.
 //!
 //! The session tests use a straight synthetic river in UTM 30N. The volumes test uses the web
 //! example and its terrain file.
@@ -96,14 +97,11 @@ fn r_min(s: &Session) -> f64 {
         .unwrap()
 }
 
+/// The design line, which must have the id `id`.
 fn option(s: &Session, id: &str) -> Value {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|o| o["id"] == id)
-        .unwrap_or_else(|| panic!("the design has no option `{id}`"))
-        .clone()
+    let line = s.document()["stages"]["alignment"]["results"].clone();
+    assert_eq!(line["id"], id, "the design line");
+    line
 }
 
 fn line_of(option: &Value) -> Vec<Pt> {
@@ -115,23 +113,22 @@ fn line_of(option: &Value) -> Vec<Pt> {
         .collect()
 }
 
+/// The id of every design line the later stages read: one.
 fn ids(s: &Session) -> Vec<String> {
-    s.document()["options"]
-        .as_array()
-        .unwrap()
+    owd_format::design::design_lines_of(s.document())
         .iter()
         .map(|o| o["id"].as_str().unwrap().to_string())
         .collect()
 }
 
 #[test]
-fn a_straight_given_line_becomes_an_option_that_holds_the_radius() {
+fn a_straight_given_line_becomes_the_design_line_and_holds_the_radius() {
     let mut s = design();
     let id = s
         .import_design_line(&utm_line(&straight()), "Study line")
         .unwrap();
     assert_eq!(id, "given-study-line");
-    assert_eq!(ids(&s), ["given-study-line"], "no other option is made");
+    assert_eq!(ids(&s), ["given-study-line"], "no other line is made");
     let o = option(&s, &id);
     assert_eq!(o["method"], "given");
     assert_eq!(o["name"], "Study line");
@@ -165,7 +162,7 @@ fn a_line_under_the_minimum_radius_is_reported_not_refused() {
     assert_eq!(
         owd_format::design::export::failed_checks(&o),
         ["R_min"],
-        "the failed check rides with the option"
+        "the failed check rides with the design line"
     );
 }
 
@@ -191,7 +188,7 @@ fn a_given_line_in_longitude_and_latitude_is_stored_in_the_project_crs() {
 }
 
 #[test]
-fn the_same_name_replaces_its_line_and_another_name_adds_one() {
+fn a_given_line_replaces_the_one_before_whatever_its_name() {
     let mut s = design();
     let a = s
         .import_design_line(&utm_line(&straight()), "Study line")
@@ -205,7 +202,7 @@ fn the_same_name_replaces_its_line_and_another_name_adds_one() {
     let b = s
         .import_design_line(&utm_line(&straight()), "Second line")
         .unwrap();
-    assert_eq!(ids(&s), [a, b]);
+    assert_eq!(ids(&s), [b]);
 }
 
 #[test]
@@ -256,7 +253,7 @@ fn a_new_sizing_checks_the_given_line_again_and_keeps_it() {
     assert_eq!(
         ids(&s),
         std::slice::from_ref(&id),
-        "the run makes no other option"
+        "the run makes no other line"
     );
     let after = option(&s, &id);
     assert_eq!(after["line"], before["line"], "the given line is kept");
@@ -273,27 +270,30 @@ fn a_new_sizing_checks_the_given_line_again_and_keeps_it() {
 }
 
 #[test]
-fn the_alignment_methods_and_a_given_line_leave_each_other_alone() {
+fn a_given_line_and_a_method_replace_each_other_and_a_run_keeps_the_given_line() {
     let mut s = design();
     let rolling = json!({"use_water": false});
     s.align(AlignMethod::RollingCircle, &rolling, None).unwrap();
     let id = s
         .import_design_line(&utm_line(&straight()), "Study line")
         .unwrap();
-    assert_eq!(ids(&s), ["rolling-circle", "given-study-line"]);
+    assert_eq!(ids(&s), ["given-study-line"]);
+    assert_eq!(
+        s.document()["stages"]["alignment"]["settings"]["method"],
+        "given"
+    );
     let given = option(&s, &id);
 
-    // The method run again replaces its own option only.
-    s.align(AlignMethod::RollingCircle, &rolling, None).unwrap();
-    assert_eq!(ids(&s), ["rolling-circle", "given-study-line"]);
-    assert_eq!(option(&s, &id), given);
-
-    // The alignment stage run again keeps both.
+    // The alignment stage run again (a new vessel) keeps the given line, checked again.
     s.set_vessel("CEMT_Va", Some(2.5)).unwrap();
     s.run_stale_with(None).unwrap();
-    assert_eq!(ids(&s), ["rolling-circle", "given-study-line"]);
+    assert_eq!(ids(&s), ["given-study-line"]);
     assert_eq!(option(&s, &id)["line"], given["line"]);
     assert_eq!(option(&s, &id)["checks"]["r_min_m"], json!(r_min(&s)));
+
+    // A method replaces the given line; the given line stays out of the settings.
+    s.align(AlignMethod::RollingCircle, &rolling, None).unwrap();
+    assert_eq!(ids(&s), ["rolling-circle"]);
     assert_eq!(
         option(&s, "rolling-circle")["checks"]["r_min_m"],
         json!(r_min(&s))
@@ -314,13 +314,8 @@ fn the_volumes_stage_runs_on_a_given_line_with_terrain() {
     let terrain = dem_sampler(&dem, Some(32630)).unwrap();
     let mut s = Session::open(&text).unwrap();
     assert_eq!(s.stage_status(Stage::Volumes), StageStatus::Fresh);
-    let rows = |s: &Session| -> Vec<Value> {
-        s.document()["stages"]["volumes"]["results"]["options"]
-            .as_array()
-            .unwrap()
-            .clone()
-    };
-    // The example's own option, on this engine and this terrain.
+    let rows = |s: &Session| -> Vec<Value> { owd_format::design::volume_rows_of(s.document()) };
+    // The example's own design line, on this engine and this terrain.
     s.run_stage_with(Stage::Volumes, Some(&terrain as TerrainSampler))
         .unwrap();
     let before = rows(&s);
@@ -336,15 +331,15 @@ fn the_volumes_stage_runs_on_a_given_line_with_terrain() {
     assert_eq!(
         s.stage_status(Stage::Volumes),
         StageStatus::Stale,
-        "a new option makes the volumes stale"
+        "a new design line makes the volumes stale"
     );
 
     s.run_stage_with(Stage::Volumes, Some(&terrain as TerrainSampler))
         .unwrap();
     let after = rows(&s);
-    assert_eq!(after.len(), 2);
-    assert_eq!(after[0], before[0], "the other option keeps its numbers");
-    let row = &after[1];
+    assert_eq!(after.len(), 1, "one design line, one row");
+    assert_ne!(after[0], before[0], "the given line's own numbers");
+    let row = &after[0];
     assert_eq!(row["id"], json!(id));
     assert_eq!(row["name"], "Straight across");
     assert_eq!(row["radius_ok"], json!(true));
@@ -357,7 +352,7 @@ fn the_volumes_stage_runs_on_a_given_line_with_terrain() {
     }
     assert!(row["total_m3"].as_f64().unwrap() > 0.0);
     assert!(row.get("no_feasible_line").is_none());
-    // The sections of the given line can be drawn like any option's.
+    // The sections of the given line can be drawn like any design line's.
     let walk = s.option_section_walk(&id, &terrain).unwrap();
     assert_eq!(
         walk.stations.len() as u64,

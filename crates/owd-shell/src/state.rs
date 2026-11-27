@@ -5,10 +5,13 @@
 //! validation or default logic: every answer comes from [`Session`].
 
 use crate::run::{Outcome, RunControl, RunJob};
-use owd_core::volumes::sections::SectionVolumes;
 use owd_format::design::bank_edit::BankEdit;
-use owd_format::design::{AlignMethod, DesignError, Role, Session, Stage, StageStatus};
-use owd_format::geotiff::{Dem, read_bytes};
+use owd_format::design::features::{BuildingFilters, FeatureInput};
+use owd_format::design::sections::Stations;
+use owd_format::design::{
+    AlignMethod, DesignError, NoteKind, OpenNote, Role, Session, Stage, StageStatus,
+};
+use owd_format::sectioned::{DemFile, Terrain, TerrainRef};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,15 +24,19 @@ pub struct AppState {
     dirty: bool,
     /// Warnings from the last open: for example a DEM that is missing or has changed.
     warnings: Vec<String>,
+    /// What opening a file from an older format changed, each note with its kind. The notes that
+    /// ask the user to act are in `warnings` too; the rest are information.
+    open_notes: Vec<OpenNote>,
     /// The DEM the document names, when the shell found it next to the document and it reads.
-    dem: Option<Arc<Dem>>,
-    /// The DEM file's bytes, for the hash check, and where it was read from.
-    dem_bytes: Option<Arc<Vec<u8>>>,
+    dem: Option<TerrainRef>,
+    /// The DEM file (its bytes in memory, or a file read by range: COG-1), for the identity
+    /// check, and where it was read from.
+    dem_src: Option<DemFile>,
     dem_file: Option<PathBuf>,
     /// The stage now running on a worker, if any.
     running: Option<(Stage, Arc<RunControl>)>,
-    /// The station walk last drawn, with the key it was made under (option and volumes inputs).
-    walk: Option<(String, Arc<SectionVolumes>)>,
+    /// The stations last drawn, with the key they were read under (option and volumes inputs).
+    walk: Option<(String, Arc<Stations>)>,
     /// The design as it stood before each bank edit, newest last, for undo (spec 0012).
     bank_undo: Vec<Session>,
     /// What "Start from a river" keeps between its steps (spec 0012).
@@ -43,35 +50,78 @@ pub struct AppState {
     /// The Rule Set files loaded in this shell, as text, for the life of the shell: every design
     /// opened later loads them too (ticket #491).
     rule_set_texts: Vec<String>,
+    /// Where each feature file (BLD-1: buildings, points of interest, settlements) was read from,
+    /// so a save elsewhere says its path again from there. By [`FeatureInput`] order.
+    feature_files: [Option<PathBuf>; 3],
+    /// Each feature file as the map draws it (WGS84 GeoJSON text), made when it is loaded or
+    /// attached. Never stored: the design holds only the reference.
+    feature_maps: [Option<Arc<String>>; 3],
+}
+
+/// A feature file as the map draws it (WGS84 GeoJSON text).
+fn feature_map(input: FeatureInput, bytes: &[u8]) -> Result<Arc<String>, String> {
+    let text = owd_format::design::features::file_text(input, bytes).map_err(message)?;
+    let v = owd_format::design::features::map_geojson(input, &text)?;
+    Ok(Arc::new(v.to_string()))
 }
 
 /// How many bank edits can be undone.
 const UNDO_LIMIT: usize = 50;
 
-/// A station walk to fetch or make off the main thread.
+/// The memory of a sectioned DEM's cache of decoded blocks under the terrain limit `limit`
+/// (`None`: the reader's default cache).
+fn cache_budget(limit: Option<u64>) -> u64 {
+    limit.unwrap_or(owd_format::sectioned::terrain::DEFAULT_CACHE_BYTES)
+}
+
+/// The terrain in `file`: in sections when it is a large tiled file (its cache within `limit`),
+/// else whole, with `limit` as the most a whole grid may take (COG-1).
+pub fn open_dem(
+    file: &DemFile,
+    limit: Option<u64>,
+) -> Result<TerrainRef, owd_format::geotiff::GeoTiffError> {
+    owd_format::sectioned::open_terrain(
+        file.source().clone(),
+        owd_format::sectioned::SECTIONED_FROM_BYTES,
+        limit.unwrap_or_else(owd_format::geotiff::grid_limit),
+        cache_budget(limit),
+    )
+}
+
+/// The stations to fetch or make off the main thread.
 pub struct WalkJob {
     session: Session,
-    dem: Option<Arc<Dem>>,
+    dem: Option<TerrainRef>,
     epsg: Option<u32>,
     option: String,
     key: String,
-    cached: Option<Arc<SectionVolumes>>,
+    cached: Option<Arc<Stations>>,
+    /// Chainages whose nearest station must have its section profile.
+    profiles_at: Vec<f64>,
 }
 
-/// A station walk and the design it was made from, to draw from.
+/// The stations and the design they were read from, to draw from.
 #[derive(Debug)]
 pub struct Walked {
     pub session: Session,
-    pub walk: Arc<SectionVolumes>,
+    pub walk: Arc<Stations>,
     key: String,
 }
 
 impl WalkJob {
-    /// The cached walk, or one made now on the DEM. A refusal is the session's reason.
+    /// Ask for the section profile of the station nearest each of `chainages` too.
+    pub fn with_profiles_at(mut self, chainages: &[f64]) -> WalkJob {
+        self.profiles_at = chainages.to_vec();
+        self
+    }
+
+    /// The cached stations, or the volumes stage's stored ones through
+    /// [`Session::section_stations`], the door the drawings use. The line is walked again on the
+    /// DEM only when a station asked for has no stored profile. A refusal is the session's reason.
     pub fn run(self) -> Result<Walked, String> {
         let walk = match self.cached {
-            Some(w) => w,
-            None => {
+            Some(w) if w.profiles_at(&self.profiles_at) => w,
+            _ => {
                 let dem = self
                     .dem
                     .ok_or("the sections need the DEM the volumes were run on: it is missing or has changed")?;
@@ -79,7 +129,7 @@ impl WalkJob {
                     owd_format::design::terrain::dem_sampler(&dem, self.epsg).map_err(message)?;
                 Arc::new(
                     self.session
-                        .option_section_walk(&self.option, &sampler)
+                        .section_stations(&self.option, &self.profiles_at, Some(&sampler))
                         .map_err(message)?,
                 )
             }
@@ -102,7 +152,10 @@ fn relative_to(base: &Path, target: &Path) -> String {
         Some(folder.join(target.file_name()?))
     });
     let (Ok(b), Some(t)) = (std::fs::canonicalize(base), resolved) else {
-        return target.to_string_lossy().replace('\\', "/");
+        // No disk to ask (the browser), or a folder that is not there: two relative paths are
+        // compared by their names.
+        return lexical_relative(base, target)
+            .unwrap_or_else(|| target.to_string_lossy().replace('\\', "/"));
     };
     let (bc, tc): (Vec<_>, Vec<_>) = (b.components().collect(), t.components().collect());
     let common = bc.iter().zip(&tc).take_while(|(x, y)| x == y).count();
@@ -113,6 +166,31 @@ fn relative_to(base: &Path, target: &Path) -> String {
             .map(|c| c.as_os_str().to_string_lossy().into_owned()),
     );
     parts.join("/")
+}
+
+/// `target` from the folder `base`, by the names alone: both relative, from the same place. `None`
+/// when either is absolute or climbs above that place.
+fn lexical_relative(base: &Path, target: &Path) -> Option<String> {
+    use std::path::Component;
+    let names = |p: &Path| -> Option<Vec<String>> {
+        let mut out: Vec<String> = Vec::new();
+        for c in p.components() {
+            match c {
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    out.pop()?;
+                }
+                Component::Normal(n) => out.push(n.to_string_lossy().into_owned()),
+                Component::RootDir | Component::Prefix(_) => return None,
+            }
+        }
+        Some(out)
+    };
+    let (b, t) = (names(base)?, names(target)?);
+    let common = b.iter().zip(&t).take_while(|(x, y)| x == y).count();
+    let mut parts: Vec<String> = vec!["..".to_string(); b.len() - common];
+    parts.extend(t[common..].iter().cloned());
+    Some(parts.join("/"))
 }
 
 /// A custom vessel from the form's fields: each a number or the text typed (empty for none). A
@@ -193,8 +271,9 @@ impl AppState {
             path: None,
             dirty: false,
             warnings: Vec::new(),
+            open_notes: Vec::new(),
             dem: None,
-            dem_bytes: None,
+            dem_src: None,
             dem_file: None,
             running: None,
             walk: None,
@@ -203,6 +282,8 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         }
     }
 
@@ -210,9 +291,57 @@ impl AppState {
     /// names, if the shell found it next to the document.
     /// A path with the old file extension is refused with a message to rename it (spec 0006).
     pub fn open(path: &Path, text: &str, dem_bytes: Option<&[u8]>) -> Result<AppState, String> {
+        AppState::open_owned(path, text, dem_bytes.map(<[u8]>::to_vec))
+    }
+
+    /// [`AppState::open`] for a caller that owns the DEM file's bytes: they are kept as they are,
+    /// not copied (a large DEM in the browser, where memory is short).
+    pub fn open_owned(path: &Path, text: &str, dem: Option<Vec<u8>>) -> Result<AppState, String> {
+        AppState::open_with_file(path, text, dem.map(DemFile::from_bytes))
+    }
+
+    /// [`AppState::open`] with the DEM as a file read by range (COG-1): a large tiled file is never
+    /// read whole, only the blocks the stages and the map ask for.
+    pub fn open_with_file(
+        path: &Path,
+        text: &str,
+        dem: Option<DemFile>,
+    ) -> Result<AppState, String> {
+        let dem_bytes = dem.as_ref();
         owd_format::design::check_file_name(&path.to_string_lossy()).map_err(message)?;
-        let session = Session::open(text).map_err(message)?;
-        let warnings = session.dem_warning(dem_bytes).into_iter().collect();
+        let mut session = Session::open(text).map_err(message)?;
+        // A file from format 0.4 records no mouth: with no water level to tell, its DEM tells, when
+        // it is the file whose hash was recorded.
+        if session.old_mouth_pending() {
+            let epsg = session.document()["project"]["crs"]["epsg"]
+                .as_u64()
+                .map(|c| c as u32);
+            let dem = owd_format::design::stage_terrain(&session, dem_bytes)
+                .ok()
+                .and_then(|f| open_dem(f, None).ok());
+            let sampler = dem
+                .as_ref()
+                .and_then(|d| owd_format::design::terrain::dem_sampler(d, epsg).ok());
+            session.settle_old_mouth(
+                sampler
+                    .as_ref()
+                    .map(|s| s as owd_format::types::TerrainSampler),
+            );
+        }
+        // What opening changed (a file from an older format): the notes that ask the user to act
+        // show as warnings, before the DEM's warning. The rest are information, shown apart.
+        let open_notes = session.open_notes_by_kind().to_vec();
+        let mut warnings: Vec<String> = open_notes
+            .iter()
+            .filter(|n| n.kind == NoteKind::Action)
+            .map(|n| n.text.clone())
+            .collect();
+        warnings.extend(session.dem_warning(dem_bytes));
+        // A feature file the design names is attached by the host after the open (BLD-1); until
+        // then it shows as missing.
+        for input in FeatureInput::ALL {
+            warnings.extend(session.features_warning(input, None));
+        }
         let dem_file = session
             .dem_path()
             .map(|rel| path.parent().unwrap_or(Path::new(".")).join(rel));
@@ -221,8 +350,9 @@ impl AppState {
             path: Some(path.to_path_buf()),
             dirty: false,
             warnings,
-            dem: dem_bytes.and_then(|b| read_bytes(b).ok()).map(Arc::new),
-            dem_bytes: dem_bytes.map(|b| Arc::new(b.to_vec())),
+            open_notes,
+            dem: dem_bytes.and_then(|f| open_dem(f, None).ok()),
+            dem_src: dem,
             dem_file,
             running: None,
             walk: None,
@@ -231,7 +361,57 @@ impl AppState {
             terrain_limit: None,
             rule_set_texts: Vec::new(),
             downstream: None,
+            feature_files: Default::default(),
+            feature_maps: Default::default(),
         })
+    }
+
+    /// Open a design of a project folder (PROJ-1). `design` is the design file and `dem` the DEM
+    /// the project names with its bytes, both by their paths from the project folder. The design
+    /// records its DEM from its own folder (`../terrain/x.tif`), never the project folder itself.
+    ///
+    /// A design that records no DEM takes the project's, as Load does. A design that records the
+    /// same DEM (by its hash) under another path is pointed at the project's, and is unsaved until
+    /// the user saves it. A DEM whose hash differs gives the usual warning, and nothing is changed.
+    /// The second value says what was changed, in words for the user.
+    pub fn open_in_project(
+        design: &Path,
+        text: &str,
+        dem: Option<(&Path, DemFile)>,
+        date: &str,
+    ) -> Result<(AppState, Option<String>), String> {
+        let Some((dem_file, bytes)) = dem else {
+            return Ok((AppState::open_owned(design, text, None)?, None));
+        };
+        if AppState::dem_path(text).is_none() {
+            let mut state = AppState::open_owned(design, text, None)?;
+            state.load_dem_file(dem_file, bytes, date)?;
+            let note = format!(
+                "The design did not name a DEM: it now names the project's, `{}`. Save to keep that.",
+                state.session.dem_path().unwrap_or("?")
+            );
+            return Ok((state, Some(note)));
+        }
+        let mut state = AppState::open_with_file(design, text, Some(bytes))?;
+        // The terrain rule's one reader says whether this is the file the design recorded.
+        let same_file =
+            owd_format::design::stage_terrain(&state.session, state.dem_src.as_ref()).is_ok();
+        let mut note = None;
+        if same_file {
+            let before = state.session.dem_path().map(str::to_string);
+            state.dem_file = Some(dem_file.to_path_buf());
+            state.point_dem_from(design);
+            let after = state.session.dem_path().map(str::to_string);
+            if before != after {
+                state.dirty = true;
+                note = Some(format!(
+                    "The design named its DEM as `{}`. In this project it is `{}`: Save to keep that, so the command line finds the DEM too.",
+                    before.as_deref().unwrap_or("?"),
+                    after.as_deref().unwrap_or("?")
+                ));
+            }
+        }
+        Ok((state, note))
     }
 
     /// The DEM path the document names, relative to the document, if any.
@@ -333,7 +513,7 @@ impl AppState {
     pub fn stretches_geojson(&self) -> Result<Value, String> {
         let text = self
             .session
-            .export_stretches_geojson(true, self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .export_stretches_geojson(true, self.dem_src.as_ref())
             .map_err(message)?;
         serde_json::from_str(&text).map_err(|e| e.to_string())
     }
@@ -372,8 +552,7 @@ impl AppState {
 
     /// The option comparison table and the checks list, from the session.
     pub fn option_table(&self) -> Value {
-        self.session
-            .option_table(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+        self.session.option_table(self.dem_src.as_ref())
     }
 
     /// The plan map's geometry in WGS84, from the session.
@@ -381,8 +560,22 @@ impl AppState {
         self.session.map_geometry().map_err(message)
     }
 
+    /// The weirs, the locks and the pools of the design, for the map (MAP-4): made now from the
+    /// water level along the design line, never stored. An empty list when the design has no pools.
+    pub fn map_structures(&self) -> Result<Value, String> {
+        let list = self.session.map_structures().map_err(message)?;
+        serde_json::to_value(list).map_err(|e| e.to_string())
+    }
+
+    /// What the pool water (the ground each pool floods) is made from. `None` with no pools.
+    pub fn pool_water_input(
+        &self,
+    ) -> Result<Option<owd_format::design::structures::PoolWaterIn>, String> {
+        self.session.pool_water_input().map_err(message)
+    }
+
     /// The DEM, to draw the offline hillshade from. `None` when there is none to read.
-    pub fn dem(&self) -> Option<Arc<Dem>> {
+    pub fn dem(&self) -> Option<TerrainRef> {
         self.dem.clone()
     }
 
@@ -479,6 +672,12 @@ impl AppState {
     /// Reference a DEM file and keep it for the stages. A DEM the stages could not sample is
     /// refused, with the CRS named. It is marked `user` in the provenance, dated `date`.
     pub fn load_dem(&mut self, file: &Path, bytes: Vec<u8>, date: &str) -> Result<(), String> {
+        self.load_dem_file(file, DemFile::from_bytes(bytes), date)
+    }
+
+    /// [`AppState::load_dem`] for a file read by range (COG-1): a large tiled file is opened in
+    /// sections, so loading reads its directories and nothing more.
+    pub fn load_dem_file(&mut self, file: &Path, bytes: DemFile, date: &str) -> Result<(), String> {
         self.refuse_while_running()?;
         let base = self.path.as_deref().and_then(Path::parent);
         let rel = match base {
@@ -489,15 +688,17 @@ impl AppState {
         let terrain = crate::import::Terrain {
             path: &rel,
             name: &name,
-            bytes: &bytes,
+            file: &bytes,
             limit_bytes: self.terrain_limit,
         };
         let done = crate::import::import(&mut self.session, &[], Some(terrain), date)
             .map_err(|e| with_limit_hint(e.to_string()))?;
-        self.dem = done.dem.map(Arc::new);
-        self.dem_bytes = Some(Arc::new(bytes));
+        self.dem = done.dem;
+        self.dem_src = Some(bytes);
         self.dem_file = Some(file.to_path_buf());
         self.warnings.clear();
+        // The warnings went; the information about the older format stays until the design is saved.
+        self.open_notes.retain(|n| n.kind == NoteKind::Info);
         self.dirty = true;
         Ok(())
     }
@@ -521,13 +722,14 @@ impl AppState {
             ));
         }
         self.terrain_limit = limit;
+        // A sectioned DEM: the limit is the memory of its cache of decoded blocks, not the file.
+        if let Some(sec) = self.dem.as_ref().and_then(|d| d.sectioned()) {
+            sec.set_cache_budget(cache_budget(limit));
+        }
         if self.dem.is_none()
-            && let Some(bytes) = &self.dem_bytes
+            && let Some(file) = &self.dem_src
         {
-            let within = limit.unwrap_or_else(owd_format::geotiff::grid_limit);
-            self.dem = owd_format::geotiff::read_bytes_within(bytes, within)
-                .ok()
-                .map(Arc::new);
+            self.dem = open_dem(file, limit).ok();
         }
         Ok(())
     }
@@ -654,6 +856,138 @@ impl AppState {
         Ok(())
     }
 
+    /// Set optimise settings in the design (`length_weight`, the weights, ...), through the same
+    /// reading as `owd optimise` and its flags (`--length-weight`). Nothing runs; a fresh optimise
+    /// stage whose settings change goes stale. A refusal changes nothing.
+    pub fn set_optimise_settings(&mut self, settings: &Value) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session
+            .set_optimise_settings(settings)
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the run inputs from the app's fields (spec 0017, ticket 11): the objective
+    /// (`SENSE:MEASURE`, empty for none), the limits (one `MEASURE<=VALUE` a line, empty for none)
+    /// and the target level (empty for none), through `Session::edit_run_inputs`, as `owd
+    /// run-inputs` does. The app sends all three, so each replaces what is stored. No stage goes
+    /// stale. A refusal changes nothing.
+    pub fn set_run_inputs(
+        &mut self,
+        objective: &str,
+        limits: &str,
+        target_level: &str,
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let limits: Vec<String> = limits
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string)
+            .collect();
+        self.session
+            .edit_run_inputs(&owd_format::design::run_inputs::RunInputsEdit {
+                objective: Some(objective),
+                limits: Some(&limits),
+                target_level: Some(target_level),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the no-go areas (spec 0017, ticket 13) from GeoJSON text, as `owd constraints --no-go`
+    /// reads it, through `Session::set_constraints`. Empty text removes them. The stages that read
+    /// them go stale. A refusal changes nothing.
+    pub fn set_no_go(&mut self, geojson: &str) -> Result<(), String> {
+        use owd_format::design::constraints::{ConstraintsEdit, no_go_from_geojson};
+        self.refuse_while_running()?;
+        let areas = if geojson.trim().is_empty() {
+            Vec::new()
+        } else {
+            let v: Value = serde_json::from_str(geojson)
+                .map_err(|e| format!("the no-go areas are not JSON: {e}"))?;
+            no_go_from_geojson(&v).map_err(|e| format!("{}: {}", e.code, e.message))?
+        };
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: Some(areas),
+                multiplier: None,
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the cut-rate multiplier raster (spec 0017, ticket 13) from a GeoTIFF the user picked,
+    /// as `owd constraints --multiplier` does, through `Session::set_constraints`: recorded by its
+    /// path (relative to the design's folder), hash, CRS and nodata, and attached. A refusal changes
+    /// nothing.
+    pub fn set_cut_rate_multiplier(&mut self, file: &Path, bytes: Vec<u8>) -> Result<(), String> {
+        use owd_format::design::constraints::{ConstraintsEdit, MultiplierFile};
+        self.refuse_while_running()?;
+        let rel = match self.path.as_deref().and_then(Path::parent) {
+            Some(b) => relative_to(b, file),
+            None => file
+                .file_name()
+                .map_or_else(|| file.to_string_lossy(), |n| n.to_string_lossy())
+                .into_owned(),
+        };
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: None,
+                multiplier: Some(Some(MultiplierFile {
+                    path: &rel,
+                    bytes: &bytes,
+                })),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Remove the cut-rate multiplier raster (spec 0017, ticket 13).
+    pub fn clear_cut_rate_multiplier(&mut self) -> Result<(), String> {
+        use owd_format::design::constraints::ConstraintsEdit;
+        self.refuse_while_running()?;
+        self.session
+            .set_constraints(ConstraintsEdit {
+                no_go: None,
+                multiplier: Some(None),
+            })
+            .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// State the river mouth from the app's field: `downstream` or `LON,LAT`, as `owd import
+    /// --mouth` reads it, through the same shell call. The river inputs are turned to run from the
+    /// mouth when it is at their far end, and the stages that read them go stale. A refusal (no
+    /// river yet, or `downstream` with neither a water level nor a DEM to say which end is lower)
+    /// changes nothing.
+    pub fn set_mouth(&mut self, text: &str) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => Some(
+                owd_format::design::terrain::dem_sampler(d, self.project_epsg())
+                    .map_err(message)?,
+            ),
+            None => None,
+        };
+        crate::import::set_mouth(
+            &mut self.session,
+            text,
+            sampler
+                .as_ref()
+                .map(|s| s as owd_format::types::TerrainSampler),
+        )
+        .map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Set the water level from a pool table: the text of `owd import --water-pools FILE`, read by
     /// the session's one reader. A refusal changes nothing.
     pub fn set_water_pools(&mut self, table: &str) -> Result<(), String> {
@@ -712,11 +1046,51 @@ impl AppState {
 
     /// The DEM, only when it is the file whose hash the design recorded: the terrain rule
     /// ([`owd_format::design::stage_terrain`]) says whether to use the DEM the shell holds.
-    fn usable_dem(&self) -> Option<Arc<Dem>> {
-        let bytes = self.dem_bytes.as_deref().map(|b| b.as_slice());
+    fn usable_dem(&self) -> Option<TerrainRef> {
+        let bytes = self.dem_src.as_ref();
         owd_format::design::stage_terrain(&self.session, bytes)
             .ok()
             .and(self.dem.clone())
+    }
+
+    /// A text that changes when the channel drawn on the map may have changed (MAP-5): the design
+    /// line, what the volumes depend on, and whether the DEM the volumes read is held.
+    pub fn channel_key(&self) -> String {
+        format!(
+            "{}|{:?}",
+            self.session.channel_key(),
+            self.usable_dem().map(|d| Arc::as_ptr(&d))
+        )
+    }
+
+    /// The channel of the design line for the map (MAP-5): its edges as lines and polygons, and
+    /// the cut as a surface over the DEM when the volumes are fresh and the DEM they read is
+    /// held. Derived now; nothing is written to the design. A refusal is the session's reason
+    /// (no design line, no sizing or no water level yet).
+    pub fn channel(
+        &self,
+    ) -> Result<
+        (
+            owd_format::design::channel::ChannelGeometry,
+            Option<owd_format::design::channel::CutSurface>,
+        ),
+        String,
+    > {
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok(),
+            None => None,
+        };
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
+        let channel = self.session.channel(terrain).map_err(message)?;
+        let geometry = self.session.channel_geometry(&channel).map_err(message)?;
+        let cut = match (dem.as_deref(), terrain) {
+            (Some(d), Some(_)) => self.session.cut_surface(&channel, d).map_err(message)?,
+            _ => None,
+        };
+        Ok((geometry, cut))
     }
 
     /// Get ready to draw the sections of an option: the cached walk if the design has not changed
@@ -740,6 +1114,7 @@ impl AppState {
             option: option.to_string(),
             key,
             cached,
+            profiles_at: Vec::new(),
         }
     }
 
@@ -811,7 +1186,7 @@ impl AppState {
     /// --geojson --wgs84` on the saved file.
     pub fn export_geojson(&self) -> Result<String, String> {
         self.session
-            .export_geojson(true, self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .export_geojson(true, self.dem_src.as_ref())
             .map_err(message)
     }
 
@@ -823,7 +1198,7 @@ impl AppState {
 
     /// The inputs of the drawing sheets of an option (spec 0004, ticket 8), to run off the lock.
     pub fn sheets_job(&self, option: &str) -> crate::sheets::SheetsJob {
-        crate::sheets::SheetsJob::new(self.session.to_text(), self.dem_bytes.clone(), option)
+        crate::sheets::SheetsJob::new(self.session.to_text(), self.dem_src.clone(), option)
     }
 
     /// The inputs of the reports of the design (spec 0014, ticket 6), to run off the lock. `option`
@@ -833,22 +1208,147 @@ impl AppState {
         option: Option<&str>,
         ask: crate::report::ReportAsk,
     ) -> crate::report::ReportJob {
-        crate::report::ReportJob::new(self.session.to_text(), self.dem_bytes.clone(), option, ask)
+        crate::report::ReportJob::new(self.session.to_text(), self.dem_src.clone(), option, ask)
+            .with_extras(owd_report::Extras {
+                building_conflicts: self.building_conflicts(),
+            })
     }
 
     /// The quantity table as CSV, from the session. The same text as `owd export --csv`.
     pub fn export_csv(&self) -> String {
-        self.session
-            .export_csv(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+        self.session.export_csv(self.dem_src.as_ref())
     }
 
     /// The DEM path is stored relative to the document: say it again from the folder `path` is in.
-    /// Only the path changes; the DEM's hash stays, so no stage goes stale.
+    /// Only the path changes; the DEM's hash stays, so no stage goes stale. The feature files too.
     fn point_dem_from(&mut self, path: &Path) {
         if let Some(file) = &self.dem_file {
             let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
             self.session.set_dem_path(&rel);
         }
+        for input in FeatureInput::ALL {
+            if let Some(file) = &self.feature_files[input as usize] {
+                let rel = relative_to(path.parent().unwrap_or(Path::new(".")), file);
+                self.session.set_features_path(input, &rel);
+            }
+        }
+    }
+
+    /// Reference a feature file (BLD-1) and keep its features: `file` is where it was read from
+    /// (from the project folder in the browser), its path recorded from the design's folder. A
+    /// refusal changes nothing.
+    pub fn load_features(
+        &mut self,
+        input: FeatureInput,
+        file: &Path,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        self.refuse_while_running()?;
+        let base = self.path.as_deref().and_then(Path::parent);
+        let rel = match base {
+            Some(b) => relative_to(b, file),
+            None => file.to_string_lossy().into_owned(),
+        };
+        let mut s = self.session.clone();
+        s.set_features(input, &rel, bytes).map_err(message)?;
+        let map = feature_map(input, bytes)?;
+        self.session = s;
+        self.feature_maps[input as usize] = Some(map);
+        self.feature_files[input as usize] = Some(file.to_path_buf());
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Attach the feature file the design names, found by the host at its recorded path (or at
+    /// `file`, the project's path for it). A file that is not the one recorded is refused, and its
+    /// warning stays.
+    pub fn attach_features(
+        &mut self,
+        input: FeatureInput,
+        file: Option<&Path>,
+        bytes: &[u8],
+    ) -> Result<(), String> {
+        match self.session.attach_features(input, bytes) {
+            Ok(()) => {
+                self.feature_maps[input as usize] = Some(feature_map(input, bytes)?);
+                if let Some(f) = file {
+                    self.feature_files[input as usize] = Some(f.to_path_buf());
+                }
+                self.drop_feature_warnings(input);
+                Ok(())
+            }
+            Err(e) => {
+                self.drop_feature_warnings(input);
+                self.warnings
+                    .extend(self.session.features_warning(input, Some(bytes)));
+                Err(message(e))
+            }
+        }
+    }
+
+    /// Remove a feature input from the design.
+    pub fn clear_features(&mut self, input: FeatureInput) -> Result<(), String> {
+        self.refuse_while_running()?;
+        if self.session.feature_record(input).is_none() {
+            return Ok(());
+        }
+        self.session.clear_features(input);
+        self.feature_files[input as usize] = None;
+        self.feature_maps[input as usize] = None;
+        self.drop_feature_warnings(input);
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// Set the building filters (confidence, area, distance from the cut).
+    pub fn set_building_filters(&mut self, f: BuildingFilters) -> Result<(), String> {
+        self.refuse_while_running()?;
+        self.session.set_building_filters(f).map_err(message)?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// A feature file as the map draws it: WGS84 GeoJSON text, each feature numbered `fid` as the
+    /// session numbers it. `None` when the design has none attached.
+    pub fn feature_map(&self, input: FeatureInput) -> Option<Arc<String>> {
+        self.session.features(input)?;
+        self.feature_maps[input as usize].clone()
+    }
+
+    pub fn features(
+        &self,
+        input: FeatureInput,
+    ) -> Option<&Arc<owd_format::design::features::FeatureSet>> {
+        self.session.features(input)
+    }
+
+    /// [`AppState::set_building_filters`] from JSON: the keys given change, the others stay.
+    pub fn set_building_filters_json(&mut self, v: &Value) -> Result<(), String> {
+        let mut f = self.session.building_filters();
+        for (k, slot) in [
+            ("min_confidence", &mut f.min_confidence),
+            ("min_area_m2", &mut f.min_area_m2),
+            ("near_cut_m", &mut f.near_cut_m),
+        ] {
+            match &v[k] {
+                Value::Null => {}
+                x => {
+                    *slot = x
+                        .as_f64()
+                        .ok_or_else(|| format!("`{k}` must be a number"))?
+                }
+            }
+        }
+        self.set_building_filters(f)
+    }
+
+    fn drop_feature_warnings(&mut self, input: FeatureInput) {
+        let Some(path) = self.session.features_path(input).map(str::to_string) else {
+            return;
+        };
+        let tag = format!("`{path}`");
+        self.warnings.retain(|w| !w.contains(&tag));
     }
 
     /// The text to write at `path`: the design with its DEM path said from that folder.
@@ -869,6 +1369,7 @@ impl AppState {
         self.point_dem_from(path);
         self.dirty = false;
         self.warnings.clear();
+        self.open_notes.clear();
     }
 
     pub fn file_name(&self) -> String {
@@ -917,7 +1418,7 @@ impl AppState {
         self.dirty = true;
     }
 
-    pub(crate) fn usable_dem_for_reach(&self) -> Option<Arc<Dem>> {
+    pub(crate) fn usable_dem_for_reach(&self) -> Option<TerrainRef> {
         self.usable_dem()
     }
 
@@ -925,7 +1426,7 @@ impl AppState {
     pub fn snapshot(&self) -> Value {
         let status: Vec<Value> = self
             .session
-            .status_with_dem(self.dem_bytes.as_deref().map(|b| b.as_slice()))
+            .status_with_dem(self.dem_src.as_ref())
             .stages
             .iter()
             .map(|(stage, st)| {
@@ -948,6 +1449,7 @@ impl AppState {
             "dirty": self.dirty,
             "title": self.title(),
             "warnings": self.warnings,
+            "open_notes": self.open_notes,
             "can_undo_bank_edit": !self.bank_undo.is_empty(),
             "terrain_limit_bytes": self.terrain_limit,
             "downstream_lon_lat": self.downstream,
@@ -974,6 +1476,8 @@ impl AppState {
         snap["rule_set_problem"] = json!(self.session.rule_set_problem().map(message));
         // The stages "Run stale" would run now, in order: the surfaces step through these and
         // never work the list out from the statuses (one run loop).
+        // The buildings, points of interest and settlements the design names (BLD-1).
+        snap["feature_inputs"] = self.session.feature_inputs();
         snap["due"] = json!(
             self.session
                 .due_stages()
@@ -982,6 +1486,196 @@ impl AppState {
                 .collect::<Vec<_>>()
         );
         snap
+    }
+}
+
+/// The buildings, points of interest and settlements against the design (BLD-1): what a click on
+/// one reads, and the channel's stations they are measured against.
+impl AppState {
+    /// The channel of the design line with its stations, as the cut test reads it: the volumes
+    /// stage's own stations and daylight lines when they are fresh on the DEM held.
+    pub fn channel_stations(&self) -> Result<owd_format::design::channel::Channel, String> {
+        let dem = self.usable_dem();
+        let sampler = match dem.as_deref() {
+            Some(d) => owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok(),
+            None => None,
+        };
+        let terrain: Option<owd_format::types::TerrainSampler> = sampler
+            .as_ref()
+            .map(|s| s as owd_format::types::TerrainSampler);
+        self.session.channel(terrain).map_err(message)
+    }
+
+    /// The ground at points in the project CRS, from the DEM held (NaN off it, or with none).
+    pub fn ground_at(&self, pts: &[[f64; 2]]) -> Vec<f64> {
+        let dem = self.usable_dem();
+        let sampler = dem
+            .as_deref()
+            .and_then(|d| owd_format::design::terrain::dem_sampler(d, self.project_epsg()).ok());
+        match sampler {
+            Some(s) => {
+                let (xs, ys): (Vec<f64>, Vec<f64>) = pts.iter().map(|p| (p[0], p[1])).unzip();
+                s(&xs, &ys)
+            }
+            None => vec![f64::NAN; pts.len()],
+        }
+    }
+
+    /// What a click on feature `fid` of `input` reads, as JSON: its id, name, kind and other
+    /// properties, area and confidence (and whether it is counted), the ground there, its distance
+    /// to the design line and the chainage of the nearest point, and its place across the cut
+    /// (`channel`, when the caller has it). The water there is the caller's to add.
+    pub fn feature_card(
+        &self,
+        input: FeatureInput,
+        fid: usize,
+        channel: Option<&owd_format::design::channel::Channel>,
+    ) -> Result<Value, String> {
+        use owd_format::design::feature_place::{CutIndex, cut_relation, line_distance};
+        let set = self
+            .session
+            .features(input)
+            .ok_or_else(|| format!("no {} file is loaded", input.label().to_lowercase()))?;
+        let f = set
+            .features
+            .get(fid)
+            .ok_or_else(|| format!("there is no feature {fid}"))?;
+        let num = |v: f64| if v.is_finite() { json!(v) } else { Value::Null };
+        let mut card = json!({
+            "input": input.key(),
+            "fid": fid,
+            "id": f.id,
+            "name": f.name,
+            "kind": f.kind,
+            "properties": f.props,
+            "lon_lat": f.lon_lat,
+            "area_m2": num(f.area_m2),
+            "confidence": num(f.confidence),
+            "ground_m": num(self.ground_at(&[f.at])[0]),
+        });
+        if input == FeatureInput::Buildings {
+            let filters = self.session.building_filters();
+            card["below_confidence"] = json!(filters.below_confidence(f));
+            card["below_area"] = json!(filters.below_area(f));
+        }
+        if input == FeatureInput::Settlements {
+            card["area_ha"] = num(f.area_m2 / 10_000.0);
+        }
+        if let Some(line) = owd_format::design::final_line_of(self.session.document()) {
+            let (d, ch) = line_distance(&line.line.0, f.at);
+            card["line_distance_m"] = num(d);
+            card["line_chainage_m"] = num(ch);
+        }
+        if let Some(ch) = channel {
+            let near = self.session.building_filters().near_cut_m;
+            let index = CutIndex::new(ch);
+            card["cut"] = match index.locate(f.at, near.max(500.0)) {
+                Some(p) => json!({
+                    "chainage_m": p.chainage_m,
+                    "offset_m": p.offset_m,
+                    "outside_m": p.outside_m,
+                    "daylight": p.daylight,
+                    "from_volumes": ch.from_volumes,
+                    "relation": match cut_relation(&p, f.area_m2, near) {
+                        Some(owd_format::design::feature_place::CutRelation::Taken) => "taken",
+                        Some(owd_format::design::feature_place::CutRelation::Near) => "near",
+                        None => "clear",
+                    },
+                }),
+                None => Value::Null,
+            };
+        }
+        Ok(card)
+    }
+
+    /// Points spread evenly over settlement `fid` (about `n`, on a square grid), in WGS84: what the
+    /// share of it the pool water covers is counted on.
+    pub fn settlement_samples(&self, fid: usize, n: usize) -> Vec<[f64; 2]> {
+        use owd_format::design::features::polygon_contains;
+        let Some(f) = self
+            .session
+            .features(FeatureInput::Settlements)
+            .and_then(|s| s.features.get(fid))
+        else {
+            return Vec::new();
+        };
+        let area: f64 = f.area_m2.max(1.0);
+        let step = (area / n.max(1) as f64).sqrt().max(1.0);
+        let mut pts = Vec::new();
+        for poly in &f.polygons {
+            let (mut x0, mut y0, mut x1, mut y1) = (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            );
+            for p in &poly.exterior {
+                x0 = x0.min(p[0]);
+                y0 = y0.min(p[1]);
+                x1 = x1.max(p[0]);
+                y1 = y1.max(p[1]);
+            }
+            let mut y = y0 + step / 2.0;
+            while y < y1 {
+                let mut x = x0 + step / 2.0;
+                while x < x1 {
+                    if polygon_contains(poly, [x, y]) {
+                        pts.push([x, y]);
+                    }
+                    x += step;
+                }
+                y += step;
+            }
+        }
+        let Some(utm) = self
+            .project_epsg()
+            .and_then(|e| owd_format::design::crs::Crs::from_epsg(e).ok())
+        else {
+            return Vec::new();
+        };
+        match utm {
+            owd_format::design::crs::Crs::Utm(u) => u.inverse_all(&pts).unwrap_or_default(),
+            owd_format::design::crs::Crs::Wgs84 => pts,
+        }
+    }
+
+    /// The buildings and the channel (BLD-1): in the cut, near it, severed. `None` with no
+    /// buildings loaded or no channel yet.
+    pub fn building_conflicts(&self) -> Option<Value> {
+        self.session.features(FeatureInput::Buildings)?;
+        let channel = self.channel_stations().ok()?;
+        self.session.building_conflicts(&channel)
+    }
+
+    /// [`AppState::building_conflicts`] on a channel the caller holds.
+    pub fn building_conflicts_on(
+        &self,
+        channel: &owd_format::design::channel::Channel,
+    ) -> Option<Value> {
+        self.session.building_conflicts(channel)
+    }
+
+    /// Whether each feature of `input` is counted (for buildings: passes the confidence and area
+    /// filters; every place and settlement is), by `fid`.
+    pub fn features_counted(&self, input: FeatureInput) -> Vec<bool> {
+        let f = self.session.building_filters();
+        self.session
+            .features(input)
+            .map(|s| {
+                s.features
+                    .iter()
+                    .map(|b| input != FeatureInput::Buildings || f.counts(b))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The representative point of every feature of `input` in WGS84, by `fid`; empty with none.
+    pub fn feature_points(&self, input: FeatureInput) -> Vec<[f64; 2]> {
+        self.session
+            .features(input)
+            .map(|s| s.features.iter().map(|f| f.lon_lat).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -1207,6 +1901,61 @@ mod tests {
     }
 
     #[test]
+    fn an_older_format_file_shows_its_information_apart_from_its_warnings() {
+        let old = |name: &str| {
+            std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join(format!("../owd-format/tests/data/format-0.4-{name}.owd")),
+            )
+            .unwrap()
+        };
+        let kinds = |s: &AppState| -> Vec<String> {
+            s.snapshot()["open_notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n["kind"].as_str().unwrap().to_string())
+                .collect()
+        };
+        // Every stage was fresh: four information notes, and the one warning is the missing DEM.
+        let mut kept = AppState::open(Path::new("a.owd"), &old("lattice-only"), None).unwrap();
+        assert_eq!(kinds(&kept), ["info"; 4]);
+        let snap = kept.snapshot();
+        let warnings = snap["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].as_str().unwrap().contains("DEM"));
+        assert!(
+            snap["open_notes"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("older format")
+        );
+        // A stale stage is a warning: it is in both lists, as an action note.
+        let stale = AppState::open(Path::new("a.owd"), &old("stale-volumes"), None).unwrap();
+        let snap = stale.snapshot();
+        let action: Vec<&Value> = snap["open_notes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|n| n["kind"] == "action")
+            .collect();
+        assert!(!action.is_empty());
+        for n in action {
+            assert!(
+                snap["warnings"].as_array().unwrap().contains(&n["text"]),
+                "{n}"
+            );
+        }
+        // Saving clears them all; a new design has none.
+        kept.saved(Path::new("b.owd"));
+        assert_eq!(kept.snapshot()["open_notes"], json!([]));
+        assert_eq!(
+            AppState::new_design("t", "2026-01-01").snapshot()["open_notes"],
+            json!([])
+        );
+    }
+
+    #[test]
     fn the_dem_next_to_the_document_is_kept_for_the_hillshade_when_it_reads() {
         let tif = std::fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1240,7 +1989,7 @@ mod tests {
         let data = (0..w * h)
             .map(|i| 40.0 + 6.0 * ((i % w) as f64 / 6.0).sin() + 4.0 * ((i / w) as f64 / 2.0).cos())
             .collect();
-        let dem = Dem {
+        let dem = owd_format::geotiff::Dem {
             width: w,
             height: h,
             data,
@@ -1282,9 +2031,7 @@ mod tests {
         // The constraint stretches for the map: the session's export in WGS84, one line each.
         let fc = s.stretches_geojson().unwrap();
         let doc = s.snapshot()["document"].clone();
-        let count: usize = doc["stages"]["volumes"]["results"]["options"]
-            .as_array()
-            .unwrap()
+        let count: usize = owd_format::design::volume_rows_of(&doc)
             .iter()
             .map(|o| {
                 o["screening"]["constraint_stretches"]
@@ -1441,6 +2188,94 @@ mod tests {
             .to_string()
     }
 
+    /// Every position of a map geometry value is a longitude and a latitude near the fixture.
+    fn assert_lon_lat(g: &Value, what: &str) {
+        let pts = owd_format::design::geojson::all_positions(g);
+        assert!(pts.len() >= 2, "{what}: {} positions", pts.len());
+        for p in pts {
+            assert!(
+                (-3.01..=-2.98).contains(&p[0]),
+                "{what}: longitude {}",
+                p[0]
+            );
+            assert!((5.39..=5.41).contains(&p[1]), "{what}: latitude {}", p[1]);
+        }
+    }
+
+    #[test]
+    fn the_map_geometry_carries_the_polygon_centreline_and_banks_in_lon_lat() {
+        // MAP-1. The design keeps them in the project CRS (a UTM zone, in metres).
+        let s = two_banks();
+        let doc = s.snapshot()["document"].clone();
+        assert_ne!(doc["project"]["crs"]["epsg"], 4326);
+        let stored = doc["inputs"]["river_polygon"]["coordinates"][0][0][0]
+            .as_f64()
+            .unwrap();
+        assert!(stored.abs() > 1000.0, "stored in metres: {stored}");
+        let g = s.map_geometry().unwrap();
+        assert_eq!(g["crs"], "EPSG:4326");
+        assert_eq!(g["river_polygon"]["type"], "Polygon");
+        assert_lon_lat(&g["river_polygon"], "river polygon");
+        // The polygon goes whole: one position on the map for each one in the design.
+        let ring = |v: &Value| v["coordinates"][0].as_array().unwrap().len();
+        assert_eq!(
+            ring(&g["river_polygon"]),
+            ring(&doc["inputs"]["river_polygon"])
+        );
+        assert_eq!(g["centreline"]["type"], "LineString");
+        assert_lon_lat(&g["centreline"], "centreline");
+        let banks = g["banks"].as_array().unwrap();
+        let sides: Vec<&str> = banks.iter().map(|b| b["side"].as_str().unwrap()).collect();
+        assert_eq!(sides, ["left", "right"]);
+        for b in banks {
+            assert_eq!(b["line"]["type"], "LineString");
+            assert_lon_lat(&b["line"], "bank");
+        }
+        // The box the map opens on holds the polygon.
+        let bbox: Vec<f64> = g["bbox"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect();
+        for p in owd_format::design::geojson::all_positions(&g["river_polygon"]) {
+            assert!(bbox[0] <= p[0] && p[0] <= bbox[2] && bbox[1] <= p[1] && p[1] <= bbox[3]);
+        }
+    }
+
+    #[test]
+    fn the_map_geometry_has_no_polygon_and_no_banks_when_the_design_has_none() {
+        let mut s = AppState::new_design("Study", "2026-10-16");
+        s.load_inputs(
+            &[(
+                Role::Centreline,
+                r#"{"type":"LineString","coordinates":[[-3.0,5.40],[-2.995,5.401],[-2.99,5.40]]}"#
+                    .into(),
+            )],
+            "2026-10-21",
+        )
+        .unwrap();
+        let g = s.map_geometry().unwrap();
+        assert!(g["river_polygon"].is_null());
+        assert_eq!(g["banks"].as_array().unwrap().len(), 0);
+        assert_lon_lat(&g["centreline"], "centreline");
+        // A design with only a polygon opens the map on it.
+        let mut p = AppState::new_design("Study", "2026-10-16");
+        p.load_inputs(
+            &[(
+                Role::RiverPolygon,
+                r#"{"type":"Polygon","coordinates":[[[-3.0,5.40],[-2.99,5.40],[-2.99,5.402],[-3.0,5.402],[-3.0,5.40]]]}"#
+                    .into(),
+            )],
+            "2026-10-21",
+        )
+        .unwrap();
+        let g = p.map_geometry().unwrap();
+        assert_lon_lat(&g["river_polygon"], "river polygon");
+        assert!(g["centreline"].is_null());
+        assert!(!g["bbox"].is_null(), "the map opens on the polygon");
+    }
+
     #[test]
     fn loaded_banks_are_marked_user_and_an_edit_marks_them_and_what_is_rebuilt_edited() {
         let mut s = two_banks();
@@ -1536,6 +2371,117 @@ mod tests {
     }
 
     #[test]
+    fn a_design_of_a_project_names_its_dem_from_its_own_folder_with_no_disk_to_ask() {
+        // The browser has no disk: the paths are compared by their names (PROJ-1).
+        assert_eq!(
+            lexical_relative(Path::new("design"), Path::new("terrain/d.tif")).as_deref(),
+            Some("../terrain/d.tif")
+        );
+        assert_eq!(
+            lexical_relative(Path::new("design"), Path::new("design/../terrain/d.tif")).as_deref(),
+            Some("../terrain/d.tif")
+        );
+        assert_eq!(
+            lexical_relative(Path::new(""), Path::new("d.tif")).as_deref(),
+            Some("d.tif")
+        );
+        assert_eq!(lexical_relative(Path::new("/a"), Path::new("d.tif")), None);
+        assert_eq!(
+            lexical_relative(Path::new("a"), Path::new("../../d.tif")),
+            None
+        );
+
+        let design = Path::new("no-such-project/design/reach-a.owd");
+        let dem = Path::new("no-such-project/terrain/reach-a-dem.tif");
+        // A design with no DEM takes the project's, named from the design's own folder.
+        let empty = AppState::new_design("T", "2026-11-20").save_text();
+        let (mut s, note) = AppState::open_in_project(
+            design,
+            &empty,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "../terrain/reach-a-dem.tif"
+        );
+        assert!(s.is_dirty());
+        assert!(note.unwrap().contains("../terrain/reach-a-dem.tif"));
+        assert!(s.dem().is_some(), "the DEM is held for the stages");
+        let saved = s.save_text_for(design);
+        assert!(
+            !saved.contains("no-such-project"),
+            "no folder in the design"
+        );
+
+        // A design that names the same DEM beside itself is pointed at the project's, unsaved.
+        let mut beside = AppState::new_design("T", "2026-11-20");
+        beside
+            .load_dem(Path::new("reach-a-dem.tif"), dem_bytes(), "2026-11-20")
+            .unwrap();
+        let text = beside.save_text();
+        assert_eq!(
+            AppState::dem_path(&text).as_deref(),
+            Some("reach-a-dem.tif")
+        );
+        let (s, note) = AppState::open_in_project(
+            design,
+            &text,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "../terrain/reach-a-dem.tif"
+        );
+        assert!(s.is_dirty());
+        assert!(note.unwrap().contains("Save"));
+        assert!(s.snapshot()["warnings"].as_array().unwrap().is_empty());
+
+        // The relation already right: nothing changes, nothing to save.
+        let right = s.save_text();
+        let (s, note) = AppState::open_in_project(
+            design,
+            &right,
+            Some((dem, DemFile::from_bytes(dem_bytes()))),
+            "2026-11-20",
+        )
+        .unwrap();
+        assert!(!s.is_dirty());
+        assert_eq!(note, None);
+
+        // Another DEM than the one recorded: the usual warning, and the design is left alone.
+        let mut other = dem_bytes();
+        let n = other.len();
+        other[n - 1] ^= 0xff;
+        let (s, note) = AppState::open_in_project(
+            design,
+            &text,
+            Some((dem, DemFile::from_bytes(other))),
+            "2026-11-20",
+        )
+        .unwrap();
+        assert_eq!(note, None);
+        assert!(!s.is_dirty());
+        assert_eq!(
+            s.snapshot()["document"]["inputs"]["dem"]["path"],
+            "reach-a-dem.tif"
+        );
+        let warnings = s.snapshot()["warnings"].to_string();
+        assert!(
+            warnings.contains("has changed since its hash was recorded"),
+            "{warnings}"
+        );
+
+        // No DEM in the project: the design opens as Open opens it.
+        let (s, note) = AppState::open_in_project(design, &text, None, "2026-11-20").unwrap();
+        assert_eq!(note, None);
+        assert!(s.snapshot()["warnings"].to_string().contains("is missing"));
+    }
+
+    #[test]
     fn a_dem_is_referenced_by_a_path_relative_to_the_document_and_follows_a_save_as() {
         let (mut s, dir) = ready();
         assert_eq!(s.snapshot()["document"]["inputs"]["dem"]["path"], "dem.tif");
@@ -1561,8 +2507,7 @@ mod tests {
     }
 
     #[test]
-    fn the_sections_come_from_the_walk_the_volumes_summed_and_the_walk_is_kept_until_the_design_changes()
-     {
+    fn the_sections_come_from_the_stored_stations_and_are_kept_until_the_design_changes() {
         let (mut s, _dir) = ready();
         run(&mut s, "alignment", Some("rolling_circle")).unwrap();
         // Before volumes have run there is no walk to draw.
@@ -1573,11 +2518,39 @@ mod tests {
             .session
             .long_section("rolling-circle", &first.walk)
             .unwrap();
-        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"]["options"][0];
+        let row = &s.snapshot()["document"]["stages"]["volumes"]["results"];
         assert_eq!(
             ls["chainage_m"].as_array().unwrap().len() as u64,
             row["stations"].as_u64().unwrap()
         );
+        // The app reads the volumes stage's stored stations, through the drawings' door: nothing
+        // is walked again (spec 0017 ticket 10).
+        use owd_format::design::sections::{COMPUTED_FOR_PROFILE, StationSource};
+        assert_eq!(first.walk.source, StationSource::Stored);
+        // A station with no stored profile has its one section cut again, never drawn from a
+        // neighbour.
+        let n = first.walk.walk.stations.len();
+        // The example's line is long enough that most stations keep no profile: one must exist,
+        // or this check proves nothing (QA on PR 568, finding 3).
+        let bare = (0..n)
+            .find(|&i| !first.walk.has_profile(i))
+            .expect("a station with no stored profile");
+        {
+            let at = first.walk.walk.stations[bare].chainage_m;
+            assert!(first.session.cross_section(&first.walk, at).is_err());
+            let again = s
+                .begin_walk("rolling-circle")
+                .with_profiles_at(&[at])
+                .run()
+                .unwrap();
+            assert_eq!(
+                again.walk.source,
+                StationSource::Computed {
+                    reason: COMPUTED_FOR_PROFILE
+                }
+            );
+            assert!(again.session.cross_section(&again.walk, at).is_ok());
+        }
         s.keep_walk(&first);
         // Kept: the next job already holds it. A new water level changes the volumes' inputs: it is dropped.
         assert!(s.begin_walk("rolling-circle").cached.is_some());

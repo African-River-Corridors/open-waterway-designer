@@ -1,0 +1,150 @@
+{
+ "label": "Label: golden",
+ "why": "A given river profile (8 m at the mouth to 9 m at 1000 m) and two pools above it: 10 m from 300 m to 600 m and 12 m from 600 m to 1000 m. Outside the pools the river is open: its level is the given profile. Steps at 300 m (8.3 to 10) and 600 m (10 to 12).",
+ "input": {
+  "centreline": [
+   [
+    0.0,
+    0.0
+   ],
+   [
+    1000.0,
+    0.0
+   ]
+  ],
+  "design_line": [
+   [
+    0.0,
+    10.0
+   ],
+   [
+    1000.0,
+    10.0
+   ]
+  ],
+  "step_m": 250.0,
+  "given": [
+   [
+    0.0,
+    8.0
+   ],
+   [
+    1000.0,
+    9.0
+   ]
+  ],
+  "beyond_pools": "open_river",
+  "pools": [
+   {
+    "from": 300.0,
+    "to": 600.0,
+    "level_m": 10.0
+   },
+   {
+    "from": 600.0,
+    "to": 1000.0,
+    "level_m": 12.0
+   }
+  ]
+ },
+ "expect": {
+  "output": {
+   "length_m": 1000.0,
+   "points": [
+    {
+     "chainage": 0.0,
+     "river_chainage": 0.0,
+     "level_m": 8.0,
+     "source": "open_river"
+    },
+    {
+     "chainage": 250.0,
+     "river_chainage": 250.0,
+     "level_m": 8.25,
+     "source": "open_river"
+    },
+    {
+     "chainage": 300.0,
+     "river_chainage": 300.0,
+     "level_m": 8.3,
+     "source": "open_river"
+    },
+    {
+     "chainage": 300.0,
+     "river_chainage": 300.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 500.0,
+     "river_chainage": 500.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 600.0,
+     "river_chainage": 600.0,
+     "level_m": 10.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 600.0,
+     "river_chainage": 600.0,
+     "level_m": 12.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 750.0,
+     "river_chainage": 750.0,
+     "level_m": 12.0,
+     "source": "pool"
+    },
+    {
+     "chainage": 1000.0,
+     "river_chainage": 1000.0,
+     "level_m": 12.0,
+     "source": "pool"
+    }
+   ],
+   "stretches": [
+    {
+     "from": 0.0,
+     "to": 300.0,
+     "source": "open_river"
+    },
+    {
+     "from": 300.0,
+     "to": 600.0,
+     "source": "pool",
+     "pool": 0,
+     "pool_level_m": 10.0
+    },
+    {
+     "from": 600.0,
+     "to": 1000.0,
+     "source": "pool",
+     "pool": 1,
+     "pool_level_m": 12.0
+    }
+   ]
+  },
+  "levels_at": [
+   [
+    100.0,
+    8.1
+   ],
+   [
+    299.0,
+    8.299
+   ],
+   [
+    301.0,
+    10.0
+   ],
+   [
+    601.0,
+    12.0
+   ]
+  ]
+ }
+}

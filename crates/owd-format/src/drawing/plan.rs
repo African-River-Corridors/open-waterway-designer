@@ -19,6 +19,7 @@ use super::setting_out::{self, BendRow};
 use super::{DrawError, DrawOptions, Sheet, SheetKind};
 use crate::design::Session;
 use crate::design::geojson::all_positions;
+use crate::design::sections::Stations;
 use crate::types::TerrainSampler;
 use otd::raster::{Backdrop, Grid, Light};
 use otd::rules::{Rect, text_width};
@@ -380,29 +381,15 @@ fn at_offset(s: &CrossSection, o: f64) -> Pt {
     ]
 }
 
-/// The outermost offsets on each side where the cut face is at or below the ground: the top of cut.
-fn top_of_cut(s: &CrossSection) -> (Option<f64>, Option<f64>) {
-    let cut = |j: usize| {
-        let (t, c) = (s.terrain[j], s.cutface[j]);
-        t.is_finite() && c.is_finite() && c <= t
-    };
-    let lo = (0..s.offsets.len())
-        .filter(|&j| s.offsets[j] < 0.0 && cut(j))
-        .map(|j| s.offsets[j])
-        .reduce(f64::min);
-    let hi = (0..s.offsets.len())
-        .filter(|&j| s.offsets[j] > 0.0 && cut(j))
-        .map(|j| s.offsets[j])
-        .reduce(f64::max);
-    (lo, hi)
-}
-
 /// Polylines through the stations, broken where `f` gives nothing.
-fn station_lines(walk: &SectionVolumes, f: impl Fn(&CrossSection) -> Option<Pt>) -> Vec<Vec<Pt>> {
+fn station_lines(
+    walk: &SectionVolumes,
+    f: impl Fn(usize, &CrossSection) -> Option<Pt>,
+) -> Vec<Vec<Pt>> {
     let mut out: Vec<Vec<Pt>> = Vec::new();
     let mut current = Vec::new();
-    for s in &walk.stations {
-        match f(s) {
+    for (i, s) in walk.stations.iter().enumerate() {
+        match f(i, s) {
             Some(p) => current.push(p),
             None => {
                 if current.len() > 1 {
@@ -534,22 +521,22 @@ impl Placer {
 /// What every viewport of the plan draws over its window.
 struct Content<'a> {
     line: &'a Line,
-    walk: &'a SectionVolumes,
+    stations: &'a Stations,
     banks: Vec<Vec<Pt>>,
     sections: Vec<(usize, &'a CrossSection, f64)>,
     labels: Vec<PlanLabel>,
     p: &'a PlanParams,
 }
 
-/// The extent of the channel round the line: the widest top of cut (or toe) of the walk, plus the
-/// margin.
-fn half_width(walk: &SectionVolumes, margin_m: f64) -> f64 {
-    walk.stations
+/// The extent of the channel round the line: the widest top of cut (or toe) of the stations, plus
+/// the margin. The top of cut is the volumes stage's, stored for every station.
+fn half_width(stations: &Stations, margin_m: f64) -> f64 {
+    stations
+        .walk
+        .stations
         .iter()
-        .map(|s| {
-            let (lo, hi) = top_of_cut(s);
-            lo.map_or(s.hb, f64::abs).max(hi.unwrap_or(s.hb)).max(s.hb)
-        })
+        .zip(&stations.top_of_cut)
+        .map(|(s, &(lo, hi))| lo.map_or(s.hb, f64::abs).max(hi.unwrap_or(s.hb)).max(s.hb))
         .fold(0.0, f64::max)
         + margin_m
 }
@@ -815,10 +802,12 @@ impl Content<'_> {
             }
         }
         // the footprint: toe and top of cut on each side
-        let toe_l = station_lines(self.walk, |s| Some(at_offset(s, -s.hb)));
-        let toe_r = station_lines(self.walk, |s| Some(at_offset(s, s.hb)));
-        let top_l = station_lines(self.walk, |s| top_of_cut(s).0.map(|o| at_offset(s, o)));
-        let top_r = station_lines(self.walk, |s| top_of_cut(s).1.map(|o| at_offset(s, o)));
+        let walk = &self.stations.walk;
+        let top = &self.stations.top_of_cut;
+        let toe_l = station_lines(walk, |_, s| Some(at_offset(s, -s.hb)));
+        let toe_r = station_lines(walk, |_, s| Some(at_offset(s, s.hb)));
+        let top_l = station_lines(walk, |i, s| top[i].0.map(|o| at_offset(s, o)));
+        let top_r = station_lines(walk, |i, s| top[i].1.map(|o| at_offset(s, o)));
         for (name, lines) in [
             ("toe-l", toe_l),
             ("toe-r", toe_r),
@@ -892,7 +881,7 @@ impl Content<'_> {
 pub(super) fn build(
     session: &Session,
     option_id: &str,
-    walk: &SectionVolumes,
+    stations: &Stations,
     terrain: TerrainSampler,
     options: &DrawOptions,
     background: &Background,
@@ -900,16 +889,18 @@ pub(super) fn build(
     let p = options.style.plan();
     let gp: GalleryParams = options.style.gallery();
     let doc = session.document();
-    let option = doc["options"]
-        .as_array()
-        .and_then(|a| a.iter().find(|o| o["id"] == option_id))
-        .ok_or_else(|| DrawError::Input(format!("there is no option `{option_id}`")))?;
+    let lines = session.design_lines();
+    let option = lines
+        .iter()
+        .find(|o| o["id"] == option_id)
+        .ok_or_else(|| DrawError::Input(format!("there is no design line `{option_id}`")))?;
     let pts = all_positions(&option["line"]);
     if pts.len() < 2 {
         return Err(DrawError::Missing(format!(
             "option `{option_id}` has no design line to draw"
         )));
     }
+    let walk = &stations.walk;
     if walk.stations.is_empty() {
         return Err(DrawError::Missing(format!(
             "option `{option_id}` has no stations to draw"
@@ -944,7 +935,7 @@ pub(super) fn build(
         .collect();
     let content = Content {
         line: &line,
-        walk,
+        stations,
         banks,
         sections,
         labels: labels(option, &stretches, &p.rules),
@@ -1020,7 +1011,7 @@ pub(super) fn build(
         w: layout.free.w,
         h: layout.free.h,
     };
-    let half = half_width(walk, p.margin_m);
+    let half = half_width(stations, p.margin_m);
     let k_strip = 1000.0 / f64::from(p.strip_scale);
     let ranges = strips(&line, half, &frame, k_strip, p.overlap_m)?;
 

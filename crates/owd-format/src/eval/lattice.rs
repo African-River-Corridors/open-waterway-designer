@@ -198,10 +198,14 @@ fn grid_of(g: &Value) -> Result<Result<TerrainGrid, String>, EvalError> {
                 })
                 .collect()
         };
+        // A grid from the host names no corridor: every cell counts as inside it (the corridor
+        // limit is not a setting of this door).
+        let corridor = ground.iter().map(|r| vec![true; r.len()]).collect();
         return Ok(Ok(TerrainGrid {
             ground,
             wet: mask("wet")?,
             valid: mask("valid")?,
+            corridor,
             x0: f64_arg(g, "x0")?,
             y0: f64_arg(g, "y0")?,
             cell_m: f64_arg(g, "cell_m")?,

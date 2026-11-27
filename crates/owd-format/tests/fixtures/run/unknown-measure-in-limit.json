@@ -1,0 +1,16 @@
+{
+  "label": "Label: property",
+  "why": "A limit on a measure OWD does not know is refused by name.",
+  "input": {
+    "limits": [
+      {
+        "measure": "depth",
+        "bound": "at_most",
+        "value": 3.0
+      }
+    ]
+  },
+  "expect": {
+    "code": "RUN_MEASURE_UNKNOWN"
+  }
+}

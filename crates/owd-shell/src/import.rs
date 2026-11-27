@@ -5,8 +5,9 @@
 //! checks, the session calls and the provenance records.
 
 use owd_format::design::provenance::{Mark, record};
-use owd_format::design::{DesignError, ImportReport, Role, Session};
-use owd_format::geotiff::Dem;
+use owd_format::design::{DesignError, ImportReport, MouthReport, Role, Session, parse_mouth};
+use owd_format::sectioned::{DemFile, Terrain as _, TerrainRef};
+use owd_format::types::TerrainSampler;
 
 /// A terrain file to import, already read by the caller.
 pub struct Terrain<'a> {
@@ -14,8 +15,11 @@ pub struct Terrain<'a> {
     pub path: &'a str,
     /// The file as named in messages.
     pub name: &'a str,
-    pub bytes: &'a [u8],
-    /// The grid limit to read it within, in bytes; `None`: the reader's limit in force.
+    /// The file: its bytes in memory, or a file read by range (a large tiled file is opened in
+    /// sections, COG-1).
+    pub file: &'a DemFile,
+    /// The grid limit to read it within, in bytes; `None`: the reader's limit in force. For a
+    /// sectioned file, the memory of its cache of decoded blocks.
     pub limit_bytes: Option<u64>,
 }
 
@@ -24,7 +28,7 @@ pub struct Imported {
     /// The project CRS and, per input, its source CRS and size (positions, or pixels for `dem`).
     pub report: ImportReport,
     /// The terrain, read, when one was imported.
-    pub dem: Option<Dem>,
+    pub dem: Option<TerrainRef>,
 }
 
 /// Why an import was refused.
@@ -118,10 +122,7 @@ fn import_into(
     let Some(t) = terrain else {
         return Ok(Imported { report, dem: None });
     };
-    let limit = t
-        .limit_bytes
-        .unwrap_or_else(owd_format::geotiff::grid_limit);
-    let dem = owd_format::geotiff::read_bytes_within(t.bytes, limit)
+    let dem = crate::state::open_dem(t.file, t.limit_bytes)
         .map_err(|e| ImportError::Terrain(format!("{}: {e}", t.name)))?;
     let epsg = project_epsg(session);
     if epsg.is_some() {
@@ -129,7 +130,7 @@ fn import_into(
             .map(|_| ())
             .map_err(ImportError::Design)?;
     }
-    session.set_dem(t.path, t.bytes, &dem);
+    session.set_dem(t.path, t.file, &*dem);
     session
         .set_provenance(
             "dem",
@@ -139,7 +140,7 @@ fn import_into(
     report.inputs.push((
         "dem".to_string(),
         owd_format::design::terrain::dem_crs_name(&dem),
-        dem.width * dem.height,
+        dem.width() * dem.height(),
     ));
     Ok(Imported {
         report,
@@ -153,6 +154,19 @@ fn project_epsg(session: &Session) -> Option<u32> {
         .map(|c| c as u32)
 }
 
+/// State the river mouth of `session` (spec 0017): `text` is `downstream` or `LON,LAT`, as the
+/// command line's `--mouth` and the app's field give it. `terrain` is the design's elevation model,
+/// for `downstream` with no water level. The one path for every surface: the same text gives the
+/// same document. A refusal leaves `session` as it was.
+pub fn set_mouth(
+    session: &mut Session,
+    text: &str,
+    terrain: Option<TerrainSampler>,
+) -> Result<MouthReport, DesignError> {
+    let at = parse_mouth(text)?;
+    session.set_mouth(at, terrain)
+}
+
 /// Import a bank dataset file (ticket B7) into `session`: the banks and the river polygon through
 /// [`import`] (so each is marked in the provenance, dated `date`), and what the source says into
 /// `inputs.banks`. The whole file is read first; a refusal leaves `session` as it was.
@@ -164,7 +178,7 @@ pub fn import_bank_dataset(
     let file = owd_format::design::banks::read_bank_file(text).map_err(ImportError::Design)?;
     let mut s = session.clone();
     let imported = import(&mut s, &file.items(), None, date)?;
-    s.set_bank_metadata(&file.banks);
+    s.set_bank_metadata_from(&file);
     *session = s;
     Ok(imported)
 }

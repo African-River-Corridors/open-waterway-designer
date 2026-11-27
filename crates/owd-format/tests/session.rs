@@ -226,8 +226,17 @@ fn a_zone_that_differs_from_the_designs_is_refused() {
 
 #[test]
 fn a_stage_that_cannot_run_yet_says_what_it_needs_a_dem() {
+    // The volumes stage needs a DEM. The optimise stage does not: with no DEM it runs on plan area
+    // (see `with_no_dem_the_stage_optimises_on_plan_area_and_says_so` in `optimise.rs`).
     let mut s = imported();
-    let e = s.run_stage(Stage::Optimise).unwrap_err();
+    s.align(
+        owd_format::design::AlignMethod::Centreline,
+        &Value::Null,
+        None,
+    )
+    .unwrap();
+    s.set_water_profile(&[[0.0, 0.0]]).unwrap();
+    let e = s.run_stage(Stage::Volumes).unwrap_err();
     assert!(
         matches!(&e, DesignError::Input(m) if m.contains("needs a DEM")),
         "{e}"
@@ -244,7 +253,7 @@ fn the_dem_warning_names_a_missing_or_changed_file() {
     });
     let s = Session::open(&serde_json::to_string(&doc).unwrap()).unwrap();
     assert_eq!(s.dem_warning(Some(b"abc")), None);
-    assert!(s.dem_warning(None).unwrap().contains("missing"));
+    assert!(s.dem_warning(None::<&[u8]>).unwrap().contains("missing"));
     assert!(s.dem_warning(Some(b"abd")).unwrap().contains("changed"));
 }
 
@@ -384,12 +393,13 @@ fn the_sizing_choices_list_rule_sets_with_their_inputs_and_vessel_classes_with_l
 }
 
 /// A study saved before the shared catalogue names its class by an old id (`CEMT_IV`): it opens with
-/// the same stages fresh, the same sizing, and saves the catalogue id (spec 0015 T0).
+/// its sizing fresh, the same sizing, and saves the catalogue id (spec 0015 T0). The file is format
+/// 0.3; its alignment and volumes were up to date when it was saved, so they open fresh too (the
+/// owner's rule for old files, 20 November 2026).
 #[test]
 fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
     let text = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/web/river-example.owd"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/format-0.3-example.owd"),
     )
     .unwrap();
     assert!(
@@ -407,12 +417,13 @@ fn a_study_with_an_old_class_id_opens_fresh_and_saves_the_catalogue_id() {
         doc["stages"]["sizing"]["results"]["vessel_standard_id"],
         "CEMT-IV"
     );
-    for stage in [Stage::Sizing, Stage::Alignment, Stage::Volumes] {
-        assert_eq!(
-            s.stage_status(stage),
-            StageStatus::Fresh,
-            "{stage:?} was fresh in the file and stays fresh"
-        );
+    assert_eq!(
+        s.stage_status(Stage::Sizing),
+        StageStatus::Fresh,
+        "the sizing was fresh in the file and stays fresh"
+    );
+    for stage in [Stage::Alignment, Stage::Volumes] {
+        assert_eq!(s.stage_status(stage), StageStatus::Fresh, "{stage:?}");
     }
     for k in [
         "bottom_width_straight_m",

@@ -1,0 +1,11 @@
+- **The window optimiser (OPT-5).** `owd optimise --method windows` (or Method: Window optimiser in the app's Optimise panel) redesigns the alignment's design line, or a given line, in windows of about 1 to 2 km. Seams sit on straights where the line hugs the river (weir sites and the ends of recorded cut-throughs are forced seams; a step of the water level is a weir site). Each window is searched by the lattice from the line's exact point and heading at one seam to its exact point and heading at the other (64 headings, 12 radii from R_min to 8 R_min, arcs of about 80 m, a vessel length of straight between opposite curves, also across the seams), and every move is priced with the volumes stage's own cross-section: its cut model, its bend widening at the arc's own radius, its ground with the bed model, the stage's weights. A sideways polish slides the found line and the starting stretch; a window takes a line only when the volumes stage's measure says it is at least 1 % cheaper over the same stretch, and otherwise keeps the starting line bit for bit and says why. A second pass searches over the first pass's seams. The joined line holds R_min, has no gap or kink at a seam, does not cross itself and is never dearer than the starting line. The weir cascade is not run: an earlier pool-lattice run's pools are kept. Every window is recorded (stretch, seams, costs before and after, plain m³, gain, adopted or why not, search counts, polish). Off by default: `method` is `lattice` and is not written, so a design that does not choose it reads, hashes and saves as before. Settings under `windows`; see `docs/window-optimiser.md`. Measured on synthetic rivers (release build, one thread, R_min 180 m, 64 headings, polish on; states take about 600 bytes each with the window's grid and polish):
+
+  | Window | Expansions | States | Seconds | Memory | Saving (end to end) |
+  |---|---|---|---|---|---|
+  | 0.5 km | 1,598 | 5,081 | 4 | 13 MB | 18.7 % |
+  | 1 km | 9,372 | 21,660 | 19 | 21 MB | 14.3 % |
+  | 1.5 km | 29,123 | 58,223 | 89 | 56 MB | 7.7 % |
+  | 2 km | 60,680 | 112,062 | 99 | 56 MB | 9.9 % |
+  | 3.2 km | 205,135 | 334,099 | 184 | 203 MB | 12.4 % (4 km line) |
+
+  At R_min 360 m the same windows take 2, 13, 23, 47 and 106 s, with 1,083 to 97,280 expansions. The knee is past 2 km: `window_max_m` stays 2,500 m.

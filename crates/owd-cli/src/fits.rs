@@ -178,7 +178,7 @@ pub fn fits(
     }
     // The DEM only when it is the file whose hash was recorded; with it, a bed model and a water
     // level, the answer is full.
-    let dem = match owd_format::design::stage_terrain(&session, bytes.as_deref()) {
+    let dem = match owd_format::design::stage_terrain(&session, bytes.as_ref()) {
         Ok(b) => Some(read_dem(b, session.dem_path().unwrap_or("DEM"))?),
         Err(_) => None,
     };

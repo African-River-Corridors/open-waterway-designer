@@ -49,7 +49,7 @@ fn draw(o: &DrawOptions) -> Vec<Sheet> {
 fn stored() -> Vec<Value> {
     let (text, _) = example();
     let doc: Value = serde_json::from_str(&text).unwrap();
-    doc["stages"]["volumes"]["results"]["options"][0]["screening"]["constraint_stretches"]
+    doc["stages"]["volumes"]["results"]["screening"]["constraint_stretches"]
         .as_array()
         .unwrap()
         .clone()

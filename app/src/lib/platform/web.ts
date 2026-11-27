@@ -4,6 +4,7 @@
 // it was before the run. Errors thrown by the session are strings; they become rejected promises.
 import { Host as WorkerHost } from "./host";
 import type { FileDropEvent, Platform, ReachProgress } from "./types";
+import { PROJECT_FILE, allowed, forget, handleFolder, itemState, listing, readAll, remember, remembered, type DirHandleLike, type ProjectFolder } from "../project";
 
 /** The design worker, and the requests waiting on it (host.ts). */
 const newHost = (onProgress: (n: number) => void, onReach: (p: ReachProgress) => void) => new WorkerHost(() => new Worker(new URL("./worker.ts", import.meta.url), { type: "module" }), onProgress, onReach);
@@ -65,7 +66,37 @@ function pickFile(accept: string): Promise<File | null> {
   });
 }
 
+/** The part of a FileSystemFileHandle that saving uses. */
+type SaveHandle = { name: string; createWritable: () => Promise<{ write: (t: string) => Promise<void>; close: () => Promise<void> }> };
+
+/** The feature inputs (BLD-1), by their key in the design and in `owd-project.json`. */
+const FEATURE_KEYS: string[] = ["buildings", "points_of_interest", "settlements"];
+const FEATURE_WORDS: Record<string, string> = { buildings: "buildings", points_of_interest: "places", settlements: "settlements" };
+
 const bytesOf = async (file: File) => new Uint8Array(await file.arrayBuffer());
+
+/** What `owd-project.json` says, as the engine read it (`project_read`). */
+interface ProjectInfo {
+  title: string | null;
+  design: string | null;
+  dem: string | null;
+  items: { key: string; label: string; path: string | null }[];
+}
+/** The project folder that is open: the folder, and its text file as read. */
+interface OpenProject {
+  folder: ProjectFolder;
+  info: ProjectInfo;
+}
+const NO_FOLDER_ACCESS = "The browser did not let OWD into the folder. Use Open project, choose the folder again and allow editing.";
+/** A write into the folder; a refusal by the browser is said in plain words. */
+async function writeIn(folder: ProjectFolder, path: string, data: string | Uint8Array) {
+  try {
+    await folder.write(path, data);
+  } catch (e) {
+    if (e instanceof DOMException && (e.name === "NotAllowedError" || e.name === "SecurityError")) throw NO_FOLDER_ACCESS;
+    throw `cannot write ${path} into the project folder "${folder.name}": ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
 
 export async function createWebPlatform(): Promise<Platform> {
   const progressHandlers = new Set<(n: number) => void>();
@@ -75,8 +106,13 @@ export async function createWebPlatform(): Promise<Platform> {
   let host = newHost(onProgress, onReach);
   await host.rpc("ping");
 
-  /** The DEM the session holds, kept so a restart can give it back. */
-  let dem: Uint8Array | null = null;
+  /** The DEM the session holds, kept so a restart can give it back: the file itself, never its
+   * bytes. The worker reads only the blocks it needs from it (COG-1), so a large sectioned DEM is
+   * never loaded whole. */
+  let dem: Blob | null = null;
+  /** The feature files the session holds (BLD-1: buildings, points of interest, settlements), kept so a
+   * restart can attach them again: the path or name the session recorded them under, and the file. */
+  let features: Record<string, { name: string; file: Blob }> = {};
   /** The Rule Set files loaded in this session, kept so a restart loads them again (#499). */
   const ruleSetTexts: string[] = [];
   /** Whether the design has unsaved changes, as the last snapshot said (or as it was before a restart). */
@@ -85,6 +121,13 @@ export async function createWebPlatform(): Promise<Platform> {
   let running: { stage: string; cancelled: boolean } | null = null;
 
   const json = async <T>(method: string, ...args: unknown[]): Promise<T> => JSON.parse(await host.rpc<string>(method, ...args)) as T;
+
+  /** The project folder that is open (PROJ-1), and the one chosen but not opened yet. */
+  let project: OpenProject | null = null;
+  let chosen: { folder: ProjectFolder; info: ProjectInfo | null } | null = null;
+  /** The name the design is saved under: in a project, its path from the project folder, so the
+   * design names its DEM from its own folder (`../terrain/x.tif`). */
+  const docName = (snap: { file_name: string }) => project?.info.design ?? snap.file_name;
 
   /** A snapshot: note its title and unsaved flag, and remember the design for a reload. */
   function follow<T extends { dirty: boolean; title: string; file_name: string }>(snap: T): T {
@@ -95,9 +138,10 @@ export async function createWebPlatform(): Promise<Platform> {
     } catch {
       /* no document title to set */
     }
+    const name = docName(snap);
     host
-      .rpc<string>("save_text", snap.file_name)
-      .then((text) => writeKey(LAST_DESIGN, JSON.stringify({ name: snap.file_name, text })))
+      .rpc<string>("save_text", name)
+      .then((text) => writeKey(LAST_DESIGN, JSON.stringify({ name, text })))
       .catch(() => {});
     return snap;
   }
@@ -106,26 +150,238 @@ export async function createWebPlatform(): Promise<Platform> {
   const fileName = (snap: { file_name: string }) => (/\.owd$/.test(snap.file_name) ? snap.file_name : DEFAULT_NAME);
   const confirmDiscard = () => !dirty || window.confirm(DISCARD);
 
-  async function saveNamed(name: string) {
+  /** The file the browser's save dialog gave us, so Save writes to it again without asking (File System Access). */
+  let handle: SaveHandle | null = null;
+  const canPick = () => typeof (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker === "function";
+
+  async function writeTo(h: SaveHandle, text: string) {
+    const w = await h.createWritable();
+    await w.write(text);
+    await w.close();
+  }
+
+  /** Save with the browser's save dialog. null when the user cancels it. */
+  async function pickSave(suggested: string): Promise<SaveHandle | null> {
+    try {
+      return await (window as unknown as { showSaveFilePicker: (o: unknown) => Promise<SaveHandle> }).showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "Channel design", accept: { "application/json": [".owd"] } }],
+      });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return null;
+      throw e;
+    }
+  }
+
+  async function saveNamed(name: string, to?: SaveHandle) {
     const text = await host.rpc<string>("save_text", name);
-    download(name, text, "application/json");
+    if (to) {
+      await writeTo(to, text);
+      handle = to;
+    } else {
+      handle = null;
+      download(name, text, "application/json");
+    }
     carriedDirty = false;
     return change("saved", name);
   }
 
+  /** Save as: the browser's save dialog where there is one (it asks for the name), else a name prompt and a download. */
+  async function saveAsChosen(current: string) {
+    if (canPick()) {
+      const h = await pickSave(current);
+      if (!h) return null;
+      project = null; // a copy somewhere else: it is no longer the project's design
+      return saveNamed(/\.owd$/.test(h.name) ? h.name : `${h.name}.owd`, h);
+    }
+    const name = window.prompt("File name (the browser will download it)", current);
+    if (name === null || name.trim() === "") return null;
+    const clean = name.trim();
+    project = null;
+    return saveNamed(/\.owd$/.test(clean) ? clean : `${clean}.owd`);
+  }
+
+  /** Save the project's design back into the project folder. */
+  async function saveInProject(p: OpenProject) {
+    const path = p.info.design!;
+    await writeIn(p.folder, path, await host.rpc<string>("save_text", path));
+    handle = null;
+    carriedDirty = false;
+    return change("saved", path);
+  }
+
+  /** Give the user the files OWD made. In a project they go into `exports/` of the folder; else
+   * the browser downloads them. Returns where they went, in words. */
+  async function deliver(files: [string, BlobPart, string][], count?: string): Promise<string | null> {
+    if (!files.length) return null;
+    const p = project;
+    if (!p) {
+      for (const [name, data, type] of files) download(name, data, type);
+      return count ?? files.map(([name]) => name).join(", ");
+    }
+    const paths: string[] = [];
+    for (const [name, data] of files) {
+      const path = await host.rpc<string>("project_export_path", name);
+      await writeIn(p.folder, path, data as string | Uint8Array);
+      paths.push(path);
+    }
+    return `${count ? `${count} in exports/` : paths.join(", ")} in the project folder "${p.folder.name}"`;
+  }
+
+  const canPickFolder = () => typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === "function";
+
+  /** Look into a folder the user chose: its text file as the engine reads it, or, with no text
+   * file, what the standard places hold. The folder is kept until it is opened. */
+  async function look(folder: ProjectFolder) {
+    const file = await folder.read(PROJECT_FILE);
+    if (file) {
+      const info = await json<ProjectInfo>("project_read", await file.text());
+      chosen = { folder, info };
+      return { folder: folder.name, title: info.title, found: null };
+    }
+    chosen = { folder, info: null };
+    return { folder: folder.name, title: null, found: await json("project_find", JSON.stringify(await listing(folder))) };
+  }
+
+  /** Ask for a folder with the browser's folder dialog. null when the user cancels it. */
+  async function pickProject() {
+    if (!canPickFolder()) throw "This browser cannot open a folder: Chrome and Edge can. Use Open for the design and Load… for the DEM.";
+    if (!confirmDiscard()) return null;
+    let dir: DirHandleLike;
+    try {
+      dir = await (window as unknown as { showDirectoryPicker: (o: unknown) => Promise<DirHandleLike> }).showDirectoryPicker({ mode: "readwrite", id: "owd-project" });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return null;
+      throw e;
+    }
+    return look(handleFolder(dir));
+  }
+
+  /** The folder remembered from last time; the browser asks the user for leave again. */
+  async function reopenProject() {
+    const last = await remembered();
+    if (!last) throw "No project folder is remembered in this browser. Use Open project.";
+    if (!confirmDiscard()) return null;
+    if (!(await allowed(last.handle, true))) throw NO_FOLDER_ACCESS;
+    return look(handleFolder(last.handle));
+  }
+
+  /** Write `owd-project.json` into the chosen folder, which has none: the design and the DEM the
+   * user took, and the inputs found under their standard names. */
+  async function adoptProject(design: string | null, dem: string | null) {
+    if (!chosen) throw "Choose a project folder first.";
+    const { folder } = chosen;
+    if (await folder.read(PROJECT_FILE)) throw `${PROJECT_FILE} is already in the folder: OWD does not overwrite it.`;
+    const text = await host.rpc<string>("project_adopt", JSON.stringify(await listing(folder)), folder.name, design ?? undefined, dem ?? undefined);
+    await writeIn(folder, PROJECT_FILE, text);
+    chosen = { folder, info: await json<ProjectInfo>("project_read", text) };
+  }
+
+  /** Open the chosen project: its design, and the DEM it names, in one step. */
+  async function openProject(say: (line: string) => void) {
+    if (!chosen?.info) throw "Choose a project folder first.";
+    const { folder, info } = chosen;
+    if (!info.design) throw `${PROJECT_FILE} names no design: add "design": "design/<name>.owd" to it.`;
+    const designFile = await folder.read(info.design);
+    if (!designFile) throw `The project names the design ${info.design}, but that file is not in the folder "${folder.name}".`;
+    const text = await designFile.text();
+    const demFile = info.dem ? await folder.read(info.dem) : null;
+    say(demFile ? "Loading the design and the DEM…" : "Loading the design…");
+    const before = project;
+    project = { folder, info };
+    try {
+      let snap = await change<{ dirty: boolean; title: string; file_name: string; project_note?: string | null; project_added?: string | null }>("open_project_file", info.design, text, demFile ? info.dem : undefined, demFile ?? undefined);
+      dem = demFile;
+      features = {};
+      // The buildings, points of interest and settlements the project names (BLD-1): attached when the
+      // design names them (a file that changed keeps its warning), loaded when it names none.
+      const notes: string[] = snap.project_note ? [snap.project_note] : [];
+      // The inputs the project added to the design: normal, so said in one calm line, not a warning.
+      const added: string[] = [];
+      for (const key of FEATURE_KEYS) {
+        const path = info.items.find((i) => i.key === key)?.path;
+        const file = path ? await folder.read(path) : null;
+        if (!path || !file) continue;
+        say(`Loading ${path}…`);
+        const named = !!(await json<{ document: { inputs: Record<string, unknown> } }>("snapshot")).document.inputs[key];
+        try {
+          snap = await change(named ? "attach_features" : "load_features", key, path, await readAll(file));
+          features[key] = { name: path, file };
+          if (!named) added.push(FEATURE_WORDS[key] ?? key);
+        } catch (e) {
+          if (!named) notes.push(`${path} was not loaded: ${String(e)}`);
+          snap = await change("snapshot");
+        }
+      }
+      snap.project_note = notes.length ? notes.join(" ") : null;
+      snap.project_added = added.length ? `The project added ${added.length} input${added.length === 1 ? "" : "s"} to the design (${added.join(", ")}). Save to keep ${added.length === 1 ? "it" : "them"}.` : null;
+      handle = null;
+      carriedDirty = false;
+      chosen = null;
+      if (folder.handle) await remember({ handle: folder.handle as DirHandleLike, title: info.title ?? folder.name, folder: folder.name });
+      return snap;
+    } catch (e) {
+      project = before;
+      throw e;
+    }
+  }
+
+  /** The open project for the panel: each item the text file names, and how it stands. */
+  async function projectStatus() {
+    const p = project;
+    if (!p) return null;
+    const snap = await json<{ warnings: string[]; document: { inputs: Record<string, unknown> } }>("snapshot");
+    const inputs = snap.document.inputs;
+    const demChanged = snap.warnings.some((w) => w.includes("has changed since its hash was recorded"));
+    const attached = (snap as unknown as { feature_inputs?: Record<string, { attached: boolean }> }).feature_inputs ?? {};
+    const inDesign = (key: string) => (key === "design" ? true : key === "dem" ? !!inputs.dem && dem !== null : key === "water_pools" ? !!inputs.water_level : FEATURE_KEYS.includes(key) ? !!attached[key]?.attached : !!inputs[key]);
+    const items = [];
+    for (const item of p.info.items) {
+      const there = item.path ? (await p.folder.read(item.path)) !== null : false;
+      // A feature file the design names but could not attach from the folder is another file.
+      const changed = FEATURE_KEYS.includes(item.key) ? !!inputs[item.key] && !attached[item.key]?.attached : demChanged;
+      items.push({ ...item, state: itemState(item.key, item.path, there, inDesign(item.key), changed) });
+    }
+    return { title: p.info.title ?? p.folder.name, folder: p.folder.name, design: p.info.design, items };
+  }
+
+  /** Load one item of the open project into the design, through the same calls as Load…. */
+  async function projectLoad(key: string, say: (line: string) => void) {
+    const p = project;
+    const path = p?.info.items.find((i) => i.key === key)?.path;
+    if (!p || !path) throw "The project does not name that file.";
+    const file = await p.folder.read(path);
+    if (!file) throw `${path} is not in the project folder "${p.folder.name}".`;
+    if (key === "dem") {
+      say("Loading the DEM…");
+      const snap = await change("load_dem_file", path, file);
+      dem = file;
+      return snap;
+    }
+    if (key === "water_pools") return change("set_water_pools", await file.text());
+    if (FEATURE_KEYS.includes(key)) {
+      say(`Loading ${path}…`);
+      const snap = await change("load_features", key, path, await readAll(file));
+      features[key] = { name: path, file };
+      return snap;
+    }
+    return change("load_input", key, path.split("/").pop(), await readAll(file), undefined);
+  }
+
   /** Bring back the design as it stood before a run, in a new worker. */
-  async function restart(before: { name: string; text: string; dem: Uint8Array | null; dirty: boolean }) {
+  async function restart(before: { name: string; text: string; dem: Blob | null; dirty: boolean }) {
     host = newHost(onProgress, onReach);
     await host.rpc("ping");
     dem = before.dem;
     for (const text of ruleSetTexts) await host.rpc("load_rule_set_text", text);
-    await host.rpc("open_text", before.name, before.text, before.dem ?? undefined);
+    await host.rpc("open_text_file", before.name, before.text, before.dem ?? undefined);
+    for (const [key, f] of Object.entries(features)) await host.rpc("attach_features", key, f.name, await readAll(f.file)).catch(() => {});
     carriedDirty = before.dirty;
   }
 
   async function runStage(stage: string, method: string | null) {
     const snap = await json<{ file_name: string; dirty: boolean }>("snapshot");
-    const before = { name: snap.file_name, text: await host.rpc<string>("save_text", snap.file_name), dem, dirty: snap.dirty || carriedDirty };
+    const before = { name: docName(snap), text: await host.rpc<string>("save_text", docName(snap)), dem, dirty: snap.dirty || carriedDirty };
     running = { stage, cancelled: false };
     const mine = running;
     try {
@@ -167,7 +423,7 @@ export async function createWebPlatform(): Promise<Platform> {
    * the design comes back as it was. */
   async function network(method: string, ...args: unknown[]) {
     const snap = await json<{ file_name: string; dirty: boolean }>("snapshot");
-    const before = { name: snap.file_name, text: await host.rpc<string>("save_text", snap.file_name), dem, dirty: snap.dirty || carriedDirty };
+    const before = { name: docName(snap), text: await host.rpc<string>("save_text", docName(snap)), dem, dirty: snap.dirty || carriedDirty };
     running = { stage: method, cancelled: false };
     const mine = running;
     try {
@@ -188,12 +444,18 @@ export async function createWebPlatform(): Promise<Platform> {
   async function loadInput(role: string, given: unknown) {
     const file = given instanceof File ? given : await pickFile(role === "dem" ? ".tif,.tiff" : ".geojson,.json,.gpkg");
     if (!file) return null;
-    const bytes = await bytesOf(file);
-    if (role === "dem") {
-      const snap = await change("load_dem", file.name, bytes);
-      dem = bytes;
+    if (FEATURE_KEYS.includes(role)) {
+      const snap = await change("load_features", role, file.name, await readAll(file));
+      features[role] = { name: file.name, file };
       return snap;
     }
+    if (role === "dem") {
+      // The file itself goes to the worker, which reads the blocks it needs (COG-1).
+      const snap = await change("load_dem_file", file.name, file);
+      dem = file;
+      return snap;
+    }
+    const bytes = await bytesOf(file);
     return change("load_input", role, file.name, bytes, undefined);
   }
 
@@ -201,9 +463,12 @@ export async function createWebPlatform(): Promise<Platform> {
     if (!confirmDiscard()) return null;
     const base = import.meta.env.BASE_URL;
     const [text, tif] = await Promise.all([fetch(`${base}examples/${EXAMPLE}`).then((r) => (r.ok ? r.text() : Promise.reject(`cannot load the example (${r.status})`))), fetch(`${base}examples/${EXAMPLE_DEM}`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(`cannot load the example DEM (${r.status})`)))]);
-    dem = new Uint8Array(tif);
+    dem = new Blob([tif]);
+    features = {};
+    handle = null;
+    project = null;
     carriedDirty = false;
-    return change("open_text", EXAMPLE, text, dem);
+    return change("open_text_file", EXAMPLE, text, dem);
   }
 
   const commands: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
@@ -220,6 +485,9 @@ export async function createWebPlatform(): Promise<Platform> {
     new_file: async () => {
       if (!confirmDiscard()) return null;
       dem = null;
+      features = {};
+      handle = null;
+      project = null;
       carriedDirty = false;
       return change("new_design");
     },
@@ -229,16 +497,19 @@ export async function createWebPlatform(): Promise<Platform> {
       if (!file) return null;
       const text = await file.text();
       dem = null;
+      features = {};
+      handle = null;
+      project = null;
       carriedDirty = false;
       return change("open_text", file.name, text, undefined);
     },
-    save: async () => saveNamed(fileName(await json("snapshot"))),
-    save_as: async () => {
-      const name = window.prompt("File name", fileName(await json("snapshot")));
-      if (name === null || name.trim() === "") return null;
-      const clean = name.trim();
-      return saveNamed(/\.owd$/.test(clean) ? clean : `${clean}.owd`);
+    save: async () => {
+      if (project?.info.design) return saveInProject(project);
+      const name = fileName(await json("snapshot"));
+      if (handle) return saveNamed(handle.name, handle);
+      return canPick() ? saveAsChosen(name) : saveNamed(name);
     },
+    save_as: async () => saveAsChosen(fileName(await json("snapshot"))),
     set_rule_sets: (a) => change("set_rule_sets", JSON.stringify(a.ids), JSON.stringify(a.inputs)),
     set_vessel: (a) => change("set_vessel", a.vesselStandardId, a.draught),
     set_custom_vessel: (a) => change("set_custom_vessel", JSON.stringify(a.fields)),
@@ -248,13 +519,28 @@ export async function createWebPlatform(): Promise<Platform> {
     map_geometry: () => json("map_geometry"),
     option_table: () => json("option_table"),
     hillshade: () => json("hillshade"),
+    // The 3D view (MAP-2): the DEM's terrain tiles are made in the worker, from the DEM in memory.
+    terrain_info: () => json("terrain_info"),
+    terrain_tile: (a) => host.rpc("terrain_tile", a.state ?? "before", a.z, a.x, a.y),
+    // The channel and its cut (MAP-5): derived in the worker from the design and the DEM in memory.
+    channel_geometry: () => json("channel_geometry"),
+    cut_tile: (a) => host.rpc("cut_tile", a.z, a.x, a.y),
+    cut_at: (a) => json("cut_at", a.lon, a.lat),
+    // Contours (MAP-3): traced in the worker from the same DEM, a vector tile for each map tile.
+    contour_tile: (a) => host.rpc("contour_tile", a.state ?? "before", a.z, a.x, a.y, a.interval),
+    // Weirs, locks and pools (MAP-4): the list is made by the session; the pool water is worked out in the
+    // worker from the DEM in memory, and its tiles are made there too.
+    map_structures: () => json("map_structures"),
+    pool_water_info: () => json("pool_water_info"),
+    pool_water_tile: (a) => host.rpc("pool_water_tile", a.id, a.z, a.x, a.y),
+    pool_surface_tile: (a) => host.rpc("pool_surface_tile", a.id, a.state ?? "before", a.z, a.x, a.y),
+    pool_water_at: (a) => json("pool_water_at", a.id, a.lon, a.lat),
     long_section: (a) => json("long_section", a.option),
     sheets: (a) => json("sheets", a.option),
     export_sheets: async (a) => {
       // each sheet's PDF, as `owd draw` names it; the browser saves them as downloads
       const pdfs = await host.rpc<[string, Uint8Array][]>("sheet_pdfs", a.option);
-      for (const [name, bytes] of pdfs) download(name, bytes as BlobPart, "application/pdf");
-      return pdfs.length ? `${pdfs.length} PDF${pdfs.length === 1 ? "" : "s"}` : null;
+      return deliver(pdfs.map(([name, bytes]) => [name, bytes as BlobPart, "application/pdf"]), `${pdfs.length} PDF${pdfs.length === 1 ? "" : "s"}`);
     },
     export_report: async (a) => {
       // each report file, as `owd report` names it; the browser saves them as downloads
@@ -264,22 +550,32 @@ export async function createWebPlatform(): Promise<Platform> {
         html: "text/html",
         docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       };
-      for (const [name, bytes] of files) download(name, bytes as BlobPart, types[name.split(".").pop() ?? ""] ?? "application/octet-stream");
-      return files.length ? files.map(([name]) => name).join(", ") : null;
+      return deliver(files.map(([name, bytes]) => [name, bytes as BlobPart, types[name.split(".").pop() ?? ""] ?? "application/octet-stream"]));
     },
     export_qa_overlay: async (a) => {
       // the QA overlay's PNG and KMZ (spec 0013), drawn in the worker from the scenes; saved as downloads
       const files = await host.rpc<[string, Uint8Array][]>("qa_overlay", a.fromKm ?? undefined, a.toKm ?? undefined, reachAt);
-      for (const [name, bytes] of files) download(name, bytes as BlobPart, name.endsWith(".kmz") ? "application/vnd.google-earth.kmz" : "image/png");
-      return files.length ? files.map(([name]) => name).join(", ") : null;
+      return deliver(files.map(([name, bytes]) => [name, bytes as BlobPart, name.endsWith(".kmz") ? "application/vnd.google-earth.kmz" : "image/png"]));
     },
     cross_section: (a) => json("cross_section", a.option, a.chainage),
     station_near: (a) => host.rpc("station_near", a.option, a.lon, a.lat),
     load_input: (a) => loadInput(a.role as string, a.path),
+    clear_features: async (a) => {
+      delete features[a.key as string];
+      return change("clear_features", a.key);
+    },
+    set_building_filters: (a) => change("set_building_filters", JSON.stringify(a.filters ?? {})),
+    feature_map: (a) => json("feature_map", a.key),
+    building_conflicts: () => json("building_conflicts"),
+    feature_card: (a) => json("feature_card", a.key, a.fid, (a.pool as number | null) ?? undefined),
+    features_flooded: (a) => json("features_flooded", a.key, a.pool, a.minDepth),
     set_water: (a) => change("set_water", a.level, a.fall),
     set_alignment_settings: (a) => change("set_alignment_settings", a.method, JSON.stringify(a.settings)),
+    set_optimise_settings: (a) => change("set_optimise_settings", JSON.stringify(a.settings)),
     set_terrain_limit: (a) => change("set_terrain_limit", (a.gib as string) ?? ""),
     set_downstream_point: (a) => change("set_downstream_point", (a.point as string) ?? ""),
+    set_mouth: (a) => change("set_mouth", (a.mouth as string) ?? ""),
+    set_run_inputs: (a) => change("set_run_inputs", (a.objective as string) ?? "", (a.limits as string) ?? "", (a.targetLevel as string) ?? ""),
     edit_bank: (a) => change("edit_bank", a.side, JSON.stringify(a.edit)),
     undo_bank_edit: () => change("undo_bank_edit"),
     run_stage: (a) => runStage(a.stage as string, (a.method as string | null) ?? null),
@@ -294,12 +590,14 @@ export async function createWebPlatform(): Promise<Platform> {
     reach_route: async (a) => {
       if (!confirmDiscard()) return null;
       carriedDirty = false;
+      project = null;
       return network("reach_route", a.river ?? "", JSON.stringify({ start: a.start, end: a.end, via: a.via ?? [] }), reachAt);
     },
     reach_search: (a) => json("reach_search", a.text ?? "", a.country ?? "", a.once === true, reachAt),
     reach_river: async (a) => {
       if (!confirmDiscard()) return null;
       carriedDirty = false;
+      project = null;
       return network("reach_river", a.osmId, JSON.stringify(a.also ?? []), (a.search as string) ?? "", reachAt);
     },
     reach_cut: async (a) => {
@@ -329,10 +627,23 @@ export async function createWebPlatform(): Promise<Platform> {
       const snap = await json<{ file_name: string }>("snapshot");
       const base = fileName(snap).replace(/\.owd$/, "");
       const text = await host.rpc<string>(kind === "geojson" ? "export_geojson" : "export_csv");
-      const name = `${base}.${kind}`;
-      download(name, text, kind === "geojson" ? "application/geo+json" : "text/csv");
-      return name;
+      return deliver([[`${base}.${kind}`, text, kind === "geojson" ? "application/geo+json" : "text/csv"]]);
     },
+    // The project folder (PROJ-1): the folder is read and written here; its text file is the engine's.
+    project_supported: async () => canPickFolder(),
+    project_pick: pickProject,
+    project_remembered: async () => {
+      const last = await remembered();
+      return last ? { title: last.title, folder: last.folder } : null;
+    },
+    project_reopen: reopenProject,
+    project_forget: async () => {
+      await forget();
+    },
+    project_adopt: (a) => adoptProject((a.design as string | null) ?? null, (a.dem as string | null) ?? null),
+    project_open: (a) => openProject(typeof a.onProgress === "function" ? (a.onProgress as (line: string) => void) : () => {}),
+    project_status: projectStatus,
+    project_load: (a) => projectLoad(a.key as string, typeof a.onProgress === "function" ? (a.onProgress as (line: string) => void) : () => {}),
   };
 
   // Bring back the last design, if there is one. Any failure leaves the empty design.

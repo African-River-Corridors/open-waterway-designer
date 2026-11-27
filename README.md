@@ -78,17 +78,51 @@ owd fits study.owd
 
 Then size and design for the vessel you choose (below): `owd size`, `owd align`, `owd volumes`.
 
+### Project folders
+
+Keep one study in one folder, so the design and its DEM open in one step:
+
+```
+<project folder>/
+  owd-project.json        the small text file that says what is here
+  design/<name>.owd       the design file(s)
+  terrain/<name>.tif      the DEM (GeoTIFF)
+  inputs/                 source data: centreline, river polygon, bank lines, water levels by pool
+  exports/                what OWD writes out: GeoJSON, CSV, sheets, reports
+```
+
+```
+owd project init reach-a --title "Reach A screening"
+owd project status reach-a
+owd run reach-a
+```
+
+- `owd project init` makes the folders and `owd-project.json`. It never overwrites one.
+- `owd project status` lists what the text file names, says whether each file is there, and checks the DEM
+  against the hash the design recorded.
+- Every command that takes a design file takes the project folder in its place.
+- In the web app, **Open project** asks for the folder, opens the design and loads the DEM in one step. Save
+  writes back into the folder, and exports go into `exports/`. Chrome and Edge have the folder dialog; in
+  Firefox and Safari use Open and Load… as before. Nothing is uploaded.
+
+Paths in `owd-project.json` are from the folder, with forward slashes, and may not leave it. The design still
+names its DEM from its own folder (`../terrain/<name>.tif`). The full description is in
+[docs/project-folder.md](docs/project-folder.md).
+
 ### Channel rules
 
 `owd size` sizes the channel to the Rule Sets you select (`--rule-set pianc-wg141 --set-input se_quality=B`); with
 two sets the strictest Rule governs. `owd waterway` marks canal and river reaches, so a Rule can apply on part of
-the river. After the volumes stage each design line option has a verdict and its constraint stretches
+the river. After the volumes stage the design line has a verdict and its constraint stretches
 (`owd export --csv --stretches`), and `owd trace` prints the full Rule Trace. Size for any class of the shared vessel
 catalogue (`--vessel CEMT-VIb-motor`), or for a vessel of your own: `owd size design.owd --custom-vessel "My barge"
 --loa 140 --beam 29 --draught 4.7 --formation motor` (a convoy also takes `--abreast` and `--in-line`; GB 50139 reads
 `--gb-class`). Every output labels it `Custom: My barge, 140 × 29 × 4.7 m`, and `owd fits` adds it as one more row.
-Designs are document format 0.4; a format 0.3 file (the number 3) opens and is saved as 0.4, and an older file is
-refused and must be rebuilt. See [docs/rules/channel-rules.md](docs/rules/channel-rules.md).
+Designs are document format 0.5, with one design line each (spec 0017); a format 0.4 or 0.3 file opens and is
+saved as 0.5: a stage that was up to date when it was saved stays up to date, with its numbers, and the design is
+turned to run from the river mouth (the lower end, by the water level or the DEM). An older file is refused and must
+be rebuilt. `owd import
+--mouth downstream` (or `--mouth LON,LAT`) states the river mouth, and every chainage then counts from it. See [docs/rules/channel-rules.md](docs/rules/channel-rules.md).
 
 `owd fits` reads the river on the reference line: one smooth line in the water, made from the banks, that belongs
 to no vessel (ADR 0014). `owd envelope design.owd --png envelope.png` gives the largest vessel the river allows: a
@@ -178,6 +212,39 @@ with RasterTerrain("my_dem.tif") as terrain:
     v = section_volumes(line, terrain, river_polygon, water_level, depth, half_width)
 ```
 
+## How the optimisation works
+
+The full account, with the formulas, one worked example and what to doubt, is
+**[The optimisation: mathematics and approach](docs/optimisation/README.md)**. It is written for a
+river or waterway engineer who wants to check the method and get the same numbers. In short:
+
+**What is minimised.** A cost you weight yourself: dredge and dry cut (m³), a structure cost for each
+weir, and, when you turn them on, flooded land (per hectare), the length of the line (per metre) and
+land taken outside the river (per m²). The line must hold the minimum radius R_min and must not cross
+itself. OWD prices nothing by itself.
+
+**The stages.** Sizing gives the bottom width, the depth and R_min. Alignment gives a baseline along
+the river. The **weir search** chooses weir sites and pool levels on the baseline: a dynamic
+programme, exact for its cost on the sites and lifts you offer. The **pool search** then moves the
+line inside each pool: a search over arcs no tighter than R_min, which returns the least cost it
+found and is not proven optimal. The volumes stage measures the result; quote volumes from it, not
+from a search.
+
+| Part of the method | Status |
+|---|---|
+| Sizing, rolling-circle baseline, volumes (Cut Model A) | In release 0.3.1 |
+| Weir search on cut and structure cost | In release 0.3.1 |
+| Pool search on a lattice of arcs and straights | In release 0.3.1 |
+| Flood cost and the limit above bank-full | In the development branch |
+| Exact pool ends, long pools in pieces, the loop guard | In the development branch |
+| Cost per metre, land cost, the corridor as a limit | In the development branch |
+| Seams on straights, free seams, the straight through a weir | In the development branch |
+| Seed line, costed meander cut-throughs, sideways shift | Planned, not built |
+
+The document is checked against the engine: its settings table, every number of its example and
+the tests behind each of its guarantees. A change to the optimise or alignment code updates it in the
+same change (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
 ## Optional: optimise weirs, pool levels and the channel through each pool
 
 `owd.optimise` adds two searches. Both take typed config objects and a terrain
@@ -215,9 +282,202 @@ weirs: 1000 m -> pool 0.5 m
  optimised: dredge   141,201 m3   dry cut   423,598 m3
 ```
 
+**The river-following line (`owd align --method river-following`).** A design line built from the
+river first and moved by cost after. The seed is a short list of arcs and straights that follows the
+river centreline as closely as R_min allows: one circle per bend, joined by common tangents, so every
+join is tangent and no arc is tighter than 1.0333 R_min. Where the river is tighter than that, the arc
+is held at that radius and the stretch is recorded as a tight bend. Two opposite arcs, either tighter
+than 2 R_min, keep a straight of one vessel length between them. The seed's tolerance to the
+centreline (`seed_tolerance_m`, `--seed-tolerance`) is 5 m by default (an eighth of the bottom width
+when that is more): one arc per bend. A tighter value gives compound curves of three arcs.
+
+Then meander cut-throughs: short arc-straight-arc paths across a loop's neck, each with a stable id
+(`cut-AAAAA-BBBBB`, the river chainage of its two ends in hectometres). Each is costed against staying
+in the river with the volumes stage's own section (the one scorer of the window optimiser), and taken
+when it saves at least two vessel lengths, is at least 5 % cheaper and its face is no taller than
+30 m (or than staying's). Without a DEM they are listed and costed on plan area, and taken only when
+you force them on: `--force-cut ID=on`, `ID=off` or `ID=rule`, or the Force list in the app.
+
+Last, a sideways shift by dynamic programming: stations every R_min / 6 (20 to 50 m), an offset step
+small enough to hold the radius limit (1.0694 R_min), the line's curves and straights kept, then a
+continuous refinement and a rebuild as exact arcs. Every length comes from the sizing stage, so a
+change of vessel, rule set or rule quality makes the line stale, and `owd run` builds it again.
+
+**Paying for length (`length_weight`).** Water deeper than the channel bed costs nothing to cut,
+so without a length cost the lattice treats extra length through deep water as free. The setting
+`length_weight` (`owd optimise --length-weight X`, or the optimise settings in the app) adds a cost
+for each metre of design line, the sailing distance. Its unit is the unit of the cut cost: one m3
+of cut at weight 1 costs 1. A weight of 10 means one metre of line costs as much as 10 m3 of cut.
+
+To choose it, compare it with the cut of one metre of typical channel through dry ground. A 40 m
+channel 5.5 m below the ground with 1:3 side slopes cuts about 310 m3 per metre. A weight well below
+that (a few, up to a few tens) only stops the line wandering through free water. A weight near it
+or above makes the search cut corners and meander necks to save length. That is a trade of cut for
+length, and it can drive large cuts. The default is 0 (off). The weir cascade does not read it.
+
+**Paying for land (`land_weight`).** Ground that the pool drowns deeper than the channel bed needs
+no cut, whether it is river or floodplain. So without a land cost a line over drowned land beside
+the river costs the same as a line in the river, and the search can leave the river for hundreds of
+metres. The setting `land_weight` (`owd optimise --land-weight X`, or "Cost per m² of land" in the
+app) charges every m2 of the channel's footprint that lies outside the river polygon, cut or no
+cut. The footprint is the channel's plan width at the water surface: the bottom width plus the side
+slopes up through the design depth. Its unit is m3 of cut per m2.
+
+To choose it, compare it with the channel depth. A weight equal to the design depth prices a m2 of
+land like a cut of the full depth over that m2: a good first value. A tenth of the depth still keeps
+the line in the river where it can turn inside it. A weight much smaller than `length_weight`
+divided by the footprint's width lets the line cut across bends to save length. The line still
+leaves the river where the river bends tighter than R_min and is too narrow to turn in: no weight
+can change that. The lattice's details give each pool's land area (`land_area_m2`) and land cost
+(`land_cost`), and the baseline's land area beside them. The default is 0 (off). The cost steers
+the search only: the volumes stage reports the m3 it measures and never the land cost. The weir
+cascade does not read it.
+
+**The corridor as a limit (`corridor_limit`).** The corridor is `corridor_half_m` (350 m by
+default) either side of the baseline: the alignment's design line, or the river centreline when
+there is none. By default it only tells the search where to sample its estimate of the cost to go;
+the search itself may go anywhere in the rectangle round the corridor. With `corridor_limit` on
+(`owd optimise --corridor-limit`, or "Keep the line inside the corridor" in the app) no point of the
+lattice's line may lie outside the corridor, to within one grid cell (`cell_m`). A pool that cannot
+end on its end pose inside the corridor is searched again with its end moved, as any pool that
+cannot close. A pool with no line inside the corridor keeps the baseline; the details and a warning
+say so. The limit never fails silently. Turn it off again with `--corridor-limit false`.
+
+**With no DEM: optimise on plan area.** A design that has no DEM can still run the optimise stage.
+There is then no ground to cut, so the stage chooses no weirs and no pool levels, and it needs no
+water level. It searches the whole line for the least channel footprint outside the river polygon,
+in m2, at a land weight of 1 unless `land_weight` is set, plus the length cost. The results
+(`optimised_on: "plan_area"`), the lattice's details, a warning on the design line, the command
+line and the app all say that the line was optimised on plan area, not on volume. The volumes stage
+still needs a DEM. A design that names a DEM whose file is missing is refused as before: plan area
+is never a quiet fallback.
+
+**Paying for flooded land (`flood_cost_per_ha`, `max_above_bank_m`).** The weir search prices cut and
+structures. A higher pool always cuts less, so with nothing else in the cost it takes the largest
+lift you offer at every weir, and the pools can stand far above the banks. Two optimise settings
+give it the other side of the trade. Both need a DEM, and both are off by default: a design that
+sets neither gives the same weirs and numbers as before.
+
+- `flood_cost_per_ha` (`owd optimise --flood-cost-per-ha X`, or the Optimise row in the app) is the
+  cost of one hectare of land a pool floods outside the river polygon. It is in the units of the cut
+  cost: with `wet_weight` and `dry_weight` as prices per m3, it is money per hectare. A starting
+  value is 3,000. The right value is the engineer's to set: it stands for the land, crops, houses
+  and roads the water takes.
+- `max_above_bank_m` (`--max-above-bank X`) is a hard limit: no pool may stand more than X metres
+  above bank-full anywhere in its reach. When no cascade can reach the top level inside the limit,
+  the stage fails and names the reach that blocks it and what would unblock it (more candidate
+  sites, smaller lifts, or a higher limit). It never falls back to a cascade outside the limit.
+
+To compare the flood cost with the cut: 3,000 per hectare is 0.30 per m2, so at a cut price of 1 per
+m3 flooding one hectare costs the same as cutting 3,000 m3. A 60 m channel cuts about 60,000 m3 more
+per kilometre for each metre the pool is lowered, which is the price of 20 ha. So at 3,000 a metre of
+pool is worth lowering only where it floods more than about 200 m of width for each kilometre of
+river. With structures at their own prices the search may still prefer few, high weirs: read the
+per-pool table and raise the cost, or set the limit, until the pools are ones you would build.
+
+*What counts as flooded.* Ground on a grid of `flood_cell_m` cells (default 25 m), outside the river
+polygon, below the pool level, joined to the river through other ground below the level (a hollow
+away from the river stays dry), nearest to the pool's own length of the design line, and within
+`flood_distance_m` of the line (`--flood-distance`, default 1,500 m). Ground past that distance, or
+past the edge of the DEM, is not counted; a pool whose water reaches that edge is flagged, and its
+hectares are then a lower bound. No bund is assumed beside a weir: low ground near a weir that joins
+the river on the far side of it counts as flooded.
+
+*Bank-full is an estimate.* In each 500 m of line it is the 25th percentile of the DEM in the cells
+that touch the river polygon, on each side of the line, and the lower of the two sides. A coarse DEM
+or a river polygon drawn wide of the water moves it. Check it against what you know of the banks.
+
+*The report.* With either setting on, or with `--flood-report` (which leaves the search as it is),
+`results.cascade.flood` lists each pool: its level and lift, the hectares it floods and their cost,
+how far it stands above bank-full at its lower end, its upper end and at its worst place, and its
+depth over the DEM's river level at each end. `owd optimise` prints the table; the app shows it under
+the Optimise row.
+
+**Paying for flooded buildings (`building_cost`).** With a buildings file loaded (`owd import
+--buildings FILE`, `inputs.buildings` in a project, or Buildings in the app's Data), `building_cost`
+(`owd optimise --building-cost X`, or the Optimise row in the app) is the cost of one building a pool
+floods, in the units of the cut cost. It is the engineer's price, for example a resettlement cost, not
+a fact. A building counts when its point is in land the pool floods by the rule above and the water
+there is at least `building_min_depth_m` deep (`--building-min-depth`, default 0.3 m). Buildings below
+the confidence threshold (default 0.7) or the smallest area are counted apart and never costed. Off
+(0) by default: the search is then unchanged. With buildings loaded the flood report also lists the
+buildings and the settlement land each pool floods, and the first 20 flooded buildings by place.
+`owd volumes` and the screening report say which buildings the cut takes, comes within 50 m of, or
+cuts off on a meander island. See [Buildings, places and settlements](docs/buildings-and-places.md).
+
+*A wider lift menu.* The default lifts are 0.5 and 1 m. Set your own with `--lifts`, for example
+`--lifts 1,2,3,4,5,6,7,8,9,10,11,12`, and candidate sites with `--sites` or the setting
+`site_step_m`. A menu of 1 to 12 m with a site every 500 m on a 240 km river is searched in under a
+second once the tables are built; building the cut table (one pass of the sections for each pool
+level) is the long part.
+
+**The joins: seams, weir sites and S-bends (`seams_on_straights`, `free_seams`, `min_straight_m`).**
+The lattice searches each pool on its own, and a pool longer than 6 km in pieces. By default every
+search starts and ends on the baseline's exact point and heading (the baseline is the alignment's
+design line, else the river centreline). A pinned point on a bend forces a curve of R_min beside
+it, and a pinned point off the river forces the line off the river there. Three settings change
+that. All are off by default, and a design that does not set them gives the same line as before.
+
+- `seams_on_straights` (`owd optimise --seams-on-straights`): the seam between two pieces of a long
+  pool goes where the baseline is straightest and inside the river polygon, within `seam_window_m`
+  (`--seam-window`, 1,500 m by default) of the even split. Straightness is the baseline's mean
+  radius over the weir straight either side of the point (two vessel lengths, and at least half of
+  R_min). The details list each seam: where the even split was, where the seam is, and why.
+- `free_seams` (`--free-seams`): at a seam the line passes a gate instead of a point. The gate is
+  the cross-line through the baseline's point, as wide as the river is there (set
+  `seam_offset_m`, `--seam-offset`, for a fixed room either side), and the heading may differ from
+  the baseline's by `seam_heading_tol_deg` (`--seam-heading-tol`, 30 degrees by default). The next
+  piece starts from the pose the line ended on, so there is no gap and no closing curve. At a weir
+  site between two pools the line passes a lock, so it must be straight there: the line runs
+  straight for `weir_straight_m` (`--weir-straight`; two lengths of the sized vessel by default)
+  through the gate, half upstream of the weir's cross-line and half downstream. Where the search
+  finds no such line (a weir on a tight bend in a narrow corridor, for one), the weir site is pinned
+  to the baseline as before, and the details and a warning say why by name. The ends of the whole
+  line stay pinned.
+- `min_straight_m` (`--min-straight`, 0 is off): between a left curve and a right curve the line
+  runs straight for at least this length. One ship length is a good first value. The search holds
+  it in its state, so it is a rule and not a cost; it is counted in whole lattice straights (twice
+  the pitch), so the length enforced is the next multiple at or above the setting.
+
+The details give every seam (`seams`) and every weir site (`weirs`): its chainage, whether it is
+free, the gate, where the line passed it, and the straight the line has there, measured on the
+line.
+
+**The window optimiser (`--method windows`).** A second method of the optimise stage redesigns the
+alignment's design line (or a line given with `owd design-line`) in windows of about 1 to 2 km,
+volume-aware. Seams sit on straights where the line hugs the river; in each window an exact lattice
+search (64 headings, 12 radii from R_min to 8 R_min, arcs of about 80 m, one vessel length of
+straight between opposite curves) finds the cheapest line from the line's exact pose at one seam to
+its exact pose at the other, and prices every move with the volumes stage's own cross-section: its
+cut model, its bend widening at the arc's radius, its ground with the bed model. A sideways polish
+then slides both the found line and the starting stretch. A window takes the found line only when
+the volumes stage's measure says it is at least 1 % cheaper; otherwise it keeps the starting line,
+unchanged, and says why. A second pass searches over the first pass's seams. The line holds R_min,
+joins without a gap or a kink, never crosses itself and is never dearer than the line it started
+from. The weir cascade is not run: the pools and weirs of an earlier pool-lattice run are kept (its
+weirs become seams), else the design's water level is used. It is off by default; a design that does
+not choose it is unchanged.
+
+```
+owd optimise design.owd.json --method windows                  # windows of 1,500 m
+owd optimise design.owd.json --method windows --window-length 2000 --threads 8
+```
+
+`owd optimise` prints one row per window (its stretch, its cost before and after, adopted or why
+not); the app's Optimise panel has the method, the window length and the same table. The settings
+are under `windows` in the optimise settings; see [docs/window-optimiser.md](docs/window-optimiser.md).
+
 The search cost is a search objective. Re-measure the winner with `volumes.sections` before
 you quote a quantity. The lattice is coarse by design; a finer one (`pitch_m`, `n_heading`,
 more `radius_multiples`) follows the river more closely and runs longer.
+
+## Map imagery (the Imagery setting)
+
+The app draws satellite imagery under the design. Open **Imagery** in the header to choose the source. The choice is yours alone: it is kept on your machine (in the browser's storage for the web app) and is never saved in a design file, an export, a report or a drawing. A design opened on another machine shows that machine's own choice. Drawings and reports use no imagery.
+
+- **Sentinel-2 cloudless 2016 (EOX, open)** is the default. It needs no key.
+- **Esri World Imagery (your Esri key)** uses your own Esri account. Sign up for an ArcGIS Location Platform account at <https://location.arcgis.com>, create API key credentials with the Basemaps privilege (Location services, Basemaps: the Basemap styles service; the Static Basemap Tiles privilege alone gives place names with no picture), and paste the key into the field. Esri tiles are asked for only when you zoom in to a river reach; further out the map shows the open imagery, and says so. Esri bills per tile, with a free monthly allowance. A key expires, after at most one year. OWD stores the key only on your machine, shows only its last four characters, and sends it only to Esri to ask for tiles. Esri's own terms apply to your use of its imagery; OWD does not cache or save Esri tiles. The map shows "Powered by Esri" and Esri's data sources. If the key is wrong or has expired, the map says so in one line and goes back to the open imagery.
+- **Custom tiles** takes an XYZ tile address with `{z}`, `{x}` and `{y}`, and an attribution text that the map shows. Check that the provider's terms allow your use.
 
 ## Exit codes
 

@@ -26,6 +26,26 @@ function syncFetch(url: string, start: number, len: number): Uint8Array {
   return start >= 0 && x.status === 200 ? all.slice(start, start + len) : all;
 }
 
+/** A DEM file the worker keeps (COG-1): its size and a synchronous reader of a byte range, which a
+ * Worker may make with `FileReaderSync`. The engine reads the blocks it needs through it, so a large
+ * sectioned DEM is never loaded whole and the page is never blocked. */
+// A Worker's synchronous file reader (not in the DOM types the app is checked against).
+declare const FileReaderSync: { new (): { readAsArrayBuffer(blob: Blob): ArrayBuffer } };
+
+function fileReader(blob: Blob): [number, (start: number, len: number) => Uint8Array] {
+  const reader = new FileReaderSync();
+  return [blob.size, (start, len) => new Uint8Array(reader.readAsArrayBuffer(blob.slice(start, start + len)))];
+}
+
+/** The methods whose last argument is a DEM file (or nothing): it is given as its size and reader. */
+const FILE_METHODS = new Set(["load_dem_file", "open_text_file", "open_project_file"]);
+
+function withFile(args: unknown[]): unknown[] {
+  const last = args[args.length - 1];
+  const rest = args.slice(0, -1);
+  return last instanceof Blob ? [...rest, ...fileReader(last)] : [...rest, undefined, undefined];
+}
+
 /** The methods that reach the network take the fetch as their last argument. */
 const NETWORK = new Set(["reach_route", "reach_step", "reach_search", "reach_river", "qa_overlay", "reach_restore"]);
 
@@ -40,7 +60,7 @@ self.onmessage = async (e: MessageEvent<{ id: number; method: string; args: unkn
     const s = session as unknown as Methods;
     if (method === "ping") return self.postMessage({ id, ok: true, result: true });
     if (typeof s[method] !== "function") throw new Error(`no such session method: ${method}`);
-    const given = method === "run_stage" ? [args[0], args[1], (n: number) => self.postMessage({ progress: n })] : NETWORK.has(method) ? [...args, syncFetch] : args;
+    const given = method === "run_stage" ? [args[0], args[1], (n: number) => self.postMessage({ progress: n })] : NETWORK.has(method) ? [...args, syncFetch] : FILE_METHODS.has(method) ? withFile(args) : args;
     self.postMessage({ id, ok: true, result: s[method].apply(session, given) });
   } catch (err) {
     // A trap or a stack overflow leaves the wasm session unusable: say so, and the page ends this worker.

@@ -1,0 +1,107 @@
+{
+  "label": "Label: golden",
+  "why": "The simple case: one reach, one haul distance for the run (2 km), no stretches. Two stations 250 m apart, each 0.8 m2 of dredge and 0.2 m2 of dry cut: 400 and 100 m3. Dredge 400 x 10 = 4000, dry cut 100 x 5 = 500, disposal 500 x 2 = 1000, haul 500 x 2 x 1 = 1000; 6500.",
+  "input": {
+    "by_reach": [
+      {
+        "from": 0.0,
+        "to": 500.0,
+        "source": "given",
+        "stations": 2,
+        "dredge_m3": 400.0,
+        "excav_m3": 100.0,
+        "total_m3": 500.0
+      }
+    ],
+    "station_m": 250.0,
+    "stations": [
+      {
+        "chainage_m": 0.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      },
+      {
+        "chainage_m": 250.0,
+        "dredge_area_m2": 0.8,
+        "excav_area_m2": 0.2
+      }
+    ],
+    "volumes_fresh": true,
+    "rates": {
+      "dredge_per_m3": {
+        "amount": 10.0,
+        "currency": "USD"
+      },
+      "dry_cut_per_m3": {
+        "amount": 5.0,
+        "currency": "USD"
+      },
+      "disposal_per_m3": {
+        "amount": 2.0,
+        "currency": "USD"
+      },
+      "haul_per_m3_km": {
+        "amount": 1.0,
+        "currency": "USD"
+      },
+      "haul_km": 2.0
+    }
+  },
+  "expect": {
+    "cost": {
+      "currency": "USD",
+      "by_reach": [
+        {
+          "from": 0.0,
+          "to": 500.0,
+          "haul_m3_km": 1000.0,
+          "items": {
+            "dredge": {
+              "amount": 4000.0,
+              "currency": "USD"
+            },
+            "dry_cut": {
+              "amount": 500.0,
+              "currency": "USD"
+            },
+            "disposal": {
+              "amount": 1000.0,
+              "currency": "USD"
+            },
+            "haul": {
+              "amount": 1000.0,
+              "currency": "USD"
+            },
+            "total": {
+              "amount": 6500.0,
+              "currency": "USD"
+            }
+          }
+        }
+      ],
+      "totals": {
+        "dredge": {
+          "amount": 4000.0,
+          "currency": "USD"
+        },
+        "dry_cut": {
+          "amount": 500.0,
+          "currency": "USD"
+        },
+        "disposal": {
+          "amount": 1000.0,
+          "currency": "USD"
+        },
+        "haul": {
+          "amount": 1000.0,
+          "currency": "USD"
+        },
+        "total": {
+          "amount": 6500.0,
+          "currency": "USD"
+        }
+      },
+      "cut_volumes": "plain"
+    }
+  }
+}

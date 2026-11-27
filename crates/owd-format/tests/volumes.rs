@@ -105,12 +105,9 @@ fn settings() -> Value {
 fn the_volumes_equal_section_volumes_called_directly() {
     let mut s = with_dem();
     s.run_volumes(&settings(), Some(&terrain)).unwrap();
-    let rows = s.document()["stages"]["volumes"]["results"]["options"]
-        .as_array()
-        .unwrap()
-        .clone();
+    let rows = owd_format::design::volume_rows_of(s.document());
     assert_eq!(rows.len(), 1);
-    let line: Vec<Pt> = s.document()["options"][0]["line"]["coordinates"]
+    let line: Vec<Pt> = s.document()["stages"]["alignment"]["results"]["line"]["coordinates"]
         .as_array()
         .unwrap()
         .iter()
@@ -157,7 +154,7 @@ fn the_volumes_equal_section_volumes_called_directly() {
     // A failed check stays with the option's numbers.
     assert_eq!(
         r["radius_ok"],
-        s.document()["options"][0]["checks"]["radius_ok"]
+        s.document()["stages"]["alignment"]["results"]["checks"]["radius_ok"]
     );
 }
 
@@ -189,10 +186,15 @@ fn a_changed_dem_file_warns_on_open_and_marks_volumes_stale() {
     );
 
     // A missing file is a warning and a stale stage too.
-    assert_eq!(saved.dem_check(None), DemCheck::Missing);
-    assert!(saved.dem_warning(None).unwrap().contains("missing"));
+    assert_eq!(saved.dem_check(None::<&[u8]>), DemCheck::Missing);
+    assert!(
+        saved
+            .dem_warning(None::<&[u8]>)
+            .unwrap()
+            .contains("missing")
+    );
     assert_eq!(
-        saved.stage_status_with_dem(Stage::Volumes, None),
+        saved.stage_status_with_dem(Stage::Volumes, None::<&[u8]>),
         StageStatus::Stale
     );
 }

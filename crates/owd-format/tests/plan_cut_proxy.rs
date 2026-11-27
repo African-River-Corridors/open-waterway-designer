@@ -62,7 +62,9 @@ fn design(w: f64, islands: &[Vec<Pt>]) -> String {
     .unwrap();
     let d = s.document();
     assert!(d["inputs"]["dem"].is_null() && d["inputs"]["water_level"].is_null());
-    let line = d["options"][0]["line"]["coordinates"].as_array().unwrap();
+    let line = d["stages"]["alignment"]["results"]["line"]["coordinates"]
+        .as_array()
+        .unwrap();
     assert!(line.iter().all(|p| p[1].as_f64() == Some(Y0)));
     assert_eq!(line[line.len() - 1][0].as_f64(), Some(X0 + L));
     s.to_text()
@@ -146,7 +148,7 @@ fn a_proxy_volume_is_never_added_to_a_terrain_volume() {
         .join("../../examples/web/river-example.owd");
     let mut s = Session::open(&std::fs::read_to_string(example).unwrap()).unwrap();
     let volumes = s.document()["stages"]["volumes"].clone();
-    assert!(volumes["results"]["options"][0]["total_m3"].is_number());
+    assert!(volumes["results"]["total_m3"].is_number());
     s.run_plan_cut(&json!({"proxy_height_m": 4.0})).unwrap();
     assert_eq!(s.document()["stages"]["volumes"], volumes);
 

@@ -36,6 +36,10 @@ markdown_extensions:
   - admonition
   - pymdownx.superfences
   - pymdownx.highlight
+  # Formulas written as $...$ and $$...$$ (as GitHub reads them). hooks.py turns each into MathML
+  # when the site is built: no script and no request when a page is read.
+  - pymdownx.arithmatex:
+      generic: true
 
 plugins:
   - search
@@ -57,6 +61,9 @@ nav:
       - Rule Sets, reaches and screening: channel-rules.md
       - Codifying a rule: codification.md
   - Reports: reports.md
+  - The optimisation:
+      - Mathematics and approach: optimisation.md
+      - Appendices: optimisation-appendices.md
   - Roadmap: roadmap.md
   - Glossary: glossary.md
   - Worked example, the Sassandra: examples/sassandra.md

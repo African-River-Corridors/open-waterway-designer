@@ -140,11 +140,8 @@ const snapshot: Snapshot = {
       alignment: { settings: null, results: null }, optimise: { settings: null, results: null },
       volumes: {
         settings: null,
-        results: { options: [
-          { id: "o1", name: opts[0].name, screening: screening("not-navigable", stretchList) },
-          { id: "o2", name: opts[1].name, screening: screening("navigable-with-works", []) },
-          { id: "o3", name: opts[2].name, screening: screening("navigable-as-is", []) },
-        ] },
+        // One design line per run (spec 0017): the volumes row of the first.
+        results: { id: "o1", name: opts[0].name, screening: screening("not-navigable", stretchList) },
       },
     },
   },
@@ -178,7 +175,7 @@ const blank = (): Snapshot => ({
 const none = (why: string) => () => Promise.reject(why);
 
 const answer: Record<string, () => unknown> = {
-  snapshot: () => snapshot, set_rule_sets: () => snapshot, set_alignment_settings: () => snapshot, set_vessel: () => snapshot, set_custom_vessel: () => snapshot,
+  snapshot: () => snapshot, set_rule_sets: () => snapshot, set_alignment_settings: () => snapshot, set_optimise_settings: () => snapshot, set_vessel: () => snapshot, set_custom_vessel: () => snapshot,
   check_custom_vessel: () => ({ refusal: null, warnings: [] }), stretches_geojson: () => stretches,
   load_rule_set_file: () => ({ loaded: "pianc-wg141@0.9.0" }),
   sizing_choices: () => ({
@@ -191,6 +188,13 @@ const answer: Record<string, () => unknown> = {
   }),
   map_geometry: () => geometry, option_table: () => table, long_section: () => longSection, cross_section: () => crossSection,
   station_near: () => 9000, hillshade: relief,
+  // The mock has no engine to cut terrain tiles: the 3D button says there is no DEM.
+  terrain_info: () => null,
+  // Nor to derive the channel: the Channel and Cut extent ticks say there is none.
+  channel_geometry: () => null,
+  // The mock design has no pools: no weirs to draw, and no pool water.
+  map_structures: () => ({ model: { note: "placeholder model, not a design", vessel_length_m: null, vessel_beam_m: null, chamber_length_m: null, chamber_width_m: null, wall_thickness_m: 3, wall_freeboard_m: 1.5, default_weir_length_m: 100, rules: "" }, pools: [], weirs: [] }),
+  pool_water_info: () => null,
   export_sheets: () => "/tmp/owd-sheets",
   export_report: () => "/tmp/owd-reports",
   sheets: () => [{ number: "OWD-MOCK-PL-001", title: "PLAN OVERVIEW", warnings: [],

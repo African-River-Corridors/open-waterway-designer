@@ -1,0 +1,13 @@
+{
+  "label": "Label: property",
+  "why": "An objective is minimised or maximised; nothing else.",
+  "input": {
+    "objective": {
+      "measure": "cost",
+      "sense": "balance"
+    }
+  },
+  "expect": {
+    "code": "RUN_SENSE_UNKNOWN"
+  }
+}

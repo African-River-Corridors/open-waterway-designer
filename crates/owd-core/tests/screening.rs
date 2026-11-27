@@ -5,7 +5,7 @@
 
 use owd_core::rules::engine::{self, Selection, Vessel};
 use owd_core::rules::screening::{
-    StationIn, StretchKind, constraint_stretches, design_basis, falls_short,
+    StationIn, StretchKind, constraint_stretches, design_basis, falls_short, falls_short_of,
 };
 
 fn cemt_iv() -> Vessel {
@@ -127,7 +127,11 @@ fn every_short_station_is_in_exactly_one_stretch_of_its_kind_and_no_other_is() {
                         st.river_width_m,
                     ),
                     StretchKind::Depth => falls_short(sized.design_depth_m, st.river_depth_m),
-                    StretchKind::Radius => falls_short(sized.min_bend_radius_m, st.river_radius_m),
+                    StretchKind::Radius => falls_short_of(
+                        StretchKind::Radius,
+                        sized.min_bend_radius_m,
+                        st.river_radius_m,
+                    ),
                 };
                 let holding = stretches
                     .iter()
@@ -219,4 +223,55 @@ fn the_design_basis_names_the_governing_rule_of_each_quantity_per_reach_kind() {
             .iter()
             .any(|(r, _)| r == "pianc-wg141/Table5.7/min-bend-radius-c")
     );
+}
+
+/// One station set with one stretch of river radius `r` along 1,000 to 1,100 m, on a straight and
+/// wide river, for the radius reading tolerance.
+fn radius_only(r: f64) -> Vec<StationIn> {
+    (0..=300)
+        .map(|i| {
+            let s = i as f64 * 10.0;
+            StationIn {
+                chainage_m: s,
+                xy: [s, 0.0],
+                river_width_m: 200.0,
+                river_depth_m: 6.0,
+                river_radius_m: if (1000.0..=1100.0).contains(&s) {
+                    r
+                } else {
+                    f64::INFINITY
+                },
+                line_radius_m: f64::INFINITY,
+                reach: 0,
+                dredge_area_m2: 0.0,
+                dry_cut_area_m2: 0.0,
+            }
+        })
+        .collect()
+}
+
+/// A radius at the minimum, or inside the reading tolerance every other check uses
+/// (`radius_ok`, 2 %), is not a constraint stretch. One outside it is.
+#[test]
+fn a_radius_inside_the_reading_tolerance_is_not_a_stretch() {
+    use owd_core::alignment::radius_check::{RADIUS_TOL, radius_ok};
+    let s = pianc_b();
+    let v = cemt_iv();
+    let sized = engine::size(&s, &v).unwrap();
+    let r_min = sized.min_bend_radius_m;
+    let count = |r: f64| {
+        constraint_stretches(&s, &v, &sized, &radius_only(r), 10.0)
+            .unwrap()
+            .iter()
+            .filter(|x| x.kind == StretchKind::Radius)
+            .count()
+    };
+    assert_eq!(count(r_min), 0, "exactly R_min");
+    assert_eq!(count(r_min - 0.04), 0, "0.04 m under R_min reads as R_min");
+    let inside = (1.0 - RADIUS_TOL) * r_min + 0.01;
+    assert!(radius_ok(inside, r_min));
+    assert_eq!(count(inside), 0, "just inside the tolerance");
+    let outside = (1.0 - RADIUS_TOL) * r_min - 0.01;
+    assert!(!radius_ok(outside, r_min));
+    assert_eq!(count(outside), 1, "just outside the tolerance");
 }
