@@ -352,6 +352,9 @@ fn every_alignment_method_is_in_the_schema() {
         .expect("the schema lists the alignment methods");
     for m in all {
         let v = serde_json::to_value(m).unwrap();
-        assert!(allowed.contains(&v), "the schema does not list the method {v}");
+        assert!(
+            allowed.contains(&v),
+            "the schema does not list the method {v}"
+        );
     }
 }
