@@ -382,7 +382,8 @@ fn a_long_river_end_to_end() {
     let calls: usize = st.iter().map(|s| (s.hi - s.lo + 1) as usize).sum::<usize>() * 4;
     eprintln!(
         "long river {:.1} km: {:.1} s; seed {} elements, {} cut-through candidates, {} stations, \
-         {} table calls, cost {:.0} -> {:.0}, delivered {} elements, gap {:.2} m",
+         {} table calls, cost {:.0} -> {:.0}, delivered {} elements, gap {:.2} m, held {}, \
+         dropped {}",
         linear::length(&river) / 1000.0,
         dt,
         out.seed.chain.elements.len(),
@@ -392,8 +393,31 @@ fn a_long_river_end_to_end() {
         sh.cost_zero,
         sh.cost,
         out.line.elements.len(),
-        out.tracking_gap_m
+        out.tracking_gap_m,
+        out.shift_held,
+        out.shift_dropped
     );
+    eprintln!(
+        "short reversals: seed {:?}, after cuts {:?}",
+        out.seed.chain.short_reversals(2.0 * r_min, loa),
+        out.after_cuts.short_reversals(2.0 * r_min, loa)
+    );
+    let near: Vec<(f64, f64, f64)> = out
+        .after_cuts
+        .elements
+        .iter()
+        .filter(|e| e.s0 > 176_000.0 && e.s0 < 180_000.0)
+        .map(|e| (e.s0, e.length, e.radius()))
+        .collect();
+    eprintln!("after cuts near 177.8 km: {near:?}");
+    for c in out.choices.iter().filter(|c| c.accepted) {
+        eprintln!(
+            "cut {} {:.0}..{:.0}",
+            c.candidate.id,
+            c.line_from.unwrap_or(0.0),
+            c.line_to.unwrap_or(0.0)
+        );
+    }
     gap_report(&out);
     assert!(out.line.least_radius() >= r_min - 1e-9);
 }

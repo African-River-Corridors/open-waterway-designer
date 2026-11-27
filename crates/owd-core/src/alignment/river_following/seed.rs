@@ -1001,8 +1001,6 @@ pub fn seed(centreline: &[Pt], p: &SeedParams, in_water: Option<&dyn Fn(Pt) -> b
 
 /// The seed of a target already made.
 pub fn seed_of_target(t: Target, p: &SeedParams, in_water: Option<&dyn Fn(Pt) -> bool>) -> Seed {
-    let n = t.pts.len();
-    let (p0, p1) = (t.pts[0], t.pts[n - 1]);
     let mut circles: Vec<Circle> = bends(&t, p)
         .into_iter()
         .filter_map(|(a, b, hand)| circle_of(&t, a, b, hand, p))
@@ -1014,6 +1012,14 @@ pub fn seed_of_target(t: Target, p: &SeedParams, in_water: Option<&dyn Fn(Pt) ->
             place_in_water(c, &t, w);
         }
     }
+    seed_from_circles(t, circles, p)
+}
+
+/// The seed of a target from circles already placed (the rebuild of a shifted line starts from
+/// the circles of the line it shifted): polished, mended and refined as [`seed_of_target`] does.
+pub fn seed_from_circles(t: Target, mut circles: Vec<Circle>, p: &SeedParams) -> Seed {
+    let n = t.pts.len();
+    let (p0, p1) = (t.pts[0], t.pts[n - 1]);
     build_mended(&mut circles, &t, p0, p1, p);
     for i in 0..circles.len() {
         polish(&mut circles, i, &t, p);

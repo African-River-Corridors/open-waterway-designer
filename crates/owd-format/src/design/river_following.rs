@@ -618,6 +618,10 @@ pub struct ShiftRecord {
     /// True when it was built in exact 5 m steps, because its arcs missed it by more than the
     /// tolerance.
     pub tracked: bool,
+    /// Stations where the shift was held at zero because the arcs could not follow it there.
+    pub held_stations: usize,
+    /// True when the shift was not delivered: its arcs could not follow it even held.
+    pub dropped: bool,
 }
 
 /// The checks of section 7, each read from the line and the polygon.
@@ -881,7 +885,19 @@ pub fn river_following(
                 .to_string(),
         );
     }
-    if out.tracking_gap_m > d.seed_tolerance_m {
+    if out.shift_dropped {
+        warnings.push(
+            "the sideways shift was not delivered: the arcs could not follow the shifted line \
+             within twice the tolerance, so the line is the seed with its cut-throughs"
+                .to_string(),
+        );
+    } else if out.shift_held > 0 {
+        warnings.push(format!(
+            "the sideways shift was held at zero at {} station(s) where the arcs could not follow it",
+            out.shift_held
+        ));
+    }
+    if out.tracking_gap_m > d.seed_tolerance_m && !out.shift_dropped {
         warnings.push(format!(
             "the delivered arcs are up to {:.1} m from the shifted line (the tolerance is {:.1} m)",
             out.tracking_gap_m, d.seed_tolerance_m
@@ -939,6 +955,8 @@ pub fn river_following(
             tracking_gap_m: out.tracking_gap_m,
             rebuilt: out.rebuild.is_some(),
             tracked: out.tracked,
+            held_stations: out.shift_held,
+            dropped: out.shift_dropped,
         }
     });
     let checks = river_checks(
