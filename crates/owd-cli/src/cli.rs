@@ -360,8 +360,8 @@ enum Command {
         #[arg(long, value_name = "BOOL")]
         use_water: Option<String>,
         /// River-following: the largest gap of the seed from the river centreline outside the
-        /// bends tighter than R_min, in metres (default: 5 m, or an eighth of the bottom width
-        /// when more; one arc per bend). Stored in the design.
+        /// bends tighter than R_min, in metres. Unset, it is five metres, or an eighth of the
+        /// bottom width when that is more: one arc per bend. Stored in the design.
         #[arg(long, value_name = "METRES")]
         seed_tolerance: Option<f64>,
         /// River-following: force a cut-through on or off by its id, `ID=on` or `ID=off`, or give
