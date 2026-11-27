@@ -2017,6 +2017,16 @@
         "tracked": {
           "description": "True when it was built in exact 5 m steps, because its arcs missed it by more than the\ntolerance.",
           "type": "boolean"
+        },
+        "held_stations": {
+          "description": "Stations where the shift was held at zero because the arcs could not follow it there.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "dropped": {
+          "description": "True when the shift was not delivered: its arcs could not follow it even held.",
+          "type": "boolean"
         }
       },
       "required": [
@@ -2034,7 +2044,9 @@
         "refined_passes",
         "tracking_gap_m",
         "rebuilt",
-        "tracked"
+        "tracked",
+        "held_stations",
+        "dropped"
       ]
     },
     "RiverChecks": {
