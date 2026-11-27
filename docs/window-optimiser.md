@@ -29,9 +29,15 @@ judges every change with the same measure the volumes stage reports. It is off b
    cheaper than the polished starting stretch, and it does not loop, break R_min or leave the
    permitted ground. Failing that, it takes the polished starting stretch on the same rule. Failing
    that, it keeps the starting line exactly as it was, and records why.
-6. **A second pass** searches a window over each free seam, from the middle of the window before it
+6. **It undoes a window that spoils the join.** After the windows are spliced in, a window is undone
+   when the joined line crosses itself (`crosses_line`), breaks R_min (`radius`) or has a straight
+   between opposite curves shorter than the minimum straight (`short_straight`) where the line
+   before it did not. The undone window keeps the starting line, and the joined line is read again.
+   A crossing, a tight radius or a short S-bend the starting line already had is kept and reported.
+   A minimum straight of 0 turns the S-bend check off.
+7. **A second pass** searches a window over each free seam, from the middle of the window before it
    to the middle of the window after it, so a seam does not lock in a poor join.
-7. **It checks the whole line.** R_min on OWD's chord, no self-crossing, the minimum straight, and
+8. **It checks the whole line.** R_min on OWD's chord, no self-crossing, the minimum straight, and
    the cost measured end to end against the sum of the windows' savings.
 
 ## What it keeps
@@ -61,7 +67,8 @@ the starting stretch and of the found line, the full measure of the starting str
 polished starting stretch and of the found line (weighted cost, dredge, dry cut, land, length,
 tallest face, share of ground unknown), the gain in per cent, what was adopted and why (`gain`,
 `polished_start`, `under_threshold`, `dearer`, `loop`, `radius`, `left_river`, `not_closed`, `cap`,
-`timeout`, `no_path`, `no_ground`, `too_short`, `crosses_line`), the search's expansions, states and
+`timeout`, `no_path`, `no_ground`, `too_short`, `crosses_line`,
+`short_straight`), the search's expansions, states and
 seconds, the polish of both lines, the loop test, the least radius, and the settings' hash. The
 totals give the whole line's cost before and after, measured end to end.
 

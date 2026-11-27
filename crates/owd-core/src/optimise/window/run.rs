@@ -947,89 +947,137 @@ fn run_pass(
         });
         outcomes.extend(outs);
     }
-    // The splice, and no window that makes the line cross itself.
+    // The splice, and no window that makes the line cross itself, break R_min or leave a short
+    // straight between opposite curves.
     loop {
         let spans: Vec<(f64, f64, Option<&Vec<Pt>>)> = outcomes
             .iter()
             .map(|o| (o.rec.start_m, o.rec.end_m, o.piece.as_ref()))
             .collect();
         let (joined, new_spans) = splice_all(cur, &spans);
-        let crossings = self_crossings_m(&joined);
-        let start_crossings = self_crossings_m(cur);
-        // A crossing the starting line has too is not a window's doing.
-        let new_crossing = crossings.iter().find(|c| {
-            !start_crossings
-                .iter()
-                .any(|s| (s.0 - c.0).abs() < 1.0 && (s.1 - c.1).abs() < 1.0)
-        });
-        let Some(&(s1, s2)) = new_crossing else {
-            // R_min on the joined line, read exactly as the final check reads it: every place it
-            // fails where the current line did not fail nearby is laid to the adopted window that
-            // holds it (or is nearest within a chord), which is undone; then read again.
-            let r_min = cfg.lattice.r_min_m;
-            let chord = crate::alignment::radius_check::default_check_chord(r_min);
-            let before = crate::alignment::radius_check::radius_failures(cur, chord, r_min);
-            let after = crate::alignment::radius_check::radius_failures(&joined, chord, r_min);
-            let new_fail = after.iter().find(|p| {
-                !before
-                    .iter()
-                    .any(|q| libm::hypot(p[0] - q[0], p[1] - q[1]) <= 2.0 * chord)
-            });
-            if let Some(&p) = new_fail {
-                let at = linear::project(&joined, p);
-                let k = new_spans
-                    .iter()
-                    .enumerate()
-                    .filter(|(k, _)| outcomes[*k].piece.is_some())
-                    .map(|(k, sp)| {
-                        let d = if at < sp.0 {
-                            sp.0 - at
-                        } else if at > sp.1 {
-                            at - sp.1
-                        } else {
-                            0.0
-                        };
-                        (k, d)
-                    })
-                    .filter(|(_, d)| *d <= chord)
-                    .min_by(|a, b| a.1.total_cmp(&b.1))
-                    .map(|(k, _)| k);
-                if let Some(k) = k {
-                    outcomes[k].piece = None;
-                    outcomes[k].rec.adopted = Adopted::None;
-                    outcomes[k].rec.reason = "radius";
-                    continue;
-                }
-                warnings.push(format!(
-                    "the joined line reads under R_min near {at:.0} m and no adopted window holds it"
-                ));
+        let adopted: Vec<bool> = outcomes.iter().map(|o| o.piece.is_some()).collect();
+        match join_verdict(cur, &joined, &new_spans, &adopted, &cfg.lattice) {
+            JoinVerdict::Undo(k, reason) => {
+                outcomes[k].piece = None;
+                outcomes[k].rec.adopted = Adopted::None;
+                outcomes[k].rec.reason = reason;
             }
-            let recs = outcomes.into_iter().map(|o| o.rec).collect();
-            return (joined, recs, new_spans);
-        };
+            JoinVerdict::Keep(w) => {
+                warnings.extend(w);
+                let recs = outcomes.into_iter().map(|o| o.rec).collect();
+                return (joined, recs, new_spans);
+            }
+        }
+    }
+}
+
+/// What the checks of the joined line ask of the windows.
+#[derive(Debug, Clone, PartialEq)]
+pub enum JoinVerdict {
+    /// Undo this adopted window, for this reason, and read the joined line again.
+    Undo(usize, &'static str),
+    /// Keep the joined line as it is, with what no adopted window holds.
+    Keep(Vec<String>),
+}
+
+/// The checks of the line joined from `cur` and the adopted windows, in order: it crosses itself
+/// (`crosses_line`: the later window of the pair is undone), it breaks R_min (`radius`), it has a
+/// straight between opposite curves shorter than the minimum straight (`short_straight`). The last
+/// two are read as the final checks read them and laid to the adopted window that holds the place,
+/// or is nearest within a chord. What the current line has too is not a window's doing, and is
+/// kept. `spans` are the windows' spans on `joined`; `adopted` says which hold a piece.
+pub fn join_verdict(
+    cur: &[Pt],
+    joined: &[Pt],
+    spans: &[(f64, f64)],
+    adopted: &[bool],
+    lat: &LatticeConfig,
+) -> JoinVerdict {
+    let crossings = self_crossings_m(joined);
+    let start_crossings = self_crossings_m(cur);
+    // A crossing the starting line has too is not a window's doing.
+    let new_crossing = crossings.iter().find(|c| {
+        !start_crossings
+            .iter()
+            .any(|s| (s.0 - c.0).abs() < 1.0 && (s.1 - c.1).abs() < 1.0)
+    });
+    if let Some(&(s1, s2)) = new_crossing {
         // The later adopted window of the pair is undone.
         let holder = |s: f64| {
-            new_spans
+            spans
                 .iter()
                 .enumerate()
                 .rev()
-                .find(|(k, sp)| {
-                    outcomes[*k].piece.is_some() && sp.0 - 1e-6 <= s && s <= sp.1 + 1e-6
-                })
+                .find(|(k, sp)| adopted[*k] && sp.0 - 1e-6 <= s && s <= sp.1 + 1e-6)
                 .map(|(k, _)| k)
         };
-        let Some(k) = holder(s2).or_else(|| holder(s1)) else {
-            warnings.push(format!(
-                "the joined line crosses itself at {s1:.0} m and {s2:.0} m and no adopted window holds \
-                 either point"
-            ));
-            let recs = outcomes.into_iter().map(|o| o.rec).collect();
-            return (joined, recs, new_spans);
+        return match holder(s2).or_else(|| holder(s1)) {
+            Some(k) => JoinVerdict::Undo(k, "crosses_line"),
+            None => JoinVerdict::Keep(vec![format!(
+                "the joined line crosses itself at {s1:.0} m and {s2:.0} m and no adopted window \
+                 holds either point"
+            )]),
         };
-        outcomes[k].piece = None;
-        outcomes[k].rec.adopted = Adopted::None;
-        outcomes[k].rec.reason = "crosses_line";
     }
+    let r_min = lat.r_min_m;
+    let chord = crate::alignment::radius_check::default_check_chord(r_min);
+    // The adopted window that holds the stretch `a..b` of the joined line, or is nearest within a
+    // chord.
+    let nearest = |a: f64, b: f64| {
+        spans
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| adopted[*k])
+            .map(|(k, sp)| (k, (sp.0 - b).max(a - sp.1).max(0.0)))
+            .filter(|(_, d)| *d <= chord)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(k, _)| k)
+    };
+    let mut warnings = Vec::new();
+    // R_min on the joined line: every place it fails where the current line did not fail nearby.
+    let before = crate::alignment::radius_check::radius_failures(cur, chord, r_min);
+    let after = crate::alignment::radius_check::radius_failures(joined, chord, r_min);
+    let new_fail = after.iter().find(|p| {
+        !before
+            .iter()
+            .any(|q| libm::hypot(p[0] - q[0], p[1] - q[1]) <= 2.0 * chord)
+    });
+    if let Some(&p) = new_fail {
+        let at = linear::project(joined, p);
+        if let Some(k) = nearest(at, at) {
+            return JoinVerdict::Undo(k, "radius");
+        }
+        warnings.push(format!(
+            "the joined line reads under R_min near {at:.0} m and no adopted window holds it"
+        ));
+    }
+    // The minimum straight between opposite curves, read by the middle of each straight.
+    let (held, tol) = (held_min_straight(lat), 2.0 * lat.pitch_m);
+    let middle = |line: &[Pt], (a, l): (f64, f64)| linear::interpolate(line, a + 0.5 * l);
+    let before: Vec<Pt> = short_reversals(cur, r_min, held, tol)
+        .into_iter()
+        .filter_map(|s| middle(cur, s))
+        .collect();
+    let new_short = short_reversals(joined, r_min, held, tol)
+        .into_iter()
+        .find(|&s| {
+            middle(joined, s).is_some_and(|p| {
+                !before
+                    .iter()
+                    .any(|q| libm::hypot(p[0] - q[0], p[1] - q[1]) <= 2.0 * chord)
+            })
+        });
+    if let Some((a, l)) = new_short {
+        if let Some(k) = nearest(a, a + l) {
+            return JoinVerdict::Undo(k, "short_straight");
+        }
+        warnings.push(format!(
+            "the joined line has a straight of {l:.0} m between opposite curves at {a:.0} m, under \
+             the {:.0} m asked, and no adopted window holds it",
+            lat.min_straight_m
+        ));
+    }
+    JoinVerdict::Keep(warnings)
 }
 
 /// The window optimiser: see the module docs.
