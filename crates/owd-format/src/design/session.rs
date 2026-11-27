@@ -524,6 +524,13 @@ impl Session {
         if let Some(r) = self.doc["inputs"].get("waterway_reaches") {
             dep["waterway_reaches"] = r.clone();
         }
+        // The river-following line costs with the volumes stage's section settings: a change of
+        // them makes it stale (written only for that method, so no other hash moves).
+        if stage == Stage::Alignment
+            && self.doc["stages"]["alignment"]["settings"]["method"] == "river_following"
+        {
+            dep["section"] = self.doc["stages"]["volumes"]["settings"].clone();
+        }
         if stage != Stage::Sizing {
             dep["inputs"] = self.doc["inputs"].clone();
             // The DEM is identified by its hash, not by where the file sits: moving a design and its

@@ -86,6 +86,7 @@ fn run(f: &Value) -> Result<DesignLine, StageError> {
         settings,
         seed: None,
         constraints: None,
+        volumes: None,
     };
     let flat = f["terrain"]["flat_m"].as_f64();
     let terrain = move |xs: &[f64], _: &[f64]| -> Vec<f64> {

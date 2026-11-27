@@ -494,6 +494,9 @@ impl Session {
         Ok(AlignmentIn {
             river,
             size: self.channel_size()?,
+            volumes: (settings.method == AlignMethod::RiverFollowing)
+                .then(|| self.volumes_settings(&Value::Null))
+                .transpose()?,
             settings,
             seed: self.seed_legs(),
             constraints: self.constraints()?,

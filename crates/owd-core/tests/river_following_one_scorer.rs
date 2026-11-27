@@ -132,3 +132,38 @@ fn r4_with_the_one_scorer() {
     assert!(!out[1].0);
     assert!(out[1].1 > out[0].1);
 }
+
+/// The cost of one station of the one scorer, for the performance figures. Run with
+/// `cargo test --release -- --ignored one_station`.
+#[test]
+#[ignore]
+fn one_station_costs() {
+    let f = fx::omega_loop(R_MIN, 60.0, 600.0, 12.0);
+    let index = PolygonIndex::new(&f.river);
+    let ground = f.sampler();
+    let rule = rule();
+    let cutter = SectionCutter::new(&index, 4.0, CUT_MODEL, 3.0, 200.0, 1.0, None).unwrap();
+    let m = LineMeasure::new(
+        cutter,
+        &ground,
+        &rule,
+        LevelAt::Fixed(fx::WATER_LEVEL_M),
+        Weights::default(),
+        &sec(),
+        25.0,
+    );
+    let one = OneScorer::new(&m);
+    use owd_core::alignment::river_following::score::StationScorer;
+    let n = 20_000;
+    let t0 = std::time::Instant::now();
+    let mut sum = 0.0;
+    for i in 0..n {
+        sum += one
+            .section([300.0 + i as f64 * 0.1, 5.0], 0.0, 1.0 / 500.0)
+            .cost_per_m;
+    }
+    eprintln!(
+        "one station: {:.1} µs ({sum:.0})",
+        t0.elapsed().as_secs_f64() * 1e6 / n as f64
+    );
+}

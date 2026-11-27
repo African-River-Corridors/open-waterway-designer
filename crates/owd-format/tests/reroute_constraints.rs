@@ -59,6 +59,7 @@ fn input(method: &str, constraints: Option<Constraints>) -> AlignmentIn {
         settings,
         seed: None,
         constraints,
+        volumes: None,
     }
 }
 

@@ -105,6 +105,10 @@ pub struct AlignmentIn {
     /// the multiplier; every method's line reports the no-go areas it touches.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Constraints>,
+    /// The volumes stage's section settings, which the river-following line costs with (the one
+    /// scorer). Absent: the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<super::volumes::VolumesSettings>,
 }
 
 /// One bend of a design line.
