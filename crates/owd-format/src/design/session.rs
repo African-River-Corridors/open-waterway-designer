@@ -529,6 +529,13 @@ impl Session {
         if let Some(r) = self.doc["inputs"].get("waterway_reaches") {
             dep["waterway_reaches"] = r.clone();
         }
+        // The river-following line costs with the volumes stage's section settings: a change of
+        // them makes it stale (written only for that method, so no other hash moves).
+        if stage == Stage::Alignment
+            && self.doc["stages"]["alignment"]["settings"]["method"] == "river_following"
+        {
+            dep["section"] = self.doc["stages"]["volumes"]["settings"].clone();
+        }
         if stage != Stage::Sizing {
             dep["inputs"] = self.doc["inputs"].clone();
             // The DEM is identified by its hash, not by where the file sits: moving a design and its
@@ -539,9 +546,11 @@ impl Session {
             // The rolling circle reads neither the DEM nor the water level: one added after it ran
             // leaves it fresh. The re-route, the optimise stage and the volumes read them.
             let reads_dem = match stage {
-                Stage::Alignment => {
-                    self.doc["stages"]["alignment"]["settings"]["method"] == "reroute"
-                }
+                // The river-following line costs its cut-throughs and its shift on the ground.
+                Stage::Alignment => matches!(
+                    self.doc["stages"]["alignment"]["settings"]["method"].as_str(),
+                    Some("reroute" | "river_following")
+                ),
                 _ => true,
             };
             if !reads_dem && let Some(inputs) = dep["inputs"].as_object_mut() {

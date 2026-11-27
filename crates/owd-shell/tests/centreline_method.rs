@@ -48,6 +48,7 @@ fn the_shell_and_the_cli_give_the_same_centreline_option() {
         corridors: None,
         fairness_weight: None,
         use_water: None,
+        ..Default::default()
     };
     owd_cli::commands::align(
         &doc.to_string_lossy(),

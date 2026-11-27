@@ -19,6 +19,7 @@
     onRun,
     onCancel,
     onUseWater,
+    onRiverFollowing,
     onLoad,
     onFetch,
     onWater,
@@ -55,6 +56,7 @@
     onRun: (stage: StageName, method?: RunMethod) => void;
     onCancel: () => void;
     onUseWater: (choice: UseWater) => void;
+    onRiverFollowing: (settings: Record<string, unknown>) => void;
     onLoad: (role: InputRole) => void;
     onFetch: () => void;
     onWater: (level: string, fall: string) => void;
@@ -87,7 +89,7 @@
 </script>
 
 <div class="left">
-  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {onJoinSetting} {onOptimiseMethod} {onWindowLength} {lineName} />
+  <StageList {snap} {busy} {samples} {onRun} {onCancel} {onUseWater} {onRiverFollowing} {onOptimiseLength} {onOptimiseFlood} {onOptimiseLand} {onCorridorLimit} {onJoinSetting} {onOptimiseMethod} {onWindowLength} {lineName} />
   <DesignLineCard {table} {snap} {indexOf} {selectedId} {onSelect} {stretchesOpen} {onStretches} />
   <ChecksList {table} />
   {#if project}<ProjectPanel {project} busy={busy !== null} onLoad={onProjectLoad} />{/if}

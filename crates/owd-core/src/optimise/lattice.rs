@@ -1494,7 +1494,7 @@ fn line_steps(len: f64) -> usize {
 
 /// One piece of a closing path: `(radius, sign, length)`; a straight has an infinite radius and
 /// sign 0.
-type Piece = (f64, i8, f64);
+pub type Piece = (f64, i8, f64);
 
 /// What the line does just after a pinned goal pose (OPT-5): the direction of its first curve (+1
 /// left, -1 right; 0 when none comes within `min_straight_m`, or none is known) and the straight
@@ -1520,7 +1520,7 @@ pub const CLOSE_GRACE_EXPANSIONS: i64 = 20_000;
 /// at least that long: the path's own straight between its two arcs, and, when its first arc has
 /// no length, the straight run before it (`run_m`) plus its straight before an arc against
 /// `insign`. `None` when no such path exists.
-fn closing_path(
+pub fn closing_path(
     a: Pose,
     b: Pose,
     r: f64,

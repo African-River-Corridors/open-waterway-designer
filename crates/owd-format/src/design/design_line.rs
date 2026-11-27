@@ -105,6 +105,10 @@ pub struct AlignmentIn {
     /// the multiplier; every method's line reports the no-go areas it touches.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<Constraints>,
+    /// The volumes stage's section settings, which the river-following line costs with (the one
+    /// scorer). Absent: the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volumes: Option<super::volumes::VolumesSettings>,
 }
 
 /// One bend of a design line.
@@ -138,11 +142,13 @@ pub struct CutOff {
 /// What the alignment stage returns: the one design line, how it was made and what it does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignLine {
-    /// A short id: `rolling-circle`, `reroute`, `centreline`, `lattice` or `given-<name>`.
+    /// A short id: `rolling-circle`, `reroute`, `centreline`, `river-following`, `lattice` or
+    /// `given-<name>`.
     pub id: String,
     /// A name for people.
     pub name: String,
-    /// The method: `rolling_circle`, `reroute`, `centreline`, `given` or `lattice`.
+    /// The method: `rolling_circle`, `reroute`, `centreline`, `river_following`, `given` or
+    /// `lattice`.
     pub method: String,
     /// The method's settings, as used.
     pub settings: Value,
@@ -177,6 +183,10 @@ pub struct DesignLine {
     /// footprint width tested. The footprint is the straight bottom width only: the cut slopes and
     /// bend widening are not tested. Empty when it enters none, or the run has none.
     pub constraints_touched: Vec<ConstraintTouched>,
+    /// What a river-following line (OPT-4) records about itself: its seed, its cut-throughs, its
+    /// forced stretches and its shift. Absent for a line of any other method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub river_following: Option<super::river_following::RiverFollowingRecord>,
 }
 
 /// A [`Polyline`] written as a GeoJSON `LineString`, as the document writes every line.
@@ -252,6 +262,7 @@ impl DesignLine {
             bends: Vec::new(),
             cut_offs: None,
             constraints_touched: Vec::new(),
+            river_following: None,
         })
     }
 }
@@ -492,6 +503,7 @@ pub fn finish(
             cut_offs(&line, &water, &river.centreline.0)
         },
         constraints_touched: Vec::new(),
+        river_following: None,
         widening_floor: None,
         details,
         checks,
@@ -673,6 +685,7 @@ fn method_line(
         }
         AlignMethod::RollingCircle => rolling_circle(input, r_min),
         AlignMethod::Reroute => reroute(input, r_min, terrain, multiplier),
+        AlignMethod::RiverFollowing => super::river_following::river_following(input, terrain),
     }
 }
 

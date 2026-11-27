@@ -282,6 +282,27 @@ weirs: 1000 m -> pool 0.5 m
  optimised: dredge   141,201 m3   dry cut   423,598 m3
 ```
 
+**The river-following line (`owd align --method river-following`).** A design line built from the
+river first and moved by cost after. The seed is a short list of arcs and straights that follows the
+river centreline as closely as R_min allows: one circle per bend, joined by common tangents, so every
+join is tangent and no arc is tighter than 1.0333 R_min. Where the river is tighter than that, the arc
+is held at that radius and the stretch is recorded as a tight bend. Two opposite arcs, either tighter
+than 2 R_min, keep a straight of one vessel length between them. The seed's tolerance to the
+centreline (`seed_tolerance_m`, `--seed-tolerance`) is 5 m by default (an eighth of the bottom width
+when that is more): one arc per bend. A tighter value gives compound curves of three arcs.
+
+Then meander cut-throughs: short arc-straight-arc paths across a loop's neck, each with a stable id
+(`cut-AAAAA-BBBBB`, the river chainage of its two ends in hectometres). Each is costed against staying
+in the river with the volumes stage's own section (the one scorer of the window optimiser), and taken
+when it saves at least two vessel lengths, is at least 5 % cheaper and its face is no taller than
+30 m (or than staying's). Without a DEM they are listed and costed on plan area, and taken only when
+you force them on: `--force-cut ID=on`, `ID=off` or `ID=rule`, or the Force list in the app.
+
+Last, a sideways shift by dynamic programming: stations every R_min / 6 (20 to 50 m), an offset step
+small enough to hold the radius limit (1.0694 R_min), the line's curves and straights kept, then a
+continuous refinement and a rebuild as exact arcs. Every length comes from the sizing stage, so a
+change of vessel, rule set or rule quality makes the line stale, and `owd run` builds it again.
+
 **Paying for length (`length_weight`).** Water deeper than the channel bed costs nothing to cut,
 so without a length cost the lattice treats extra length through deep water as free. The setting
 `length_weight` (`owd optimise --length-weight X`, or the optimise settings in the app) adds a cost

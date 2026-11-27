@@ -12,6 +12,7 @@
 
 use super::design_line::{AlignmentIn, DesignLine, GivenLine, PoseIn, SeedLegs};
 use super::geojson::all_positions;
+pub use super::river_following::RiverFollowingSettings;
 use super::rule_sets::stage_error;
 use super::session::{DesignError, ENGINE_VERSION, Session, Stage, StageStatus};
 use crate::types::{Polyline, RiverPolygon, TerrainSampler};
@@ -35,6 +36,9 @@ pub enum AlignMethod {
     Centreline,
     /// A line the user gives (ticket C21).
     Given,
+    /// The river-following line (OPT-4): arcs and straights that follow the river as closely as
+    /// R_min allows, with meander cut-throughs as an explicit choice.
+    RiverFollowing,
 }
 
 impl AlignMethod {
@@ -44,6 +48,7 @@ impl AlignMethod {
             AlignMethod::Reroute => "reroute",
             AlignMethod::Centreline => "centreline",
             AlignMethod::Given => "given",
+            AlignMethod::RiverFollowing => "river_following",
         }
     }
 
@@ -53,6 +58,7 @@ impl AlignMethod {
             "reroute" => Some(AlignMethod::Reroute),
             "centreline" => Some(AlignMethod::Centreline),
             "given" => Some(AlignMethod::Given),
+            "river_following" | "river-following" => Some(AlignMethod::RiverFollowing),
             _ => None,
         }
     }
@@ -63,6 +69,7 @@ impl AlignMethod {
             AlignMethod::Reroute => "reroute",
             AlignMethod::Centreline => "centreline",
             AlignMethod::Given => "given",
+            AlignMethod::RiverFollowing => "river-following",
         }
     }
 
@@ -72,6 +79,7 @@ impl AlignMethod {
             AlignMethod::Reroute => "Least-cost re-route",
             AlignMethod::Centreline => "River centreline",
             AlignMethod::Given => "Given line",
+            AlignMethod::RiverFollowing => "River-following line",
         }
     }
 }
@@ -119,6 +127,10 @@ pub struct AlignmentSettings {
     pub rolling_circle: RollingCircleSettings,
     pub reroute: RerouteSettings,
     pub centreline: CentrelineSettings,
+    /// The river-following line's settings (OPT-4). Written only when one is not its default, so a
+    /// design that never set them keeps its settings, and its hashes, as before the method existed.
+    #[serde(default, skip_serializing_if = "RiverFollowingSettings::is_default")]
+    pub river_following: RiverFollowingSettings,
     /// The line the user gave, for the method `given`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub given: Option<GivenLine>,
@@ -177,6 +189,7 @@ impl Default for AlignmentSettings {
             centreline: CentrelineSettings {
                 check_chord_m: None,
             },
+            river_following: RiverFollowingSettings::default(),
             given: None,
         }
     }
@@ -297,6 +310,7 @@ impl AlignmentSettings {
             AlignMethod::RollingCircle => serde_json::to_value(&self.rolling_circle),
             AlignMethod::Reroute => serde_json::to_value(&self.reroute),
             AlignMethod::Centreline => serde_json::to_value(&self.centreline),
+            AlignMethod::RiverFollowing => Ok(self.river_following.to_value()),
             AlignMethod::Given => Ok(json!({})),
         }
         .expect("the settings are JSON")
@@ -311,6 +325,9 @@ impl AlignmentSettings {
             }
             AlignMethod::Reroute => self.reroute = self.reroute.apply(source)?,
             AlignMethod::Centreline => self.centreline = self.centreline.apply(source)?,
+            AlignMethod::RiverFollowing => {
+                self.river_following = self.river_following.apply(source)?
+            }
             AlignMethod::Given => {
                 if source.as_object().is_some_and(|o| !o.is_empty()) {
                     return Err(DesignError::Input(
@@ -330,6 +347,7 @@ impl AlignmentSettings {
             AlignMethod::RollingCircle,
             AlignMethod::Reroute,
             AlignMethod::Centreline,
+            AlignMethod::RiverFollowing,
         ] {
             out.apply_part(m, &stored[m.name()])?;
         }
@@ -340,7 +358,7 @@ impl AlignmentSettings {
                 .ok_or_else(|| {
                     DesignError::Input(format!(
                         "the alignment method `{name}` is not one OWD knows: use rolling_circle, \
-                         reroute, centreline or given"
+                         reroute, centreline, given or river_following"
                     ))
                 })?;
         }
@@ -476,6 +494,9 @@ impl Session {
         Ok(AlignmentIn {
             river,
             size: self.channel_size()?,
+            volumes: (settings.method == AlignMethod::RiverFollowing)
+                .then(|| self.volumes_settings(&Value::Null))
+                .transpose()?,
             settings,
             seed: self.seed_legs(),
             constraints: self.constraints()?,

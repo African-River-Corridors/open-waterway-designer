@@ -76,6 +76,17 @@
               "type": "null"
             }
           ]
+        },
+        "volumes": {
+          "description": "The volumes stage's section settings, which the river-following line costs with (the one\nscorer). Absent: the defaults.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VolumesSettings"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -519,6 +530,10 @@
             "check_chord_m": null
           }
         },
+        "river_following": {
+          "description": "The river-following line's settings (OPT-4). Written only when one is not its default, so a\ndesign that never set them keeps its settings, and its hashes, as before the method existed.",
+          "$ref": "#/$defs/RiverFollowingSettings"
+        },
         "given": {
           "description": "The line the user gave, for the method `given`.",
           "anyOf": [
@@ -555,6 +570,11 @@
           "description": "A line the user gives (ticket C21).",
           "type": "string",
           "const": "given"
+        },
+        {
+          "description": "The river-following line (OPT-4): arcs and straights that follow the river as closely as\nR_min allows, with meander cut-throughs as an explicit choice.",
+          "type": "string",
+          "const": "river_following"
         }
       ]
     },
@@ -684,6 +704,204 @@
         }
       },
       "additionalProperties": false
+    },
+    "RiverFollowingSettings": {
+      "description": "The settings of the river-following line, typed. Each length left unset is worked out from the\nsizing stage when the line is built, and the line records the value it used.",
+      "type": "object",
+      "properties": {
+        "seed_clip_ratio": {
+          "description": "The seed's least radius as a multiple of R_min.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0333
+        },
+        "cut_radius_ratio": {
+          "description": "The radius of a cut-through's arcs as a multiple of R_min.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0556
+        },
+        "shift_limit_ratio": {
+          "description": "The sideways shift's radius limit as a multiple of R_min.",
+          "type": "number",
+          "format": "double",
+          "default": 1.0694
+        },
+        "min_straight_m": {
+          "description": "The straight between two opposite arcs when either is tighter than 2 R_min, in metres;\nunset: the vessel's length.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "seed_tolerance_m": {
+          "description": "The largest gap of the seed from the river centreline outside a bend tighter than R_min, in\nmetres; unset: 5 m, or an eighth of the bottom width when that is more. At 5 m a smooth\nbend is one arc with straights between; at 2 m it becomes a compound curve of three arcs.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "seed_presmooth_m": {
+          "description": "The moving average of the centreline before the seed is fitted, in metres; unset: R_min / 6.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "seed_aim": {
+          "description": "What the seed aims at.",
+          "$ref": "#/$defs/Aim",
+          "default": "centreline"
+        },
+        "cut_min_save_m": {
+          "description": "A cut-through saves at least this length, in metres; unset: twice the vessel's length.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "cut_min_ratio": {
+          "description": "The river stretch a cut-through replaces is at least this many times the cut's length.",
+          "type": "number",
+          "format": "double",
+          "default": 1.3
+        },
+        "cut_max_arc_turn_deg": {
+          "description": "Each arc of a cut-through turns at most this, in degrees.",
+          "type": "number",
+          "format": "double",
+          "default": 100.0
+        },
+        "cut_min_gain": {
+          "description": "A cut-through is taken only when it is at least this share cheaper than staying in the\nriver (a tie goes to the river).",
+          "type": "number",
+          "format": "double",
+          "default": 0.05
+        },
+        "face_max_m": {
+          "description": "A cut-through whose tallest face is over this (and over staying's) is refused, in metres.",
+          "type": "number",
+          "format": "double",
+          "default": 30.0
+        },
+        "cut_force": {
+          "description": "Cut-throughs forced on (`true`) or off (`false`) by id; this wins over the rule.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "default": {}
+        },
+        "in_river_margin_m": {
+          "description": "The river polygon grown (+) or shrunk (−) for the in-river tests, in metres.",
+          "type": "number",
+          "format": "double",
+          "default": -3.0
+        },
+        "cut_through_room_m": {
+          "description": "The room either side of an accepted cut-through the shift may use, in metres; unset: twice\nthe bottom width.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "shift": {
+          "description": "Run the sideways shift.",
+          "type": "boolean",
+          "default": true
+        },
+        "shift_reach_m": {
+          "description": "The largest sideways offset, in metres; unset: the larger of 150 m and R_min / 2.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "shift_station_m": {
+          "description": "The shift's station spacing, in metres; unset: R_min / 6, from 20 to 50 m.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "shift_offset_step_m": {
+          "description": "The shift's offset step, in metres; unset: from the station spacing and R_min (spec 4.8).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        },
+        "shift_max_slope": {
+          "description": "The steepest sideways slope of the shift.",
+          "type": "number",
+          "format": "double",
+          "default": 0.3
+        },
+        "shift_refine": {
+          "description": "Refine the shift after the dynamic programme.",
+          "type": "boolean",
+          "default": true
+        },
+        "same_curves": {
+          "description": "Keep the seed's curves and straights in the shift (spec 4.5).",
+          "type": "boolean",
+          "default": true
+        },
+        "widening_levels": {
+          "description": "The bottom widths the shift's cost tables are built at, to price bend widening.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "default": 4
+        },
+        "turn_weight": {
+          "description": "A price on turning in the shift, per metre of line per unit of R_min × curvature (0: off).",
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "check_chord_m": {
+          "description": "The chord the radius check reads on; unset: R_min / 3.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "default": null
+        }
+      },
+      "additionalProperties": false
+    },
+    "Aim": {
+      "description": "What the seed aims at.",
+      "oneOf": [
+        {
+          "description": "The river centreline (the default).",
+          "type": "string",
+          "const": "centreline"
+        },
+        {
+          "description": "The river's water: at a bend tighter than R_min, the arc that keeps most of the line in it.",
+          "type": "string",
+          "const": "in_water"
+        }
+      ]
     },
     "GivenLine": {
       "description": "A line the user already has (ticket C21), given as the design line: its name and its points in\nthe project CRS.",
@@ -905,12 +1123,58 @@
         "crs"
       ]
     },
+    "VolumesSettings": {
+      "description": "The settings of the volumes stage, typed. A key the stage does not know is refused by name.",
+      "type": "object",
+      "properties": {
+        "cut_model": {
+          "description": "The cut model (`a` or `b`).",
+          "type": "string"
+        },
+        "station_m": {
+          "description": "The station spacing in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "maxw_m": {
+          "description": "The half-width of each cross-section in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "dx_m": {
+          "description": "The sample spacing across each cross-section in metres.",
+          "type": "number",
+          "format": "double"
+        },
+        "wet_slope": {
+          "description": "The slope of the cut below water, horizontal per vertical.",
+          "type": "number",
+          "format": "double"
+        },
+        "half_width_m": {
+          "description": "A fixed bottom half-width in metres; `None`: widened in bends from the sizing.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "cut_model",
+        "station_m",
+        "maxw_m",
+        "dx_m",
+        "wet_slope"
+      ]
+    },
     "DesignLine": {
       "description": "What the alignment stage returns: the one design line, how it was made and what it does.",
       "type": "object",
       "properties": {
         "id": {
-          "description": "A short id: `rolling-circle`, `reroute`, `centreline`, `lattice` or `given-<name>`.",
+          "description": "A short id: `rolling-circle`, `reroute`, `centreline`, `river-following`, `lattice` or\n`given-<name>`.",
           "type": "string"
         },
         "name": {
@@ -918,7 +1182,7 @@
           "type": "string"
         },
         "method": {
-          "description": "The method: `rolling_circle`, `reroute`, `centreline`, `given` or `lattice`.",
+          "description": "The method: `rolling_circle`, `reroute`, `centreline`, `river_following`, `given` or\n`lattice`.",
           "type": "string"
         },
         "settings": {
@@ -969,6 +1233,17 @@
           "items": {
             "$ref": "#/$defs/ConstraintTouched"
           }
+        },
+        "river_following": {
+          "description": "What a river-following line (OPT-4) records about itself: its seed, its cut-throughs, its\nforced stretches and its shift. Absent for a line of any other method.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiverFollowingRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1088,6 +1363,799 @@
         "to",
         "area_m2",
         "footprint_width_m"
+      ]
+    },
+    "RiverFollowingRecord": {
+      "description": "What the river-following line records about itself (spec OPT-4, section 6). The window optimiser\n(OPT-5) reads [`RiverFollowingRecord::permitted_stretches`] from it for its permitted ground.",
+      "type": "object",
+      "properties": {
+        "settings": {
+          "description": "The settings, every one as used."
+        },
+        "derived": {
+          "description": "The lengths worked out from the sizing.",
+          "$ref": "#/$defs/Derived"
+        },
+        "costed_on": {
+          "description": "`volume` (a ground model) or `plan_area` (none).",
+          "type": "string"
+        },
+        "seed": {
+          "$ref": "#/$defs/SeedRecord"
+        },
+        "cut_throughs": {
+          "description": "Every cut-through candidate, in chainage order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CutThroughRecord"
+          }
+        },
+        "forced": {
+          "description": "The forced stretches of the delivered line, in chainage order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ForcedStretch"
+          }
+        },
+        "shift": {
+          "description": "The shift, when it ran.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShiftRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elements": {
+          "description": "The delivered line's elements.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ElementRecord"
+          }
+        },
+        "checks": {
+          "$ref": "#/$defs/RiverChecks"
+        },
+        "low_line_mismatch": {
+          "description": "Where the river polygon and the ground's low line disagree (with a DEM).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LowLineMismatch"
+          }
+        },
+        "warnings": {
+          "description": "Warnings in words.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "settings",
+        "derived",
+        "costed_on",
+        "seed",
+        "cut_throughs",
+        "forced",
+        "elements",
+        "checks",
+        "low_line_mismatch",
+        "warnings"
+      ]
+    },
+    "Derived": {
+      "description": "The lengths the method used, worked out from the sizing stage and the settings. The line\nrecords them, so a reader sees that each came from R_min, the vessel or the bottom width.",
+      "type": "object",
+      "properties": {
+        "r_min_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "loa_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "bottom_width_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "seed_tolerance_m": {
+          "description": "The seed's tolerance to the centreline.",
+          "type": "number",
+          "format": "double"
+        },
+        "r_clip_m": {
+          "description": "The seed's least radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "r_cut_m": {
+          "description": "The radius of a cut-through's arcs.",
+          "type": "number",
+          "format": "double"
+        },
+        "r_shift_m": {
+          "description": "The shift's radius limit.",
+          "type": "number",
+          "format": "double"
+        },
+        "min_straight_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "tight_reverse_r_m": {
+          "description": "Opposite arcs tighter than this need the minimum straight (2 R_min).",
+          "type": "number",
+          "format": "double"
+        },
+        "seed_presmooth_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "seed_step_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "curve_threshold_per_m": {
+          "description": "A bend of the river curves at least this much, 1/m (1 / 8 R_min).",
+          "type": "number",
+          "format": "double"
+        },
+        "cut_min_save_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "cut_through_room_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "off_river_min_m": {
+          "description": "A stretch of the line out of the river is recorded when at least this long (2 × LOA).",
+          "type": "number",
+          "format": "double"
+        },
+        "check_chord_m": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "r_min_m",
+        "loa_m",
+        "bottom_width_m",
+        "seed_tolerance_m",
+        "r_clip_m",
+        "r_cut_m",
+        "r_shift_m",
+        "min_straight_m",
+        "tight_reverse_r_m",
+        "seed_presmooth_m",
+        "seed_step_m",
+        "curve_threshold_per_m",
+        "cut_min_save_m",
+        "cut_through_room_m",
+        "off_river_min_m",
+        "check_chord_m"
+      ]
+    },
+    "SeedRecord": {
+      "description": "The seed, as the line records it.",
+      "type": "object",
+      "properties": {
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ElementRecord"
+          }
+        },
+        "element_count": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "arc_count": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "least_radius_m": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "gap_m": {
+          "description": "The largest gap from the river centreline (smoothed) outside the tight bends, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "gap_all_m": {
+          "description": "The largest gap anywhere, the tight bends too, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "passes": {
+          "description": "Refinement passes, and whether the gap outside the tight bends is within the tolerance.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "settled": {
+          "type": "boolean"
+        },
+        "bends": {
+          "description": "Each bend: its arc, its radius, its gap to the centreline, and whether it is a tight bend\nheld at the seed's least radius.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BendRecord"
+          }
+        }
+      },
+      "required": [
+        "elements",
+        "element_count",
+        "arc_count",
+        "gap_m",
+        "gap_all_m",
+        "passes",
+        "settled",
+        "bends"
+      ]
+    },
+    "ElementRecord": {
+      "description": "One element of a line: a straight or an arc.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "`straight` or `arc`.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Design-line chainage of its start, m.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "length_m": {
+          "description": "Its length, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "radius_m": {
+          "description": "Its radius, m; null for a straight.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "hand": {
+          "description": "`left`, `right`, or null for a straight.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start_point": {
+          "description": "Its start point and heading (degrees counter-clockwise from +x).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "start_heading_deg": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "kind",
+        "start",
+        "length_m",
+        "start_point",
+        "start_heading_deg"
+      ]
+    },
+    "BendRecord": {
+      "description": "One bend of the seed, for the app's list.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "Seed chainage of the arc, from and to.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "radius_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "hand": {
+          "description": "`left` or `right`.",
+          "type": "string"
+        },
+        "gap_m": {
+          "description": "The largest gap of the line from the centreline round the bend, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "tight": {
+          "description": "Held at the seed's least radius because the river is tighter (or moved to hold the minimum\nstraight).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "radius_m",
+        "hand",
+        "gap_m",
+        "tight"
+      ]
+    },
+    "CutThroughRecord": {
+      "description": "A cut-through candidate, accepted or refused, with both sets of numbers.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "A stable id from the river chainage of its two ends, to 100 m: `cut-AAAAA-BBBBB` in\nhectometres. A force list names it.",
+          "type": "string"
+        },
+        "seed_from": {
+          "description": "Seed chainage of its two ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "seed_to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_from": {
+          "description": "River chainage of its two ends.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "stay": {
+          "description": "Staying in the river over the stretch.",
+          "$ref": "#/$defs/Numbers"
+        },
+        "options": {
+          "description": "The radii tried: the cut-through radius, then wider ones.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CutOptionRecord"
+          }
+        },
+        "offered": {
+          "description": "The option offered (an index into `options`).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "passes": {
+          "description": "True when the offered option passes the rule.",
+          "type": "boolean"
+        },
+        "accepted": {
+          "type": "boolean"
+        },
+        "decided_by": {
+          "description": "`rule`, `forced on` or `forced off`.",
+          "type": "string"
+        },
+        "refused_because": {
+          "description": "Why it was not taken, in words.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from": {
+          "description": "Design-line chainage of the cut, when accepted.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Chainage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Chainage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "seed_from",
+        "seed_to",
+        "river_from",
+        "river_to",
+        "stay",
+        "options",
+        "offered",
+        "passes",
+        "accepted",
+        "decided_by"
+      ]
+    },
+    "Numbers": {
+      "description": "The numbers of one way through a stretch (staying in the river, or a cut-through).",
+      "type": "object",
+      "properties": {
+        "length_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "wet_m3": {
+          "description": "Dredge (cut below the water level), m³.",
+          "type": "number",
+          "format": "double"
+        },
+        "dry_m3": {
+          "description": "Dry cut, m³.",
+          "type": "number",
+          "format": "double"
+        },
+        "plain_m3": {
+          "description": "Wet and dry, m³.",
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "description": "The weighted cost, as the scorer weighs it.",
+          "type": "number",
+          "format": "double"
+        },
+        "land_m2": {
+          "description": "The channel's water surface outside the river polygon, m².",
+          "type": "number",
+          "format": "double"
+        },
+        "face_max_m": {
+          "description": "The tallest cut face above the water, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "stations_over_face": {
+          "description": "Stations whose face is over `face_max_m` of the settings.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "length_m",
+        "wet_m3",
+        "dry_m3",
+        "plain_m3",
+        "cost",
+        "land_m2",
+        "face_max_m",
+        "stations_over_face"
+      ]
+    },
+    "CutOptionRecord": {
+      "description": "One radius a cut-through was tried at.",
+      "type": "object",
+      "properties": {
+        "radius_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "length_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "saved_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "ratio": {
+          "description": "The river stretch's length over the cut's.",
+          "type": "number",
+          "format": "double"
+        },
+        "numbers": {
+          "$ref": "#/$defs/Numbers"
+        },
+        "line": {
+          "description": "The cut's centre line, for the map.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
+      "required": [
+        "radius_m",
+        "length_m",
+        "saved_m",
+        "ratio",
+        "numbers",
+        "line"
+      ]
+    },
+    "ForcedStretch": {
+      "description": "A stretch of the line the river forces: a bend tighter than the seed may follow, or a\nstretch out of the river not chosen as a cut-through.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "A stable name: `forced-` and the river chainage of its middle, to 100 m.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`tight_bend`: the river is tighter than R_min allows; `straight`: the seed left the river\nto hold the minimum straight between opposite arcs; `off_river`: the line's centre is out\nof the river (with the margin) for at least `off_river_min_m`.",
+          "type": "string"
+        },
+        "from": {
+          "description": "Design-line chainage, from and to.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_from": {
+          "description": "River chainage, from and to.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_radius_m": {
+          "description": "The river's tightest radius there (a tight bend), m.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "farthest_from_centreline_m": {
+          "description": "The farthest the line is from the river centreline in the stretch, m.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "from",
+        "to",
+        "river_from",
+        "river_to",
+        "farthest_from_centreline_m"
+      ]
+    },
+    "ShiftRecord": {
+      "description": "The sideways shift, as the line records it.",
+      "type": "object",
+      "properties": {
+        "station_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "offset_step_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "reach_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_slope": {
+          "type": "number",
+          "format": "double"
+        },
+        "offsets": {
+          "description": "The offset at each station, m (+ left).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "cost_zero": {
+          "description": "The search cost at zero shift, and after.",
+          "type": "number",
+          "format": "double"
+        },
+        "cost": {
+          "type": "number",
+          "format": "double"
+        },
+        "largest_offset_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "mean_offset_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "share_moved": {
+          "description": "The share of stations moved by at least half an offset step.",
+          "type": "number",
+          "format": "double"
+        },
+        "closed": {
+          "description": "True when the end closed at zero offset and zero slope.",
+          "type": "boolean"
+        },
+        "refined_passes": {
+          "description": "The refinement's passes that moved the line.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "tracking_gap_m": {
+          "description": "The largest gap between the shifted line and the delivered arcs, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "rebuilt": {
+          "description": "True when the shifted line was built again (the shift moved it and saved cost).",
+          "type": "boolean"
+        },
+        "tracked": {
+          "description": "True when it was built in exact 5 m steps, because its arcs missed it by more than the\ntolerance.",
+          "type": "boolean"
+        },
+        "held_stations": {
+          "description": "Stations where the shift was held at zero because the arcs could not follow it there.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "dropped": {
+          "description": "True when the shift was not delivered: its arcs could not follow it even held.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "station_m",
+        "offset_step_m",
+        "reach_m",
+        "max_slope",
+        "offsets",
+        "cost_zero",
+        "cost",
+        "largest_offset_m",
+        "mean_offset_m",
+        "share_moved",
+        "closed",
+        "refined_passes",
+        "tracking_gap_m",
+        "rebuilt",
+        "tracked",
+        "held_stations",
+        "dropped"
+      ]
+    },
+    "RiverChecks": {
+      "description": "The checks of section 7, each read from the line and the polygon.",
+      "type": "object",
+      "properties": {
+        "tangency_max_rad": {
+          "description": "The largest heading jump at an element join, rad.",
+          "type": "number",
+          "format": "double"
+        },
+        "short_reversals": {
+          "description": "Opposite arcs either tighter than 2 R_min with a straight shorter than the minimum:\n`[chainage, straight length]`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "off_river_unexplained": {
+          "description": "Stretches out of the river (with the margin) at least `off_river_min_m` long that no\naccepted cut-through or forced stretch holds: `[from, to]` chainage. Empty: the check\npasses. Null when the design has no river polygon.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "self_crossing": {
+          "description": "The line crosses itself.",
+          "type": "boolean"
+        },
+        "largest_from_centreline_m": {
+          "description": "The largest and the mean distance of the line from the river centreline, m.",
+          "type": "number",
+          "format": "double"
+        },
+        "mean_from_centreline_m": {
+          "type": "number",
+          "format": "double"
+        },
+        "share_outside": {
+          "description": "The share of the line's length whose centre is out of the river (with the margin).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "tracking_gap_ok": {
+          "description": "The tracking gap within the tolerance.",
+          "type": "boolean"
+        },
+        "force_unmatched": {
+          "description": "Forced ids that matched no candidate.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ok": {
+          "description": "Every check passes.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tangency_max_rad",
+        "short_reversals",
+        "self_crossing",
+        "largest_from_centreline_m",
+        "mean_from_centreline_m",
+        "tracking_gap_ok",
+        "force_unmatched",
+        "ok"
+      ]
+    },
+    "LowLineMismatch": {
+      "description": "The data check: stretches where the river polygon's middle and the ground's low line are more\nthan half a bottom width apart (spec 8). A warning, never a move of the line.",
+      "type": "object",
+      "properties": {
+        "river_from": {
+          "description": "River chainage, from and to.",
+          "$ref": "#/$defs/Chainage"
+        },
+        "river_to": {
+          "$ref": "#/$defs/Chainage"
+        },
+        "largest_m": {
+          "description": "The largest distance between the two, m.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "river_from",
+        "river_to",
+        "largest_m"
       ]
     }
   }

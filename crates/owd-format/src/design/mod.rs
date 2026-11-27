@@ -35,6 +35,7 @@ pub mod provenance;
 pub mod reach;
 pub mod reference_line;
 pub mod river;
+pub mod river_following;
 pub mod rule_sets;
 pub mod run_inputs;
 pub mod schema;

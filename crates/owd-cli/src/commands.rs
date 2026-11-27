@@ -1146,6 +1146,10 @@ pub struct AlignFlags {
     pub fairness_weight: Option<f64>,
     /// `--use-water`: `true` or `false`, as typed.
     pub use_water: Option<String>,
+    /// River-following: `--seed-tolerance`, `--force-cut ID=on|off|rule`, `--shift true|false`.
+    pub seed_tolerance: Option<f64>,
+    pub force_cut: Vec<String>,
+    pub shift: Option<String>,
 }
 
 pub fn align(
@@ -1159,7 +1163,7 @@ pub fn align(
     let method = AlignMethod::from_name(method).ok_or_else(|| {
         input_error(format!(
             "unknown method `{method}`: use rolling-circle, reroute, centreline, or given (the \
-             line `owd design-line` gave)"
+             line `owd design-line` gave), or river-following"
         ))
     })?;
     let use_water = match flags.use_water.as_deref().map(str::trim) {
@@ -1175,7 +1179,64 @@ pub fn align(
     if use_water.is_some() && method != AlignMethod::RollingCircle {
         return Err(input_error("--use-water is for the rolling circle only"));
     }
+    let rf_flags =
+        flags.seed_tolerance.is_some() || !flags.force_cut.is_empty() || flags.shift.is_some();
+    if rf_flags && method != AlignMethod::RiverFollowing {
+        return Err(input_error(
+            "--seed-tolerance, --force-cut and --shift are for the river-following line only",
+        ));
+    }
     let mut session = open(doc)?;
+    // The river-following settings are stored in the design, as the app sets them.
+    if rf_flags {
+        let mut set = serde_json::Map::new();
+        if let Some(t) = flags.seed_tolerance {
+            set.insert("seed_tolerance_m".into(), json!(t));
+        }
+        if let Some(v) = flags.shift.as_deref().map(str::trim) {
+            let on = match v {
+                "true" => true,
+                "false" => false,
+                other => {
+                    return Err(input_error(format!(
+                        "--shift must be true or false, not `{other}`"
+                    )));
+                }
+            };
+            set.insert("shift".into(), json!(on));
+        }
+        if !flags.force_cut.is_empty() {
+            let stored = session.alignment_settings().map_err(from_design)?;
+            let mut force = stored.river_following.cut_force.clone();
+            for f in &flags.force_cut {
+                let (id, v) = f.split_once('=').ok_or_else(|| {
+                    input_error(format!(
+                        "--force-cut takes ID=on, ID=off or ID=rule, not `{f}`"
+                    ))
+                })?;
+                match v.trim() {
+                    "on" => {
+                        force.insert(id.trim().to_string(), true);
+                    }
+                    "off" => {
+                        force.insert(id.trim().to_string(), false);
+                    }
+                    "rule" => {
+                        force.remove(id.trim());
+                    }
+                    other => {
+                        return Err(input_error(format!(
+                            "--force-cut takes on, off or rule after `=`, not `{other}`"
+                        )));
+                    }
+                }
+            }
+            set.insert("cut_force".into(), json!(force));
+        }
+        session
+            .set_alignment_settings(method, &Value::Object(set))
+            .map_err(from_design)?;
+    }
     // Stored in the design's settings, as the app shell sets it; the run then reads it there.
     if let Some(on) = use_water {
         session
@@ -1209,12 +1270,17 @@ pub fn align(
         }
         // The river centreline as it is, and a given line: no flag but `--chord` applies.
         AlignMethod::Centreline | AlignMethod::Given => {}
+        AlignMethod::RiverFollowing => {}
     }
     if let Some(v) = flags.chord {
         put("check_chord_m", json!(v));
     }
     let overrides = Value::Object(overrides);
-    if method == AlignMethod::Reroute {
+    if matches!(method, AlignMethod::Reroute | AlignMethod::RiverFollowing)
+        && (method == AlignMethod::Reroute
+            || flags.water_level.is_some()
+            || flags.water_slope.is_some())
+    {
         apply_water(
             &mut session,
             &WaterFlags {
@@ -1227,13 +1293,27 @@ pub fn align(
         )?;
     } else if flags.water_level.is_some() || flags.water_slope.is_some() {
         return Err(input_error(
-            "--water-level and --water-slope are for the re-route only",
+            "--water-level and --water-slope are for the re-route and the river-following line only",
         ));
     }
     // The re-route samples a DEM, by the terrain rule the other stages follow: a DEM given here is
     // read and becomes the document's DEM reference; otherwise the one the document names, when it
     // is there with its recorded hash. A missing or changed file is refused by name.
     let dem = match method {
+        // The river-following line reads the DEM when the design has one, and runs on plan area
+        // when it has none.
+        AlignMethod::RiverFollowing if flags.dem.is_some() || session.dem_path().is_some() => {
+            let bytes = session
+                .dem_path()
+                .and_then(|p| dem_file(&doc_dir(doc).join(p)).ok());
+            stage_dem(
+                &mut session,
+                doc,
+                bytes.as_ref(),
+                &flags.dem,
+                "align --method river-following",
+            )?
+        }
         AlignMethod::Reroute => {
             let bytes = session
                 .dem_path()
@@ -1246,7 +1326,11 @@ pub fn align(
                 "align --method reroute",
             )?
         }
-        _ if flags.dem.is_some() => return Err(input_error("--dem is for the re-route only")),
+        _ if flags.dem.is_some() => {
+            return Err(input_error(
+                "--dem is for the re-route and the river-following line only",
+            ));
+        }
         _ => None,
     };
     let sampler = match &dem {

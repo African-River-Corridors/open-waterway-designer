@@ -58,6 +58,9 @@ To move a test, edit the filter in `.config/nextest.toml` and the table below. T
 | owd-core::window_cases: `s2_a_bend_against_a_spur_moves_away_from_it` | 65 s debug | Three window-optimiser runs of the bend against a spur (OPT-5 S2, S10: as it is, mirrored, on four threads). Its twins in the same file (S3, S5, S6, S7, S8, S13, S14) and `owd-core::window_guarantees` stay in the pull-request job. |
 | owd-format::optimise_windows: `the_window_method_makes_a_line_that_holds_r_min_and_is_never_dearer` | about 5 min debug | The optimise stage's window method end to end, twice (determinism), then the volumes, on the `optimise_pools` example (OPT-5). The settings test in the same file stays in the pull-request job. |
 | owd-format::optimise_windows: `the_window_method_keeps_the_pools_of_a_fresh_lattice_run_and_its_weirs_are_seams` | about 4 min debug | The pool lattice, then the window method on its pools (OPT-5). |
+| owd-format::river_following: `a_change_of_rule_quality_builds_the_line_again` | minutes debug | The river-following line (OPT-4) end to end twice on a 12 km sine river with the one scorer (rule quality A, then C: R_min 360 m then 180 m). The plan-area, data-check and corrupted-line tests of the same file stay in the pull-request job. |
+| owd-format::river_following: `the_same_input_gives_the_same_line` | minutes debug | The river-following line twice on the omega loop with the one scorer, compared to the bit (OPT-4). |
+| owd-format::river_following_stale: `a_change_of_rule_quality_makes_the_line_stale_and_run_builds_it_again` | minutes debug | Sizing, the river-following line, a change of quality, and the run of what is due, in the session (OPT-4). Its twin `a_design_that_never_used_it_keeps_its_settings` stays in the pull-request job. |
 Times are from one local nextest run (10 cores, tests in parallel, so inflated); CI times are in the pull request.
 Python tests (about 33 s in total) all still run in the pull-request job.
 
