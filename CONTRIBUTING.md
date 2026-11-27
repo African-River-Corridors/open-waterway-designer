@@ -70,6 +70,37 @@ deliberate and written down. Never loosen the tolerance to make a number pass; i
 Other guards: `bash tools/gates.sh` (format, clippy with warnings as errors, Rust tests with Python made
 unusable, pytest) and `python tools/release_guard.py` (no embargoed terms or local paths).
 
+## The optimisation document
+
+`docs/optimisation/` says what the two searches compute, with the formulas, a worked example and
+what to doubt. It is a living record of the design, and tests hold it to the code
+(`crates/owd-cli/tests/optimisation_doc.rs`).
+
+**The rule.** A change to the optimise or alignment code (`crates/owd-core/src/optimise/`,
+`crates/owd-core/src/alignment/`, `crates/owd-core/src/cut_model.rs`,
+`crates/owd-core/src/volumes/sections.rs`, `crates/owd-format/src/design/optimise.rs` and
+`volumes.rs`), to their settings or to their checks updates `docs/optimisation/` in the same pull
+request.
+
+**What the tests enforce.**
+
+- A new setting of the optimise or volumes stage, or a new field of the lattice's configuration,
+  does not compile in the test until it is listed there; a changed default, or a changed value of
+  the engine's fixed constants that the document lists, fails until appendix B is updated.
+- Every number the document quotes from its worked example must equal the stored number
+  (`docs/optimisation/example/numbers.json`). The nightly tests run the example again and fail when
+  the engine no longer gives those numbers. To update: build the release `owd`, run
+  `python3 docs/optimisation/example/run.py`, and correct the text where a number moved.
+- Every guarantee (section 6) and every item of "what the cost does not know" (section 7) names the
+  test that pins it. Renaming or deleting that test fails until the document names its replacement
+  or the statement is corrected.
+
+**What only this rule asks.** No test reads prose. If you change how an algorithm works without
+changing a setting, a default or a pinned number, the description in sections 3 to 6 is yours to
+correct, and a new limit of the method belongs in section 7 with a test of its own. The status
+table moves a part from "in the development branch" to "in release X" at release time
+(`docs/agents/releasing.md`), and from "planned" when it is built.
+
 ## The changelog: one fragment per pull request
 
 Do not edit `CHANGELOG.md` in a pull request. Add a small file `changelog.d/<pr>.<kind>.md` instead, where

@@ -37,6 +37,21 @@ export const poolLabel = (p: PoolReach) => `Pool ${p.number} · ${m1(p.level_m)}
 /** What a click on the pool water reads. */
 export const waterReadout = (w: WaterAt) => `water level ${m1(w.water_level_m)} m, ground ${m1(w.ground_m)} m, depth ${m1(w.depth_m)} m, pool ${w.pool}`;
 
+/** The check the legend shows: the steps of the water level and the weirs drawn, which must agree. */
+export function stepsCheck(s: MapStructures | null): { text: string; ok: boolean } {
+  const steps = s?.level_steps ?? 0;
+  const weirs = s?.weirs.length ?? 0;
+  const n = (k: number, one: string, many: string) => `${k} ${k === 1 ? one : many}`;
+  return { text: `${n(steps, "level step", "level steps")}, ${n(weirs, "weir drawn", "weirs drawn")}`, ok: steps === weirs };
+}
+
+/** Where the water level changes at a weir, in words, for its card. The model has one site on the
+ * design line: the level steps on the line across the design line there, and a bypassed river loop
+ * the line has left is not modelled apart from it. */
+export function levelChangeText(w: WeirSite): string {
+  return `The water level steps from ${m1(w.downstream_level_m)} m to ${m1(w.upstream_level_m)} m on the line across the design line at ${km(w.chainage_m)}. Water away from the design line takes the level of its nearest point of the line, so a river loop the line has left (a bypassed meander) is not modelled apart: its water steps on the same line.`;
+}
+
 /** The lock chamber's size in words, or why there is no lock. */
 export function chamberText(s: MapStructures): string {
   const m = s.model;

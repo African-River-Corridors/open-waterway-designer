@@ -493,3 +493,204 @@ fn a_dem_in_degrees_gives_the_same_cut() {
     );
     assert!(after.contains(&20.0));
 }
+
+/// The cut on the left bank only, the right only, both and none, in stretches of 500 m.
+fn stretch_sides(chainage: f64) -> (bool, bool) {
+    match ((chainage / 500.0) as usize) % 4 {
+        0 => (true, false),
+        1 => (false, true),
+        2 => (true, true),
+        _ => (false, false),
+    }
+}
+
+#[test]
+fn a_daylight_line_runs_only_where_its_side_is_cut_and_never_crosses_the_channel() {
+    let dem = dem_of(|_, _| 20.0);
+    let (s, mut channel) = with_volumes(&dem);
+    for st in &mut channel.stations {
+        let (l, r) = stretch_sides(st.chainage_m);
+        if !l {
+            st.daylight_left_m = None;
+        }
+        if !r {
+            st.daylight_right_m = None;
+        }
+    }
+    let g = s.channel_geometry(&channel).unwrap();
+    let day = g.daylight.as_ref().expect("daylight lines");
+    let ws = channel.wet_slope;
+    // Each drawn vertex is a station's daylight point on its own side, and each segment joins
+    // two stations next to each other, both cut on that side: no segment crosses the bed.
+    for (left, lines) in [(true, &day.left), (false, &day.right)] {
+        assert!(!lines.is_empty());
+        for line in lines {
+            let utm = ZONE.forward_all(line).unwrap();
+            let idx: Vec<usize> = utm
+                .iter()
+                .map(|p| {
+                    let (k, st) = channel
+                        .stations
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, st)| {
+                            if left {
+                                st.daylight_left_m.is_some()
+                            } else {
+                                st.daylight_right_m.is_some()
+                            }
+                        })
+                        .min_by(|a, b| {
+                            let d = |st: &owd_format::design::channel::ChannelStation| {
+                                let o = if left {
+                                    st.daylight_left_m
+                                } else {
+                                    st.daylight_right_m
+                                };
+                                let q = st.at_offset(o.unwrap());
+                                libm::hypot(q[0] - p[0], q[1] - p[1])
+                            };
+                            d(a.1).total_cmp(&d(b.1))
+                        })
+                        .unwrap();
+                    let o = if left {
+                        st.daylight_left_m
+                    } else {
+                        st.daylight_right_m
+                    }
+                    .unwrap();
+                    let q = st.at_offset(o);
+                    assert!(
+                        libm::hypot(q[0] - p[0], q[1] - p[1]) < 0.01,
+                        "a vertex off its station"
+                    );
+                    assert!(
+                        o.abs() >= st.water_edge_m(ws) - 1e-6,
+                        "inside the water's edge"
+                    );
+                    assert_eq!(o < 0.0, left, "on its own side");
+                    let (l, r) = stretch_sides(st.chainage_m);
+                    assert!(if left { l } else { r }, "a line where its side is not cut");
+                    k
+                })
+                .collect();
+            assert!(idx.windows(2).all(|w| w[1] == w[0] + 1), "{idx:?}");
+        }
+    }
+    // The cut picture stops with the lines: beside the channel between a station cut on a side
+    // and one not cut on it, nothing is cut. A point 30 m out, between the last left-cut station
+    // before 500 m and the first station after it.
+    let cut = surface(&s, &channel, &dem);
+    let last = channel
+        .stations
+        .iter()
+        .rfind(|st| st.chainage_m < 500.0)
+        .unwrap();
+    let next = channel
+        .stations
+        .iter()
+        .find(|st| st.chainage_m >= 500.0)
+        .unwrap();
+    let mid = (last.chainage_m + next.chainage_m) / 2.0;
+    let o = last.daylight_left_m.unwrap() / 2.0;
+    let p = owd_format::design::channel::ChannelStation {
+        chainage_m: mid,
+        ..last.clone()
+    };
+    let between = [
+        (last.x + next.x) / 2.0 - o * libm::sin(p.heading_rad),
+        (last.y + next.y) / 2.0 + o * libm::cos(p.heading_rad),
+    ];
+    assert!(
+        cut.at(between, 20.0).is_none(),
+        "no wedge out to a station with no cut"
+    );
+    let inside = last.at_offset(o);
+    assert!(
+        cut.at(inside, 20.0).is_some(),
+        "the cut at the last station with one"
+    );
+}
+
+/// The cut of `channel` read on a 1 m grid over the river: the cut area, and the farthest cut
+/// point from the design line (the line runs along y = Y0 here).
+fn cut_on_grid(cut: &CutSurface) -> (f64, f64) {
+    let (mut area, mut far) = (0.0, 0.0f64);
+    for i in 0..3200 {
+        for j in -150..150 {
+            let p = [X0 - 100.0 + i as f64 + 0.5, Y0 + j as f64 + 0.5];
+            if cut.at(p, 20.0).is_some() {
+                area += 1.0;
+                far = far.max((p[1] - Y0).abs());
+            }
+        }
+    }
+    (area, far)
+}
+
+#[test]
+fn past_the_end_of_a_cut_patch_nothing_is_cut_and_the_cut_area_is_the_stations_footprint() {
+    // A cut on both banks for the first 500 m, then none at all: the volumes found no cut there.
+    let dem = dem_of(|_, _| 20.0);
+    let (s, mut channel) = with_volumes(&dem);
+    for st in &mut channel.stations {
+        if st.chainage_m >= 500.0 {
+            st.daylight_left_m = None;
+            st.daylight_right_m = None;
+        }
+    }
+    let cut = surface(&s, &channel, &dem);
+    let last = channel
+        .stations
+        .iter()
+        .rfind(|st| st.daylight_left_m.is_some())
+        .unwrap();
+    let reach = last.daylight_left_m.unwrap().abs();
+    // 20 m past the last station with a cut and 20 m to its side: inside that station's reach,
+    // but beside the stretch with no cut.
+    for side in [-1.0, 1.0] {
+        let p = [last.x + 20.0, last.y + side * 20.0];
+        assert!(libm::hypot(20.0, 20.0) < reach);
+        assert!(
+            cut.at(p, 20.0).is_none(),
+            "a fan of cut past the patch's end at {p:?}"
+        );
+    }
+    // The self-check: the area coloured is the plan area of the stations' cut, and nothing is
+    // coloured farther from the line than the widest daylight offset.
+    let st = &channel.stations;
+    let mut footprint = 0.0;
+    let mut widest = 0.0f64;
+    for w in st.windows(2) {
+        let (a, b) = (&w[0], &w[1]);
+        for (da, db) in [
+            (a.daylight_left_m, b.daylight_left_m),
+            (a.daylight_right_m, b.daylight_right_m),
+        ] {
+            if let (Some(da), Some(db)) = (da, db) {
+                footprint += (da.abs() + db.abs()) / 2.0 * (b.chainage_m - a.chainage_m);
+                widest = widest.max(da.abs()).max(db.abs());
+            }
+        }
+    }
+    let (area, far) = cut_on_grid(&cut);
+    // Nothing is cut beyond the line's start, nor past the last station with a cut.
+    let (first, mut outside) = (&channel.stations[0], 0.0);
+    for i in 0..3200 {
+        for j in -150..150 {
+            let p = [X0 - 100.0 + i as f64 + 0.5, Y0 + j as f64 + 0.5];
+            if cut.at(p, 20.0).is_some() && (p[0] < first.x || p[0] > last.x) {
+                outside += 1.0;
+            }
+        }
+    }
+    assert_eq!(outside, 0.0, "cut outside the stations' span, m2");
+    assert!(
+        ((area - footprint) / footprint).abs() < 0.01,
+        "cut {area} m2, the stations' footprint {footprint} m2"
+    );
+    assert!(
+        far <= widest + 1.0,
+        "cut {far} m from the line, widest daylight {widest} m"
+    );
+}

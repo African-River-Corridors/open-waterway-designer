@@ -30,7 +30,7 @@ The OWD website. Live at **https://www.africanrivercorridors.com/owd** once it i
 | `app.html` | The web app page. This file is a placeholder; `build.py --app-dist` puts the built app in its place and its files under `app-files/`. |
 | `tokens.css`, `fonts/` | The brand tokens and fonts. `tokens.css` is owned by the app (`app/src/tokens.css`) and stays byte-identical to it. |
 | `assets/`, `favicon.svg` | Logo and illustrations. Copied from the brand pack; do not edit them here. |
-| `mkdocs.yml`, `hooks.py`, `overrides/` | The docs: mkdocs-material with the OWD theme. |
+| `mkdocs.yml`, `hooks.py`, `overrides/` | The docs: mkdocs-material with the OWD theme. `hooks.py` also turns formulas (`$...$`, `$$...$$`) into MathML at build time, so a page needs no script to show them. |
 | `docs-theme/owd.css` | The docs theme over `tokens.css`. |
 | `requirements.txt` | Exact pins for the docs tools. mkdocs stays below 2.0, which drops the plugin and theme systems this build uses. |
 | `build.py` | Builds everything into `_site/`. |
@@ -39,8 +39,8 @@ The OWD website. Live at **https://www.africanrivercorridors.com/owd** once it i
 ## Build it locally
 
 The docs are the repo's own Markdown: README, ROADMAP, GLOSSARY, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY,
-TRADEMARKS, CHANGELOG, the style guide, `docs/known-issues.md`, `docs/adr/` and `docs/specs/`. `build.py`
-copies them into `_docs/` at build time. Edit the files where they are; never in `_docs/`. A new ADR or
+TRADEMARKS, CHANGELOG, the style guide, `docs/known-issues.md`, `docs/optimisation/` (with its figures),
+`docs/adr/` and `docs/specs/`. `build.py` copies them into `_docs/` at build time. Edit the files where they are; never in `_docs/`. A new ADR or
 spec joins the nav by itself. Links between these files keep working; a link to any other repo file goes
 to GitHub.
 

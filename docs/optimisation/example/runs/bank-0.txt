@@ -1,0 +1,13 @@
+$ owd optimise bank-0.owd --lifts 0.5,1,1.5,2 --sites 1000,2000,3000,4000,5000,6000 --flood-report --max-above-bank 0
+weirs: 1000 m -> pool 2.0 m, 2000 m -> pool 4.0 m, 3000 m -> pool 5.5 m, 4000 m -> pool 6.5 m
+Pool lattice: 1 pool(s) re-routed, minimum radius 254 m on a 85 m chord against R_min 255 m: ok
+flooded land outside the river polygon: 1.3 ha, flood cost 0 at 0 per ha (cut cost 330944); no pool more than 0 m above bank-full
+bank-full is an estimate from the DEM: in each 500 m of line, the 25th percentile of the ground in the cells that touch the river polygon, on each side of the line, and the lower of the two sides
+  pool (m along the line) | level m | lift m | flooded ha | above bank-full m, lower / upper end | over the DEM river level m, lower / upper end
+  0 to 1000 | 0.00 | - | 0.0 | -2.58 / -3.11 | 1.58 / 1.01
+  1000 to 2000 | 2.00 | 2.00 | 0.0 | -1.64 / -2.06 | 2.49 / 1.98
+  2000 to 3000 | 4.00 | 2.00 | 0.2 | -0.61 / -1.07 | 3.48 / 3.06
+  3000 to 4000 | 5.50 | 1.50 | 0.6 | -0.11 / -1.44 | 3.58 / 2.72
+  4000 to 6682 | 6.50 | 1.00 | 0.5 | -0.94 / -3.35 | 3.29 / 0.89
+$ owd volumes bank-0.owd
+Pool lattice: dredge 268547 m3, dry cut 134758 m3, tallest face 3.5 m

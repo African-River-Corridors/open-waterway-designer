@@ -141,6 +141,9 @@ pub struct MapStructures {
     pub model: LockModel,
     pub pools: Vec<PoolReach>,
     pub weirs: Vec<WeirSite>,
+    /// The steps of the water level along the design line: a check the map shows beside the
+    /// weirs drawn ("18 level steps, 18 weirs drawn"). Each step has its weir.
+    pub level_steps: usize,
 }
 
 impl MapStructures {
@@ -150,6 +153,7 @@ impl MapStructures {
             model: LockModel::for_vessel(vessel),
             pools: Vec::new(),
             weirs: Vec::new(),
+            level_steps: 0,
         }
     }
 }
@@ -332,11 +336,20 @@ pub fn structures(input: &StructuresIn, to_lon_lat: ToLonLat) -> Result<MapStruc
             .chamber_length_m
             .map_or(25.0, |l| l / 2.0)
             .clamp(5.0, (length / 2.0).max(5.0));
-        let (back, ahead) = (at(s.chainage_m - half), at(s.chainage_m + half));
-        let (dx, dy) = (ahead[0] - back[0], ahead[1] - back[1]);
-        let norm = libm::hypot(dx, dy);
+        let (mut back, mut ahead) = (at(s.chainage_m - half), at(s.chainage_m + half));
+        let (mut dx, mut dy) = (ahead[0] - back[0], ahead[1] - back[1]);
+        let mut norm = libm::hypot(dx, dy);
         if norm < 1e-9 {
-            continue;
+            // A chord with no length (the line turns back on itself there): the first segment of
+            // the line with a length, so every step keeps its weir.
+            let seg = line
+                .windows(2)
+                .find(|w| libm::hypot(w[1][0] - w[0][0], w[1][1] - w[0][1]) > 1e-9)
+                .unwrap_or(&line[..2]);
+            (dx, dy) = (seg[1][0] - seg[0][0], seg[1][1] - seg[0][1]);
+            norm = libm::hypot(dx, dy).max(1e-12);
+            back = [c[0] - dx / norm, c[1] - dy / norm];
+            ahead = [c[0] + dx / norm, c[1] + dy / norm];
         }
         let t = [dx / norm, dy / norm];
         // To the left of the line, looking upstream.
@@ -421,6 +434,7 @@ pub fn structures(input: &StructuresIn, to_lon_lat: ToLonLat) -> Result<MapStruc
     Ok(MapStructures {
         model,
         pools,
+        level_steps: steps.len(),
         weirs,
     })
 }

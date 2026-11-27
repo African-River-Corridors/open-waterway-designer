@@ -24,3 +24,6 @@ website/.venv/
 app/wasm-pkg/
 app/dist-web/
 app/dist-web-test/
+
+# the worked example of docs/optimisation: designs made by run.py
+docs/optimisation/example/out/

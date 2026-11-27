@@ -1,7 +1,7 @@
 <script lang="ts">
   // The small card of one weir (MAP-4): what the placeholder model assumes there.
   import type { MapStructures, PoolWaterInfo, WeirSite } from "./api";
-  import { PLACEHOLDER_NOTE, chamberText, km } from "./structures";
+  import { PLACEHOLDER_NOTE, chamberText, km, levelChangeText } from "./structures";
 
   let {
     weir,
@@ -38,7 +38,7 @@
     <dt>Lock chamber</dt>
     <dd data-testid="weir-card-chamber">{chamberText(structures)}</dd>
     <dt>Weir length</dt>
-    <dd data-testid="weir-card-length">{Math.round(weir.weir_length_m)} m<span class="sub">{weir.clipped_to_river ? "the river polygon's width here" : "a default length: no river polygon here"}</span></dd>
+    <dd data-testid="weir-card-length">{Math.round(weir.weir_length_m)} m<span class="sub">{weir.clipped_to_river ? "the river polygon's width here" : "a default length across the design line: the line is not inside a river polygon here"}</span></dd>
     <dt>Land flooded</dt>
     <dd data-testid="weir-card-land">
       {#if land}
@@ -48,6 +48,7 @@
       {/if}
     </dd>
   </dl>
+  <p class="rules" data-testid="weir-card-level">{levelChangeText(weir)}</p>
   <p class="rules" data-testid="weir-card-rules">Sizes of this {PLACEHOLDER_NOTE}: {structures.model.rules}.</p>
 </section>
 

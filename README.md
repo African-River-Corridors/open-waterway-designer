@@ -212,6 +212,39 @@ with RasterTerrain("my_dem.tif") as terrain:
     v = section_volumes(line, terrain, river_polygon, water_level, depth, half_width)
 ```
 
+## How the optimisation works
+
+The full account, with the formulas, one worked example and what to doubt, is
+**[The optimisation: mathematics and approach](docs/optimisation/README.md)**. It is written for a
+river or waterway engineer who wants to check the method and get the same numbers. In short:
+
+**What is minimised.** A cost you weight yourself: dredge and dry cut (m³), a structure cost for each
+weir, and, when you turn them on, flooded land (per hectare), the length of the line (per metre) and
+land taken outside the river (per m²). The line must hold the minimum radius R_min and must not cross
+itself. OWD prices nothing by itself.
+
+**The stages.** Sizing gives the bottom width, the depth and R_min. Alignment gives a baseline along
+the river. The **weir search** chooses weir sites and pool levels on the baseline: a dynamic
+programme, exact for its cost on the sites and lifts you offer. The **pool search** then moves the
+line inside each pool: a search over arcs no tighter than R_min, which returns the least cost it
+found and is not proven optimal. The volumes stage measures the result; quote volumes from it, not
+from a search.
+
+| Part of the method | Status |
+|---|---|
+| Sizing, rolling-circle baseline, volumes (Cut Model A) | In release 0.3.1 |
+| Weir search on cut and structure cost | In release 0.3.1 |
+| Pool search on a lattice of arcs and straights | In release 0.3.1 |
+| Flood cost and the limit above bank-full | In the development branch |
+| Exact pool ends, long pools in pieces, the loop guard | In the development branch |
+| Cost per metre, land cost, the corridor as a limit | In the development branch |
+| Seams on straights, free seams, the straight through a weir | In the development branch |
+| Seed line, costed meander cut-throughs, sideways shift | Planned, not built |
+
+The document is checked against the engine: its settings table, every number of its example and
+the tests behind each of its guarantees. A change to the optimise or alignment code updates it in the
+same change (see [CONTRIBUTING.md](CONTRIBUTING.md)).
+
 ## Optional: optimise weirs, pool levels and the channel through each pool
 
 `owd.optimise` adds two searches. Both take typed config objects and a terrain
