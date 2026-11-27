@@ -453,8 +453,9 @@ enum Command {
         /// pools and weirs stay as they are).
         #[arg(long, value_name = "METHOD")]
         method: Option<String>,
-        /// With `--method windows`: the window length aimed for, in metres (default 1,500; the
-        /// band is 800 to 2,500 m, widened to take it).
+        /// With `--method windows`: the window length aimed for, in metres. Unset, it is the
+        /// window optimiser's own (one and a half kilometres; the band is 800 to 2,500 m,
+        /// widened to take it).
         #[arg(long, value_name = "METRES")]
         window_length: Option<f64>,
         /// With `--method windows`: how many windows to search at once (default: every core).
