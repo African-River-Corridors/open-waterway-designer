@@ -183,6 +183,10 @@ fn the_optimise_settings_table_holds_the_engines_names_and_defaults() {
         min_straight_m,
         cell_m,
         check_chord_m,
+        method,
+        // The window optimiser's own settings (OPT-5): written only with `method` `windows`, and
+        // given in docs/window-optimiser.md, not in this document of the pool lattice.
+        windows: _,
     } = OptimiseSettings::default();
     let expected = [
         ("site_step_m", json!(site_step_m)),
@@ -228,6 +232,7 @@ fn the_optimise_settings_table_holds_the_engines_names_and_defaults() {
         ("min_straight_m", json!(min_straight_m)),
         ("cell_m", json!(cell_m)),
         ("check_chord_m", json!(check_chord_m)),
+        ("method", json!(method)),
     ];
     hold(
         &table(&appendices(), "optimise"),
@@ -328,7 +333,12 @@ fn the_table_of_fixed_values_holds_the_engines() {
         max_expand,
         bounds_margin_m,
         max_pool_piece_m,
+        // The window optimiser's (OPT-5): off for the pool lattice, so the document has none.
+        radii_m,
+        nominal_arc_m,
+        max_states,
     } = LatticeConfig::new(r_min).validated().unwrap();
+    assert!(radii_m.is_none() && nominal_arc_m.is_none() && max_states == usize::MAX);
     // Stated in the text of section 5, not in the table: the search always closes on the end
     // pose, and it drops no state by a bound.
     assert!(

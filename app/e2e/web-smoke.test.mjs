@@ -703,6 +703,34 @@ describe("OWD web smoke tests", () => {
     await (await tid(b, "set-bank-limit")).click();
     await until(b, "the limit gone", async () => (await pageDoc(b)).stages.optimise.settings?.max_above_bank_m === undefined);
     assert.equal(await text(b, "bank-limit-stored"), "Stored: no limit");
+    // The window optimiser (OPT-5): the method list says the pool lattice and the design holds no method; choosing the
+    // window optimiser stores it with its settings and shows the window length; a length is stored with a band that takes
+    // it; a bad length is refused in words; choosing the lattice again takes the method out of the design.
+    assert.equal(await (await tid(b, "optimise-method")).getValue(), "lattice");
+    assert.equal((await opt()).method, undefined);
+    assert.equal(await exists(b, "window-length"), false);
+    await b.execute(() => {
+      const sel = document.querySelector('[data-testid="optimise-method"]');
+      sel.value = "windows";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await until(b, "the window method stored", async () => (await opt())?.method === "windows");
+    assert.equal((await opt()).windows.window_target_m, 1500);
+    await until(b, "the window length box", async () => await exists(b, "window-length"));
+    await (await tid(b, "window-length")).setValue("3000");
+    await (await tid(b, "set-window-length")).click();
+    await until(b, "the window length stored", async () => (await opt())?.windows?.window_target_m === 3000);
+    assert.equal((await opt()).windows.window_max_m, 3000);
+    assert.equal(await text(b, "window-length-stored"), "Stored: 3000");
+    await (await tid(b, "window-length")).setValue("abc");
+    await (await tid(b, "set-window-length")).click();
+    await until(b, "the window length refusal", async () => (await exists(b, "error")) && (await text(b, "error")).includes("The window length must be a number of metres"));
+    await b.execute(() => {
+      const sel = document.querySelector('[data-testid="optimise-method"]');
+      sel.value = "lattice";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await until(b, "the method gone", async () => (await opt())?.method === undefined && (await opt())?.windows === undefined);
   });
 
   it("shows that a design with no DEM was optimised on plan area, not volume (OPT-1)", async () => {

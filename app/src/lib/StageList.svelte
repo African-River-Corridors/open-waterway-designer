@@ -1,6 +1,6 @@
 <script lang="ts">
   import { useWaterChoice } from "./api";
-  import type { CascadeFlood, FloodSetting, JoinSetting, RunMethod, Snapshot, StageName, StageState, UseWater } from "./api";
+  import type { CascadeFlood, FloodSetting, JoinSetting, OptimiseMethod, RunMethod, Snapshot, StageName, StageState, UseWater, WindowRow } from "./api";
 
   let {
     snap,
@@ -14,6 +14,8 @@
     onCorridorLimit,
     onOptimiseFlood,
     onJoinSetting,
+    onOptimiseMethod,
+    onWindowLength,
     lineName = null,
   }: {
     snap: Snapshot | null;
@@ -35,6 +37,10 @@
     /** Set a flood setting of the weir search (a number as typed; an empty limit is no limit). */
     onOptimiseFlood: (setting: FloodSetting, value: string) => void;
     onJoinSetting: (key: JoinSetting, value: boolean | string) => void;
+    /** Choose the optimise stage's method (OPT-5). */
+    onOptimiseMethod: (method: OptimiseMethod) => void;
+    /** Set the window optimiser's window length (metres, as typed). */
+    onWindowLength: (metres: string) => void;
     lineName?: string | null;
   } = $props();
   // The stored flood settings: the cost is 0 (off) and the limit is none until set, and neither is written then.
@@ -72,6 +78,44 @@
     ((snap?.document.stages.optimise.results as { cascade?: { flood?: CascadeFlood } } | null)?.cascade?.flood ?? null) as CascadeFlood | null,
   );
   const fixed = (x: number | null | undefined, digits: number) => (x == null ? "–" : x.toFixed(digits));
+  // The optimise stage's method (OPT-5): `lattice` unless the design says otherwise.
+  type WindowsStored = { method?: OptimiseMethod; windows?: { window_target_m?: number } };
+  let optimiseStored = $derived((snap?.document.stages.optimise.settings as WindowsStored | null) ?? {});
+  let optimiseMethodNow = $derived<OptimiseMethod>(optimiseStored.method ?? "lattice");
+  let storedWindow = $derived(optimiseStored.windows?.window_target_m ?? 1500);
+  let windowText = $state("");
+  let windowSeen: number | null = null;
+  $effect(() => {
+    if (windowSeen !== storedWindow) {
+      windowSeen = storedWindow;
+      windowText = String(storedWindow);
+    }
+  });
+  // The windows of the last window run, from its design line's details.
+  let windowRows = $derived(
+    (((snap?.document.stages.optimise.results as { design_line?: { method?: string; details?: { windows?: WindowRow[] } } } | null)
+      ?.design_line?.method === "windows"
+      ? (snap?.document.stages.optimise.results as { design_line: { details: { windows?: WindowRow[] } } }).design_line.details.windows
+      : null) ?? null) as WindowRow[] | null,
+  );
+  const WHY: Record<string, string> = {
+    gain: "cheaper",
+    polished_start: "polished start cheaper",
+    under_threshold: "less than 1 % cheaper",
+    dearer: "dearer",
+    loop: "loops",
+    radius: "breaks R_min",
+    left_river: "leaves the river",
+    not_closed: "could not join the seams",
+    cap: "search limit",
+    timeout: "time limit",
+    no_path: "no line found",
+    no_ground: "no ground",
+    too_short: "too short",
+    crosses_line: "crosses the line",
+    frozen: "frozen",
+    cancelled: "cancelled",
+  };
   // The stored cost per metre of line; 0 (off) is not written into the design.
   let storedLength = $derived(
     (snap?.document.stages.optimise.settings as { length_weight?: number } | null)?.length_weight ?? 0,
@@ -218,6 +262,46 @@
         {#if onPlanArea}
           <li class="sub length" data-testid="plan-area-note">
             <span class="help">Optimised on plan area, not volume: no elevation model is loaded. The search kept the channel inside the river polygon; it chose no weirs. Load a DEM and run Optimise again to optimise on volume.</span>
+          </li>
+        {/if}
+        <li class="sub length" data-testid="optimise-method-row">
+          <label class="name">
+            Method
+            <select aria-label="Optimise method" data-testid="optimise-method" value={optimiseMethodNow} disabled={busy !== null} onchange={(e) => onOptimiseMethod(e.currentTarget.value as OptimiseMethod)}>
+              <option value="lattice">Weirs and pool lattice</option>
+              <option value="windows">Window optimiser</option>
+            </select>
+          </label>
+          <span class="dim help" data-testid="optimise-method-help">The window optimiser redesigns the design line in windows of 1 to 2 km, pricing every move with the volumes' own cross-section, and keeps a window's change only when it is at least 1 % cheaper. It keeps the pools and weirs as they are.</span>
+        </li>
+        {#if optimiseMethodNow === "windows"}
+          <li class="sub length" data-testid="window-length-row">
+            <label class="name">
+              Window length (m)
+              <input type="text" inputmode="decimal" data-testid="window-length" bind:value={windowText} disabled={busy !== null} />
+            </label>
+            <button data-testid="set-window-length" disabled={busy !== null} onclick={() => onWindowLength(windowText)}>Set</button>
+            <span class="dim" data-testid="window-length-stored">Stored: {storedWindow}</span>
+          </li>
+        {/if}
+        {#if windowRows}
+          <li class="sub length" data-testid="windows-row">
+            <table class="pools" data-testid="windows">
+              <thead>
+                <tr><th>Start (m)</th><th>End (m)</th><th>Cost before</th><th>Cost after</th><th>Kept</th></tr>
+              </thead>
+              <tbody>
+                {#each windowRows as w (w.id)}
+                  <tr data-testid="window">
+                    <td>{fixed(w.start_m, 0)}</td>
+                    <td>{fixed(w.end_m, 0)}</td>
+                    <td>{fixed(w.full_start.cost, 0)}</td>
+                    <td>{fixed(w.full_found?.cost, 0)}</td>
+                    <td>{w.adopted === "none" ? `not adopted: ${WHY[w.reason] ?? w.reason}` : w.adopted === "found" ? `adopted${w.pass === 2 ? " (pass 2)" : ""}` : "polished start"}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
           </li>
         {/if}
         <li class="sub length" data-testid="length-weight-row">

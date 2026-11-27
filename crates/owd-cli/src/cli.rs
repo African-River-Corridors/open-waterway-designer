@@ -456,6 +456,17 @@ enum Command {
         /// The cut model: a or b (default a).
         #[arg(long, value_name = "MODEL")]
         model: Option<String>,
+        /// `lattice` (the weir cascade, then the pool lattice; the default) or `windows` (the
+        /// window optimiser: the alignment's line redesigned in windows of 1 to 2 km, each priced
+        /// with the volumes stage's own section and adopted only when it saves at least 1 %; the
+        /// pools and weirs stay as they are).
+        #[arg(long, value_name = "METHOD")]
+        method: Option<String>,
+        #[arg(long, value_name = "METRES", help = optimise_window_length_help())]
+        window_length: Option<f64>,
+        /// With `--method windows`: how many windows to search at once (default: every core).
+        #[arg(long, value_name = "N")]
+        threads: Option<i64>,
         #[command(flatten)]
         out: Out,
     },
@@ -1524,6 +1535,9 @@ pub fn main() -> ExitCode {
             building_min_depth,
             flood_report,
             model,
+            method,
+            window_length,
+            threads,
             out,
         } => commands::optimise(
             &doc,
@@ -1551,6 +1565,9 @@ pub fn main() -> ExitCode {
                 building_min_depth,
                 flood_report,
                 model,
+                method,
+                window_length,
+                threads,
             },
             &out.output,
             out.json,
@@ -1796,6 +1813,19 @@ fn optimise_join_help(key: &str, text: &str) -> String {
         _ => d.min_straight_m,
     };
     format!("{text} (default {}).", shown_default(&serde_json::json!(v)))
+}
+
+/// The help of `owd optimise --window-length`, with the window optimiser's own defaults.
+fn optimise_window_length_help() -> String {
+    let w = owd_format::design::OptimiseSettings::default().windows;
+    let n = |v: f64| shown_default(&serde_json::json!(v));
+    format!(
+        "With `--method windows`: the window length aimed for, in metres (default {}; the band is \
+         {} to {} m, widened to take it).",
+        n(w.window_target_m),
+        n(w.window_min_m),
+        n(w.window_max_m)
+    )
 }
 
 /// The help of `owd optimise --land-weight`, with the stage's own default.

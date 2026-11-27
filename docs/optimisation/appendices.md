@@ -172,6 +172,7 @@ A test holds the names and defaults of this table to the engine's.
 | `min_straight_m` | `--min-straight` | m | `0` | The least straight between a left curve and a right curve. 0: one straight of twice the pitch. |
 | `cell_m` | none | m | `2` | The cell of the grid the pool search reads the ground on. |
 | `check_chord_m` | none | m | `null` | The chord of the $R_{\min}$ check. `null`: a third of $R_{\min}$. |
+| `method` | `--method` | name | `"lattice"` | `lattice`: the weir cascade, then the pool lattice (this document). `windows`: the window optimiser, with its own settings under `windows` (see `docs/window-optimiser.md`). |
 <!-- /settings -->
 
 ### Settings of the volumes stage

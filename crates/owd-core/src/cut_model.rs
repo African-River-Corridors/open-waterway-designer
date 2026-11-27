@@ -452,17 +452,28 @@ pub fn widened_hb_from_shape_floor(
     local_radii(&xs, &ys, 2)
         .into_iter()
         .map(|ri| {
-            if ri.is_finite() && 0.0 < ri && ri < rmax {
+            widened_hb_at_radius(ri, hb, rmax, |ri| {
                 let r = match floor {
                     WideningFloor::MinRadius => py_max(ri, rmin),
                     WideningFloor::None => ri,
                 };
-                hb + 0.5 * shape.bend_widening_m(r)
-            } else {
-                hb
-            }
+                shape.bend_widening_m(r)
+            })
         })
         .collect()
+}
+
+/// The bottom half-width at a bend of radius `ri`: `hb + widening(ri) / 2` for a finite radius above
+/// 0 and under `rmax`, else `hb` (a straight). `widening` gives the whole bend widening (both sides)
+/// at a radius, with its floor applied. The volumes stage reads `ri` off the line
+/// ([`widened_hb_from_shape`]); the window optimiser's search (OPT-5) reads it off the primitive it
+/// lays, so the two widen by the one rule.
+pub fn widened_hb_at_radius(ri: f64, hb: f64, rmax: f64, widening: impl Fn(f64) -> f64) -> f64 {
+    if ri.is_finite() && 0.0 < ri && ri < rmax {
+        hb + 0.5 * widening(ri)
+    } else {
+        hb
+    }
 }
 
 /// Per-offset cut-face elevation for ONE transverse profile (for drawings). `None` where there is
