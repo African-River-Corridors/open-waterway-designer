@@ -447,9 +447,7 @@ enum Command {
         flood_distance: Option<f64>,
         #[arg(long, value_name = "COST", help = optimise_building_cost_help())]
         building_cost: Option<f64>,
-        /// A building counts as flooded only where the water at its centroid is at least this deep,
-        /// in metres (default 0.3), so a puddle does not count.
-        #[arg(long, value_name = "METRES")]
+        #[arg(long, value_name = "METRES", help = optimise_building_depth_help())]
         building_min_depth: Option<f64>,
         /// Report what each pool floods and how far it stands above bank-full, with no flood cost
         /// and no limit: the search is unchanged. The flood cost and the limit report it too.
@@ -1834,6 +1832,16 @@ fn optimise_building_cost_help() -> String {
          (centroid in flooded land, water at least --building-min-depth deep), so it moves weirs \
          and lowers pools to flood fewer. Needs a DEM and a buildings file (owd import --buildings) \
          (default {}: off).",
+        shown_default(&serde_json::json!(d))
+    )
+}
+
+/// The help of `owd optimise --building-min-depth`, with the stage's own default (BLD-1).
+fn optimise_building_depth_help() -> String {
+    let d = owd_format::design::OptimiseSettings::default().building_min_depth_m;
+    format!(
+        "A building counts as flooded only where the water at its centroid is at least this deep, \
+         in metres, so a puddle does not count (default {}).",
         shown_default(&serde_json::json!(d))
     )
 }
