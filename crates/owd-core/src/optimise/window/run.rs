@@ -1050,7 +1050,8 @@ pub fn optimise_windows(inp: &WindowInputs, cfg: &WindowConfig) -> Result<Window
                 .collect(),
         })
         .collect();
-    let per_window_mb = cfg.lattice.max_states.min(1usize << 40) as f64 * STATE_BYTES / 1.0e6;
+    let per_window_mb =
+        (cfg.lattice.max_states as f64).min((1u64 << 40) as f64) * STATE_BYTES / 1.0e6;
     let in_flight = ((cfg.memory_budget_mb / per_window_mb.max(1.0)).floor() as usize)
         .clamp(1, cfg.threads.max(1));
     if in_flight < cfg.threads {
