@@ -1006,6 +1006,9 @@ pub fn river_following(
             "cut_throughs_accepted": record.cut_throughs.iter().filter(|c| c.accepted).count(),
             // The stretches the window optimiser (OPT-5) reads from its starting line's details:
             // design-line chainage, from the typed record's permitted_stretches().
+            // The window optimiser's reading: {id, kind, from, to, room_m}, design-line chainage.
+            "permitted_stretches": serde_json::to_value(record.permitted_stretches())
+                .expect("permitted stretches are JSON"),
             "cut_throughs": permitted_json(&record, "cut_through"),
             "forced_stretches": permitted_json(&record, "forced"),
             "costed_on": costed_on,

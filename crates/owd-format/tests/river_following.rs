@@ -252,6 +252,20 @@ fn r11_without_a_dem_cut_throughs_are_listed_not_taken() {
             .iter()
             .any(|p| p.id == id && p.kind == "cut_through")
     );
+    // And in the line's details, where the window optimiser reads it first: `permitted_stretches`,
+    // `{id, kind, from, to, room_m}` in design-line chainage; and the older `cut_throughs[]` with
+    // `from_m` and `to_m`.
+    let ps = lf.details["permitted_stretches"].as_array().unwrap();
+    let p = ps.iter().find(|p| p["id"] == json!(id)).unwrap();
+    assert_eq!(p["kind"], "cut_through");
+    assert!(p["from"].as_f64().unwrap() < p["to"].as_f64().unwrap());
+    assert_eq!(p["room_m"].as_f64().unwrap(), rf.derived.cut_through_room_m);
+    let mut keys: Vec<String> = p.as_object().unwrap().keys().cloned().collect();
+    keys.sort();
+    assert_eq!(keys, vec!["from", "id", "kind", "room_m", "to"]);
+    let d = &lf.details["cut_throughs"][0];
+    assert_eq!(d["id"], json!(id));
+    assert!(d["from_m"].as_f64().unwrap() < d["to_m"].as_f64().unwrap());
     guarantees(&lf, 300.0);
     // A forced id that matches nothing is named.
     let stale = input(
